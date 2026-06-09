@@ -69,12 +69,14 @@ fn wire__crate__api__matrix__create_client_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_homeserver_url = <String>::sse_decode(&mut deserializer);
+            let api_data_dir = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
                         let output_ok =
-                            crate::api::matrix::create_client(api_homeserver_url).await?;
+                            crate::api::matrix::create_client(api_homeserver_url, api_data_dir)
+                                .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -796,11 +798,13 @@ fn wire__crate__api__matrix__restore_session_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_session = <crate::api::matrix::StoredSession>::sse_decode(&mut deserializer);
+            let api_data_dir = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
-                        let output_ok = crate::api::matrix::restore_session(api_session).await?;
+                        let output_ok =
+                            crate::api::matrix::restore_session(api_session, api_data_dir).await?;
                         Ok(output_ok)
                     })()
                     .await,

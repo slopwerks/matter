@@ -79,7 +79,10 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
-  Future<void> crateApiMatrixCreateClient({required String homeserverUrl});
+  Future<void> crateApiMatrixCreateClient({
+    required String homeserverUrl,
+    required String dataDir,
+  });
 
   Future<String> crateApiMatrixCreateDm({required String userId});
 
@@ -137,7 +140,10 @@ abstract class RustLibApi extends BaseApi {
     required String password,
   });
 
-  Future<void> crateApiMatrixRestoreSession({required StoredSession session});
+  Future<void> crateApiMatrixRestoreSession({
+    required StoredSession session,
+    required String dataDir,
+  });
 
   Future<void> crateApiMatrixSendMessage({
     required String roomId,
@@ -158,12 +164,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
-  Future<void> crateApiMatrixCreateClient({required String homeserverUrl}) {
+  Future<void> crateApiMatrixCreateClient({
+    required String homeserverUrl,
+    required String dataDir,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(homeserverUrl, serializer);
+          sse_encode_String(dataDir, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -176,7 +186,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiMatrixCreateClientConstMeta,
-        argValues: [homeserverUrl],
+        argValues: [homeserverUrl, dataDir],
         apiImpl: this,
       ),
     );
@@ -184,7 +194,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiMatrixCreateClientConstMeta => const TaskConstMeta(
     debugName: "create_client",
-    argNames: ["homeserverUrl"],
+    argNames: ["homeserverUrl", "dataDir"],
   );
 
   @override
@@ -742,12 +752,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateApiMatrixRestoreSession({required StoredSession session}) {
+  Future<void> crateApiMatrixRestoreSession({
+    required StoredSession session,
+    required String dataDir,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_stored_session(session, serializer);
+          sse_encode_String(dataDir, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -760,14 +774,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiMatrixRestoreSessionConstMeta,
-        argValues: [session],
+        argValues: [session, dataDir],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiMatrixRestoreSessionConstMeta =>
-      const TaskConstMeta(debugName: "restore_session", argNames: ["session"]);
+      const TaskConstMeta(
+        debugName: "restore_session",
+        argNames: ["session", "dataDir"],
+      );
 
   @override
   Future<void> crateApiMatrixSendMessage({

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/connection_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 
@@ -69,6 +71,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ref.invalidate(chatRoomsProvider);
       // Start background sync for real-time updates
       await rust.startSync();
+      // Mark connected after successful sync
+      if (mounted) {
+        ref.read(connectionProvider.notifier).state = AppConnectionState.connected;
+      }
     } catch (e) {
       debugPrint('Initial sync failed: $e');
     }
@@ -89,6 +95,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     await _initialSync();
   }
 
+  Future<String> _getDataDir() async {
+    final dir = await getApplicationSupportDirectory();
+    return dir.path;
+  }
+
   Future<void> _login() async {
     _clearError();
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -98,7 +109,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
-      await rust.createClient(homeserverUrl: _homeserverController.text);
+      await rust.createClient(homeserverUrl: _homeserverController.text, dataDir: await _getDataDir());
       final result = await rust.loginWithPassword(
         username: _usernameController.text,
         password: _passwordController.text,
@@ -131,7 +142,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
-      await rust.createClient(homeserverUrl: _homeserverController.text);
+      await rust.createClient(homeserverUrl: _homeserverController.text, dataDir: await _getDataDir());
 
       rust.AuthResult result;
 
@@ -181,7 +192,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
-      await rust.createClient(homeserverUrl: _homeserverController.text);
+      await rust.createClient(homeserverUrl: _homeserverController.text, dataDir: await _getDataDir());
       final result = await rust.loginWithToken(
         accessToken: _accessTokenController.text,
         userId: _userIdController.text,

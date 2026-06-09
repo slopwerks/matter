@@ -204,11 +204,13 @@ fn uiaa_to_auth_result(uiaa_info: &UiaaInfo) -> AuthResult {
 /// Create a Matrix client for the given homeserver URL.
 /// Must be called before any registration / login attempt.
 #[frb]
-pub async fn create_client(homeserver_url: String) -> Result<(), String> {
+pub async fn create_client(homeserver_url: String, data_dir: String) -> Result<(), String> {
     let url = url::Url::parse(&homeserver_url).map_err(|e| format!("Invalid URL: {e}"))?;
+    let sdk_dir = build_sdk_data_dir(&data_dir);
 
     let client = Client::builder()
         .homeserver_url(url)
+        .sqlite_store(sdk_dir, None)
         .build()
         .await
         .map_err(|e| format!("Failed to create client: {e}"))?;
@@ -457,6 +459,13 @@ pub async fn logout() -> Result<(), String> {
 
 
 
+/// Get the SDK data directory for persistent storage.
+/// On Android, `dirs::data_dir()` may point to a read-only location,
+/// so callers should pass the app's writable data directory from Dart.
+fn build_sdk_data_dir(base: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(base).join("sdk")
+}
+
 // ── Session persistence ──────────────────────────────────────────────
 
 /// Session data to persist across app restarts.
@@ -488,19 +497,14 @@ pub async fn get_session() -> Option<StoredSession> {
 
 /// Restore a previously saved session.
 #[frb]
-pub async fn restore_session(session: StoredSession) -> Result<(), String> {
+pub async fn restore_session(session: StoredSession, data_dir: String) -> Result<(), String> {
     let url = url::Url::parse(&session.homeserver_url)
         .map_err(|e| format!("Invalid URL: {e}"))?;
-
-    // Use sqlite store for persistent state
-    let data_dir = dirs::data_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("matter")
-        .join("sdk");
+    let sdk_dir = build_sdk_data_dir(&data_dir);
 
     let client = Client::builder()
         .homeserver_url(url)
-        .sqlite_store(data_dir, None)
+        .sqlite_store(sdk_dir, None)
         .build()
         .await
         .map_err(|e| format!("Client build failed: {e}"))?;

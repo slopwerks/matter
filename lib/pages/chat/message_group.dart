@@ -7,11 +7,13 @@ import 'image_message_bubble.dart';
 class MessageGroup {
   final String senderId;
   final String senderName;
+  final bool isMe;
   final List<ChatMessage> messages;
 
   MessageGroup({
     required this.senderId,
     required this.senderName,
+    required this.isMe,
     required this.messages,
   });
 }
@@ -28,7 +30,7 @@ class MessageGroupWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isMe = group.senderId == 'me';
+    final isMe = group.isMe;
 
     if (isMe) {
       return Padding(

@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/message_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 
-class MessageInput extends StatefulWidget {
+class MessageInput extends ConsumerStatefulWidget {
   final String roomId;
 
   const MessageInput({super.key, required this.roomId});
 
   @override
-  State<MessageInput> createState() => _MessageInputState();
+  ConsumerState<MessageInput> createState() => _MessageInputState();
 }
 
-class _MessageInputState extends State<MessageInput> {
+class _MessageInputState extends ConsumerState<MessageInput> {
   final _controller = TextEditingController();
   bool _hasText = false;
   bool _isSending = false;
@@ -41,6 +43,8 @@ class _MessageInputState extends State<MessageInput> {
 
     try {
       await rust.sendMessage(roomId: widget.roomId, message: text);
+      // Refresh message list after sending
+      ref.invalidate(messagesProvider(widget.roomId));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'app.dart';
 import 'pages/login/login_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/connection_provider.dart';
 import 'src/rust/api/matrix.dart' as rust;
 import 'src/rust/frb_generated.dart';
 import 'theme/app_theme.dart';
@@ -55,7 +57,8 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     try {
       final session = await loadPersistedSession();
       if (session != null) {
-        await rust.restoreSession(session: session);
+        final dataDir = (await getApplicationSupportDirectory()).path;
+        await rust.restoreSession(session: session, dataDir: dataDir);
         final displayName = await loadPersistedDisplayName() ?? session.userId.split(':').first.replaceFirst('@', '');
 
         ref.read(isLoggedInProvider.notifier).state = true;
@@ -70,6 +73,10 @@ class _AppRootState extends ConsumerState<_AppRoot> {
         await rust.syncOnce();
         ref.invalidate(chatRoomsProvider);
         await rust.startSync();
+        // Connected now
+        if (mounted) {
+          ref.read(connectionProvider.notifier).state = AppConnectionState.connected;
+        }
       }
     } catch (e) {
       debugPrint('Session restore failed: $e');

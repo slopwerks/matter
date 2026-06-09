@@ -6,16 +6,19 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `format_timestamp`, `get_client`, `get_last_message_info`, `store_client`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `uiaa_to_auth_result`
+// These functions are ignored because they are not marked as `pub`: `build_sdk_data_dir`, `format_timestamp`, `get_client`, `get_last_message_info`, `store_client`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `uiaa_to_auth_result`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SyncNotification`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Create a Matrix client for the given homeserver URL.
 /// Must be called before any registration / login attempt.
-Future<void> createClient({required String homeserverUrl}) => RustLib
-    .instance
-    .api
-    .crateApiMatrixCreateClient(homeserverUrl: homeserverUrl);
+Future<void> createClient({
+  required String homeserverUrl,
+  required String dataDir,
+}) => RustLib.instance.api.crateApiMatrixCreateClient(
+  homeserverUrl: homeserverUrl,
+  dataDir: dataDir,
+);
 
 /// Step 1 of registration: send a register request without auth to discover
 /// the UIAA session and flows. The server will respond with 401 + UIAA info.
@@ -76,8 +79,13 @@ Future<StoredSession?> getSession() =>
     RustLib.instance.api.crateApiMatrixGetSession();
 
 /// Restore a previously saved session.
-Future<void> restoreSession({required StoredSession session}) =>
-    RustLib.instance.api.crateApiMatrixRestoreSession(session: session);
+Future<void> restoreSession({
+  required StoredSession session,
+  required String dataDir,
+}) => RustLib.instance.api.crateApiMatrixRestoreSession(
+  session: session,
+  dataDir: dataDir,
+);
 
 /// Perform an initial sync and then start a background sync loop.
 /// Returns immediately after the initial sync. The background sync

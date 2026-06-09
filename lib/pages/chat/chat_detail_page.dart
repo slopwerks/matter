@@ -40,6 +40,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           MessageGroup(
             senderId: message.senderId,
             senderName: message.senderName,
+            isMe: true,
             messages: [message],
           ),
         );
@@ -48,6 +49,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           MessageGroup(
             senderId: message.senderId,
             senderName: message.senderName,
+            isMe: false,
             messages: [message],
           ),
         );
@@ -164,12 +166,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
             child: messagesAsync.when(
               data: (messages) {
                 final groups = _groupMessages(messages);
-                final reversed = groups.reversed.toList();
 
-                // 重建 keys
+                // 按时间正序排列，reverse:true 会把列表末尾（最新消息）显示在屏幕底部
                 _keys.clear();
-                for (int i = 0; i < reversed.length; i++) {
-                  if (reversed[i].senderId != 'me') {
+                for (int i = 0; i < groups.length; i++) {
+                  if (!groups[i].isMe) {
                     _keys[i] = GlobalKey();
                   }
                 }
@@ -181,25 +182,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                   reverse: true,
                   controller: _scrollController,
                   slivers: [
-                    const SliverPadding(padding: EdgeInsets.only(top: 8)),
-                    const SliverToBoxAdapter(child: DateSeparator(dateLabel: '今天')),
-                    for (int i = 0; i < reversed.length; i++)
-                      if (reversed[i].senderId == 'me')
+                    const SliverPadding(padding: EdgeInsets.only(bottom: 8)),
+                    // sliver 顺序：最新在前 → reverse:true 把它显示在底部
+                    for (int i = groups.length - 1; i >= 0; i--)
+                      if (groups[i].isMe)
                         SliverToBoxAdapter(
-                          child: MessageGroupWidget(group: reversed[i]),
+                          child: MessageGroupWidget(group: groups[i]),
                         )
                       else
-SliverLayoutBuilder(
-                            builder: (context, constraints) {
+                        SliverLayoutBuilder(
+                          builder: (context, constraints) {
                             final height = _heights[i] ?? 80.0;
                             final so = constraints.scrollOffset;
-
-                            // 头像默认在 group 底部 (bottom: 4.5, height: 32)
-                            // 4.5 = 3(外边距) + 1.5(最后一条消息底边距)，与消息气泡底对齐
-                            // sticky: dy = -so 使头像保持屏幕位置不变
-                            // 到达消息内容顶部时夹住: dy ≥ 39.5 - height
-                            // 39.5 = 32(头像高) + 3(底边距) + 1.5(消息底边距) + 3(外顶边距) + 1.5(消息顶边距)
-                            // = 3 + 1.5 + 32 + 3 + 1.5，头停在第一条消息气泡顶部而非外边距顶部
                             final dy = (-so).clamp(39.5 - height, 0.0);
 
                             return SliverToBoxAdapter(
@@ -208,7 +202,7 @@ SliverLayoutBuilder(
                                 clipBehavior: Clip.hardEdge,
                                 children: [
                                   MessageGroupWidget(
-                                    group: reversed[i],
+                                    group: groups[i],
                                     showAvatar: false,
                                   ),
                                   Positioned(
@@ -220,7 +214,7 @@ SliverLayoutBuilder(
                                         width: 32,
                                         height: 32,
                                         child: _buildAvatar(
-                                          reversed[i].senderName,
+                                          groups[i].senderName,
                                         ),
                                       ),
                                     ),
@@ -230,7 +224,9 @@ SliverLayoutBuilder(
                             );
                           },
                         ),
-                    const SliverPadding(padding: EdgeInsets.only(bottom: 8)),
+                    // DateSeparator 在 sliver 列表末尾 → reverse 后显示在最顶部（最旧消息上方）
+                    const SliverToBoxAdapter(child: DateSeparator(dateLabel: '今天')),
+                    const SliverPadding(padding: EdgeInsets.only(top: 8)),
                   ],
                 );
               },
