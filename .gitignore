@@ -69,3 +69,4 @@ ios/Runner/GoogleService-Info.plist
 # Build artifacts
 android/app/src/main/jniLibs/
 build/
+local.properties

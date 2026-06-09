@@ -1,10 +1,11 @@
 use flutter_rust_bridge::frb;
+use log::{info, warn};
 use matrix_sdk::{
     Client, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession,
     ruma::api::client::{
         account::register::v3::Request as RegistrationRequest,
-        uiaa::{AuthData, RegistrationToken, UiaaInfo},
+        uiaa::{AuthData, Dummy, RegistrationToken, UiaaInfo},
     },
     store::RoomLoadSettings,
 };
@@ -106,22 +107,80 @@ pub struct AuthResult {
 
 // ── Internal helpers ─────────────────────────────────────────────────
 
-/// Try to extract UIAA info from a register error.
-/// We try multiple ways because the error might be wrapped differently.
-fn try_extract_uiaa(err: &matrix_sdk::Error) -> Option<&UiaaInfo> {
-    // Method 1: the official SDK method
-    if let Some(info) = err.as_uiaa_response() {
-        return Some(info);
+/// Try to extract UIAA info from a register error via structured SDK APIs.
+fn try_extract_uiaa(err: &matrix_sdk::Error) -> Option<AuthResult> {
+    // Method 1: top-level SDK method
+    if let Some(uiaa_info) = err.as_uiaa_response() {
+        info!("UIAA extracted via err.as_uiaa_response()");
+        return Some(uiaa_to_auth_result(uiaa_info));
     }
 
-    // Method 2: dig through HttpError manually
+    // Method 2: dig into HttpError manually
     if let matrix_sdk::Error::Http(http_err) = err {
-        if let Some(info) = http_err.as_uiaa_response() {
-            return Some(info);
+        if let Some(uiaa_info) = http_err.as_uiaa_response() {
+            info!("UIAA extracted via http_err.as_uiaa_response()");
+            return Some(uiaa_to_auth_result(uiaa_info));
         }
     }
 
     None
+}
+/// Fallback: parse UIAA info from the error Display string.
+///
+/// The SDK may not always expose UIAA as a structured error. When it doesn't,
+/// the raw 401 JSON body ends up in the error Display string like:
+///   `the server returned an error: [401] {"completed":[...],"flows":[...],"session":"..."}`
+/// We extract that JSON and parse it properly.
+fn try_parse_uiaa_from_string(err_str: &str) -> Option<AuthResult> {
+    // Find the JSON object — it starts with { after [401]
+    let json_start = err_str
+        .find("[401]")
+        .and_then(|pos| err_str[pos + 5..].find('{').map(|p| pos + 5 + p))?;
+    let json_str = &err_str[json_start..];
+
+    let val: serde_json::Value = serde_json::from_str(json_str).ok()?;
+
+    // Verify it's a UIAA challenge with registration_token
+    let has_reg_token = val
+        .get("flows")
+        .and_then(|f| f.as_array())
+        .is_some_and(|flows| {
+            flows.iter().any(|flow| {
+                flow.get("stages")
+                    .and_then(|s| s.as_array())
+                    .is_some_and(|stages| {
+                        stages
+                            .iter()
+                            .any(|s| s.as_str() == Some("m.login.registration_token"))
+                    })
+            })
+        });
+
+    if !has_reg_token {
+        return None;
+    }
+
+    let session = val.get("session").and_then(|s| s.as_str()).map(|s| s.to_string());
+
+    if session.is_some() {
+        info!("UIAA parsed from error string JSON, session found");
+        Some(AuthResult {
+            success: false,
+            user_id: None,
+            device_id: None,
+            access_token: None,
+            error: None,
+            needs_uiaa: true,
+            session,
+            flows: Some("m.login.registration_token".to_string()),
+        })
+    } else {
+        warn!(
+            "UIAA JSON found but no session: {}",
+            &err_str[..err_str.len().min(500)]
+        );
+        None
+    }
 }
 
 /// Convert UiaaInfo into our AuthResult
@@ -140,7 +199,6 @@ fn uiaa_to_auth_result(uiaa_info: &UiaaInfo) -> AuthResult {
         flows: flows_json,
     }
 }
-
 // ── Auth functions ───────────────────────────────────────────────────
 
 /// Create a Matrix client for the given homeserver URL.
@@ -170,11 +228,13 @@ pub async fn register_get_uiaa_session(
         .await
         .ok_or("No client created. Call create_client first.")?;
 
+    // Send a Dummy auth to trigger UIAA flow discovery.
+    // Some servers won't return UIAA info without an initial auth body.
     let mut request = RegistrationRequest::new();
     request.username = Some(username);
     request.password = Some(password);
     request.initial_device_display_name = Some("Matter".to_owned());
-    // No auth data — this will trigger 401 UIAA from the server
+    request.auth = Some(AuthData::Dummy(Dummy::new()));
 
     match client.matrix_auth().register(request).await {
         // Unexpected: server registered without UIAA
@@ -189,20 +249,28 @@ pub async fn register_get_uiaa_session(
             flows: None,
         }),
         Err(err) => {
-            if let Some(uiaa_info) = try_extract_uiaa(&err) {
-                Ok(uiaa_to_auth_result(uiaa_info))
-            } else {
-                Ok(AuthResult {
-                    success: false,
-                    user_id: None,
-                    device_id: None,
-                    access_token: None,
-                    error: Some(format!("{err}")),
-                    needs_uiaa: false,
-                    session: None,
-                    flows: None,
-                })
+            let err_str = format!("{err}");
+            info!("register_get_uiaa_session error: {}", &err_str[..err_str.len().min(300)]);
+
+            if let Some(result) = try_extract_uiaa(&err) {
+                return Ok(result);
             }
+
+            if let Some(result) = try_parse_uiaa_from_string(&err_str) {
+                return Ok(result);
+            }
+
+            warn!("No UIAA info extracted from get_uiaa_session");
+            Ok(AuthResult {
+                success: false,
+                user_id: None,
+                device_id: None,
+                access_token: None,
+                error: Some(err_str),
+                needs_uiaa: false,
+                session: None,
+                flows: None,
+            })
         }
     }
 }
@@ -241,21 +309,27 @@ pub async fn register_complete_uiaa(
             flows: None,
         }),
         Err(err) => {
-            if let Some(uiaa_info) = try_extract_uiaa(&err) {
-                // Still needs UIAA — maybe wrong token, server gave a new session
-                Ok(uiaa_to_auth_result(uiaa_info))
-            } else {
-                Ok(AuthResult {
-                    success: false,
-                    user_id: None,
-                    device_id: None,
-                    access_token: None,
-                    error: Some(format!("{err}")),
-                    needs_uiaa: false,
-                    session: None,
-                    flows: None,
-                })
+            let err_str = format!("{err}");
+            info!("register_complete_uiaa error: {}", &err_str[..err_str.len().min(300)]);
+
+            if let Some(result) = try_extract_uiaa(&err) {
+                return Ok(result);
             }
+
+            if let Some(result) = try_parse_uiaa_from_string(&err_str) {
+                return Ok(result);
+            }
+
+            Ok(AuthResult {
+                success: false,
+                user_id: None,
+                device_id: None,
+                access_token: None,
+                error: Some(err_str),
+                needs_uiaa: false,
+                session: None,
+                flows: None,
+            })
         }
     }
 }
