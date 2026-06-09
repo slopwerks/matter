@@ -454,7 +454,9 @@ pub async fn logout() -> Result<(), String> {
     Ok(())
 }
 
-// ── Legacy mock functions (kept for UI compatibility) ────────────────
+
+
+// ── Real chat functions ──────────────────────────────────────────────
 
 #[frb(sync)]
 pub fn get_connection_status() -> ConnectionStatus {
@@ -466,79 +468,231 @@ pub async fn init_client() -> Result<(), String> {
     Ok(())
 }
 
+/// Perform an initial sync to load rooms and messages from the server.
+#[frb]
+pub async fn sync_once() -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    client
+        .sync_once(matrix_sdk::config::SyncSettings::default())
+        .await
+        .map_err(|e| format!("Sync failed: {e}"))?;
+
+    info!("Initial sync completed");
+    Ok(())
+}
+
+/// Get all joined rooms (must sync first).
 #[frb]
 pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
-    let rooms = vec![
-        ChatRoom {
-            id: "room_1".to_string(),
-            name: "Flutter 开发者".to_string(),
-            avatar_url: None,
-            last_message: "新的 UI 看起来真不错 👍".to_string(),
-            last_message_time: "14:32".to_string(),
-            unread_count: 3,
-            is_pinned: true,
-            is_muted: false,
-        },
-        ChatRoom {
-            id: "room_2".to_string(),
-            name: "Rust 交流".to_string(),
-            avatar_url: None,
-            last_message: "async/await 在 FFI 里确实有点麻烦".to_string(),
-            last_message_time: "12:05".to_string(),
-            unread_count: 0,
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let rooms = client.rooms();
+    let mut result = Vec::new();
+
+    for room in rooms {
+        if room.state() != matrix_sdk::RoomState::Joined {
+            continue;
+        }
+
+        let room_id = room.room_id().to_string();
+        let name = room.display_name().await
+            .map(|dn| dn.to_string())
+            .unwrap_or_else(|_| room_id.clone());
+        let avatar_url = room.avatar_url().map(|u| u.to_string());
+        let unread_count = room.unread_notification_counts().notification_count as i32;
+        let (last_message, last_message_time) = get_last_message_info(&room).await;
+
+        result.push(ChatRoom {
+            id: room_id,
+            name,
+            avatar_url,
+            last_message,
+            last_message_time,
+            unread_count,
             is_pinned: false,
             is_muted: false,
-        },
-        ChatRoom {
-            id: "room_3".to_string(),
-            name: "Matrix Protocol".to_string(),
-            avatar_url: None,
-            last_message: "你们试过新的 sliding sync 吗？".to_string(),
-            last_message_time: "昨天".to_string(),
-            unread_count: 12,
-            is_pinned: false,
-            is_muted: false,
-        },
-    ];
-    Ok(rooms)
+        });
+    }
+
+    result.sort_by(|a, b| {
+        b.unread_count.cmp(&a.unread_count)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(result)
+}
+
+async fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
+    let mut last_msg = "(暂无消息)".to_string();
+    let mut last_time = String::new();
+
+    let mut opts = matrix_sdk::room::MessagesOptions::backward();
+    opts.limit = 1u32.into();
+
+    if let Ok(msg_resp) = room.messages(opts).await {
+        if let Some(timeline_event) = msg_resp.chunk.first() {
+            let raw = timeline_event.kind.raw();
+            if let Ok(any_ev) = raw.deserialize() {
+                if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
+                ) = any_ev
+                {
+                    last_time = format_timestamp(u64::from(msg.origin_server_ts().0));
+                    if let Some(text) = msg.as_original().and_then(|o| {
+                        match &o.content.msgtype {
+                            matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
+                            _ => None,
+                        }
+                    }) {
+                        last_msg = text;
+                        if last_msg.len() > 50 {
+                            last_msg.truncate(47);
+                            last_msg.push_str("...");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    (last_msg, last_time)
+}
+fn format_timestamp(millis: u64) -> String {
+    let secs = millis / 1000;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let diff = now_secs.saturating_sub(secs);
+
+    if diff < 60 {
+        "刚刚".to_string()
+    } else if diff < 3600 {
+        format!("{}分钟前", diff / 60)
+    } else if diff < 86400 {
+        format!("{}小时前", diff / 3600)
+    } else {
+        let hours = ((secs / 3600) % 24) as u8;
+        let mins = ((secs / 60) % 60) as u8;
+        // If older than 7 days, show date-like info
+        if diff < 604800 {
+            format!("{}天前", diff / 86400)
+        } else {
+            format!("{:02}:{:02}", hours, mins)
+        }
+    }
+}
+
+/// Get messages for a room (must sync first).
+#[frb]
+pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let my_user_id = client.user_id().map(|u| u.to_string());
+
+    let room = client.rooms()
+        .into_iter()
+        .find(|r| r.room_id().to_string() == room_id)
+        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+
+    let mut messages = Vec::new();
+
+    let mut opts = matrix_sdk::room::MessagesOptions::backward();
+    opts.limit = 50u32.into();
+
+    if let Ok(msg_resp) = room.messages(opts).await {
+        // chunk comes in reverse chronological order; reverse it
+        for timeline_event in msg_resp.chunk.iter().rev() {
+            let raw = timeline_event.kind.raw();
+            let Ok(any_ev) = raw.deserialize() else { continue };
+
+            let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
+            ) = any_ev else { continue };
+
+            let body = match msg.as_original().and_then(|o| {
+                match &o.content.msgtype {
+                    matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
+                    _ => None,
+                }
+            }) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            let sender_id = msg.sender().to_string();
+            let is_me = my_user_id.as_ref() == Some(&sender_id);
+
+            let sender_name = if is_me {
+                "我".to_string()
+            } else {
+                sender_id.split(':').next()
+                    .unwrap_or(&sender_id)
+                    .trim_start_matches('@')
+                    .to_string()
+            };
+
+            let ts_millis = u64::from(msg.origin_server_ts().0);
+            let secs = ts_millis / 1000;
+            let hours = ((secs / 3600) % 24) as u8;
+            let mins = ((secs / 60) % 60) as u8;
+            let timestamp = format!("{:02}:{:02}", hours, mins);
+
+            let event_id = msg.event_id().to_string();
+
+            messages.push(ChatMessage {
+                id: event_id,
+                sender_id,
+                sender_name,
+                content: body,
+                timestamp,
+                is_me,
+                msg_type: MessageType::Text,
+                image_url: None,
+            });
+        }
+    }
+
+    Ok(messages)
+}
+
+/// Send a text message to a room.
+#[frb]
+pub async fn send_message(room_id: String, message: String) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let room = client.rooms()
+        .into_iter()
+        .find(|r| r.room_id().to_string() == room_id)
+        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+
+    let content = matrix_sdk::ruma::events::room::message::RoomMessageEventContent::text_plain(&message);
+
+    room.send(content)
+        .await
+        .map_err(|e| format!("Send failed: {e}"))?;
+
+    info!("Message sent to {}", room_id);
+    Ok(())
 }
 
 #[frb]
 pub async fn get_spaces() -> Result<Vec<Space>, String> {
-    let spaces = vec![
+    Ok(vec![
         Space { id: "all".to_string(), name: "全部".to_string(), avatar_url: None },
-        Space { id: "space_1".to_string(), name: "工作".to_string(), avatar_url: None },
-    ];
-    Ok(spaces)
-}
-
-#[frb]
-pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
-    let _ = room_id;
-    let messages = vec![
-        ChatMessage {
-            id: "msg_1".to_string(),
-            sender_id: "user_1".to_string(),
-            sender_name: "Alice".to_string(),
-            content: "嗨，Matter 的 UI 看起来真不错！".to_string(),
-            timestamp: "14:20".to_string(),
-            is_me: false,
-            msg_type: MessageType::Text,
-            image_url: None,
-        },
-    ];
-    Ok(messages)
+    ])
 }
 
 #[frb]
 pub async fn get_contacts() -> Result<Vec<Contact>, String> {
-    let contacts = vec![
-        Contact {
-            id: "user_1".to_string(),
-            name: "Alice".to_string(),
-            avatar_url: None,
-            status: "在线".to_string(),
-        },
-    ];
-    Ok(contacts)
+    Ok(vec![])
 }

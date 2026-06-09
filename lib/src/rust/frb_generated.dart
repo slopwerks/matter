@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 937164575;
+  int get rustContentHash => -1259619138;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -125,6 +125,13 @@ abstract class RustLibApi extends BaseApi {
     required String username,
     required String password,
   });
+
+  Future<void> crateApiMatrixSendMessage({
+    required String roomId,
+    required String message,
+  });
+
+  Future<void> crateApiMatrixSyncOnce();
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -601,6 +608,67 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "register_get_uiaa_session",
         argNames: ["username", "password"],
       );
+
+  @override
+  Future<void> crateApiMatrixSendMessage({
+    required String roomId,
+    required String message,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(roomId, serializer);
+          sse_encode_String(message, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 17,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixSendMessageConstMeta,
+        argValues: [roomId, message],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixSendMessageConstMeta => const TaskConstMeta(
+    debugName: "send_message",
+    argNames: ["roomId", "message"],
+  );
+
+  @override
+  Future<void> crateApiMatrixSyncOnce() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 18,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixSyncOnceConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixSyncOnceConstMeta =>
+      const TaskConstMeta(debugName: "sync_once", argNames: []);
 
   @protected
   String dco_decode_String(dynamic raw) {

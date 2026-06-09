@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 
 class MessageInput extends StatefulWidget {
-  const MessageInput({super.key});
+  final String roomId;
+
+  const MessageInput({super.key, required this.roomId});
 
   @override
   State<MessageInput> createState() => _MessageInputState();
@@ -11,6 +14,7 @@ class MessageInput extends StatefulWidget {
 class _MessageInputState extends State<MessageInput> {
   final _controller = TextEditingController();
   bool _hasText = false;
+  bool _isSending = false;
 
   @override
   void initState() {
@@ -26,6 +30,29 @@ class _MessageInputState extends State<MessageInput> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _isSending) return;
+
+    setState(() => _isSending = true);
+    _controller.clear();
+
+    try {
+      await rust.sendMessage(roomId: widget.roomId, message: text);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('发送失败: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
   }
 
   @override
@@ -95,19 +122,27 @@ class _MessageInputState extends State<MessageInput> {
               height: 40,
               child: _hasText
                   ? GestureDetector(
-                      onTap: () {
-                        _controller.clear();
-                      },
+                      onTap: _isSending ? null : _sendMessage,
                       child: Container(
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
+                        decoration: BoxDecoration(
+                          color: _isSending
+                              ? AppColors.onSurfaceVariant
+                              : AppColors.primary,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.send_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
+                        child: _isSending
+                            ? const Padding(
+                                padding: EdgeInsets.all(10),
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                       ),
                     )
                   : const SizedBox.shrink(),

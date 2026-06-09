@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `get_client`, `store_client`, `try_extract_uiaa`, `uiaa_to_auth_result`
+// These functions are ignored because they are not marked as `pub`: `format_timestamp`, `get_client`, `get_last_message_info`, `store_client`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `uiaa_to_auth_result`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Create a Matrix client for the given homeserver URL.
@@ -75,14 +75,26 @@ ConnectionStatus getConnectionStatus() =>
 
 Future<void> initClient() => RustLib.instance.api.crateApiMatrixInitClient();
 
+/// Perform an initial sync to load rooms and messages from the server.
+Future<void> syncOnce() => RustLib.instance.api.crateApiMatrixSyncOnce();
+
+/// Get all joined rooms (must sync first).
 Future<List<ChatRoom>> getChatRooms() =>
     RustLib.instance.api.crateApiMatrixGetChatRooms();
 
-Future<List<Space>> getSpaces() =>
-    RustLib.instance.api.crateApiMatrixGetSpaces();
-
+/// Get messages for a room (must sync first).
 Future<List<ChatMessage>> getMessages({required String roomId}) =>
     RustLib.instance.api.crateApiMatrixGetMessages(roomId: roomId);
+
+/// Send a text message to a room.
+Future<void> sendMessage({required String roomId, required String message}) =>
+    RustLib.instance.api.crateApiMatrixSendMessage(
+      roomId: roomId,
+      message: message,
+    );
+
+Future<List<Space>> getSpaces() =>
+    RustLib.instance.api.crateApiMatrixGetSpaces();
 
 Future<List<Contact>> getContacts() =>
     RustLib.instance.api.crateApiMatrixGetContacts();

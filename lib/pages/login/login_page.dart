@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 
@@ -57,6 +58,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       homeserver: _homeserverController.text,
     );
     ref.read(homeserverProvider.notifier).state = _homeserverController.text;
+
+    // Trigger initial sync in background after login
+    _initialSync();
+  }
+
+  Future<void> _initialSync() async {
+    try {
+      await rust.syncOnce();
+      // Invalidate chat rooms provider so it refetches with real data
+      ref.invalidate(chatRoomsProvider);
+    } catch (e) {
+      debugPrint('Initial sync failed: $e');
+    }
   }
 
   Future<void> _login() async {
