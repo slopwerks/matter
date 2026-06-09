@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
+import '../../src/rust/api/matrix.dart' as rust;
 
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
@@ -246,7 +247,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         horizontal: 16,
                         vertical: 14,
                       ),
-                      onTap: () {
+                      onTap: () async {
+                        try {
+                          await rust.logout();
+                        } catch (_) {}
+                        await clearPersistedSession();
                         ref.read(isLoggedInProvider.notifier).state = false;
                         ref.read(currentUserProvider.notifier).state = null;
                       },

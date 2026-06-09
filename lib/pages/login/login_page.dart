@@ -59,18 +59,34 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
     ref.read(homeserverProvider.notifier).state = _homeserverController.text;
 
-    // Trigger initial sync in background after login
-    _initialSync();
+    // Persist session + sync in background
+    _persistAndSync(userId, displayName);
   }
 
   Future<void> _initialSync() async {
     try {
       await rust.syncOnce();
-      // Invalidate chat rooms provider so it refetches with real data
       ref.invalidate(chatRoomsProvider);
+      // Start background sync for real-time updates
+      await rust.startSync();
     } catch (e) {
       debugPrint('Initial sync failed: $e');
     }
+  }
+
+  Future<void> _persistAndSync(String userId, String displayName) async {
+    // Persist session
+    final session = await rust.getSession();
+    if (session != null) {
+      await persistSession(
+        homeserver: _homeserverController.text,
+        accessToken: session.accessToken,
+        userId: session.userId,
+        deviceId: session.deviceId,
+        displayName: displayName,
+      );
+    }
+    await _initialSync();
   }
 
   Future<void> _login() async {

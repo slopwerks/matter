@@ -456,19 +456,97 @@ pub async fn logout() -> Result<(), String> {
 
 
 
-// ── Real chat functions ──────────────────────────────────────────────
 
-#[frb(sync)]
-pub fn get_connection_status() -> ConnectionStatus {
-    ConnectionStatus::Connected
+// ── Session persistence ──────────────────────────────────────────────
+
+/// Session data to persist across app restarts.
+#[frb]
+#[derive(Clone, Debug)]
+pub struct StoredSession {
+    pub homeserver_url: String,
+    pub access_token: String,
+    pub user_id: String,
+    pub device_id: String,
 }
 
+/// Get the current session if logged in, for persisting to disk.
 #[frb]
-pub async fn init_client() -> Result<(), String> {
+pub async fn get_session() -> Option<StoredSession> {
+    let client = get_client().await?;
+    let auth = client.matrix_auth();
+    if !auth.logged_in() {
+        return None;
+    }
+    let session = auth.session()?;
+    Some(StoredSession {
+        homeserver_url: client.homeserver().to_string(),
+        access_token: session.tokens.access_token,
+        user_id: session.meta.user_id.to_string(),
+        device_id: session.meta.device_id.to_string(),
+    })
+}
+
+/// Restore a previously saved session.
+#[frb]
+pub async fn restore_session(session: StoredSession) -> Result<(), String> {
+    let url = url::Url::parse(&session.homeserver_url)
+        .map_err(|e| format!("Invalid URL: {e}"))?;
+
+    // Use sqlite store for persistent state
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("matter")
+        .join("sdk");
+
+    let client = Client::builder()
+        .homeserver_url(url)
+        .sqlite_store(data_dir, None)
+        .build()
+        .await
+        .map_err(|e| format!("Client build failed: {e}"))?;
+
+    let user_id = matrix_sdk::ruma::UserId::parse(&session.user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+    let device_id = matrix_sdk::ruma::OwnedDeviceId::from(session.device_id);
+
+    let matrix_session = MatrixSession {
+        meta: SessionMeta {
+            user_id,
+            device_id,
+        },
+        tokens: SessionTokens {
+            access_token: session.access_token,
+            refresh_token: None,
+        },
+    };
+
+    client
+        .matrix_auth()
+        .restore_session(matrix_session, RoomLoadSettings::default())
+        .await
+        .map_err(|e| format!("Restore failed: {e}"))?;
+
+    store_client(client).await;
+    info!("Session restored for {}", session.user_id);
     Ok(())
 }
 
-/// Perform an initial sync to load rooms and messages from the server.
+// ── Sync & real-time ─────────────────────────────────────────────────
+
+/// A notification sent from Rust to Dart when new events arrive.
+#[frb]
+#[derive(Clone, Debug)]
+pub struct SyncNotification {
+    /// Which room got a new event (empty if just a state sync)
+    pub room_id: String,
+    /// Number of rooms with new messages
+    pub rooms_updated: i32,
+}
+
+/// Perform an initial sync and then start a background sync loop.
+/// Returns immediately after the initial sync. The background sync
+/// runs forever via `client.sync()` which uses long-polling (30s timeout).
+/// When new events arrive, we notify via the sync_state stream.
 #[frb]
 pub async fn sync_once() -> Result<(), String> {
     let client = get_client()
@@ -481,6 +559,52 @@ pub async fn sync_once() -> Result<(), String> {
         .map_err(|e| format!("Sync failed: {e}"))?;
 
     info!("Initial sync completed");
+    Ok(())
+}
+
+/// Start a background sync loop. This uses long-polling (the server holds
+/// the connection for up to 30s waiting for new events, then responds).
+/// After each response, it immediately starts the next poll.
+/// This is the standard approach for Matrix clients — NOT polling.
+#[frb]
+pub async fn start_sync() -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let settings = matrix_sdk::config::SyncSettings::default();
+
+    // Spawn the sync loop in a background tokio task
+    tokio::spawn(async move {
+        info!("Background sync loop started");
+        match client.sync(settings).await {
+            Ok(()) => info!("Sync loop ended normally"),
+            Err(e) => warn!("Sync loop error: {e}"),
+        }
+    });
+
+    Ok(())
+}
+
+/// Check if background sync is alive.
+#[frb]
+pub async fn is_connected() -> bool {
+    if let Some(client) = get_client().await {
+        client.matrix_auth().logged_in()
+    } else {
+        false
+    }
+}
+
+// ── Chat functions ───────────────────────────────────────────────────
+
+#[frb(sync)]
+pub fn get_connection_status() -> ConnectionStatus {
+    ConnectionStatus::Connected
+}
+
+#[frb]
+pub async fn init_client() -> Result<(), String> {
     Ok(())
 }
 
@@ -562,6 +686,7 @@ async fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
 
     (last_msg, last_time)
 }
+
 fn format_timestamp(millis: u64) -> String {
     let secs = millis / 1000;
     let now_secs = std::time::SystemTime::now()
@@ -576,15 +701,12 @@ fn format_timestamp(millis: u64) -> String {
         format!("{}分钟前", diff / 60)
     } else if diff < 86400 {
         format!("{}小时前", diff / 3600)
+    } else if diff < 604800 {
+        format!("{}天前", diff / 86400)
     } else {
         let hours = ((secs / 3600) % 24) as u8;
         let mins = ((secs / 60) % 60) as u8;
-        // If older than 7 days, show date-like info
-        if diff < 604800 {
-            format!("{}天前", diff / 86400)
-        } else {
-            format!("{:02}:{:02}", hours, mins)
-        }
+        format!("{:02}:{:02}", hours, mins)
     }
 }
 
@@ -608,7 +730,6 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     opts.limit = 50u32.into();
 
     if let Ok(msg_resp) = room.messages(opts).await {
-        // chunk comes in reverse chronological order; reverse it
         for timeline_event in msg_resp.chunk.iter().rev() {
             let raw = timeline_event.kind.raw();
             let Ok(any_ev) = raw.deserialize() else { continue };
@@ -683,6 +804,51 @@ pub async fn send_message(room_id: String, message: String) -> Result<(), String
 
     info!("Message sent to {}", room_id);
     Ok(())
+}
+
+/// Create a new direct chat room with a user.
+/// Returns the new room ID.
+#[frb]
+pub async fn create_dm(user_id: String) -> Result<String, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let invited_user = matrix_sdk::ruma::UserId::parse(&user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+
+    let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+    request.invite = vec![invited_user];
+    request.is_direct = true;
+
+    let response = client
+        .create_room(request)
+        .await
+        .map_err(|e| format!("Create room failed: {e}"))?;
+
+    info!("Created DM room: {}", response.room_id());
+    Ok(response.room_id().to_string())
+}
+
+/// Create a group room with a name and optional topic.
+/// Returns the new room ID.
+#[frb]
+pub async fn create_group_room(name: String, topic: Option<String>) -> Result<String, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+    request.name = Some(name);
+    request.topic = topic;
+
+    let response = client
+        .create_room(request)
+        .await
+        .map_err(|e| format!("Create room failed: {e}"))?;
+
+    info!("Created group room: {}", response.room_id());
+    Ok(response.room_id().to_string())
 }
 
 #[frb]

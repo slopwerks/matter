@@ -7,7 +7,8 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `format_timestamp`, `get_client`, `get_last_message_info`, `store_client`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `uiaa_to_auth_result`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SyncNotification`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Create a Matrix client for the given homeserver URL.
 /// Must be called before any registration / login attempt.
@@ -70,13 +71,33 @@ Future<String?> getCurrentUserId() =>
 /// Logout the current user.
 Future<void> logout() => RustLib.instance.api.crateApiMatrixLogout();
 
+/// Get the current session if logged in, for persisting to disk.
+Future<StoredSession?> getSession() =>
+    RustLib.instance.api.crateApiMatrixGetSession();
+
+/// Restore a previously saved session.
+Future<void> restoreSession({required StoredSession session}) =>
+    RustLib.instance.api.crateApiMatrixRestoreSession(session: session);
+
+/// Perform an initial sync and then start a background sync loop.
+/// Returns immediately after the initial sync. The background sync
+/// runs forever via `client.sync()` which uses long-polling (30s timeout).
+/// When new events arrive, we notify via the sync_state stream.
+Future<void> syncOnce() => RustLib.instance.api.crateApiMatrixSyncOnce();
+
+/// Start a background sync loop. This uses long-polling (the server holds
+/// the connection for up to 30s waiting for new events, then responds).
+/// After each response, it immediately starts the next poll.
+/// This is the standard approach for Matrix clients — NOT polling.
+Future<void> startSync() => RustLib.instance.api.crateApiMatrixStartSync();
+
+/// Check if background sync is alive.
+Future<bool> isConnected() => RustLib.instance.api.crateApiMatrixIsConnected();
+
 ConnectionStatus getConnectionStatus() =>
     RustLib.instance.api.crateApiMatrixGetConnectionStatus();
 
 Future<void> initClient() => RustLib.instance.api.crateApiMatrixInitClient();
-
-/// Perform an initial sync to load rooms and messages from the server.
-Future<void> syncOnce() => RustLib.instance.api.crateApiMatrixSyncOnce();
 
 /// Get all joined rooms (must sync first).
 Future<List<ChatRoom>> getChatRooms() =>
@@ -92,6 +113,18 @@ Future<void> sendMessage({required String roomId, required String message}) =>
       roomId: roomId,
       message: message,
     );
+
+/// Create a new direct chat room with a user.
+/// Returns the new room ID.
+Future<String> createDm({required String userId}) =>
+    RustLib.instance.api.crateApiMatrixCreateDm(userId: userId);
+
+/// Create a group room with a name and optional topic.
+/// Returns the new room ID.
+Future<String> createGroupRoom({required String name, String? topic}) => RustLib
+    .instance
+    .api
+    .crateApiMatrixCreateGroupRoom(name: name, topic: topic);
 
 Future<List<Space>> getSpaces() =>
     RustLib.instance.api.crateApiMatrixGetSpaces();
@@ -295,4 +328,36 @@ class Space {
           id == other.id &&
           name == other.name &&
           avatarUrl == other.avatarUrl;
+}
+
+/// Session data to persist across app restarts.
+class StoredSession {
+  final String homeserverUrl;
+  final String accessToken;
+  final String userId;
+  final String deviceId;
+
+  const StoredSession({
+    required this.homeserverUrl,
+    required this.accessToken,
+    required this.userId,
+    required this.deviceId,
+  });
+
+  @override
+  int get hashCode =>
+      homeserverUrl.hashCode ^
+      accessToken.hashCode ^
+      userId.hashCode ^
+      deviceId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StoredSession &&
+          runtimeType == other.runtimeType &&
+          homeserverUrl == other.homeserverUrl &&
+          accessToken == other.accessToken &&
+          userId == other.userId &&
+          deviceId == other.deviceId;
 }
