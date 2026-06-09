@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/user_provider.dart';
+
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
 
@@ -36,7 +36,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 96),
+              padding: const EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: 96,
+              ),
               child: Column(
                 children: [
                   // Profile card
@@ -57,7 +62,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           height: 60,
                           decoration: BoxDecoration(
                             color: AppColors.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(AppRadii.content),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.content,
+                            ),
                           ),
                           child: Center(
                             child: currentUser != null
@@ -101,8 +108,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               ),
                             ],
                           ),
-),
-                   ],
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -235,7 +242,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     const SizedBox(height: 20),
                     AppCard(
                       color: AppColors.error.withValues(alpha: 0.12),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
                       onTap: () {
                         ref.read(isLoggedInProvider.notifier).state = false;
                         ref.read(currentUserProvider.notifier).state = null;
@@ -259,8 +269,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           ),
                         ],
                       ),
-),
-                   ],
+                    ),
+                  ],
                 ],
               ),
             ),

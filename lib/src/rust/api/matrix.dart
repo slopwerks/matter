@@ -6,6 +6,70 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `get_client`, `store_client`, `try_extract_uiaa`, `uiaa_to_auth_result`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+
+/// Create a Matrix client for the given homeserver URL.
+/// Must be called before any registration / login attempt.
+Future<void> createClient({required String homeserverUrl}) => RustLib
+    .instance
+    .api
+    .crateApiMatrixCreateClient(homeserverUrl: homeserverUrl);
+
+/// Step 1 of registration: send a register request without auth to discover
+/// the UIAA session and flows. The server will respond with 401 + UIAA info.
+Future<AuthResult> registerGetUiaaSession({
+  required String username,
+  required String password,
+}) => RustLib.instance.api.crateApiMatrixRegisterGetUiaaSession(
+  username: username,
+  password: password,
+);
+
+/// Step 2 of registration: complete registration by providing the registration
+/// token and the UIAA session obtained from register_get_uiaa_session.
+Future<AuthResult> registerCompleteUiaa({
+  required String username,
+  required String password,
+  required String registrationToken,
+  required String session,
+}) => RustLib.instance.api.crateApiMatrixRegisterCompleteUiaa(
+  username: username,
+  password: password,
+  registrationToken: registrationToken,
+  session: session,
+);
+
+/// Login with username and password.
+Future<AuthResult> loginWithPassword({
+  required String username,
+  required String password,
+}) => RustLib.instance.api.crateApiMatrixLoginWithPassword(
+  username: username,
+  password: password,
+);
+
+/// Login with an existing access token (restore session).
+Future<AuthResult> loginWithToken({
+  required String accessToken,
+  required String userId,
+  required String deviceId,
+}) => RustLib.instance.api.crateApiMatrixLoginWithToken(
+  accessToken: accessToken,
+  userId: userId,
+  deviceId: deviceId,
+);
+
+/// Check if the client is currently logged in.
+Future<bool> isLoggedIn() => RustLib.instance.api.crateApiMatrixIsLoggedIn();
+
+/// Get the current user ID if logged in.
+Future<String?> getCurrentUserId() =>
+    RustLib.instance.api.crateApiMatrixGetCurrentUserId();
+
+/// Logout the current user.
+Future<void> logout() => RustLib.instance.api.crateApiMatrixLogout();
+
 ConnectionStatus getConnectionStatus() =>
     RustLib.instance.api.crateApiMatrixGetConnectionStatus();
 
@@ -22,6 +86,58 @@ Future<List<ChatMessage>> getMessages({required String roomId}) =>
 
 Future<List<Contact>> getContacts() =>
     RustLib.instance.api.crateApiMatrixGetContacts();
+
+/// Result of a registration or login attempt
+class AuthResult {
+  final bool success;
+  final String? userId;
+  final String? deviceId;
+  final String? accessToken;
+  final String? error;
+
+  /// If true, UIAA is needed — caller should call register_account again with token + session
+  final bool needsUiaa;
+  final String? session;
+
+  /// Available UIAA flows (JSON)
+  final String? flows;
+
+  const AuthResult({
+    required this.success,
+    this.userId,
+    this.deviceId,
+    this.accessToken,
+    this.error,
+    required this.needsUiaa,
+    this.session,
+    this.flows,
+  });
+
+  @override
+  int get hashCode =>
+      success.hashCode ^
+      userId.hashCode ^
+      deviceId.hashCode ^
+      accessToken.hashCode ^
+      error.hashCode ^
+      needsUiaa.hashCode ^
+      session.hashCode ^
+      flows.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AuthResult &&
+          runtimeType == other.runtimeType &&
+          success == other.success &&
+          userId == other.userId &&
+          deviceId == other.deviceId &&
+          accessToken == other.accessToken &&
+          error == other.error &&
+          needsUiaa == other.needsUiaa &&
+          session == other.session &&
+          flows == other.flows;
+}
 
 class ChatMessage {
   final String id;

@@ -66,3 +66,6 @@ android/key.properties
 # Google services (if using Firebase)
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
+# Build artifacts
+android/app/src/main/jniLibs/
+build/

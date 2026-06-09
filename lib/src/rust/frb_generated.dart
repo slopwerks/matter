@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1956433319;
+  int get rustContentHash => 937164575;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -79,11 +79,15 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<void> crateApiMatrixCreateClient({required String homeserverUrl});
+
   Future<List<ChatRoom>> crateApiMatrixGetChatRooms();
 
   ConnectionStatus crateApiMatrixGetConnectionStatus();
 
   Future<List<Contact>> crateApiMatrixGetContacts();
+
+  Future<String?> crateApiMatrixGetCurrentUserId();
 
   Future<List<ChatMessage>> crateApiMatrixGetMessages({required String roomId});
 
@@ -94,6 +98,33 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSimpleInitApp();
 
   Future<void> crateApiMatrixInitClient();
+
+  Future<bool> crateApiMatrixIsLoggedIn();
+
+  Future<AuthResult> crateApiMatrixLoginWithPassword({
+    required String username,
+    required String password,
+  });
+
+  Future<AuthResult> crateApiMatrixLoginWithToken({
+    required String accessToken,
+    required String userId,
+    required String deviceId,
+  });
+
+  Future<void> crateApiMatrixLogout();
+
+  Future<AuthResult> crateApiMatrixRegisterCompleteUiaa({
+    required String username,
+    required String password,
+    required String registrationToken,
+    required String session,
+  });
+
+  Future<AuthResult> crateApiMatrixRegisterGetUiaaSession({
+    required String username,
+    required String password,
+  });
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -105,6 +136,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<void> crateApiMatrixCreateClient({required String homeserverUrl}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(homeserverUrl, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixCreateClientConstMeta,
+        argValues: [homeserverUrl],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixCreateClientConstMeta => const TaskConstMeta(
+    debugName: "create_client",
+    argNames: ["homeserverUrl"],
+  );
+
+  @override
   Future<List<ChatRoom>> crateApiMatrixGetChatRooms() {
     return handler.executeNormal(
       NormalTask(
@@ -113,7 +174,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 2,
             port: port_,
           );
         },
@@ -137,7 +198,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_connection_status,
@@ -162,7 +223,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -181,6 +242,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_contacts", argNames: []);
 
   @override
+  Future<String?> crateApiMatrixGetCurrentUserId() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiMatrixGetCurrentUserIdConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixGetCurrentUserIdConstMeta =>
+      const TaskConstMeta(debugName: "get_current_user_id", argNames: []);
+
+  @override
   Future<List<ChatMessage>> crateApiMatrixGetMessages({
     required String roomId,
   }) {
@@ -192,7 +280,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 6,
             port: port_,
           );
         },
@@ -219,7 +307,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 7,
             port: port_,
           );
         },
@@ -244,7 +332,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -269,7 +357,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 9,
             port: port_,
           );
         },
@@ -296,7 +384,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 10,
             port: port_,
           );
         },
@@ -314,10 +402,228 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiMatrixInitClientConstMeta =>
       const TaskConstMeta(debugName: "init_client", argNames: []);
 
+  @override
+  Future<bool> crateApiMatrixIsLoggedIn() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 11,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiMatrixIsLoggedInConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixIsLoggedInConstMeta =>
+      const TaskConstMeta(debugName: "is_logged_in", argNames: []);
+
+  @override
+  Future<AuthResult> crateApiMatrixLoginWithPassword({
+    required String username,
+    required String password,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(username, serializer);
+          sse_encode_String(password, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_auth_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixLoginWithPasswordConstMeta,
+        argValues: [username, password],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixLoginWithPasswordConstMeta =>
+      const TaskConstMeta(
+        debugName: "login_with_password",
+        argNames: ["username", "password"],
+      );
+
+  @override
+  Future<AuthResult> crateApiMatrixLoginWithToken({
+    required String accessToken,
+    required String userId,
+    required String deviceId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(accessToken, serializer);
+          sse_encode_String(userId, serializer);
+          sse_encode_String(deviceId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 13,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_auth_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixLoginWithTokenConstMeta,
+        argValues: [accessToken, userId, deviceId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixLoginWithTokenConstMeta =>
+      const TaskConstMeta(
+        debugName: "login_with_token",
+        argNames: ["accessToken", "userId", "deviceId"],
+      );
+
+  @override
+  Future<void> crateApiMatrixLogout() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 14,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixLogoutConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixLogoutConstMeta =>
+      const TaskConstMeta(debugName: "logout", argNames: []);
+
+  @override
+  Future<AuthResult> crateApiMatrixRegisterCompleteUiaa({
+    required String username,
+    required String password,
+    required String registrationToken,
+    required String session,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(username, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(registrationToken, serializer);
+          sse_encode_String(session, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 15,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_auth_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixRegisterCompleteUiaaConstMeta,
+        argValues: [username, password, registrationToken, session],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixRegisterCompleteUiaaConstMeta =>
+      const TaskConstMeta(
+        debugName: "register_complete_uiaa",
+        argNames: ["username", "password", "registrationToken", "session"],
+      );
+
+  @override
+  Future<AuthResult> crateApiMatrixRegisterGetUiaaSession({
+    required String username,
+    required String password,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(username, serializer);
+          sse_encode_String(password, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 16,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_auth_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiMatrixRegisterGetUiaaSessionConstMeta,
+        argValues: [username, password],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMatrixRegisterGetUiaaSessionConstMeta =>
+      const TaskConstMeta(
+        debugName: "register_get_uiaa_session",
+        argNames: ["username", "password"],
+      );
+
   @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  AuthResult dco_decode_auth_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return AuthResult(
+      success: dco_decode_bool(arr[0]),
+      userId: dco_decode_opt_String(arr[1]),
+      deviceId: dco_decode_opt_String(arr[2]),
+      accessToken: dco_decode_opt_String(arr[3]),
+      error: dco_decode_opt_String(arr[4]),
+      needsUiaa: dco_decode_bool(arr[5]),
+      session: dco_decode_opt_String(arr[6]),
+      flows: dco_decode_opt_String(arr[7]),
+    );
   }
 
   @protected
@@ -460,6 +766,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  AuthResult sse_decode_auth_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_success = sse_decode_bool(deserializer);
+    var var_userId = sse_decode_opt_String(deserializer);
+    var var_deviceId = sse_decode_opt_String(deserializer);
+    var var_accessToken = sse_decode_opt_String(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
+    var var_needsUiaa = sse_decode_bool(deserializer);
+    var var_session = sse_decode_opt_String(deserializer);
+    var var_flows = sse_decode_opt_String(deserializer);
+    return AuthResult(
+      success: var_success,
+      userId: var_userId,
+      deviceId: var_deviceId,
+      accessToken: var_accessToken,
+      error: var_error,
+      needsUiaa: var_needsUiaa,
+      session: var_session,
+      flows: var_flows,
+    );
   }
 
   @protected
@@ -639,6 +968,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
+  }
+
+  @protected
+  void sse_encode_auth_result(AuthResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.success, serializer);
+    sse_encode_opt_String(self.userId, serializer);
+    sse_encode_opt_String(self.deviceId, serializer);
+    sse_encode_opt_String(self.accessToken, serializer);
+    sse_encode_opt_String(self.error, serializer);
+    sse_encode_bool(self.needsUiaa, serializer);
+    sse_encode_opt_String(self.session, serializer);
+    sse_encode_opt_String(self.flows, serializer);
   }
 
   @protected

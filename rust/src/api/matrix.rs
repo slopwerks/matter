@@ -1,6 +1,36 @@
 use flutter_rust_bridge::frb;
+use matrix_sdk::{
+    Client, SessionMeta, SessionTokens,
+    authentication::matrix::MatrixSession,
+    ruma::api::client::{
+        account::register::v3::Request as RegistrationRequest,
+        uiaa::{AuthData, RegistrationToken, UiaaInfo},
+    },
+    store::RoomLoadSettings,
+};
+use once_cell::sync::Lazy;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+// ── Global client store ──────────────────────────────────────────────
+
+static CLIENT_STORE: Lazy<Arc<RwLock<Option<Client>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
+
+async fn store_client(client: Client) {
+    let mut store = CLIENT_STORE.write().await;
+    *store = Some(client);
+}
+
+async fn get_client() -> Option<Client> {
+    let store = CLIENT_STORE.read().await;
+    store.clone()
+}
+
+// ── FRB data types ───────────────────────────────────────────────────
 
 #[frb]
+#[derive(Clone, Debug)]
 pub enum ConnectionStatus {
     Connected,
     Connecting,
@@ -9,6 +39,7 @@ pub enum ConnectionStatus {
 }
 
 #[frb]
+#[derive(Clone, Debug)]
 pub struct ChatRoom {
     pub id: String,
     pub name: String,
@@ -21,6 +52,7 @@ pub struct ChatRoom {
 }
 
 #[frb]
+#[derive(Clone, Debug)]
 pub struct Space {
     pub id: String,
     pub name: String,
@@ -28,6 +60,7 @@ pub struct Space {
 }
 
 #[frb]
+#[derive(Clone, Debug)]
 pub struct Contact {
     pub id: String,
     pub name: String,
@@ -35,15 +68,327 @@ pub struct Contact {
     pub status: String,
 }
 
+#[frb]
+#[derive(Clone, Debug)]
+pub enum MessageType {
+    Text,
+    Image,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
+pub struct ChatMessage {
+    pub id: String,
+    pub sender_id: String,
+    pub sender_name: String,
+    pub content: String,
+    pub timestamp: String,
+    pub is_me: bool,
+    pub msg_type: MessageType,
+    pub image_url: Option<String>,
+}
+
+/// Result of a registration or login attempt
+#[frb]
+#[derive(Clone, Debug)]
+pub struct AuthResult {
+    pub success: bool,
+    pub user_id: Option<String>,
+    pub device_id: Option<String>,
+    pub access_token: Option<String>,
+    pub error: Option<String>,
+    /// If true, UIAA is needed — caller should call register_account again with token + session
+    pub needs_uiaa: bool,
+    pub session: Option<String>,
+    /// Available UIAA flows (JSON)
+    pub flows: Option<String>,
+}
+
+// ── Internal helpers ─────────────────────────────────────────────────
+
+/// Try to extract UIAA info from a register error.
+/// We try multiple ways because the error might be wrapped differently.
+fn try_extract_uiaa(err: &matrix_sdk::Error) -> Option<&UiaaInfo> {
+    // Method 1: the official SDK method
+    if let Some(info) = err.as_uiaa_response() {
+        return Some(info);
+    }
+
+    // Method 2: dig through HttpError manually
+    if let matrix_sdk::Error::Http(http_err) = err {
+        if let Some(info) = http_err.as_uiaa_response() {
+            return Some(info);
+        }
+    }
+
+    None
+}
+
+/// Convert UiaaInfo into our AuthResult
+fn uiaa_to_auth_result(uiaa_info: &UiaaInfo) -> AuthResult {
+    let session = uiaa_info.session.clone();
+    let flows_json = serde_json::to_string(&uiaa_info.flows).ok();
+
+    AuthResult {
+        success: false,
+        user_id: None,
+        device_id: None,
+        access_token: None,
+        error: None,
+        needs_uiaa: true,
+        session,
+        flows: flows_json,
+    }
+}
+
+// ── Auth functions ───────────────────────────────────────────────────
+
+/// Create a Matrix client for the given homeserver URL.
+/// Must be called before any registration / login attempt.
+#[frb]
+pub async fn create_client(homeserver_url: String) -> Result<(), String> {
+    let url = url::Url::parse(&homeserver_url).map_err(|e| format!("Invalid URL: {e}"))?;
+
+    let client = Client::builder()
+        .homeserver_url(url)
+        .build()
+        .await
+        .map_err(|e| format!("Failed to create client: {e}"))?;
+
+    store_client(client).await;
+    Ok(())
+}
+
+/// Step 1 of registration: send a register request without auth to discover
+/// the UIAA session and flows. The server will respond with 401 + UIAA info.
+#[frb]
+pub async fn register_get_uiaa_session(
+    username: String,
+    password: String,
+) -> Result<AuthResult, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created. Call create_client first.")?;
+
+    let mut request = RegistrationRequest::new();
+    request.username = Some(username);
+    request.password = Some(password);
+    request.initial_device_display_name = Some("Matter".to_owned());
+    // No auth data — this will trigger 401 UIAA from the server
+
+    match client.matrix_auth().register(request).await {
+        // Unexpected: server registered without UIAA
+        Ok(response) => Ok(AuthResult {
+            success: true,
+            user_id: Some(response.user_id.to_string()),
+            device_id: response.device_id.map(|d| d.to_string()),
+            access_token: response.access_token,
+            error: None,
+            needs_uiaa: false,
+            session: None,
+            flows: None,
+        }),
+        Err(err) => {
+            if let Some(uiaa_info) = try_extract_uiaa(&err) {
+                Ok(uiaa_to_auth_result(uiaa_info))
+            } else {
+                Ok(AuthResult {
+                    success: false,
+                    user_id: None,
+                    device_id: None,
+                    access_token: None,
+                    error: Some(format!("{err}")),
+                    needs_uiaa: false,
+                    session: None,
+                    flows: None,
+                })
+            }
+        }
+    }
+}
+
+/// Step 2 of registration: complete registration by providing the registration
+/// token and the UIAA session obtained from register_get_uiaa_session.
+#[frb]
+pub async fn register_complete_uiaa(
+    username: String,
+    password: String,
+    registration_token: String,
+    session: String,
+) -> Result<AuthResult, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created. Call create_client first.")?;
+
+    let mut request = RegistrationRequest::new();
+    request.username = Some(username);
+    request.password = Some(password);
+    request.initial_device_display_name = Some("Matter".to_owned());
+
+    let mut reg_token = RegistrationToken::new(registration_token);
+    reg_token.session = Some(session);
+    request.auth = Some(AuthData::RegistrationToken(reg_token));
+
+    match client.matrix_auth().register(request).await {
+        Ok(response) => Ok(AuthResult {
+            success: true,
+            user_id: Some(response.user_id.to_string()),
+            device_id: response.device_id.map(|d| d.to_string()),
+            access_token: response.access_token,
+            error: None,
+            needs_uiaa: false,
+            session: None,
+            flows: None,
+        }),
+        Err(err) => {
+            if let Some(uiaa_info) = try_extract_uiaa(&err) {
+                // Still needs UIAA — maybe wrong token, server gave a new session
+                Ok(uiaa_to_auth_result(uiaa_info))
+            } else {
+                Ok(AuthResult {
+                    success: false,
+                    user_id: None,
+                    device_id: None,
+                    access_token: None,
+                    error: Some(format!("{err}")),
+                    needs_uiaa: false,
+                    session: None,
+                    flows: None,
+                })
+            }
+        }
+    }
+}
+
+/// Login with username and password.
+#[frb]
+pub async fn login_with_password(
+    username: String,
+    password: String,
+) -> Result<AuthResult, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created. Call create_client first.")?;
+
+    match client
+        .matrix_auth()
+        .login_username(&username, &password)
+        .initial_device_display_name("Matter")
+        .await
+    {
+        Ok(response) => Ok(AuthResult {
+            success: true,
+            user_id: Some(response.user_id.to_string()),
+            device_id: Some(response.device_id.to_string()),
+            access_token: Some(response.access_token),
+            error: None,
+            needs_uiaa: false,
+            session: None,
+            flows: None,
+        }),
+        Err(e) => Ok(AuthResult {
+            success: false,
+            user_id: None,
+            device_id: None,
+            access_token: None,
+            error: Some(format!("{e}")),
+            needs_uiaa: false,
+            session: None,
+            flows: None,
+        }),
+    }
+}
+
+/// Login with an existing access token (restore session).
+#[frb]
+pub async fn login_with_token(
+    access_token: String,
+    user_id: String,
+    device_id: String,
+) -> Result<AuthResult, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created. Call create_client first.")?;
+
+    let parsed_user_id = matrix_sdk::ruma::UserId::parse(&user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+    let parsed_device_id = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
+
+    let session = MatrixSession {
+        meta: SessionMeta {
+            user_id: parsed_user_id,
+            device_id: parsed_device_id,
+        },
+        tokens: SessionTokens {
+            access_token,
+            refresh_token: None,
+        },
+    };
+
+    client
+        .matrix_auth()
+        .restore_session(session, RoomLoadSettings::default())
+        .await
+        .map_err(|e| format!("Restore session failed: {e}"))?;
+
+    Ok(AuthResult {
+        success: true,
+        user_id: client.user_id().map(|u| u.to_string()),
+        device_id: client.device_id().map(|d| d.to_string()),
+        access_token: None,
+        error: None,
+        needs_uiaa: false,
+        session: None,
+        flows: None,
+    })
+}
+
+/// Check if the client is currently logged in.
+#[frb]
+pub async fn is_logged_in() -> bool {
+    if let Some(client) = get_client().await {
+        client.matrix_auth().logged_in()
+    } else {
+        false
+    }
+}
+
+/// Get the current user ID if logged in.
+#[frb]
+pub async fn get_current_user_id() -> Option<String> {
+    if let Some(client) = get_client().await {
+        client.user_id().map(|u| u.to_string())
+    } else {
+        None
+    }
+}
+
+/// Logout the current user.
+#[frb]
+pub async fn logout() -> Result<(), String> {
+    if let Some(client) = get_client().await {
+        if client.matrix_auth().logged_in() {
+            client
+                .matrix_auth()
+                .logout()
+                .await
+                .map_err(|e| format!("Logout failed: {e}"))?;
+        }
+    }
+    let mut store = CLIENT_STORE.write().await;
+    *store = None;
+    Ok(())
+}
+
+// ── Legacy mock functions (kept for UI compatibility) ────────────────
+
 #[frb(sync)]
 pub fn get_connection_status() -> ConnectionStatus {
-    // Mock: randomly return different statuses
     ConnectionStatus::Connected
 }
 
 #[frb]
 pub async fn init_client() -> Result<(), String> {
-    // Placeholder: will integrate matrix-rust-sdk later
     Ok(())
 }
 
@@ -80,26 +425,6 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
             is_pinned: false,
             is_muted: false,
         },
-        ChatRoom {
-            id: "room_4".to_string(),
-            name: "设计讨论".to_string(),
-            avatar_url: None,
-            last_message: "Liquid glass 效果再克制一点会更好".to_string(),
-            last_message_time: "昨天".to_string(),
-            unread_count: 0,
-            is_pinned: false,
-            is_muted: true,
-        },
-        ChatRoom {
-            id: "room_5".to_string(),
-            name: "Matter 内部".to_string(),
-            avatar_url: None,
-            last_message: "UI 第一版快要完成了 🎉".to_string(),
-            last_message_time: "周一".to_string(),
-            unread_count: 1,
-            is_pinned: true,
-            is_muted: false,
-        },
     ];
     Ok(rooms)
 }
@@ -107,46 +432,10 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
 #[frb]
 pub async fn get_spaces() -> Result<Vec<Space>, String> {
     let spaces = vec![
-        Space {
-            id: "all".to_string(),
-            name: "全部".to_string(),
-            avatar_url: None,
-        },
-        Space {
-            id: "space_1".to_string(),
-            name: "工作".to_string(),
-            avatar_url: None,
-        },
-        Space {
-            id: "space_2".to_string(),
-            name: "兴趣".to_string(),
-            avatar_url: None,
-        },
-        Space {
-            id: "space_3".to_string(),
-            name: "家庭".to_string(),
-            avatar_url: None,
-        },
+        Space { id: "all".to_string(), name: "全部".to_string(), avatar_url: None },
+        Space { id: "space_1".to_string(), name: "工作".to_string(), avatar_url: None },
     ];
     Ok(spaces)
-}
-
-#[frb]
-pub enum MessageType {
-    Text,
-    Image,
-}
-
-#[frb]
-pub struct ChatMessage {
-    pub id: String,
-    pub sender_id: String,
-    pub sender_name: String,
-    pub content: String,
-    pub timestamp: String,
-    pub is_me: bool,
-    pub msg_type: MessageType,
-    pub image_url: Option<String>,
 }
 
 #[frb]
@@ -163,86 +452,6 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
             msg_type: MessageType::Text,
             image_url: None,
         },
-        ChatMessage {
-            id: "msg_2".to_string(),
-            sender_id: "user_1".to_string(),
-            sender_name: "Alice".to_string(),
-            content: "那个 Liquid Glass 效果用在导航栏上挺克制的，不会太抢注意力。".to_string(),
-            timestamp: "14:21".to_string(),
-            is_me: false,
-            msg_type: MessageType::Text,
-            image_url: None,
-        },
-        ChatMessage {
-            id: "msg_3".to_string(),
-            sender_id: "user_1".to_string(),
-            sender_name: "Alice".to_string(),
-            content: "给你看看我拍的照片".to_string(),
-            timestamp: "14:22".to_string(),
-            is_me: false,
-            msg_type: MessageType::Image,
-            image_url: Some("https://picsum.photos/seed/matter1/800/600".to_string()),
-        },
-        ChatMessage {
-            id: "msg_4".to_string(),
-            sender_id: "user_1".to_string(),
-            sender_name: "Alice".to_string(),
-            content: "期待 😊 消息气泡打算怎么做？".to_string(),
-            timestamp: "14:23".to_string(),
-            is_me: false,
-            msg_type: MessageType::Text,
-            image_url: None,
-        },
-        ChatMessage {
-            id: "msg_5".to_string(),
-            sender_id: "me".to_string(),
-            sender_name: "我".to_string(),
-            content: "谢谢！还在打磨细节，刚把底部导航的高度调了。".to_string(),
-            timestamp: "14:25".to_string(),
-            is_me: true,
-            msg_type: MessageType::Text,
-            image_url: None,
-        },
-        ChatMessage {
-            id: "msg_6".to_string(),
-            sender_id: "me".to_string(),
-            sender_name: "我".to_string(),
-            content: "左右分栏，自己的消息靠右，别人的靠左。圆角大一些，和整体风格统一。".to_string(),
-            timestamp: "14:26".to_string(),
-            is_me: true,
-            msg_type: MessageType::Text,
-            image_url: None,
-        },
-        ChatMessage {
-            id: "msg_7".to_string(),
-            sender_id: "me".to_string(),
-            sender_name: "我".to_string(),
-            content: "".to_string(),
-            timestamp: "14:27".to_string(),
-            is_me: true,
-            msg_type: MessageType::Image,
-            image_url: Some("https://picsum.photos/seed/matter2/800/600".to_string()),
-        },
-        ChatMessage {
-            id: "msg_8".to_string(),
-            sender_id: "user_1".to_string(),
-            sender_name: "Alice".to_string(),
-            content: "对，主要是避免低端机上掉帧。接下来要做聊天详情页了。".to_string(),
-            timestamp: "14:28".to_string(),
-            is_me: false,
-            msg_type: MessageType::Text,
-            image_url: None,
-        },
-        ChatMessage {
-            id: "msg_9".to_string(),
-            sender_id: "user_1".to_string(),
-            sender_name: "Alice".to_string(),
-            content: "👍".to_string(),
-            timestamp: "14:29".to_string(),
-            is_me: false,
-            msg_type: MessageType::Text,
-            image_url: None,
-        },
     ];
     Ok(messages)
 }
@@ -255,30 +464,6 @@ pub async fn get_contacts() -> Result<Vec<Contact>, String> {
             name: "Alice".to_string(),
             avatar_url: None,
             status: "在线".to_string(),
-        },
-        Contact {
-            id: "user_2".to_string(),
-            name: "Bob".to_string(),
-            avatar_url: None,
-            status: "刚刚".to_string(),
-        },
-        Contact {
-            id: "user_3".to_string(),
-            name: "Charlie".to_string(),
-            avatar_url: None,
-            status: "离线".to_string(),
-        },
-        Contact {
-            id: "user_4".to_string(),
-            name: "Diana".to_string(),
-            avatar_url: None,
-            status: "在线".to_string(),
-        },
-        Contact {
-            id: "user_5".to_string(),
-            name: "Eve".to_string(),
-            avatar_url: None,
-            status: "30 分钟前".to_string(),
         },
     ];
     Ok(contacts)
