@@ -345,6 +345,10 @@ pub struct ChatMessage {
     pub image_url: Option<String>,
     /// Event ID this message is replying to, if any.
     pub in_reply_to: Option<String>,
+    /// Whether this message has been edited.
+    pub is_edited: bool,
+    /// History of edits (previous versions), oldest first.
+    pub edit_history: Vec<String>,
 }
 
 /// Result of a registration or login attempt
@@ -1436,6 +1440,15 @@ fn strip_reply_fallback(body: &str) -> String {
     body.to_string()
 }
 
+/// Extract edit text from a replacement relation's new_content.
+fn extract_edit_text(new_content: &matrix_sdk::ruma::events::room::message::RoomMessageEventContentWithoutRelation) -> Option<String> {
+    match &new_content.msgtype {
+        matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
+        matrix_sdk::ruma::events::room::message::MessageType::Notice(t) => Some(t.body.clone()),
+        _ => None,
+    }
+}
+
 /// Get messages for a room (must sync first).
 #[frb]
 pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
@@ -1450,7 +1463,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
         .find(|r| r.room_id().to_string() == room_id)
         .ok_or_else(|| format!("Room not found: {room_id}"))?;
 
-    let mut messages = Vec::new();
+    let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
+    let mut edits: HashMap<String, Vec<String>> = HashMap::new();
     let mut last_event_id: Option<String> = None;
 
     let mut opts = matrix_sdk::room::MessagesOptions::backward();
@@ -1486,6 +1500,16 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                 ) => {
                     let Some(original) = msg.as_original() else { continue };
 
+                    // Check if this is an edit (replacement) event
+                    if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(replacement)) = &original.content.relates_to {
+                        if let Some(edit_text) = extract_edit_text(&replacement.new_content) {
+                            edits.entry(replacement.event_id.to_string())
+                                .or_default()
+                                .push(edit_text);
+                        }
+                        continue; // Do not add the edit event itself to the message list
+                    }
+
                     let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
                         if let matrix_sdk::ruma::events::room::message::Relation::Reply { in_reply_to } = rel {
                             Some(in_reply_to.event_id.to_string())
@@ -1494,18 +1518,19 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         }
                     });
 
-                    match &original.content.msgtype {
+                    let chat_msg = match &original.content.msgtype {
                         matrix_sdk::ruma::events::room::message::MessageType::Text(t) => {
                             let content = if in_reply_to.is_some() {
                                 strip_reply_fallback(&t.body)
                             } else {
                                 t.body.clone()
                             };
-                            messages.push(ChatMessage {
+                            ChatMessage {
                                 id: event_id_str.clone(), sender_id: sender_id.clone(), sender_name: sender_name.clone(),
                                 content, timestamp: timestamp.clone(), is_me,
                                 msg_type: MessageType::Text, image_url: None, in_reply_to,
-                            });
+                                is_edited: false, edit_history: Vec::new(),
+                            }
                         }
                         matrix_sdk::ruma::events::room::message::MessageType::Emote(t) => {
                             let name = sender_name.clone();
@@ -1514,11 +1539,12 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             } else {
                                 format!("* {} {}", name, t.body)
                             };
-                            messages.push(ChatMessage {
+                            ChatMessage {
                                 id: event_id_str.clone(), sender_id: sender_id.clone(), sender_name: sender_name.clone(),
                                 content, timestamp: timestamp.clone(), is_me,
                                 msg_type: MessageType::Text, image_url: None, in_reply_to,
-                            });
+                                is_edited: false, edit_history: Vec::new(),
+                            }
                         }
                         matrix_sdk::ruma::events::room::message::MessageType::Notice(t) => {
                             let content = if in_reply_to.is_some() {
@@ -1526,33 +1552,40 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             } else {
                                 t.body.clone()
                             };
-                            messages.push(ChatMessage {
+                            ChatMessage {
                                 id: event_id_str.clone(), sender_id: sender_id.clone(), sender_name: sender_name.clone(),
                                 content, timestamp: timestamp.clone(), is_me,
                                 msg_type: MessageType::Text, image_url: None, in_reply_to,
-                            });
+                                is_edited: false, edit_history: Vec::new(),
+                            }
                         }
                         matrix_sdk::ruma::events::room::message::MessageType::Image(t) => {
                             let url = match &t.source {
                                 matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => Some(mxc.to_string()),
                                 _ => None,
                             };
-                            messages.push(ChatMessage {
+                            ChatMessage {
                                 id: event_id_str.clone(), sender_id: sender_id.clone(), sender_name: sender_name.clone(),
                                 content: t.body.clone(), timestamp: timestamp.clone(), is_me,
                                 msg_type: MessageType::Image, image_url: url, in_reply_to,
-                            });
+                                is_edited: false, edit_history: Vec::new(),
+                            }
                         }
                         matrix_sdk::ruma::events::room::message::MessageType::File(t) => {
-                            messages.push(ChatMessage {
+                            ChatMessage {
                                 id: event_id_str.clone(), sender_id: sender_id.clone(), sender_name: sender_name.clone(),
                                 content: format!("\u{6587}\u{4EF6}: {}", t.body),
                                 timestamp: timestamp.clone(), is_me,
                                 msg_type: MessageType::Text, image_url: None, in_reply_to,
-                            });
+                                is_edited: false, edit_history: Vec::new(),
+                            }
                         }
-                        _ => {} // skip unknown message types but still track event_id
-                    }
+                        _ => {
+                            last_event_id = Some(event_id_str.clone());
+                            continue; // skip unknown message types
+                        }
+                    };
+                    raw_messages.push((event_id_str.clone(), chat_msg));
                     last_event_id = Some(event_id_str.clone());
                 }
 
@@ -1598,17 +1631,33 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         _ => None,
                     };
                     if let Some(content) = content {
-                        messages.push(ChatMessage {
+                        raw_messages.push((event_id_str.clone(), ChatMessage {
                             id: event_id_str.clone(), sender_id: sender_id.clone(), sender_name: sender_name.clone(),
                             content, timestamp: timestamp.clone(), is_me: false,
                             msg_type: MessageType::Event, image_url: None, in_reply_to: None,
-                        });
+                            is_edited: false, edit_history: Vec::new(),
+                        }));
                     }
                     last_event_id = Some(any_ev.event_id().to_string());
                 }
                 _ => {}
             }
         }
+    }
+
+    // Apply edits to the corresponding messages
+    let mut messages = Vec::new();
+    for (event_id, mut msg) in raw_messages {
+        if let Some(history) = edits.remove(&event_id) {
+            msg.is_edited = true;
+            // Prepend original content so edit_history = [original, edit1, edit2, ...]
+            let original = msg.content.clone();
+            let mut full_history = vec![original];
+            full_history.extend(history);
+            msg.content = full_history.last().unwrap().clone();
+            msg.edit_history = full_history;
+        }
+        messages.push(msg);
     }
 
     // Send read receipt for the last event (mark room as read)
@@ -1907,7 +1956,8 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
         .find(|r| r.room_id().to_string() == room_id)
         .ok_or_else(|| format!("Room not found: {room_id}"))?;
 
-    let mut messages = Vec::new();
+    let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
+    let mut edits: HashMap<String, Vec<String>> = HashMap::new();
 
     // Use the event ID as the "from" token for backwards pagination
     let _from_token = matrix_sdk::ruma::events::TimelineEventType::from(from_event_id.clone());
@@ -1944,6 +1994,16 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
             let timestamp = format!("{:02}:{:02}", hours, mins);
             let event_id = msg.event_id().to_string();
 
+            // Check if this is an edit (replacement) event
+            if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(replacement)) = &original.content.relates_to {
+                if let Some(edit_text) = extract_edit_text(&replacement.new_content) {
+                    edits.entry(replacement.event_id.to_string())
+                        .or_default()
+                        .push(edit_text);
+                }
+                continue;
+            }
+
             let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
                 if let matrix_sdk::ruma::events::room::message::Relation::Reply { in_reply_to } = rel {
                     Some(in_reply_to.event_id.to_string())
@@ -1952,15 +2012,15 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
                 }
             });
 
-            match &original.content.msgtype {
+            let chat_msg = match &original.content.msgtype {
                 matrix_sdk::ruma::events::room::message::MessageType::Text(t) => {
                     let content = if in_reply_to.is_some() {
                         strip_reply_fallback(&t.body)
                     } else {
                         t.body.clone()
                     };
-                    messages.push(ChatMessage {
-                        id: event_id,
+                    ChatMessage {
+                        id: event_id.clone(),
                         sender_id,
                         sender_name,
                         content,
@@ -1969,15 +2029,17 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
                         msg_type: MessageType::Text,
                         image_url: None,
                         in_reply_to,
-                    });
+                        is_edited: false,
+                        edit_history: Vec::new(),
+                    }
                 }
                 matrix_sdk::ruma::events::room::message::MessageType::Image(t) => {
                     let url = match &t.source {
                         matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => Some(mxc.to_string()),
                         _ => None,
                     };
-                    messages.push(ChatMessage {
-                        id: event_id,
+                    ChatMessage {
+                        id: event_id.clone(),
                         sender_id,
                         sender_name,
                         content: t.body.clone(),
@@ -1986,11 +2048,28 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
                         msg_type: MessageType::Image,
                         image_url: url,
                         in_reply_to,
-                    });
+                        is_edited: false,
+                        edit_history: Vec::new(),
+                    }
                 }
                 _ => continue,
-            }
+            };
+            raw_messages.push((event_id, chat_msg));
         }
+    }
+
+    // Apply edits
+    let mut messages = Vec::new();
+    for (event_id, mut msg) in raw_messages {
+        if let Some(history) = edits.remove(&event_id) {
+            msg.is_edited = true;
+            let original = msg.content.clone();
+            let mut full_history = vec![original];
+            full_history.extend(history);
+            msg.content = full_history.last().unwrap().clone();
+            msg.edit_history = full_history;
+        }
+        messages.push(msg);
     }
 
     Ok(messages)

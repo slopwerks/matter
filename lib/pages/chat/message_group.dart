@@ -178,18 +178,148 @@ class MessageGroupWidget extends ConsumerWidget {
           Align(
             alignment: Alignment.bottomRight,
             widthFactor: 1.0,
-            child: Text(
-              message.timestamp,
-              style: TextStyle(
-                color: isMe
-                    ? Colors.white.withValues(alpha: 0.65)
-                    : AppColors.onSurfaceVariant,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  message.timestamp,
+                  style: TextStyle(
+                    color: isMe
+                        ? Colors.white.withValues(alpha: 0.65)
+                        : AppColors.onSurfaceVariant,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (message.isEdited) ...[
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => _showEditHistory(context, message),
+                    child: Text(
+                      '已编辑',
+                      style: TextStyle(
+                        color: isMe
+                            ? Colors.white.withValues(alpha: 0.45)
+                            : AppColors.onSurfaceVariant.withValues(alpha: 0.6),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showEditHistory(BuildContext context, ChatMessage message) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.surface)),
+            ),
+            child: Column(
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 8, bottom: 12),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.onSurfaceVariant.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Text(
+                    '编辑记录',
+                    style: TextStyle(
+                      color: AppColors.onBackground,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Divider(color: AppColors.surfaceVariant, height: 0.5),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    itemCount: message.editHistory.length,
+                    itemBuilder: (context, index) {
+                      final isOriginal = index == 0;
+                      final isLatest = index == message.editHistory.length - 1;
+                      String label;
+                      if (isOriginal) {
+                        label = '原始';
+                      } else if (isLatest) {
+                        label = '最新';
+                      } else {
+                        label = '第 ${index} 次编辑';
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isLatest
+                                        ? AppColors.primary.withValues(alpha: 0.15)
+                                        : AppColors.surfaceVariant.withValues(alpha: 0.5),
+                                    borderRadius: BorderRadius.circular(AppRadii.tag),
+                                  ),
+                                  child: Text(
+                                    label,
+                                    style: TextStyle(
+                                      color: isLatest ? AppColors.primary : AppColors.onSurfaceVariant,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              message.editHistory[index],
+                              style: const TextStyle(
+                                color: AppColors.onBackground,
+                                fontSize: 14,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

@@ -1754,6 +1754,8 @@ impl SseDecode for crate::api::matrix::ChatMessage {
         let mut var_msgType = <crate::api::matrix::MessageType>::sse_decode(deserializer);
         let mut var_imageUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_inReplyTo = <Option<String>>::sse_decode(deserializer);
+        let mut var_isEdited = <bool>::sse_decode(deserializer);
+        let mut var_editHistory = <Vec<String>>::sse_decode(deserializer);
         return crate::api::matrix::ChatMessage {
             id: var_id,
             sender_id: var_senderId,
@@ -1764,6 +1766,8 @@ impl SseDecode for crate::api::matrix::ChatMessage {
             msg_type: var_msgType,
             image_url: var_imageUrl,
             in_reply_to: var_inReplyTo,
+            is_edited: var_isEdited,
+            edit_history: var_editHistory,
         };
     }
 }
@@ -1835,6 +1839,18 @@ impl SseDecode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
     }
 }
 
@@ -2202,6 +2218,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::matrix::ChatMessage {
             self.msg_type.into_into_dart().into_dart(),
             self.image_url.into_into_dart().into_dart(),
             self.in_reply_to.into_into_dart().into_dart(),
+            self.is_edited.into_into_dart().into_dart(),
+            self.edit_history.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2454,6 +2472,8 @@ impl SseEncode for crate::api::matrix::ChatMessage {
         <crate::api::matrix::MessageType>::sse_encode(self.msg_type, serializer);
         <Option<String>>::sse_encode(self.image_url, serializer);
         <Option<String>>::sse_encode(self.in_reply_to, serializer);
+        <bool>::sse_encode(self.is_edited, serializer);
+        <Vec<String>>::sse_encode(self.edit_history, serializer);
     }
 }
 
@@ -2511,6 +2531,16 @@ impl SseEncode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <String>::sse_encode(item, serializer);
+        }
     }
 }
 

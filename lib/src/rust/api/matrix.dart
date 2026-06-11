@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `app_log`, `build_sdk_data_dir`, `finalize_pending`, `format_timestamp`, `get_client`, `get_last_message_info`, `notify_sync_event`, `sanitize_for_path`, `set_connection_status`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
+// These functions are ignored because they are not marked as `pub`: `app_log`, `build_sdk_data_dir`, `extract_edit_text`, `finalize_pending`, `format_timestamp`, `get_client`, `get_last_message_info`, `notify_sync_event`, `sanitize_for_path`, `set_connection_status`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -380,6 +380,12 @@ class ChatMessage {
   /// Event ID this message is replying to, if any.
   final String? inReplyTo;
 
+  /// Whether this message has been edited.
+  final bool isEdited;
+
+  /// History of edits (previous versions), oldest first.
+  final List<String> editHistory;
+
   const ChatMessage({
     required this.id,
     required this.senderId,
@@ -390,6 +396,8 @@ class ChatMessage {
     required this.msgType,
     this.imageUrl,
     this.inReplyTo,
+    required this.isEdited,
+    required this.editHistory,
   });
 
   @override
@@ -402,7 +410,9 @@ class ChatMessage {
       isMe.hashCode ^
       msgType.hashCode ^
       imageUrl.hashCode ^
-      inReplyTo.hashCode;
+      inReplyTo.hashCode ^
+      isEdited.hashCode ^
+      editHistory.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -417,7 +427,9 @@ class ChatMessage {
           isMe == other.isMe &&
           msgType == other.msgType &&
           imageUrl == other.imageUrl &&
-          inReplyTo == other.inReplyTo;
+          inReplyTo == other.inReplyTo &&
+          isEdited == other.isEdited &&
+          editHistory == other.editHistory;
 }
 
 class ChatRoom {

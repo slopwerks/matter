@@ -1599,8 +1599,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ChatMessage dco_decode_chat_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ChatMessage(
       id: dco_decode_String(arr[0]),
       senderId: dco_decode_String(arr[1]),
@@ -1611,6 +1611,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       msgType: dco_decode_message_type(arr[6]),
       imageUrl: dco_decode_opt_String(arr[7]),
       inReplyTo: dco_decode_opt_String(arr[8]),
+      isEdited: dco_decode_bool(arr[9]),
+      editHistory: dco_decode_list_String(arr[10]),
     );
   }
 
@@ -1663,6 +1665,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 dco_decode_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeI64(raw);
+  }
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_String).toList();
   }
 
   @protected
@@ -1902,6 +1910,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_msgType = sse_decode_message_type(deserializer);
     var var_imageUrl = sse_decode_opt_String(deserializer);
     var var_inReplyTo = sse_decode_opt_String(deserializer);
+    var var_isEdited = sse_decode_bool(deserializer);
+    var var_editHistory = sse_decode_list_String(deserializer);
     return ChatMessage(
       id: var_id,
       senderId: var_senderId,
@@ -1912,6 +1922,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       msgType: var_msgType,
       imageUrl: var_imageUrl,
       inReplyTo: var_inReplyTo,
+      isEdited: var_isEdited,
+      editHistory: var_editHistory,
     );
   }
 
@@ -1972,6 +1984,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <String>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -2267,6 +2291,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_message_type(self.msgType, serializer);
     sse_encode_opt_String(self.imageUrl, serializer);
     sse_encode_opt_String(self.inReplyTo, serializer);
+    sse_encode_bool(self.isEdited, serializer);
+    sse_encode_list_String(self.editHistory, serializer);
   }
 
   @protected
@@ -2311,6 +2337,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_String(item, serializer);
+    }
   }
 
   @protected
