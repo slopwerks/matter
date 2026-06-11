@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'pages/chat/chat_page.dart';
 import 'pages/contacts/contacts_page.dart';
 import 'pages/settings/settings_page.dart';
+import 'providers/chat_provider.dart';
 import 'providers/navigation_provider.dart';
 import 'theme/app_theme.dart';
 import 'widgets/liquid_glass.dart';
@@ -41,6 +42,10 @@ class _MatterAppState extends ConsumerState<MatterApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep the sync stream listener alive for the app's lifetime.
+    // Without watch(), the provider auto-disposes and stops receiving events.
+    ref.watch(syncStreamProvider);
+
     return Scaffold(
       extendBody: true,
       body: PageView(

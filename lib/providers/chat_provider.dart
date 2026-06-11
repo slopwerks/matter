@@ -136,7 +136,7 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
         if (currentRoomId != null) {
           final now = DateTime.now();
           if (lastMessageRefresh == null ||
-              now.difference(lastMessageRefresh!).inSeconds >= 2) {
+              now.difference(lastMessageRefresh!).inMilliseconds >= 500) {
             lastMessageRefresh = now;
             ref.invalidate(messagesProvider(currentRoomId));
           }
