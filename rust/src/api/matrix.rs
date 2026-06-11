@@ -1305,9 +1305,9 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
             .name()
             .filter(|n| !n.is_empty())
             .unwrap_or_default();
-        // If no explicit name, compute display name (async, may use heroes/members)
+        // If no explicit name, use cached display name (fast, no async)
         if name.is_empty() {
-            name = room.display_name().await
+            name = room.cached_display_name()
                 .map(|dn| dn.to_string())
                 .unwrap_or_default();
         }
@@ -1317,7 +1317,7 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
         }
         let avatar_url = room.avatar_url().map(|u| u.to_string());
         let unread_count = room.unread_notification_counts().notification_count as i32;
-        let (last_message, last_message_time) = get_last_message_info(&room).await;
+        let (last_message, last_message_time) = get_last_message_info(&room);
 
         // Determine room type
         let room_type = if room.is_space() {
@@ -1351,28 +1351,24 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
     Ok(result)
 }
 
-async fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
+fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
     let mut last_msg = "(暂无消息)".to_string();
     let mut last_time = String::new();
 
-    let mut opts = matrix_sdk::room::MessagesOptions::backward();
-    opts.limit = 1u32.into();
-
-    if let Ok(msg_resp) = room.messages(opts).await {
-        if let Some(timeline_event) = msg_resp.chunk.first() {
-            let raw = timeline_event.kind.raw();
-            if let Ok(any_ev) = raw.deserialize() {
-                if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
-                ) = any_ev
-                {
-                    last_time = format_timestamp(u64::from(msg.origin_server_ts().0));
-                    if let Some(text) = msg.as_original().and_then(|o| {
-                        match &o.content.msgtype {
-                            matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
-                            _ => None,
-                        }
-                    }) {
+    if let Some(latest) = room.latest_event() {
+        let raw = latest.event().raw();
+        if let Ok(any_ev) = raw.deserialize() {
+            if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
+            ) = any_ev
+            {
+                last_time = format_timestamp(u64::from(msg.origin_server_ts().0));
+                if let Some(text) = msg.as_original().and_then(|o| {
+                    match &o.content.msgtype {
+                        matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
+                        _ => None,
+                    }
+                }) {
                     last_msg = text;
                     if last_msg.len() > 50 {
                         // Safe truncation that respects UTF-8 char boundaries
@@ -1382,7 +1378,6 @@ async fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
                         }
                         last_msg.truncate(end);
                         last_msg.push_str("...");
-                    }
                     }
                 }
             }

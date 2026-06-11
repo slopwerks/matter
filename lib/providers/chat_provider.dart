@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../src/rust/api/matrix.dart' as rust;
+import 'auth_provider.dart';
 
 final chatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
+  if (!ref.watch(sessionReadyProvider)) return [];
   final rooms = await rust.getChatRooms();
   return rooms;
 });
 
 final spacesProvider = FutureProvider<List<rust.Space>>((ref) async {
+  if (!ref.watch(sessionReadyProvider)) return [];
   final spaces = await rust.getSpaces();
   return spaces;
 });
@@ -15,6 +18,7 @@ final spacesProvider = FutureProvider<List<rust.Space>>((ref) async {
 final selectedSpaceIdProvider = StateProvider<String>((ref) => 'all');
 
 final contactsProvider = FutureProvider<List<rust.Contact>>((ref) async {
+  if (!ref.watch(sessionReadyProvider)) return [];
   final contacts = await rust.getContacts();
   return contacts;
 });
@@ -25,6 +29,7 @@ final messagesProvider = FutureProvider.family<List<rust.ChatMessage>, String>((
   ref,
   roomId,
 ) async {
+  if (!ref.watch(sessionReadyProvider)) return [];
   final messages = await rust.getMessages(roomId: roomId);
   return messages;
 });
@@ -70,6 +75,7 @@ final roomMembersProvider = FutureProvider.family<List<rust.Contact>, String>((
   ref,
   roomId,
 ) async {
+  if (!ref.watch(sessionReadyProvider)) return [];
   final members = await rust.getRoomMembers(roomId: roomId);
   return members;
 });
@@ -79,6 +85,7 @@ final searchRoomsProvider = FutureProvider.family<List<rust.ChatRoom>, String>((
   ref,
   query,
 ) async {
+  if (!ref.watch(sessionReadyProvider)) return [];
   if (query.trim().isEmpty) return [];
   return rust.searchRooms(query: query);
 });

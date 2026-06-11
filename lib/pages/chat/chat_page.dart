@@ -18,15 +18,6 @@ class ChatPage extends ConsumerStatefulWidget {
 
 class _ChatPageState extends ConsumerState<ChatPage> {
   @override
-  void initState() {
-    super.initState();
-    // Ensure rooms are fetched
-    Future.microtask(() {
-      if (mounted) ref.invalidate(chatRoomsProvider);
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final roomsAsync = ref.watch(chatRoomsProvider);
     final connectionLabel = ref.watch(connectionLabelProvider);

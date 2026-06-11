@@ -68,21 +68,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   List<MessageGroup> _groupMessages(List<ChatMessage> messages) {
     final groups = <MessageGroup>[];
     for (final message in messages) {
-      if (message.isMe) {
+      if (groups.isEmpty || groups.last.senderId != message.senderId) {
         groups.add(
           MessageGroup(
             senderId: message.senderId,
             senderName: message.senderName,
-            isMe: true,
-            messages: [message],
-          ),
-        );
-      } else if (groups.isEmpty || groups.last.senderId != message.senderId) {
-        groups.add(
-          MessageGroup(
-            senderId: message.senderId,
-            senderName: message.senderName,
-            isMe: false,
+            isMe: message.isMe,
             messages: [message],
           ),
         );

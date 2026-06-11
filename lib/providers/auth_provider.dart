@@ -19,6 +19,9 @@ class CurrentUser {
 
 final isLoggedInProvider = StateProvider<bool>((ref) => false);
 
+/// Whether the Rust session has been fully restored and is ready for API calls.
+final sessionReadyProvider = StateProvider<bool>((ref) => false);
+
 final currentUserProvider = StateProvider<CurrentUser?>((ref) => null);
 
 /// Provider for the homeserver URL

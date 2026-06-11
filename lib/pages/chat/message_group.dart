@@ -44,7 +44,7 @@ class MessageGroupWidget extends ConsumerWidget {
 
     if (isMe) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: group.messages
@@ -57,6 +57,7 @@ class MessageGroupWidget extends ConsumerWidget {
                   e.value,
                   true,
                   isFirst: e.key == 0,
+                  isLast: e.key == group.messages.length - 1,
                 ),
               )
               .toList(),
@@ -68,8 +69,6 @@ class MessageGroupWidget extends ConsumerWidget {
       padding: EdgeInsets.only(
         left: compact ? 12 : (showAvatar ? 12 : 68),
         right: 12,
-        top: 3,
-        bottom: 3,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -89,6 +88,7 @@ class MessageGroupWidget extends ConsumerWidget {
                       e.value,
                       false,
                       isFirst: e.key == 0,
+                      isLast: e.key == group.messages.length - 1,
                     ),
                   )
                   .toList(),
@@ -105,11 +105,15 @@ class MessageGroupWidget extends ConsumerWidget {
     ChatMessage message,
     bool isMe, {
     bool isFirst = false,
+    bool isLast = false,
   }) {
     return GestureDetector(
       onLongPress: () => _showContextMenu(context, ref, message),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1.5),
+        padding: EdgeInsets.only(
+          top: isFirst ? 2 : 1,
+          bottom: isLast ? 10 : 1,
+        ),
         child: message.msgType == MessageType.event
             ? _buildEventMessage(message)
             : message.msgType == MessageType.image && message.imageUrl != null
@@ -131,7 +135,9 @@ class MessageGroupWidget extends ConsumerWidget {
     bool isFirst = false,
   }) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 280),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.70,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: isMe ? AppColors.primary : AppColors.surfaceElevated,
@@ -171,6 +177,7 @@ class MessageGroupWidget extends ConsumerWidget {
           const SizedBox(height: 3),
           Align(
             alignment: Alignment.bottomRight,
+            widthFactor: 1.0,
             child: Text(
               message.timestamp,
               style: TextStyle(

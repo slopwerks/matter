@@ -131,7 +131,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   Widget _buildBroken() {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 200, maxHeight: 120),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.5,
+        maxHeight: 120,
+      ),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: isMe
