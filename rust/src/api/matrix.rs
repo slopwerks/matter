@@ -1860,8 +1860,9 @@ fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
     let mut last_msg = "(暂无消息)".to_string();
     let mut last_time = String::new();
 
-    if let Some(latest) = room.latest_event() {
-        let raw = latest.event().raw();
+    let latest_value = room.latest_event();
+    if let matrix_sdk::latest_events::LatestEventValue::Remote(latest) = latest_value {
+        let raw = latest.raw();
         if let Ok(any_ev) = raw.deserialize() {
             if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
                 matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
@@ -2012,8 +2013,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                     }
 
                     let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
-                        if let matrix_sdk::ruma::events::room::message::Relation::Reply { in_reply_to } = rel {
-                            Some(in_reply_to.event_id.to_string())
+                        if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
+                            Some(reply.in_reply_to.event_id.to_string())
                         } else {
                             None
                         }
@@ -2330,12 +2331,10 @@ pub async fn send_reply(room_id: String, message: String, reply_to_event_id: Str
 
     // Build the reply content
     let content = matrix_sdk::ruma::events::room::message::RoomMessageEventContent::text_plain(&message);
-    // Manually set the in_reply_to relation
     let mut reply_content = content;
-    let in_reply_to = matrix_sdk::ruma::events::relation::InReplyTo::new(event_id);
-    reply_content.relates_to = Some(matrix_sdk::ruma::events::room::message::Relation::Reply {
-        in_reply_to,
-    });
+    reply_content.relates_to = Some(matrix_sdk::ruma::events::room::message::Relation::Reply(
+        matrix_sdk::ruma::events::relation::Reply::with_event_id(event_id),
+    ));
 
     room.send(reply_content)
         .await
@@ -2506,8 +2505,8 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
             }
 
             let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
-                if let matrix_sdk::ruma::events::room::message::Relation::Reply { in_reply_to } = rel {
-                    Some(in_reply_to.event_id.to_string())
+                if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
+                    Some(reply.in_reply_to.event_id.to_string())
                 } else {
                     None
                 }

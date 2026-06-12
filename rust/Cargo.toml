@@ -8,12 +8,11 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.12.0"
-matrix-sdk = { version = "0.11", default-features = false, features = [
+matrix-sdk = { version = "0.18", default-features = false, features = [
   "e2e-encryption",
-  "rustls-tls",
   "bundled-sqlite",
 ] }
-ruma = { version = "0.13", features = ["client-api-c"] }
+ruma = { version = "0.16", features = ["client-api-c"] }
 tokio = { version = "1", features = [
   "rt",
   "rt-multi-thread",
