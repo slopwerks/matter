@@ -46,6 +46,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  DeviceVerificationStatus dco_decode_box_autoadd_device_verification_status(
+    dynamic raw,
+  );
+
+  @protected
   StoredSession dco_decode_box_autoadd_stored_session(dynamic raw);
 
   @protected
@@ -59,6 +64,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Contact dco_decode_contact(dynamic raw);
+
+  @protected
+  DeviceVerificationStatus dco_decode_device_verification_status(dynamic raw);
+
+  @protected
+  EncryptionRecoveryInfo dco_decode_encryption_recovery_info(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -94,10 +105,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<Space> dco_decode_list_space(dynamic raw);
 
   @protected
+  List<VerificationDevice> dco_decode_list_verification_device(dynamic raw);
+
+  @protected
+  List<VerificationEmoji> dco_decode_list_verification_emoji(dynamic raw);
+
+  @protected
   MessageType dco_decode_message_type(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  DeviceVerificationStatus?
+  dco_decode_opt_box_autoadd_device_verification_status(dynamic raw);
 
   @protected
   StoredSession? dco_decode_opt_box_autoadd_stored_session(dynamic raw);
@@ -122,6 +143,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void dco_decode_unit(dynamic raw);
+
+  @protected
+  VerificationDevice dco_decode_verification_device(dynamic raw);
+
+  @protected
+  VerificationEmoji dco_decode_verification_emoji(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -152,6 +179,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  DeviceVerificationStatus sse_decode_box_autoadd_device_verification_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   StoredSession sse_decode_box_autoadd_stored_session(
     SseDeserializer deserializer,
   );
@@ -167,6 +199,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Contact sse_decode_contact(SseDeserializer deserializer);
+
+  @protected
+  DeviceVerificationStatus sse_decode_device_verification_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  EncryptionRecoveryInfo sse_decode_encryption_recovery_info(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -202,10 +244,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<Space> sse_decode_list_space(SseDeserializer deserializer);
 
   @protected
+  List<VerificationDevice> sse_decode_list_verification_device(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<VerificationEmoji> sse_decode_list_verification_emoji(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MessageType sse_decode_message_type(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  DeviceVerificationStatus?
+  sse_decode_opt_box_autoadd_device_verification_status(
+    SseDeserializer deserializer,
+  );
 
   @protected
   StoredSession? sse_decode_opt_box_autoadd_stored_session(
@@ -232,6 +290,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_decode_unit(SseDeserializer deserializer);
+
+  @protected
+  VerificationDevice sse_decode_verification_device(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VerificationEmoji sse_decode_verification_emoji(SseDeserializer deserializer);
 
   @protected
   void sse_encode_AnyhowException(
@@ -267,6 +333,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_device_verification_status(
+    DeviceVerificationStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_stored_session(
     StoredSession self,
     SseSerializer serializer,
@@ -286,6 +358,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_contact(Contact self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_device_verification_status(
+    DeviceVerificationStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_encryption_recovery_info(
+    EncryptionRecoveryInfo self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -333,10 +417,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_space(List<Space> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_verification_device(
+    List<VerificationDevice> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_verification_emoji(
+    List<VerificationEmoji> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_message_type(MessageType self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_device_verification_status(
+    DeviceVerificationStatus? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_stored_session(
@@ -367,6 +469,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_verification_device(
+    VerificationDevice self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_verification_emoji(
+    VerificationEmoji self,
+    SseSerializer serializer,
+  );
 }
 
 // Section: wire_class

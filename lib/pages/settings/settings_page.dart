@@ -7,6 +7,7 @@ import '../../src/rust/api/matrix.dart' as rust;
 
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
+import 'encryption_page.dart';
 import 'log_viewer_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -388,12 +389,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         icon: Icons.security_rounded,
                         iconColor: AppColors.success,
                         title: '加密',
-                        subtitle: '端到端加密已启用',
+                        subtitle: '设备验证与加密恢复',
                         onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('加密设置开发中'),
-                              duration: Duration(seconds: 1),
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const EncryptionPage(),
                             ),
                           );
                         },

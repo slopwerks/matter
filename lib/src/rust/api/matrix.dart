@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `app_log`, `build_sdk_data_dir`, `extract_edit_text`, `finalize_pending`, `format_timestamp`, `get_client`, `get_last_message_info`, `notify_sync_event`, `sanitize_for_path`, `set_connection_status`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `active_session_meta`, `app_log`, `build_sdk_data_dir`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `format_timestamp`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `notify_sync_event`, `sanitize_for_path`, `set_connection_status`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Stream app log entries from Rust → Dart (live).
 Stream<AppLogEntry> watchAppLogs() =>
@@ -114,6 +114,41 @@ Future<void> restoreSession({
   session: session,
   dataDir: dataDir,
 );
+
+Future<List<VerificationDevice>> listOwnDevices() =>
+    RustLib.instance.api.crateApiMatrixListOwnDevices();
+
+Future<void> startDeviceVerification({required String deviceId}) => RustLib
+    .instance
+    .api
+    .crateApiMatrixStartDeviceVerification(deviceId: deviceId);
+
+Future<void> acceptDeviceVerification() =>
+    RustLib.instance.api.crateApiMatrixAcceptDeviceVerification();
+
+Future<DeviceVerificationStatus?> getDeviceVerificationStatus() =>
+    RustLib.instance.api.crateApiMatrixGetDeviceVerificationStatus();
+
+Future<void> confirmDeviceVerification() =>
+    RustLib.instance.api.crateApiMatrixConfirmDeviceVerification();
+
+Future<void> cancelDeviceVerification({required bool mismatch}) => RustLib
+    .instance
+    .api
+    .crateApiMatrixCancelDeviceVerification(mismatch: mismatch);
+
+Future<EncryptionRecoveryInfo> getEncryptionRecoveryInfo() =>
+    RustLib.instance.api.crateApiMatrixGetEncryptionRecoveryInfo();
+
+Future<void> recoverEncryption({required String recoveryKeyOrPassphrase}) =>
+    RustLib.instance.api.crateApiMatrixRecoverEncryption(
+      recoveryKeyOrPassphrase: recoveryKeyOrPassphrase,
+    );
+
+Future<String> enableEncryptionRecovery({String? passphrase}) => RustLib
+    .instance
+    .api
+    .crateApiMatrixEnableEncryptionRecovery(passphrase: passphrase);
 
 /// Perform an initial sync with a 30-second timeout.
 /// Uses traditional /sync for the initial load (Sliding Sync needs
@@ -515,6 +550,66 @@ class Contact {
           status == other.status;
 }
 
+class DeviceVerificationStatus {
+  final String phase;
+  final String deviceId;
+  final String flowId;
+  final bool incoming;
+  final List<VerificationEmoji> emojis;
+  final String message;
+
+  const DeviceVerificationStatus({
+    required this.phase,
+    required this.deviceId,
+    required this.flowId,
+    required this.incoming,
+    required this.emojis,
+    required this.message,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      deviceId.hashCode ^
+      flowId.hashCode ^
+      incoming.hashCode ^
+      emojis.hashCode ^
+      message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DeviceVerificationStatus &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          deviceId == other.deviceId &&
+          flowId == other.flowId &&
+          incoming == other.incoming &&
+          emojis == other.emojis &&
+          message == other.message;
+}
+
+class EncryptionRecoveryInfo {
+  final String state;
+  final bool deviceVerified;
+
+  const EncryptionRecoveryInfo({
+    required this.state,
+    required this.deviceVerified,
+  });
+
+  @override
+  int get hashCode => state.hashCode ^ deviceVerified.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EncryptionRecoveryInfo &&
+          runtimeType == other.runtimeType &&
+          state == other.state &&
+          deviceVerified == other.deviceVerified;
+}
+
 enum MessageType {
   text,
   image,
@@ -585,4 +680,53 @@ sealed class SyncEvent with _$SyncEvent {
   /// A message was sent (room list should refresh).
   const factory SyncEvent.messageSent({required String roomId}) =
       SyncEvent_MessageSent;
+}
+
+class VerificationDevice {
+  final String deviceId;
+  final String displayName;
+  final bool isCurrent;
+  final bool isVerified;
+
+  const VerificationDevice({
+    required this.deviceId,
+    required this.displayName,
+    required this.isCurrent,
+    required this.isVerified,
+  });
+
+  @override
+  int get hashCode =>
+      deviceId.hashCode ^
+      displayName.hashCode ^
+      isCurrent.hashCode ^
+      isVerified.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VerificationDevice &&
+          runtimeType == other.runtimeType &&
+          deviceId == other.deviceId &&
+          displayName == other.displayName &&
+          isCurrent == other.isCurrent &&
+          isVerified == other.isVerified;
+}
+
+class VerificationEmoji {
+  final String symbol;
+  final String description;
+
+  const VerificationEmoji({required this.symbol, required this.description});
+
+  @override
+  int get hashCode => symbol.hashCode ^ description.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VerificationEmoji &&
+          runtimeType == other.runtimeType &&
+          symbol == other.symbol &&
+          description == other.description;
 }

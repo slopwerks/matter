@@ -3,9 +3,18 @@ use log::{info, warn};
 use matrix_sdk::{
     Client, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession,
+    encryption::{
+        VerificationState as OwnVerificationState,
+        recovery::RecoveryState,
+        verification::{Verification, VerificationRequestState},
+    },
     ruma::api::client::{
         account::register::v3::Request as RegistrationRequest,
         uiaa::{AuthData, Dummy, RegistrationToken, UiaaInfo},
+    },
+    ruma::events::key::verification::{
+        VerificationMethod,
+        request::ToDeviceKeyVerificationRequestEvent,
     },
     store::RoomLoadSettings,
 };
@@ -175,6 +184,45 @@ async fn stop_sync_task(user_id: Option<&str>) {
 static PENDING: Lazy<Arc<RwLock<Option<PendingEntry>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
+#[derive(Clone, Debug)]
+struct VerificationSession {
+    user_id: String,
+    device_id: String,
+    flow_id: String,
+    incoming: bool,
+    accepted: bool,
+}
+
+static VERIFICATION_SESSION: Lazy<Arc<RwLock<Option<VerificationSession>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
+
+fn install_verification_event_handler(client: &Client) {
+    client.add_event_handler(
+        |event: ToDeviceKeyVerificationRequestEvent, client: Client| async move {
+            let Some(own_user_id) = client.user_id() else {
+                return;
+            };
+            if event.sender != own_user_id {
+                return;
+            }
+
+            let session = VerificationSession {
+                user_id: event.sender.to_string(),
+                device_id: event.content.from_device.to_string(),
+                flow_id: event.content.transaction_id.to_string(),
+                incoming: true,
+                accepted: false,
+            };
+            *VERIFICATION_SESSION.write().await = Some(session);
+            app_log(
+                "info",
+                "encryption",
+                "Received a device verification request".to_string(),
+            );
+        },
+    );
+}
+
 fn sanitize_for_path(s: &str) -> String {
     s.replace('@', "_at_")
         .replace(':', "_colon_")
@@ -279,6 +327,7 @@ async fn finalize_pending() -> Result<String, String> {
         .map_err(|e| format!("Restore session in per-user store: {e}"))?;
     app_log("info", "auth", format!("finalize_pending: session restored for {}", user_id));
     info!("finalize_pending: session restored for {}", user_id);
+    install_verification_event_handler(&new_client);
 
     // Store in the multi-account map
     {
@@ -366,6 +415,40 @@ pub struct Contact {
     pub name: String,
     pub avatar_url: Option<String>,
     pub status: String,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
+pub struct VerificationDevice {
+    pub device_id: String,
+    pub display_name: String,
+    pub is_current: bool,
+    pub is_verified: bool,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
+pub struct VerificationEmoji {
+    pub symbol: String,
+    pub description: String,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
+pub struct DeviceVerificationStatus {
+    pub phase: String,
+    pub device_id: String,
+    pub flow_id: String,
+    pub incoming: bool,
+    pub emojis: Vec<VerificationEmoji>,
+    pub message: String,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
+pub struct EncryptionRecoveryInfo {
+    pub state: String,
+    pub device_verified: bool,
 }
 
 #[frb]
@@ -855,6 +938,7 @@ pub async fn switch_account(user_id: String) -> bool {
         *active = Some(user_id.clone());
         drop(active);
         drop(sync_task);
+        clear_verification_session().await;
         app_log("info", "auth", format!("Switched to account: {}", user_id));
         info!("Switched to account: {}", user_id);
         true
@@ -873,6 +957,7 @@ pub async fn logout() -> Result<(), String> {
     };
 
     let user_id = active_user.ok_or("No active account to logout")?;
+    clear_verification_session().await;
     stop_sync_task(Some(&user_id)).await;
 
     let entry = {
@@ -919,6 +1004,10 @@ pub async fn logout() -> Result<(), String> {
 /// Remove a specific account by user_id (logout + delete data).
 #[frb]
 pub async fn remove_account(user_id: String) -> Result<(), String> {
+    let removing_active = ACTIVE_USER.read().await.as_ref() == Some(&user_id);
+    if removing_active {
+        clear_verification_session().await;
+    }
     stop_sync_task(Some(&user_id)).await;
     let entry = {
         let mut clients = CLIENTS.write().await;
@@ -1032,6 +1121,7 @@ pub async fn restore_session(session: StoredSession, data_dir: String) -> Result
             app_log("error", "auth", msg.clone());
             msg
         })?;
+    install_verification_event_handler(&client);
 
     // Add to multi-account store
     {
@@ -1053,6 +1143,314 @@ pub async fn restore_session(session: StoredSession, data_dir: String) -> Result
 
     app_log("info", "auth", format!("Session restored for {}", session.user_id));
     Ok(())
+}
+
+// ── Device verification & encryption recovery ─────────────────────
+
+fn active_session_meta(client: &Client) -> Result<(String, String), String> {
+    let session = client.matrix_auth().session().ok_or("No active Matrix session")?;
+    Ok((session.meta.user_id.to_string(), session.meta.device_id.to_string()))
+}
+
+async fn current_verification_session() -> Result<(Client, VerificationSession), String> {
+    let client = get_client().await.ok_or("No active client")?;
+    let session = VERIFICATION_SESSION
+        .read()
+        .await
+        .clone()
+        .ok_or("No active verification")?;
+    Ok((client, session))
+}
+
+async fn clear_verification_session() {
+    *VERIFICATION_SESSION.write().await = None;
+}
+
+#[frb]
+pub async fn list_own_devices() -> Result<Vec<VerificationDevice>, String> {
+    let client = get_client().await.ok_or("No active client")?;
+    let (user_id, current_device_id) = active_session_meta(&client)?;
+    let user_id = matrix_sdk::ruma::UserId::parse(user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+
+    // Refresh the identity first so the device list isn't limited to stale local data.
+    client
+        .encryption()
+        .request_user_identity(&user_id)
+        .await
+        .map_err(|e| format!("Failed to refresh encryption identity: {e}"))?;
+    let devices = client
+        .encryption()
+        .get_user_devices(&user_id)
+        .await
+        .map_err(|e| format!("Failed to load devices: {e}"))?;
+
+    let mut result = devices
+        .devices()
+        .map(|device| VerificationDevice {
+            device_id: device.device_id().to_string(),
+            display_name: device.display_name().unwrap_or("未命名设备").to_string(),
+            is_current: device.device_id().as_str() == current_device_id,
+            is_verified: device.is_verified(),
+        })
+        .collect::<Vec<_>>();
+    result.sort_by_key(|device| (!device.is_current, device.display_name.to_lowercase()));
+    Ok(result)
+}
+
+#[frb]
+pub async fn start_device_verification(device_id: String) -> Result<(), String> {
+    let client = get_client().await.ok_or("No active client")?;
+    let (user_id, current_device_id) = active_session_meta(&client)?;
+    if device_id == current_device_id {
+        return Err("Cannot verify the current device with itself".into());
+    }
+    let user_id = matrix_sdk::ruma::UserId::parse(user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+    let device_id = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
+    let device = client
+        .encryption()
+        .get_device(&user_id, &device_id)
+        .await
+        .map_err(|e| format!("Failed to load device: {e}"))?
+        .ok_or("Device is no longer available")?;
+    let request = device
+        .request_verification_with_methods(vec![VerificationMethod::SasV1])
+        .await
+        .map_err(|e| format!("Failed to request verification: {e}"))?;
+
+    *VERIFICATION_SESSION.write().await = Some(VerificationSession {
+        user_id: user_id.to_string(),
+        device_id: device_id.to_string(),
+        flow_id: request.flow_id().to_string(),
+        incoming: false,
+        accepted: true,
+    });
+    Ok(())
+}
+
+#[frb]
+pub async fn accept_device_verification() -> Result<(), String> {
+    let (client, session) = current_verification_session().await?;
+    let user_id = matrix_sdk::ruma::UserId::parse(&session.user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+    let request = client
+        .encryption()
+        .get_verification_request(&user_id, &session.flow_id)
+        .await
+        .ok_or("Verification request is no longer available")?;
+    request
+        .accept_with_methods(vec![VerificationMethod::SasV1])
+        .await
+        .map_err(|e| format!("Failed to accept verification: {e}"))?;
+    if let Some(active) = VERIFICATION_SESSION.write().await.as_mut() {
+        active.accepted = true;
+    }
+    Ok(())
+}
+
+#[frb]
+pub async fn get_device_verification_status() -> Result<Option<DeviceVerificationStatus>, String> {
+    let client = get_client().await.ok_or("No active client")?;
+    let Some(session) = VERIFICATION_SESSION.read().await.clone() else {
+        return Ok(None);
+    };
+    let user_id = matrix_sdk::ruma::UserId::parse(&session.user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+
+    let request = client
+        .encryption()
+        .get_verification_request(&user_id, &session.flow_id)
+        .await;
+
+    if session.accepted {
+        if let Some(request) = request.as_ref() {
+            if request.is_ready() && request.we_started() {
+                request
+                    .start_sas()
+                    .await
+                    .map_err(|e| format!("Failed to start emoji verification: {e}"))?;
+            }
+        }
+    }
+
+    if let Some(Verification::SasV1(sas)) = client
+        .encryption()
+        .get_verification(&user_id, &session.flow_id)
+        .await
+    {
+        if session.accepted && !sas.can_be_presented() && !sas.is_done() && sas.cancel_info().is_none() {
+            sas.accept()
+                .await
+                .map_err(|e| format!("Failed to accept emoji verification: {e}"))?;
+        }
+        if sas.is_done() {
+            return Ok(Some(DeviceVerificationStatus {
+                phase: "done".into(),
+                device_id: session.device_id,
+                flow_id: session.flow_id,
+                incoming: session.incoming,
+                emojis: vec![],
+                message: "Verification completed".into(),
+            }));
+        }
+        if let Some(cancel) = sas.cancel_info() {
+            return Ok(Some(DeviceVerificationStatus {
+                phase: "cancelled".into(),
+                device_id: session.device_id,
+                flow_id: session.flow_id,
+                incoming: session.incoming,
+                emojis: vec![],
+                message: cancel.reason().to_string(),
+            }));
+        }
+        if let Some(emojis) = sas.emoji() {
+            return Ok(Some(DeviceVerificationStatus {
+                phase: "comparing".into(),
+                device_id: session.device_id,
+                flow_id: session.flow_id,
+                incoming: session.incoming,
+                emojis: emojis
+                    .into_iter()
+                    .map(|emoji| VerificationEmoji {
+                        symbol: emoji.symbol.to_string(),
+                        description: emoji.description.to_string(),
+                    })
+                    .collect(),
+                message: "Compare the emoji on both devices".into(),
+            }));
+        }
+    }
+
+    let (phase, message) = match request.map(|request| request.state()) {
+        Some(VerificationRequestState::Requested { .. }) if !session.accepted => {
+            ("requested", "A device wants to verify this device")
+        }
+        Some(VerificationRequestState::Created { .. }) => {
+            ("waiting", "Waiting for the other device")
+        }
+        Some(VerificationRequestState::Ready { .. }) => {
+            ("starting", "Starting emoji verification")
+        }
+        Some(VerificationRequestState::Transitioned { .. }) => {
+            ("starting", "Preparing emoji comparison")
+        }
+        Some(VerificationRequestState::Done) => ("done", "Verification completed"),
+        Some(VerificationRequestState::Cancelled(cancel)) => {
+            return Ok(Some(DeviceVerificationStatus {
+                phase: "cancelled".into(),
+                device_id: session.device_id,
+                flow_id: session.flow_id,
+                incoming: session.incoming,
+                emojis: vec![],
+                message: cancel.reason().to_string(),
+            }));
+        }
+        _ => ("waiting", "Waiting for verification events"),
+    };
+
+    Ok(Some(DeviceVerificationStatus {
+        phase: phase.into(),
+        device_id: session.device_id,
+        flow_id: session.flow_id,
+        incoming: session.incoming,
+        emojis: vec![],
+        message: message.into(),
+    }))
+}
+
+#[frb]
+pub async fn confirm_device_verification() -> Result<(), String> {
+    let (client, session) = current_verification_session().await?;
+    let user_id = matrix_sdk::ruma::UserId::parse(&session.user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+    let sas = client
+        .encryption()
+        .get_verification(&user_id, &session.flow_id)
+        .await
+        .and_then(Verification::sas)
+        .ok_or("Emoji verification is not ready")?;
+    sas.confirm()
+        .await
+        .map_err(|e| format!("Failed to confirm verification: {e}"))
+}
+
+#[frb]
+pub async fn cancel_device_verification(mismatch: bool) -> Result<(), String> {
+    let (client, session) = current_verification_session().await?;
+    let user_id = matrix_sdk::ruma::UserId::parse(&session.user_id)
+        .map_err(|e| format!("Invalid user ID: {e}"))?;
+    if let Some(sas) = client
+        .encryption()
+        .get_verification(&user_id, &session.flow_id)
+        .await
+        .and_then(Verification::sas)
+    {
+        if mismatch {
+            sas.mismatch().await
+        } else {
+            sas.cancel().await
+        }
+        .map_err(|e| format!("Failed to cancel verification: {e}"))?;
+    } else if let Some(request) = client
+        .encryption()
+        .get_verification_request(&user_id, &session.flow_id)
+        .await
+    {
+        request
+            .cancel()
+            .await
+            .map_err(|e| format!("Failed to cancel verification: {e}"))?;
+    }
+    Ok(())
+}
+
+#[frb]
+pub async fn get_encryption_recovery_info() -> Result<EncryptionRecoveryInfo, String> {
+    let client = get_client().await.ok_or("No active client")?;
+    let state = match client.encryption().recovery().state() {
+        RecoveryState::Unknown => "unknown",
+        RecoveryState::Enabled => "enabled",
+        RecoveryState::Disabled => "disabled",
+        RecoveryState::Incomplete => "incomplete",
+    };
+    let device_verified = matches!(
+        client.encryption().verification_state().get(),
+        OwnVerificationState::Verified
+    );
+    Ok(EncryptionRecoveryInfo { state: state.into(), device_verified })
+}
+
+#[frb]
+pub async fn recover_encryption(recovery_key_or_passphrase: String) -> Result<(), String> {
+    let value = recovery_key_or_passphrase.trim();
+    if value.is_empty() {
+        return Err("Recovery key or passphrase is empty".into());
+    }
+    let client = get_client().await.ok_or("No active client")?;
+    client
+        .encryption()
+        .recovery()
+        .recover(value)
+        .await
+        .map_err(|e| format!("Failed to recover encryption data: {e}"))
+}
+
+#[frb]
+pub async fn enable_encryption_recovery(passphrase: Option<String>) -> Result<String, String> {
+    let client = get_client().await.ok_or("No active client")?;
+    let recovery = client.encryption().recovery();
+    let passphrase = passphrase.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let result = if let Some(passphrase) = passphrase.as_deref() {
+        recovery
+            .enable()
+            .wait_for_backups_to_upload()
+            .with_passphrase(passphrase)
+            .await
+    } else {
+        recovery.enable().wait_for_backups_to_upload().await
+    };
+    result.map_err(|e| format!("Failed to enable encryption recovery: {e}"))
 }
 
 // ── Sync & real-time ─────────────────────────────────────────────────
