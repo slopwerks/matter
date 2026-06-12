@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -126,8 +125,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
       setState(() => _isSending = true);
 
-      final file = File(pickedFile.path);
-      final bytes = await file.readAsBytes();
+      final bytes = await pickedFile.readAsBytes();
       final filename = pickedFile.name;
 
       await rust.sendImageMessage(

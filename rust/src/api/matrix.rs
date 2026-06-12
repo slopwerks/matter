@@ -12,7 +12,8 @@ use matrix_sdk::{
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
+use tokio::task::JoinHandle;
 use std::time::SystemTime;
 
 // ── App-wide log system ─────────────────────────────────────────────
@@ -72,8 +73,8 @@ fn app_log(level: &str, tag: &str, message: String) {
 #[frb]
 pub fn watch_app_logs(sink: crate::frb_generated::StreamSink<AppLogEntry>) {
     let mut rx = APP_LOG_TX.subscribe();
-    tokio::spawn(async move {
-        while let Ok(entry) = rx.recv().await {
+    std::thread::spawn(move || {
+        while let Ok(entry) = rx.blocking_recv() {
             if sink.add(entry).is_err() {
                 break;
             }
@@ -145,6 +146,31 @@ static CLIENTS: Lazy<Arc<RwLock<HashMap<String, ClientEntry>>>> =
 static ACTIVE_USER: Lazy<Arc<RwLock<Option<String>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
+struct SyncTask {
+    user_id: String,
+    handle: JoinHandle<()>,
+}
+
+/// Exactly one account owns the app-wide background sync task at a time.
+static SYNC_TASK: Lazy<Mutex<Option<SyncTask>>> = Lazy::new(|| Mutex::new(None));
+
+async fn stop_sync_task(user_id: Option<&str>) {
+    let mut task = SYNC_TASK.lock().await;
+    let should_stop = task
+        .as_ref()
+        .is_some_and(|running| user_id.is_none_or(|id| running.user_id == id));
+    if should_stop {
+        if let Some(running) = task.take() {
+            running.handle.abort();
+            app_log(
+                "info",
+                "sync",
+                format!("Stopped sync loop for user {}", running.user_id),
+            );
+        }
+    }
+}
+
 /// Temporary client during login (before we know the user_id for a per-user dir).
 static PENDING: Lazy<Arc<RwLock<Option<PendingEntry>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
@@ -200,6 +226,25 @@ async fn finalize_pending() -> Result<String, String> {
 
     // Build per-user directory
     let sdk_dir = build_sdk_data_dir(&data_dir, Some(&user_id));
+
+    // A password/token login creates a fresh Matrix device. An existing SDK
+    // store for the same user may still be bound to the previous device ID,
+    // which matrix-sdk correctly rejects as a crypto-account mismatch.
+    // Drop the old client and rebuild its store for the new device.
+    stop_sync_task(Some(&user_id)).await;
+    {
+        let mut clients = CLIENTS.write().await;
+        clients.remove(&user_id);
+    }
+    if sdk_dir.exists() {
+        app_log(
+            "info",
+            "auth",
+            format!("Rebuilding SDK store for newly logged-in device: {}", user_id),
+        );
+        std::fs::remove_dir_all(&sdk_dir)
+            .map_err(|e| format!("Failed to reset existing account store: {e}"))?;
+    }
 
     // Create a new client in the per-user directory
     let url = url::Url::parse(&homeserver_url)
@@ -797,8 +842,19 @@ pub async fn switch_account(user_id: String) -> bool {
     let clients = CLIENTS.read().await;
     if clients.contains_key(&user_id) {
         drop(clients);
+        let mut sync_task = SYNC_TASK.lock().await;
+        if let Some(running) = sync_task.take() {
+            running.handle.abort();
+            app_log(
+                "info",
+                "sync",
+                format!("Stopped sync loop for user {}", running.user_id),
+            );
+        }
         let mut active = ACTIVE_USER.write().await;
         *active = Some(user_id.clone());
+        drop(active);
+        drop(sync_task);
         app_log("info", "auth", format!("Switched to account: {}", user_id));
         info!("Switched to account: {}", user_id);
         true
@@ -817,6 +873,7 @@ pub async fn logout() -> Result<(), String> {
     };
 
     let user_id = active_user.ok_or("No active account to logout")?;
+    stop_sync_task(Some(&user_id)).await;
 
     let entry = {
         let mut clients = CLIENTS.write().await;
@@ -862,6 +919,7 @@ pub async fn logout() -> Result<(), String> {
 /// Remove a specific account by user_id (logout + delete data).
 #[frb]
 pub async fn remove_account(user_id: String) -> Result<(), String> {
+    stop_sync_task(Some(&user_id)).await;
     let entry = {
         let mut clients = CLIENTS.write().await;
         clients.remove(&user_id).ok_or("Account not found")?
@@ -1073,17 +1131,20 @@ pub async fn start_sync() -> Result<(), String> {
     let hs = client.homeserver().to_string();
     app_log("info", "sync", format!("start_sync: beginning for user {} (homeserver: {hs})", user_id));
 
+    stop_sync_task(None).await;
+
     // Try Sliding Sync first
-    match try_start_sliding_sync(client.clone()).await {
-        Ok(()) => {
+    let handle = match try_start_sliding_sync(client.clone()).await {
+        Ok(handle) => {
             app_log("info", "sync", format!("start_sync: Sliding Sync started for user {}", user_id));
-            Ok(())
+            handle
         }
         Err(e) => {
             app_log("warn", "sync", format!("start_sync: Sliding Sync failed ({}), falling back to traditional sync loop", e));
             // Fallback: traditional sync loop
+            let loop_user_id = user_id.clone();
             tokio::spawn(async move {
-                app_log("info", "sync", format!("Traditional sync loop started for user {}", user_id));
+                app_log("info", "sync", format!("Traditional sync loop started for user {}", loop_user_id));
                 loop {
                     set_connection_status(ConnectionStatus::Updating);
                     match client
@@ -1102,14 +1163,26 @@ pub async fn start_sync() -> Result<(), String> {
                         }
                     }
                 }
-            });
-            Ok(())
+            })
         }
+    };
+
+    let mut current_task = SYNC_TASK.lock().await;
+    let active_user = ACTIVE_USER.read().await.clone();
+    if active_user.as_deref() != Some(&user_id) {
+        handle.abort();
+        return Err("Active account changed while starting sync.".to_string());
     }
+
+    if let Some(running) = current_task.take() {
+        running.handle.abort();
+    }
+    *current_task = Some(SyncTask { user_id, handle });
+    Ok(())
 }
 
 /// Try to set up Sliding Sync with the SDK's built-in support.
-async fn try_start_sliding_sync(client: Client) -> Result<(), String> {
+async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String> {
     use matrix_sdk::sliding_sync::{SlidingSyncList, SlidingSyncMode, Version};
     use matrix_sdk::ruma::events::StateEventType as RoomStateType;
     use futures_util::StreamExt;
@@ -1142,7 +1215,7 @@ async fn try_start_sliding_sync(client: Client) -> Result<(), String> {
         .map_err(|e| format!("Failed to build Sliding Sync: {e}"))?;
 
     // Spawn the sync loop
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         app_log("info", "sync", "Sliding Sync loop started".to_string());
         let stream = sliding_sync.sync();
         futures_util::pin_mut!(stream);
@@ -1163,7 +1236,7 @@ async fn try_start_sliding_sync(client: Client) -> Result<(), String> {
         app_log("warn", "sync", "Sliding Sync stream ended".to_string());
     });
 
-    Ok(())
+    Ok(handle)
 }
 
 /// Stream real-time sync events from Rust → Dart.
@@ -1173,8 +1246,8 @@ async fn try_start_sliding_sync(client: Client) -> Result<(), String> {
 #[frb]
 pub fn watch_sync_events(sink: crate::frb_generated::StreamSink<SyncEvent>) {
     let mut rx = SYNC_EVENT_TX.subscribe();
-    tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.blocking_recv() {
             if sink.add(event).is_err() {
                 break; // Dart side disconnected
             }
@@ -1185,11 +1258,12 @@ pub fn watch_sync_events(sink: crate::frb_generated::StreamSink<SyncEvent>) {
 /// Check if background sync is alive.
 #[frb]
 pub async fn is_connected() -> bool {
-    if let Some(client) = get_client().await {
-        client.matrix_auth().logged_in()
-    } else {
-        false
-    }
+    let task_running = SYNC_TASK
+        .lock()
+        .await
+        .as_ref()
+        .is_some_and(|task| !task.handle.is_finished());
+    task_running
 }
 
 // ── Chat functions ───────────────────────────────────────────────────
@@ -1216,13 +1290,9 @@ pub async fn mxc_to_http(mxc_url: String) -> Option<String> {
     if server_name.is_empty() || media_id.is_empty() { return None; }
     let raw_base = client.homeserver().to_string();
     let base = raw_base.trim_end_matches('/');
-    let token = client.matrix_auth().session().map(|s| s.tokens.access_token);
-    let mut media_url = format!("{}/_matrix/client/v1/media/thumbnail/{}/{}?width=800&height=600&method=scale",
+    let media_url = format!("{}/_matrix/client/v1/media/thumbnail/{}/{}?width=800&height=600&method=scale",
         base, server_name, media_id);
-    if let Some(t) = token {
-        media_url = format!("{}&access_token={}", media_url, t);
-    }
-    app_log("info", "media", format!("mxc_to_http: {} -> {}", mxc_url, media_url));
+    app_log("info", "media", format!("Resolved media thumbnail for {}", mxc_url));
     Some(media_url)
 }
 
@@ -1238,13 +1308,9 @@ pub async fn mxc_to_http_full(mxc_url: String) -> Option<String> {
     if server_name.is_empty() || media_id.is_empty() { return None; }
     let raw_base = client.homeserver().to_string();
     let base = raw_base.trim_end_matches('/');
-    let token = client.matrix_auth().session().map(|s| s.tokens.access_token);
-    let mut media_url = format!("{}/_matrix/client/v1/media/download/{}/{}",
+    let media_url = format!("{}/_matrix/client/v1/media/download/{}/{}",
         base, server_name, media_id);
-    if let Some(t) = token {
-        media_url = format!("{}?access_token={}", media_url, t);
-    }
-    app_log("info", "media", format!("mxc_to_http_full: {} -> {}", mxc_url, media_url));
+    app_log("info", "media", format!("Resolved full media URL for {}", mxc_url));
     Some(media_url)
 }
 

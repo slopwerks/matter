@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../src/rust/api/matrix.dart' as rust;
@@ -38,6 +39,10 @@ const _kSessions = 'multi_sessions'; // JSON list of StoredSession
 const _kSessionDisplayNames =
     'session_display_names'; // JSON map: user_id -> display_name
 const _kActiveUserId = 'active_user_id';
+const _secureStorage = FlutterSecureStorage();
+
+String _tokenKey(String userId) =>
+    'matrix_access_token_${base64Url.encode(utf8.encode(userId))}';
 
 /// All saved sessions (for multi-account).
 final sessionsProvider = StateProvider<List<rust.StoredSession>>((ref) => []);
@@ -70,6 +75,8 @@ Future<void> addSession({
   );
   sessions.add(newSession);
 
+  await _secureStorage.write(key: _tokenKey(userId), value: accessToken);
+
   // Save
   await prefs.setString(
     _kSessions,
@@ -78,7 +85,6 @@ Future<void> addSession({
           .map(
             (s) => {
               'homeserver_url': s.homeserverUrl,
-              'access_token': s.accessToken,
               'user_id': s.userId,
               'device_id': s.deviceId,
             },
@@ -104,16 +110,42 @@ Future<List<rust.StoredSession>> loadAllSessions() async {
 
   try {
     final List<dynamic> list = jsonDecode(raw);
-    return list
-        .map(
-          (e) => rust.StoredSession(
-            homeserverUrl: e['homeserver_url'] as String,
-            accessToken: e['access_token'] as String,
-            userId: e['user_id'] as String,
-            deviceId: e['device_id'] as String,
-          ),
-        )
-        .toList();
+    final sessions = <rust.StoredSession>[];
+    var migratedPlaintextTokens = false;
+    for (final item in list) {
+      final e = item as Map<String, dynamic>;
+      final userId = e['user_id'] as String;
+      var accessToken = await _secureStorage.read(key: _tokenKey(userId));
+
+      // Migrate sessions written by older versions, then remove the token
+      // from SharedPreferences when the sanitized metadata is saved below.
+      final legacyToken = e['access_token'] as String?;
+      if (legacyToken != null) {
+        migratedPlaintextTokens = true;
+        if (accessToken == null && legacyToken.isNotEmpty) {
+          accessToken = legacyToken;
+          await _secureStorage.write(
+            key: _tokenKey(userId),
+            value: legacyToken,
+          );
+        }
+      }
+      if (accessToken == null || accessToken.isEmpty) continue;
+
+      sessions.add(
+        rust.StoredSession(
+          homeserverUrl: e['homeserver_url'] as String,
+          accessToken: accessToken,
+          userId: userId,
+          deviceId: e['device_id'] as String,
+        ),
+      );
+    }
+
+    if (migratedPlaintextTokens) {
+      await _saveSessionMetadata(prefs, sessions);
+    }
+    return sessions;
   } catch (_) {
     return [];
   }
@@ -123,6 +155,12 @@ Future<List<rust.StoredSession>> loadAllSessions() async {
 Future<String?> loadActiveUserId() async {
   final prefs = await SharedPreferences.getInstance();
   return prefs.getString(_kActiveUserId);
+}
+
+/// Persist the account that should be restored as active on the next launch.
+Future<void> saveActiveUserId(String userId) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_kActiveUserId, userId);
 }
 
 /// Get the display name for a user.
@@ -136,21 +174,8 @@ Future<void> removeSession(String userId) async {
   final prefs = await SharedPreferences.getInstance();
   final sessions = await loadAllSessions();
   sessions.removeWhere((s) => s.userId == userId);
-  await prefs.setString(
-    _kSessions,
-    jsonEncode(
-      sessions
-          .map(
-            (s) => {
-              'homeserver_url': s.homeserverUrl,
-              'access_token': s.accessToken,
-              'user_id': s.userId,
-              'device_id': s.deviceId,
-            },
-          )
-          .toList(),
-    ),
-  );
+  await _saveSessionMetadata(prefs, sessions);
+  await _secureStorage.delete(key: _tokenKey(userId));
 
   final namesMap = await _loadDisplayNames();
   namesMap.remove(userId);
@@ -170,6 +195,10 @@ Future<void> removeSession(String userId) async {
 /// Clear all persisted sessions.
 Future<void> clearAllSessions() async {
   final prefs = await SharedPreferences.getInstance();
+  final sessions = await loadAllSessions();
+  for (final session in sessions) {
+    await _secureStorage.delete(key: _tokenKey(session.userId));
+  }
   await prefs.remove(_kSessions);
   await prefs.remove(_kSessionDisplayNames);
   await prefs.remove(_kActiveUserId);
@@ -231,6 +260,26 @@ Future<Map<String, String>> _loadDisplayNames() async {
   } catch (_) {
     return {};
   }
+}
+
+Future<void> _saveSessionMetadata(
+  SharedPreferences prefs,
+  List<rust.StoredSession> sessions,
+) async {
+  await prefs.setString(
+    _kSessions,
+    jsonEncode(
+      sessions
+          .map(
+            (s) => {
+              'homeserver_url': s.homeserverUrl,
+              'user_id': s.userId,
+              'device_id': s.deviceId,
+            },
+          )
+          .toList(),
+    ),
+  );
 }
 
 // ── Legacy compat functions (still used in settings page logout) ───────

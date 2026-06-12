@@ -1,13 +1,13 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import '../theme/app_theme.dart';
 
 /// Cached access token for authenticated image loading.
 final _accessTokenProvider = FutureProvider<String?>((ref) async {
+  ref.watch(activeUserIdProvider);
   return rust.getAccessToken();
 });
 
@@ -122,8 +122,8 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
   }
 }
 
-/// Image widget that downloads via dart:io HttpClient with Authorization header.
-class _AuthenticatedImage extends StatefulWidget {
+/// Cross-platform image widget using an Authorization header when required.
+class _AuthenticatedImage extends StatelessWidget {
   final String url;
   final String? token;
   final Widget fallback;
@@ -139,118 +139,32 @@ class _AuthenticatedImage extends StatefulWidget {
   });
 
   @override
-  State<_AuthenticatedImage> createState() => _AuthenticatedImageState();
-}
-
-/// Simple in-memory image cache to avoid re-downloading.
-class _ImageCache {
-  static final Map<String, Uint8List> _cache = {};
-  static const int _maxSize = 80;
-
-  static Uint8List? get(String url) => _cache[url];
-
-  static void put(String url, Uint8List bytes) {
-    if (_cache.length >= _maxSize) {
-      // Evict oldest entry
-      _cache.remove(_cache.keys.first);
-    }
-    _cache[url] = bytes;
-  }
-}
-
-class _AuthenticatedImageState extends State<_AuthenticatedImage> {
-  Uint8List? _imageBytes;
-  bool _loading = true;
-  bool _error = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadImage();
-  }
-
-  @override
-  void didUpdateWidget(covariant _AuthenticatedImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.url != oldWidget.url) {
-      _imageBytes = null;
-      _loading = true;
-      _error = false;
-      _loadImage();
-    }
-  }
-
-  Future<void> _loadImage() async {
-    // Check cache first
-    final cached = _ImageCache.get(widget.url);
-    if (cached != null) {
-      if (mounted) {
-        setState(() {
-          _imageBytes = cached;
-          _loading = false;
-        });
-        widget.onLoaded?.call();
-      }
-      return;
-    }
-
-    try {
-      final client = HttpClient();
-      final request = await client.getUrl(Uri.parse(widget.url));
-      if (widget.token != null) {
-        request.headers.set('Authorization', 'Bearer ${widget.token}');
-      }
-      final response = await request.close();
-      if (response.statusCode == 200) {
-        final bytesBuilder = BytesBuilder();
-        await for (final chunk in response) {
-          bytesBuilder.add(chunk);
-        }
-        final bytes = bytesBuilder.toBytes();
-        _ImageCache.put(widget.url, bytes);
-        if (mounted) {
-          setState(() {
-            _imageBytes = bytes;
-            _loading = false;
-          });
-          widget.onLoaded?.call();
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _error = true;
-          });
-        }
-      }
-      client.close();
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = true;
-        });
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-          strokeWidth: 1.5,
-        ),
-      );
-    }
-    if (_error || _imageBytes == null) {
-      return widget.fallback;
-    }
-    return Image.memory(
-      _imageBytes!,
-      fit: widget.fit ?? BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => widget.fallback,
+    var notifiedLoaded = false;
+    final isMatrixMedia =
+        Uri.tryParse(url)?.path.startsWith('/_matrix/client/') ?? false;
+    return Image.network(
+      url,
+      headers: token == null || !isMatrixMedia
+          ? null
+          : {'Authorization': 'Bearer $token'},
+      fit: fit ?? BoxFit.cover,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if ((frame != null || wasSynchronouslyLoaded) && !notifiedLoaded) {
+          notifiedLoaded = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) => onLoaded?.call());
+        }
+        return child;
+      },
+      loadingBuilder: (context, child, progress) => progress == null
+          ? child
+          : const Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 1.5,
+              ),
+            ),
+      errorBuilder: (context, error, stackTrace) => fallback,
     );
   }
 }

@@ -15,6 +15,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
 
+  var hasSessions = false;
+  try {
+    await migrateLegacySession();
+    hasSessions = (await loadAllSessions()).isNotEmpty;
+  } catch (e) {
+    debugPrint('Bootstrap check failed: $e');
+  }
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -30,42 +38,29 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  runApp(const ProviderScope(child: _AppRoot()));
+  runApp(ProviderScope(child: _AppRoot(hasSessions: hasSessions)));
 }
 
 class _AppRoot extends ConsumerStatefulWidget {
-  const _AppRoot();
+  final bool hasSessions;
+
+  const _AppRoot({required this.hasSessions});
 
   @override
   ConsumerState<_AppRoot> createState() => _AppRootState();
 }
 
 class _AppRootState extends ConsumerState<_AppRoot> {
-  bool _isInitializing = true;
-  bool _hasSessions = false;
+  late bool _hasSessions;
 
   @override
   void initState() {
     super.initState();
-    _bootstrap();
-  }
-
-  Future<void> _bootstrap() async {
-    try {
-      await migrateLegacySession();
-      final sessions = await loadAllSessions();
-      _hasSessions = sessions.isNotEmpty;
-    } catch (e) {
-      debugPrint('Bootstrap check failed: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isInitializing = false);
-      }
-    }
-
-    // Restore sessions in the background so the UI never blocks.
+    _hasSessions = widget.hasSessions;
     if (_hasSessions) {
       _restoreSessionsInBackground();
+    } else {
+      ref.read(sessionReadyProvider.notifier).state = true;
     }
   }
 
@@ -78,6 +73,11 @@ class _AppRootState extends ConsumerState<_AppRoot> {
 
       if (sessions.isEmpty) {
         ref.read(sessionReadyProvider.notifier).state = true;
+        if (mounted) {
+          setState(() {
+            _hasSessions = false;
+          });
+        }
         return;
       }
 
@@ -133,33 +133,43 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       }
     } catch (e) {
       debugPrint('Session restore failed: $e');
-      // Still mark ready so providers unblock — user can retry from UI.
+      restoredActiveId = null;
+    }
+
+    if (restoredActiveId == null) {
+      ref.read(isLoggedInProvider.notifier).state = false;
+      ref.read(currentUserProvider.notifier).state = null;
+      ref.read(activeUserIdProvider.notifier).state = null;
       ref.read(sessionReadyProvider.notifier).state = true;
+      if (mounted) {
+        setState(() {
+          _hasSessions = false;
+        });
+      }
+      return;
     }
 
     // Run the potentially slow sync in the background.
-    if (restoredActiveId != null) {
-      for (var attempt = 0; attempt < 3; attempt++) {
-        try {
-          await rust.syncOnce();
-          ref.invalidate(chatRoomsProvider);
-          ref.read(connectionProvider.notifier).state =
-              AppConnectionState.connected;
-          break;
-        } catch (e) {
-          debugPrint('Restore sync attempt ${attempt + 1} failed: $e');
-          if (attempt < 2) {
-            await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
-          }
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        await rust.syncOnce();
+        ref.invalidate(chatRoomsProvider);
+        ref.read(connectionProvider.notifier).state =
+            AppConnectionState.connected;
+        break;
+      } catch (e) {
+        debugPrint('Restore sync attempt ${attempt + 1} failed: $e');
+        if (attempt < 2) {
+          await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
         }
       }
-      try {
-        await rust.startSync();
-      } catch (e) {
-        debugPrint('startSync after restore failed: $e');
-      }
-      ref.invalidate(chatRoomsProvider);
     }
+    try {
+      await rust.startSync();
+    } catch (e) {
+      debugPrint('startSync after restore failed: $e');
+    }
+    ref.invalidate(chatRoomsProvider);
 
     // Signal that Rust APIs are safe to call.
     ref.read(sessionReadyProvider.notifier).state = true;
@@ -167,47 +177,9 @@ class _AppRootState extends ConsumerState<_AppRoot> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isInitializing) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.darkTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.dark,
-        home: const Scaffold(
-          backgroundColor: AppColors.background,
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Matter',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 16),
-                CircularProgressIndicator(color: AppColors.primary),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (_hasSessions) {
-      return MaterialApp(
-        title: 'Matter',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.darkTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.dark,
-        home: const MatterApp(),
-      );
-    }
-
     final isLoggedIn = ref.watch(isLoggedInProvider);
+    final sessionReady = ref.watch(sessionReadyProvider);
+    final showMainApp = isLoggedIn || (_hasSessions && !sessionReady);
 
     return MaterialApp(
       title: 'Matter',
@@ -215,7 +187,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       theme: AppTheme.darkTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.dark,
-      home: isLoggedIn ? const MatterApp() : const LoginPage(),
+      home: showMainApp ? const MatterApp() : const LoginPage(),
     );
   }
 }

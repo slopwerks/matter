@@ -52,6 +52,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         );
         if (session != null) {
           final displayName = await loadDisplayName(userId);
+          await saveActiveUserId(userId);
           ref.read(activeUserIdProvider.notifier).state = userId;
           ref.read(currentUserProvider.notifier).state = CurrentUser(
             id: userId,

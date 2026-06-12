@@ -248,7 +248,7 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
               // Create DM with this contact
               try {
                 final roomId = await createDm(userId: contact.id);
-                if (mounted) {
+                if (context.mounted) {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => ChatDetailPage(
@@ -260,7 +260,7 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
                   );
                 }
               } catch (e) {
-                if (mounted) {
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('创建会话失败: $e'),
