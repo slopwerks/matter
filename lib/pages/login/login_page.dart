@@ -56,23 +56,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     // Keep API-backed providers gated until the new crypto store has completed
     // its first sync. Querying rooms while that sync initializes can leave the
     // first room-list request waiting on the store until the app is restarted.
-    ref.read(sessionReadyProvider.notifier).state = false;
-    ref.read(currentUserProvider.notifier).state = CurrentUser(
+    ref.read(sessionReadyProvider.notifier).value = false;
+    ref.read(currentUserProvider.notifier).value = CurrentUser(
       id: userId,
       displayName: displayName,
       homeserver: _homeserverController.text,
     );
-    ref.read(homeserverProvider.notifier).state = _homeserverController.text;
-    ref.read(connectionProvider.notifier).state = AppConnectionState.connecting;
+    ref.read(homeserverProvider.notifier).value = _homeserverController.text;
+    ref.read(connectionProvider.notifier).value = AppConnectionState.connecting;
 
     try {
       await _persistAndSync(userId, displayName);
     } catch (_) {
-      ref.read(sessionReadyProvider.notifier).state = true;
+      ref.read(sessionReadyProvider.notifier).value = true;
       rethrow;
     }
     if (!mounted) return;
-    ref.read(isLoggedInProvider.notifier).state = true;
+    ref.read(isLoggedInProvider.notifier).value = true;
   }
 
   Future<void> _initialSync() async {
@@ -83,7 +83,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         // Sync succeeded — refresh room list and mark connected
         ref.invalidate(chatRoomsProvider);
         if (mounted) {
-          ref.read(connectionProvider.notifier).state =
+          ref.read(connectionProvider.notifier).value =
               AppConnectionState.connected;
         }
         break;
@@ -118,8 +118,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         displayName: displayName,
       );
       // Update multi-account providers
-      ref.read(activeUserIdProvider.notifier).state = session.userId;
-      ref.read(sessionsProvider.notifier).state = await loadAllSessions();
+      ref.read(activeUserIdProvider.notifier).value = session.userId;
+      ref.read(sessionsProvider.notifier).value = await loadAllSessions();
     }
     try {
       await _initialSync();
@@ -127,7 +127,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       debugPrint('Initial sync after login failed: $e');
     }
     // Signal that Rust APIs are safe to call before building the main app.
-    ref.read(sessionReadyProvider.notifier).state = true;
+    ref.read(sessionReadyProvider.notifier).value = true;
   }
 
   Future<String> _getDataDir() async {

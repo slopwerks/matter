@@ -1,16 +1,19 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 
 /// Provider to hold the message being replied to (per room).
-final replyingToProvider = StateProvider.family<rust.ChatMessage?, String>(
-  (ref, _) => null,
-);
+final replyingToProvider =
+    NotifierProvider.family<
+      MutableState<rust.ChatMessage?>,
+      rust.ChatMessage?,
+      String
+    >((_) => MutableState(null));
 
 class MessageInput extends ConsumerStatefulWidget {
   final String roomId;
@@ -86,7 +89,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     _stopTyping();
 
     final replyTo = ref.read(replyingToProvider(widget.roomId));
-    ref.read(replyingToProvider(widget.roomId).notifier).state = null;
+    ref.read(replyingToProvider(widget.roomId).notifier).value = null;
 
     try {
       if (replyTo != null) {
@@ -314,7 +317,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
           ),
           GestureDetector(
             onTap: () {
-              ref.read(replyingToProvider(widget.roomId).notifier).state = null;
+              ref.read(replyingToProvider(widget.roomId).notifier).value = null;
             },
             child: const Icon(
               Icons.close_rounded,

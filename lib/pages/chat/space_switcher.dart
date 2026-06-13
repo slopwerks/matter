@@ -49,14 +49,17 @@ class _SpaceSwitcherState extends ConsumerState<SpaceSwitcher>
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
                   child: Row(
                     children: spaces.asMap().entries.map((entry) {
                       final space = entry.value;
                       final isSelected = space.id == selectedId;
                       return GestureDetector(
                         onTap: () {
-                          ref.read(selectedSpaceIdProvider.notifier).state =
+                          ref.read(selectedSpaceIdProvider.notifier).value =
                               space.id;
                         },
                         child: AnimatedContainer(
@@ -64,13 +67,16 @@ class _SpaceSwitcherState extends ConsumerState<SpaceSwitcher>
                           curve: Curves.easeInOut,
                           margin: const EdgeInsets.symmetric(horizontal: 2),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? AppColors.primary.withValues(alpha: 0.12)
                                 : Colors.transparent,
-                            borderRadius:
-                                BorderRadius.circular(AppRadii.button),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.button,
+                            ),
                           ),
                           child: Text(
                             space.name,

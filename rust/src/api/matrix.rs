@@ -1521,6 +1521,11 @@ pub async fn sync_once() -> Result<(), String> {
     app_log("info", "sync", format!("sync_once: starting for user {} (homeserver: {hs})", user_id));
     set_connection_status(ConnectionStatus::Connecting);
 
+    client
+        .event_cache()
+        .subscribe()
+        .map_err(|e| format!("Failed to subscribe to the event cache: {e}"))?;
+
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(30),
         client.sync_once(matrix_sdk::config::SyncSettings::default()),
@@ -1565,6 +1570,11 @@ pub async fn start_sync() -> Result<(), String> {
         .unwrap_or_default();
     let hs = client.homeserver().to_string();
     app_log("info", "sync", format!("start_sync: beginning for user {} (homeserver: {hs})", user_id));
+
+    client
+        .event_cache()
+        .subscribe()
+        .map_err(|e| format!("Failed to subscribe to the event cache: {e}"))?;
 
     stop_sync_task(None).await;
 

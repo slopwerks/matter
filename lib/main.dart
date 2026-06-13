@@ -60,7 +60,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     if (_hasSessions) {
       _restoreSessionsInBackground();
     } else {
-      ref.read(sessionReadyProvider.notifier).state = true;
+      ref.read(sessionReadyProvider.notifier).value = true;
     }
   }
 
@@ -72,7 +72,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       final activeId = await loadActiveUserId();
 
       if (sessions.isEmpty) {
-        ref.read(sessionReadyProvider.notifier).state = true;
+        ref.read(sessionReadyProvider.notifier).value = true;
         if (mounted) {
           setState(() {
             _hasSessions = false;
@@ -115,18 +115,18 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       if (restoredActiveId != null) {
         await rust.switchAccount(userId: restoredActiveId);
 
-        ref.read(isLoggedInProvider.notifier).state = true;
-        ref.read(currentUserProvider.notifier).state = CurrentUser(
+        ref.read(isLoggedInProvider.notifier).value = true;
+        ref.read(currentUserProvider.notifier).value = CurrentUser(
           id: restoredActiveId,
           displayName:
               restoredDisplayName ??
               restoredActiveId.split(':').first.replaceFirst('@', ''),
           homeserver: restoredHomeserver ?? '',
         );
-        ref.read(homeserverProvider.notifier).state = restoredHomeserver ?? '';
-        ref.read(activeUserIdProvider.notifier).state = restoredActiveId;
-        ref.read(sessionsProvider.notifier).state = await loadAllSessions();
-        ref.read(connectionProvider.notifier).state =
+        ref.read(homeserverProvider.notifier).value = restoredHomeserver ?? '';
+        ref.read(activeUserIdProvider.notifier).value = restoredActiveId;
+        ref.read(sessionsProvider.notifier).value = await loadAllSessions();
+        ref.read(connectionProvider.notifier).value =
             AppConnectionState.connecting;
 
         ref.read(syncStreamProvider);
@@ -137,10 +137,10 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     }
 
     if (restoredActiveId == null) {
-      ref.read(isLoggedInProvider.notifier).state = false;
-      ref.read(currentUserProvider.notifier).state = null;
-      ref.read(activeUserIdProvider.notifier).state = null;
-      ref.read(sessionReadyProvider.notifier).state = true;
+      ref.read(isLoggedInProvider.notifier).value = false;
+      ref.read(currentUserProvider.notifier).value = null;
+      ref.read(activeUserIdProvider.notifier).value = null;
+      ref.read(sessionReadyProvider.notifier).value = true;
       if (mounted) {
         setState(() {
           _hasSessions = false;
@@ -154,7 +154,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       try {
         await rust.syncOnce();
         ref.invalidate(chatRoomsProvider);
-        ref.read(connectionProvider.notifier).state =
+        ref.read(connectionProvider.notifier).value =
             AppConnectionState.connected;
         break;
       } catch (e) {
@@ -172,7 +172,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     ref.invalidate(chatRoomsProvider);
 
     // Signal that Rust APIs are safe to call.
-    ref.read(sessionReadyProvider.notifier).state = true;
+    ref.read(sessionReadyProvider.notifier).value = true;
   }
 
   @override

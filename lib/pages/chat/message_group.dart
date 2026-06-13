@@ -532,7 +532,7 @@ class MessageGroupWidget extends ConsumerWidget {
                 onTap: () {
                   Navigator.of(context).pop();
                   // Set the reply target
-                  ref.read(replyingToProvider(roomId).notifier).state = message;
+                  ref.read(replyingToProvider(roomId).notifier).value = message;
                 },
               ),
               _MenuItem(

@@ -1,4 +1,6 @@
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'mutable_state.dart';
 
 class CurrentUser {
   final String id;
@@ -14,4 +16,7 @@ class CurrentUser {
   });
 }
 
-final currentUserProvider = StateProvider<CurrentUser?>((ref) => null);
+final currentUserProvider =
+    NotifierProvider<MutableState<CurrentUser?>, CurrentUser?>(
+      () => MutableState(null),
+    );

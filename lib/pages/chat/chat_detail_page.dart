@@ -48,8 +48,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(replyingToProvider(widget.roomId).notifier).state = null;
-      ref.read(currentRoomIdProvider.notifier).state = widget.roomId;
+      ref.read(replyingToProvider(widget.roomId).notifier).value = null;
+      ref.read(currentRoomIdProvider.notifier).value = widget.roomId;
     });
   }
 
@@ -97,7 +97,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     // Clear current room when leaving — defer to avoid modifying provider during build.
     Future.microtask(() {
       try {
-        ref.read(currentRoomIdProvider.notifier).state = null;
+        ref.read(currentRoomIdProvider.notifier).value = null;
       } catch (_) {}
     });
     super.deactivate();

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'auth_provider.dart';
+import 'mutable_state.dart';
 
 final chatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
   if (!ref.watch(sessionReadyProvider)) return [];
@@ -16,7 +16,9 @@ final spacesProvider = FutureProvider<List<rust.Space>>((ref) async {
   return spaces;
 });
 
-final selectedSpaceIdProvider = StateProvider<String>((ref) => 'all');
+final selectedSpaceIdProvider = NotifierProvider<MutableState<String>, String>(
+  () => MutableState('all'),
+);
 
 final contactsProvider = FutureProvider<List<rust.Contact>>((ref) async {
   if (!ref.watch(sessionReadyProvider)) return [];
@@ -24,7 +26,9 @@ final contactsProvider = FutureProvider<List<rust.Contact>>((ref) async {
   return contacts;
 });
 
-final currentRoomIdProvider = StateProvider<String?>((ref) => null);
+final currentRoomIdProvider = NotifierProvider<MutableState<String?>, String?>(
+  () => MutableState(null),
+);
 
 final messagesProvider = FutureProvider.family<List<rust.ChatMessage>, String>((
   ref,
@@ -37,7 +41,10 @@ final messagesProvider = FutureProvider.family<List<rust.ChatMessage>, String>((
 
 /// Convert mxc:// URI to HTTP URL for display.
 /// Returns null if conversion fails or URL is not mxc://.
-final mxcUrlCacheProvider = StateProvider<Map<String, String>>((ref) => {});
+final mxcUrlCacheProvider =
+    NotifierProvider<MutableState<Map<String, String>>, Map<String, String>>(
+      () => MutableState({}),
+    );
 
 Future<String?> resolveMxcUrl(WidgetRef ref, String? mxcUrl) async {
   if (mxcUrl == null || !mxcUrl.startsWith('mxc://')) return null;
@@ -49,7 +56,7 @@ Future<String?> resolveMxcUrl(WidgetRef ref, String? mxcUrl) async {
   try {
     final httpUrl = await rust.mxcToHttp(mxcUrl: mxcUrl);
     if (httpUrl != null) {
-      ref.read(mxcUrlCacheProvider.notifier).state = {
+      ref.read(mxcUrlCacheProvider.notifier).value = {
         ...cache,
         mxcUrl: httpUrl,
       };

@@ -1,19 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import '../src/rust/api/matrix.dart' as rust;
+import 'mutable_state.dart';
 
-enum AppConnectionState {
-  connected,
-  connecting,
-  updating,
-  disconnected,
-}
+enum AppConnectionState { connected, connecting, updating, disconnected }
 
-final connectionProvider = StateProvider<AppConnectionState>((ref) {
-  // For demo, start as connecting then switch to connected
-  return AppConnectionState.connecting;
-});
+final connectionProvider =
+    NotifierProvider<MutableState<AppConnectionState>, AppConnectionState>(
+      () => MutableState(AppConnectionState.connecting),
+    );
 
 final connectionLabelProvider = Provider<String>((ref) {
   final state = ref.watch(connectionProvider);
@@ -40,7 +35,7 @@ Future<void> pollConnectionStatus(Ref ref) async {
       rust.ConnectionStatus.updating => AppConnectionState.updating,
       rust.ConnectionStatus.disconnected => AppConnectionState.disconnected,
     };
-    ref.read(connectionProvider.notifier).state = mapped;
+    ref.read(connectionProvider.notifier).value = mapped;
   } catch (_) {
     // ignore
   }

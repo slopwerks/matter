@@ -2,15 +2,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
+import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 
 /// Provider that accumulates log entries from the Rust stream.
-final logEntriesProvider = StateProvider<List<rust.AppLogEntry>>((ref) => []);
+final logEntriesProvider =
+    NotifierProvider<
+      MutableState<List<rust.AppLogEntry>>,
+      List<rust.AppLogEntry>
+    >(() => MutableState([]));
 
 /// Whether the log stream is active.
-final logStreamActiveProvider = StateProvider<bool>((ref) => false);
+final logStreamActiveProvider = NotifierProvider<MutableState<bool>, bool>(
+  () => MutableState(false),
+);
 
 class LogViewerPage extends ConsumerStatefulWidget {
   const LogViewerPage({super.key});
@@ -37,21 +43,21 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
     // Load buffered history first
     final history = rust.getRecentLogs();
     if (history.isNotEmpty) {
-      ref.read(logEntriesProvider.notifier).state = history;
+      ref.read(logEntriesProvider.notifier).value = history;
     }
 
     // Start live stream
     final stream = rust.watchAppLogs();
-    ref.read(logStreamActiveProvider.notifier).state = true;
+    ref.read(logStreamActiveProvider.notifier).value = true;
     _logSubscription = stream.listen((entry) {
       final current = ref.read(logEntriesProvider);
       if (current.length > 500) {
-        ref.read(logEntriesProvider.notifier).state = [
+        ref.read(logEntriesProvider.notifier).value = [
           ...current.skip(current.length - 499),
           entry,
         ];
       } else {
-        ref.read(logEntriesProvider.notifier).state = [...current, entry];
+        ref.read(logEntriesProvider.notifier).value = [...current, entry];
       }
     });
   }
@@ -151,7 +157,7 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
               size: 20,
             ),
             onPressed: () {
-              ref.read(logEntriesProvider.notifier).state = [];
+              ref.read(logEntriesProvider.notifier).value = [];
             },
             tooltip: '清空日志',
           ),

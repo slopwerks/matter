@@ -141,7 +141,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
         children: _pages,
         onPageChanged: (index) {
           if (ref.read(navigationIndexProvider) != index) {
-            ref.read(navigationIndexProvider.notifier).state = index;
+            ref.read(navigationIndexProvider.notifier).value = index;
           }
         },
       ),

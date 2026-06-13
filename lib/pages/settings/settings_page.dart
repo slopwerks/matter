@@ -54,25 +54,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         if (session != null) {
           final displayName = await loadDisplayName(userId);
           await saveActiveUserId(userId);
-          ref.read(activeUserIdProvider.notifier).state = userId;
-          ref.read(currentUserProvider.notifier).state = CurrentUser(
+          ref.read(activeUserIdProvider.notifier).value = userId;
+          ref.read(currentUserProvider.notifier).value = CurrentUser(
             id: userId,
             displayName: displayName,
             homeserver: session.homeserverUrl,
           );
-          ref.read(homeserverProvider.notifier).state = session.homeserverUrl;
+          ref.read(homeserverProvider.notifier).value = session.homeserverUrl;
 
           // Re-sync with new account
-          ref.read(connectionProvider.notifier).state =
+          ref.read(connectionProvider.notifier).value =
               AppConnectionState.connecting;
           try {
             await rust.syncOnce();
             ref.invalidate(chatRoomsProvider);
-            ref.read(connectionProvider.notifier).state =
+            ref.read(connectionProvider.notifier).value =
                 AppConnectionState.connected;
           } catch (e) {
             debugPrint('syncOnce after switch failed: $e');
-            ref.read(connectionProvider.notifier).state =
+            ref.read(connectionProvider.notifier).value =
                 AppConnectionState.disconnected;
           }
           try {
@@ -146,13 +146,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           await _switchAccount(nextSession.userId);
         } else {
           // No accounts left, go to login
-          ref.read(isLoggedInProvider.notifier).state = false;
-          ref.read(currentUserProvider.notifier).state = null;
-          ref.read(activeUserIdProvider.notifier).state = null;
+          ref.read(isLoggedInProvider.notifier).value = false;
+          ref.read(currentUserProvider.notifier).value = null;
+          ref.read(activeUserIdProvider.notifier).value = null;
         }
       }
 
-      ref.read(sessionsProvider.notifier).state = await loadAllSessions();
+      ref.read(sessionsProvider.notifier).value = await loadAllSessions();
     } catch (e) {
       debugPrint('Failed to remove account: $e');
       if (mounted) {

@@ -1,8 +1,9 @@
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../src/rust/api/matrix.dart' as rust;
+import 'mutable_state.dart';
 
 class CurrentUser {
   final String id;
@@ -18,20 +19,29 @@ class CurrentUser {
   });
 }
 
-final isLoggedInProvider = StateProvider<bool>((ref) => false);
+final isLoggedInProvider = NotifierProvider<MutableState<bool>, bool>(
+  () => MutableState(false),
+);
 
 /// Whether the Rust session has been fully restored and is ready for API calls.
-final sessionReadyProvider = StateProvider<bool>((ref) => false);
+final sessionReadyProvider = NotifierProvider<MutableState<bool>, bool>(
+  () => MutableState(false),
+);
 
-final currentUserProvider = StateProvider<CurrentUser?>((ref) => null);
+final currentUserProvider =
+    NotifierProvider<MutableState<CurrentUser?>, CurrentUser?>(
+      () => MutableState(null),
+    );
 
 /// Provider for the homeserver URL
-final homeserverProvider = StateProvider<String>(
-  (ref) => 'http://10.0.2.2:8008',
+final homeserverProvider = NotifierProvider<MutableState<String>, String>(
+  () => MutableState('http://10.0.2.2:8008'),
 );
 
 /// Auth error message provider
-final authErrorProvider = StateProvider<String?>((ref) => null);
+final authErrorProvider = NotifierProvider<MutableState<String?>, String?>(
+  () => MutableState(null),
+);
 
 // ── Multi-account session persistence ─────────────────────────────────
 
@@ -45,10 +55,16 @@ String _tokenKey(String userId) =>
     'matrix_access_token_${base64Url.encode(utf8.encode(userId))}';
 
 /// All saved sessions (for multi-account).
-final sessionsProvider = StateProvider<List<rust.StoredSession>>((ref) => []);
+final sessionsProvider =
+    NotifierProvider<
+      MutableState<List<rust.StoredSession>>,
+      List<rust.StoredSession>
+    >(() => MutableState([]));
 
 /// The currently active user ID (for quick switching).
-final activeUserIdProvider = StateProvider<String?>((ref) => null);
+final activeUserIdProvider = NotifierProvider<MutableState<String?>, String?>(
+  () => MutableState(null),
+);
 
 /// Save a new session (add to the list, set as active).
 Future<void> addSession({
