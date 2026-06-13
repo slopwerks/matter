@@ -4,10 +4,9 @@ import '../../providers/chat_provider.dart';
 import '../../providers/connection_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/cascade_title.dart';
-import 'chat_list_item.dart';
 import 'create_chat_page.dart';
+import 'chat_list_item.dart';
 import 'search_bar.dart';
-import 'space_switcher.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key});
@@ -19,7 +18,7 @@ class ChatPage extends ConsumerStatefulWidget {
 class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   Widget build(BuildContext context) {
-    final roomsAsync = ref.watch(chatRoomsProvider);
+    final roomsAsync = ref.watch(inboxRoomsProvider);
     final connectionLabel = ref.watch(connectionLabelProvider);
 
     final titleText = connectionLabel.isNotEmpty ? connectionLabel : 'Matter';
@@ -51,10 +50,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ),
               const SliverToBoxAdapter(child: ChatSearchBar()),
               const SliverToBoxAdapter(child: SizedBox(height: 8)),
-              const SliverToBoxAdapter(child: SpaceSwitcher()),
-              const SliverToBoxAdapter(child: SizedBox(height: 8)),
               roomsAsync.when(
                 data: (rooms) {
+                  if (rooms.isEmpty) {
+                    return SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(40),
+                        child: Center(
+                          child: Text(
+                            '暂无聊天',
+                            style: const TextStyle(
+                              color: AppColors.onSurfaceVariant,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
                   return SliverList.separated(
                     itemCount: rooms.length,
                     separatorBuilder: (context, index) => const Divider(
@@ -112,9 +125,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(
-                Icons.edit_rounded,
+                Icons.add_rounded,
                 color: Colors.white,
-                size: 22,
+                size: 24,
               ),
             ),
           ),

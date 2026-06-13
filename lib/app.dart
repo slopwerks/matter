@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'pages/chat/chat_page.dart';
+import 'pages/chat/space_page.dart';
 import 'pages/contacts/contacts_page.dart';
 import 'pages/settings/encryption_page.dart';
 import 'pages/settings/settings_page.dart';
@@ -27,7 +28,12 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   bool _verificationDialogOpen = false;
   final Set<String> _handledVerificationFlows = {};
 
-  static const _pages = [ChatPage(), ContactsPage(), SettingsPage()];
+  static const _pages = [
+    ChatPage(),
+    SpacePage(),
+    ContactsPage(),
+    SettingsPage(),
+  ];
 
   @override
   void initState() {
@@ -164,18 +170,25 @@ class _MatterAppState extends ConsumerState<MatterApp> {
                 onTap: () => _onItemTapped(0),
               ),
               _NavItem(
+                icon: Icons.account_tree_outlined,
+                activeIcon: Icons.account_tree_rounded,
+                label: '空间',
+                isActive: ref.watch(navigationIndexProvider) == 1,
+                onTap: () => _onItemTapped(1),
+              ),
+              _NavItem(
                 icon: Icons.people_outline_rounded,
                 activeIcon: Icons.people_rounded,
                 label: '通讯录',
-                isActive: ref.watch(navigationIndexProvider) == 1,
-                onTap: () => _onItemTapped(1),
+                isActive: ref.watch(navigationIndexProvider) == 2,
+                onTap: () => _onItemTapped(2),
               ),
               _NavItem(
                 icon: Icons.settings_outlined,
                 activeIcon: Icons.settings_rounded,
                 label: '设置',
-                isActive: ref.watch(navigationIndexProvider) == 2,
-                onTap: () => _onItemTapped(2),
+                isActive: ref.watch(navigationIndexProvider) == 3,
+                onTap: () => _onItemTapped(3),
               ),
             ],
           ),

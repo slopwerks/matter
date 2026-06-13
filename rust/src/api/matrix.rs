@@ -163,6 +163,10 @@ struct SyncTask {
 /// Exactly one account owns the app-wide background sync task at a time.
 static SYNC_TASK: Lazy<Mutex<Option<SyncTask>>> = Lazy::new(|| Mutex::new(None));
 
+/// Server pagination token for the next older page in each room.
+static MESSAGE_PAGINATION_TOKENS: Lazy<Mutex<HashMap<String, String>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 async fn stop_sync_task(user_id: Option<&str>) {
     let mut task = SYNC_TASK.lock().await;
     let should_stop = task
@@ -410,11 +414,59 @@ pub struct Space {
 
 #[frb]
 #[derive(Clone, Debug)]
+pub struct SpaceDetails {
+    pub id: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
+    pub topic: Option<String>,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
 pub struct Contact {
     pub id: String,
     pub name: String,
     pub avatar_url: Option<String>,
     pub status: String,
+}
+
+fn room_to_chat_room(room: &matrix_sdk::Room) -> ChatRoom {
+    let room_id = room.room_id().to_string();
+    let mut name = room
+        .name()
+        .filter(|n| !n.is_empty())
+        .unwrap_or_default();
+    if name.is_empty() {
+        name = room
+            .cached_display_name()
+            .map(|dn| dn.to_string())
+            .unwrap_or_default();
+    }
+    name = name.trim().to_string();
+    if name.is_empty() {
+        name = room_id.clone();
+    }
+
+    let avatar_url = room.avatar_url().map(|u| u.to_string());
+    let unread_count = room.unread_notification_counts().notification_count as i32;
+    let (last_message, last_message_time) = get_last_message_info(room);
+    let room_type = if room.is_space() {
+        "space".to_string()
+    } else {
+        "group".to_string()
+    };
+
+    ChatRoom {
+        id: room_id,
+        name,
+        avatar_url,
+        last_message,
+        last_message_time,
+        unread_count,
+        is_pinned: false,
+        is_muted: false,
+        room_type,
+    }
 }
 
 #[frb]
@@ -1814,52 +1866,22 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
         }
         joined += 1;
 
-        let room_id = room.room_id().to_string();
-        // Try explicit m.room.name first (sync, from state store)
-        let mut name = room
-            .name()
-            .filter(|n| !n.is_empty())
-            .unwrap_or_default();
-        // If no explicit name, use cached display name (fast, no async)
-        if name.is_empty() {
-            name = room.cached_display_name()
-                .map(|dn| dn.to_string())
-                .unwrap_or_default();
-        }
-        name = name.trim().to_string();
-        if name.is_empty() {
-            name = room_id.clone();
-        }
-        let avatar_url = room.avatar_url().map(|u| u.to_string());
-        let unread_count = room.unread_notification_counts().notification_count as i32;
-        let (last_message, last_message_time) = get_last_message_info(&room);
-
-        // Determine room type
-        let room_type = if room.is_space() {
-            "space".to_string()
-        } else {
-            match room.is_direct().await {
+        let mut chat_room = room_to_chat_room(&room);
+        if !room.is_space() {
+            chat_room.room_type = match room.is_direct().await {
                 Ok(true) => "dm".to_string(),
                 _ => "group".to_string(),
-            }
-        };
-
-        result.push(ChatRoom {
-            id: room_id,
-            name,
-            avatar_url,
-            last_message,
-            last_message_time,
-            unread_count,
-            is_pinned: false,
-            is_muted: false,
-            room_type,
-        });
+            };
+        }
+        result.push(chat_room);
     }
 
     app_log("info", "rooms", format!("get_chat_rooms: {} joined rooms returned", joined));
     result.sort_by(|a, b| {
-        b.unread_count.cmp(&a.unread_count)
+        let a_time = a.last_message_time.parse::<u64>().unwrap_or_default();
+        let b_time = b.last_message_time.parse::<u64>().unwrap_or_default();
+        b_time
+            .cmp(&a_time)
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
@@ -1878,10 +1900,20 @@ fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
                 matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
             ) = any_ev
             {
-                last_time = format_timestamp(u64::from(msg.origin_server_ts().0));
+                last_time = u64::from(msg.origin_server_ts().0).to_string();
                 if let Some(text) = msg.as_original().and_then(|o| {
                     match &o.content.msgtype {
-                        matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
+                        matrix_sdk::ruma::events::room::message::MessageType::Text(t) => {
+                            let is_reply = matches!(
+                                &o.content.relates_to,
+                                Some(matrix_sdk::ruma::events::room::message::Relation::Reply(_))
+                            );
+                            Some(if is_reply {
+                                strip_reply_fallback(&t.body)
+                            } else {
+                                t.body.clone()
+                            })
+                        }
                         _ => None,
                     }
                 }) {
@@ -1901,29 +1933,6 @@ fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
     }
 
     (last_msg, last_time)
-}
-
-fn format_timestamp(millis: u64) -> String {
-    let secs = millis / 1000;
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let diff = now_secs.saturating_sub(secs);
-
-    if diff < 60 {
-        "刚刚".to_string()
-    } else if diff < 3600 {
-        format!("{}分钟前", diff / 60)
-    } else if diff < 86400 {
-        format!("{}小时前", diff / 3600)
-    } else if diff < 604800 {
-        format!("{}天前", diff / 86400)
-    } else {
-        let hours = ((secs / 3600) % 24) as u8;
-        let mins = ((secs / 60) % 60) as u8;
-        format!("{:02}:{:02}", hours, mins)
-    }
 }
 
 /// Strip the Matrix reply fallback prefix from a message body.
@@ -1977,12 +1986,21 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
 
     let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
     let mut edits: HashMap<String, Vec<String>> = HashMap::new();
-    let mut last_event_id: Option<String> = None;
-
+    let mut newest_event_id: Option<String> = None;
     let mut opts = matrix_sdk::room::MessagesOptions::backward();
-    opts.limit = 50u32.into();
+    opts.limit = 100u32.into();
 
     if let Ok(msg_resp) = room.messages(opts).await {
+        newest_event_id = msg_resp.chunk.first().and_then(|event| {
+            event
+                .kind
+                .raw()
+                .deserialize()
+                .ok()
+                .map(|event: matrix_sdk::ruma::events::AnySyncTimelineEvent| {
+                    event.event_id().to_string()
+                })
+        });
         for timeline_event in msg_resp.chunk.iter().rev() {
             let raw = timeline_event.kind.raw();
             let Ok(any_ev) = raw.deserialize() else { continue };
@@ -2000,10 +2018,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
             };
 
             let ts_millis = u64::from(any_ev.origin_server_ts().0);
-            let secs = ts_millis / 1000;
-            let hours = ((secs / 3600) % 24) as u8;
-            let mins = ((secs / 60) % 60) as u8;
-            let timestamp = format!("{:02}:{:02}", hours, mins);
+            let timestamp = ts_millis.to_string();
 
             match &any_ev {
                 // ── Message events ──
@@ -2093,12 +2108,10 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             }
                         }
                         _ => {
-                            last_event_id = Some(event_id_str.clone());
                             continue; // skip unknown message types
                         }
                     };
                     raw_messages.push((event_id_str.clone(), chat_msg));
-                    last_event_id = Some(event_id_str.clone());
                 }
 
                 // ── State/member events ──
@@ -2150,10 +2163,16 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_edited: false, edit_history: Vec::new(),
                         }));
                     }
-                    last_event_id = Some(any_ev.event_id().to_string());
                 }
                 _ => {}
             }
+        }
+
+        let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
+        if let Some(next_from) = msg_resp.end {
+            tokens.insert(room_id.clone(), next_from);
+        } else {
+            tokens.remove(&room_id);
         }
     }
 
@@ -2173,7 +2192,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     }
 
     // Send read receipt for the last event (mark room as read)
-    if let Some(ref last_id) = last_event_id {
+    if let Some(ref last_id) = newest_event_id {
         if let Ok(event_id) = matrix_sdk::ruma::EventId::parse(last_id) {
             let receipts = matrix_sdk::room::Receipts::new()
                 .fully_read_marker(event_id.clone())
@@ -2311,11 +2330,410 @@ pub async fn create_group_room(name: String, topic: Option<String>) -> Result<St
     Ok(response.room_id().to_string())
 }
 
+/// Create a space room with a name and optional topic.
+#[frb]
+pub async fn create_space(name: String, topic: Option<String>) -> Result<String, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+    request.name = Some(name);
+    request.topic = topic;
+    let mut creation_content =
+        matrix_sdk::ruma::api::client::room::create_room::v3::CreationContent::default();
+    creation_content.room_type = Some(matrix_sdk::ruma::room::RoomType::Space);
+    request.creation_content = Some(
+        matrix_sdk::ruma::serde::Raw::new(
+            &creation_content,
+        )
+        .map_err(|e| format!("Failed to encode space creation content: {e}"))?,
+    );
+
+    let response = client
+        .create_room(request)
+        .await
+        .map_err(|e| format!("Create space failed: {e}"))?;
+
+    app_log("info", "rooms", format!("Created space: {}", response.room_id()));
+    info!("Created space: {}", response.room_id());
+    Ok(response.room_id().to_string())
+}
+
+/// Join a room or space by room ID or alias.
+#[frb]
+pub async fn join_room(identifier: String) -> Result<String, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let id_or_alias = matrix_sdk::ruma::RoomOrAliasId::parse(identifier.clone())
+        .map_err(|e| format!("Invalid room or space identifier: {e}"))?;
+
+    let room = client
+        .join_room_by_id_or_alias(&id_or_alias, &[])
+        .await
+        .map_err(|e| format!("Join failed: {e}"))?;
+
+    app_log("info", "rooms", format!("Joined room: {}", room.room_id()));
+    info!("Joined room: {}", room.room_id());
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(room.room_id().to_string())
+}
+
 #[frb]
 pub async fn get_spaces() -> Result<Vec<Space>, String> {
-    Ok(vec![
-        Space { id: "all".to_string(), name: "全部".to_string(), avatar_url: None },
-    ])
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let mut spaces = client
+        .rooms()
+        .into_iter()
+        .filter(|room| room.state() == matrix_sdk::RoomState::Joined && room.is_space())
+        .map(|room| {
+            let chat_room = room_to_chat_room(&room);
+            Space {
+                id: chat_room.id,
+                name: chat_room.name,
+                avatar_url: chat_room.avatar_url,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    spaces.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(spaces)
+}
+
+#[frb]
+pub async fn get_space_details(space_id: String) -> Result<SpaceDetails, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let space_room_id = matrix_sdk::ruma::RoomId::parse(space_id.clone())
+        .map_err(|e| format!("Invalid space id: {e}"))?;
+    let room = client
+        .get_room(&space_room_id)
+        .ok_or_else(|| format!("Space not found: {space_id}"))?;
+
+    if room.state() != matrix_sdk::RoomState::Joined || !room.is_space() {
+        return Err(format!("Room is not a joined space: {space_id}"));
+    }
+
+    let chat_room = room_to_chat_room(&room);
+    let topic = room
+        .topic()
+        .map(|topic| topic.trim().to_string())
+        .filter(|topic| !topic.is_empty());
+
+    Ok(SpaceDetails {
+        id: chat_room.id,
+        name: chat_room.name,
+        avatar_url: chat_room.avatar_url,
+        topic,
+    })
+}
+
+#[frb]
+pub async fn get_space_children(space_id: String) -> Result<Vec<ChatRoom>, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let space_room = client
+        .get_room(&matrix_sdk::ruma::RoomId::parse(space_id.clone()).map_err(|e| format!("Invalid space id: {e}"))?)
+        .ok_or_else(|| format!("Space not found: {space_id}"))?;
+
+    let child_events = space_room
+        .get_state_events_static::<matrix_sdk::ruma::events::space::child::SpaceChildEventContent>()
+        .await
+        .map_err(|e| format!("Failed to load space children: {e}"))?;
+
+    let mut child_rooms = Vec::new();
+    for raw_child in child_events {
+        let Ok(child_event) = raw_child.deserialize() else { continue };
+        let child_room_id = match child_event {
+            matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(
+                matrix_sdk::ruma::events::SyncStateEvent::Original(event),
+            ) => event.state_key,
+            matrix_sdk::deserialized_responses::SyncOrStrippedState::Stripped(event) => event.state_key,
+            _ => continue,
+        };
+
+        let Some(child_room) = client.get_room(&child_room_id) else { continue };
+        if child_room.state() != matrix_sdk::RoomState::Joined {
+            continue;
+        }
+
+        let mut chat_room = room_to_chat_room(&child_room);
+        if !child_room.is_space() {
+            chat_room.room_type = match child_room.is_direct().await {
+                Ok(true) => "dm".to_string(),
+                _ => "group".to_string(),
+            };
+        }
+        child_rooms.push(chat_room);
+    }
+
+    child_rooms.sort_by(|a, b| {
+        let a_time = a.last_message_time.parse::<u64>().unwrap_or_default();
+        let b_time = b.last_message_time.parse::<u64>().unwrap_or_default();
+        b_time
+            .cmp(&a_time)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(child_rooms)
+}
+
+#[frb]
+pub async fn update_space_details(
+    space_id: String,
+    name: String,
+    topic: Option<String>,
+) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let space_room_id = matrix_sdk::ruma::RoomId::parse(space_id.clone())
+        .map_err(|e| format!("Invalid space id: {e}"))?;
+    let room = client
+        .get_room(&space_room_id)
+        .ok_or_else(|| format!("Space not found: {space_id}"))?;
+
+    if room.state() != matrix_sdk::RoomState::Joined || !room.is_space() {
+        return Err(format!("Room is not a joined space: {space_id}"));
+    }
+
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() {
+        return Err("Space name cannot be empty.".to_string());
+    }
+
+    room.set_name(trimmed_name.to_string())
+        .await
+        .map_err(|e| format!("Failed to update space name: {e}"))?;
+
+    let normalized_topic = topic.unwrap_or_default().trim().to_string();
+    room.set_room_topic(&normalized_topic)
+        .await
+        .map_err(|e| format!("Failed to update space topic: {e}"))?;
+
+    app_log("info", "rooms", format!("Updated space details: {}", space_id));
+    info!("Updated space details: {}", space_id);
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(())
+}
+
+/// Add a room to a space, and advertise the reciprocal parent relation.
+#[frb]
+pub async fn add_room_to_space(space_id: String, room_id: String) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let space_room_id = matrix_sdk::ruma::RoomId::parse(space_id.clone())
+        .map_err(|e| format!("Invalid space id: {e}"))?;
+    let child_room_id = matrix_sdk::ruma::RoomId::parse(room_id.clone())
+        .map_err(|e| format!("Invalid room id: {e}"))?;
+
+    let space_room = client
+        .get_room(&space_room_id)
+        .ok_or_else(|| format!("Space not found: {space_id}"))?;
+    let child_room = client
+        .get_room(&child_room_id)
+        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+
+    let via = vec![
+        client
+            .user_id()
+            .ok_or("No active user.")?
+            .server_name()
+            .to_owned(),
+    ];
+
+    space_room
+        .send_state_event_for_key(
+            &child_room_id,
+            matrix_sdk::ruma::events::space::child::SpaceChildEventContent::new(via.clone()),
+        )
+        .await
+        .map_err(|e| format!("Failed to add room to space: {e}"))?;
+
+    child_room
+        .send_state_event_for_key(
+            &space_room_id,
+            matrix_sdk::ruma::events::space::parent::SpaceParentEventContent::new(via),
+        )
+        .await
+        .map_err(|e| format!("Failed to set parent space on room: {e}"))?;
+
+    app_log(
+        "info",
+        "rooms",
+        format!("Added room {} to space {}", room_id, space_id),
+    );
+    info!("Added room {} to space {}", room_id, space_id);
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(())
+}
+
+#[frb]
+pub async fn remove_room_from_space(space_id: String, room_id: String) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let space_room_id = matrix_sdk::ruma::RoomId::parse(space_id.clone())
+        .map_err(|e| format!("Invalid space id: {e}"))?;
+    let child_room_id = matrix_sdk::ruma::RoomId::parse(room_id.clone())
+        .map_err(|e| format!("Invalid room id: {e}"))?;
+
+    let space_room = client
+        .get_room(&space_room_id)
+        .ok_or_else(|| format!("Space not found: {space_id}"))?;
+    let child_room = client
+        .get_room(&child_room_id)
+        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+
+    let child_events = space_room
+        .get_state_events_static::<matrix_sdk::ruma::events::space::child::SpaceChildEventContent>()
+        .await
+        .map_err(|e| format!("Failed to load space children: {e}"))?;
+    let space_child_event_id = child_events.into_iter().find_map(|raw_child| {
+        let Ok(child_event) = raw_child.deserialize() else { return None };
+        match child_event {
+            matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(
+                matrix_sdk::ruma::events::SyncStateEvent::Original(event),
+            ) if event.state_key == child_room_id => Some(event.event_id),
+            _ => None,
+        }
+    });
+
+    let parent_events = child_room
+        .get_state_events_static::<matrix_sdk::ruma::events::space::parent::SpaceParentEventContent>()
+        .await
+        .map_err(|e| format!("Failed to load room parents: {e}"))?;
+    let space_parent_event_id = parent_events.into_iter().find_map(|raw_parent| {
+        let Ok(parent_event) = raw_parent.deserialize() else { return None };
+        match parent_event {
+            matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(
+                matrix_sdk::ruma::events::SyncStateEvent::Original(event),
+            ) if event.state_key == space_room_id => Some(event.event_id),
+            _ => None,
+        }
+    });
+
+    if let Some(event_id) = space_child_event_id {
+        space_room
+            .redact(&event_id, Some("Removed from space"), None)
+            .await
+            .map_err(|e| format!("Failed to remove room from space: {e}"))?;
+    }
+
+    if let Some(event_id) = space_parent_event_id {
+        child_room
+            .redact(&event_id, Some("Removed parent space"), None)
+            .await
+            .map_err(|e| format!("Failed to remove parent space on room: {e}"))?;
+    }
+
+    app_log(
+        "info",
+        "rooms",
+        format!("Removed room {} from space {}", room_id, space_id),
+    );
+    info!("Removed room {} from space {}", room_id, space_id);
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(())
+}
+
+#[frb]
+pub async fn leave_space(space_id: String) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let space_room_id = matrix_sdk::ruma::RoomId::parse(space_id.clone())
+        .map_err(|e| format!("Invalid space id: {e}"))?;
+    let room = client
+        .get_room(&space_room_id)
+        .ok_or_else(|| format!("Space not found: {space_id}"))?;
+
+    if !room.is_space() {
+        return Err(format!("Room is not a space: {space_id}"));
+    }
+
+    room.leave()
+        .await
+        .map_err(|e| format!("Failed to leave space: {e}"))?;
+
+    app_log("info", "rooms", format!("Left space: {}", space_id));
+    info!("Left space: {}", space_id);
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(())
+}
+
+#[frb]
+pub async fn get_ungrouped_rooms() -> Result<Vec<ChatRoom>, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+
+    let mut grouped_room_ids = std::collections::HashSet::new();
+    for room in client.rooms() {
+        if room.state() != matrix_sdk::RoomState::Joined || !room.is_space() {
+            continue;
+        }
+
+        let child_events = room
+            .get_state_events_static::<matrix_sdk::ruma::events::space::child::SpaceChildEventContent>()
+            .await
+            .map_err(|e| format!("Failed to load space children: {e}"))?;
+
+        for raw_child in child_events {
+            let Ok(child_event) = raw_child.deserialize() else { continue };
+            let child_room_id = match child_event {
+                matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(
+                    matrix_sdk::ruma::events::SyncStateEvent::Original(event),
+                ) => event.state_key,
+                matrix_sdk::deserialized_responses::SyncOrStrippedState::Stripped(event) => {
+                    event.state_key
+                }
+                _ => continue,
+            };
+            grouped_room_ids.insert(child_room_id);
+        }
+    }
+
+    let mut rooms = Vec::new();
+    for room in client.rooms() {
+        if room.state() != matrix_sdk::RoomState::Joined || room.is_space() {
+            continue;
+        }
+
+        if matches!(room.is_direct().await, Ok(true)) {
+            continue;
+        }
+
+        if grouped_room_ids.contains(room.room_id()) {
+            continue;
+        }
+
+        let mut chat_room = room_to_chat_room(&room);
+        chat_room.room_type = "group".to_string();
+        rooms.push(chat_room);
+    }
+
+    rooms.sort_by(|a, b| {
+        let a_time = a.last_message_time.parse::<u64>().unwrap_or_default();
+        let b_time = b.last_message_time.parse::<u64>().unwrap_or_default();
+        b_time
+            .cmp(&a_time)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(rooms)
 }
 
 #[frb]
@@ -2454,7 +2872,7 @@ pub async fn search_rooms(query: String) -> Result<Vec<ChatRoom>, String> {
 
 /// Load more messages (paginated) from before a given event.
 #[frb]
-pub async fn get_messages_before(room_id: String, from_event_id: String, limit: u32) -> Result<Vec<ChatMessage>, String> {
+pub async fn get_messages_before(room_id: String, _from_event_id: String, limit: u32) -> Result<Vec<ChatMessage>, String> {
     let client = get_client()
         .await
         .ok_or("No client created.")?;
@@ -2469,13 +2887,23 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
     let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
     let mut edits: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Use the event ID as the "from" token for backwards pagination
-    let _from_token = matrix_sdk::ruma::events::TimelineEventType::from(from_event_id.clone());
+    let from = {
+        let tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
+        tokens.get(&room_id).cloned()
+    };
+    let Some(from) = from else {
+        return Ok(Vec::new());
+    };
+
     let mut opts = matrix_sdk::room::MessagesOptions::backward();
     opts.limit = limit.into();
-    opts.from = Some(from_event_id);
+    opts.from = Some(from.clone());
 
-    if let Ok(msg_resp) = room.messages(opts).await {
+    let msg_resp = room
+        .messages(opts)
+        .await
+        .map_err(|e| format!("Failed to load older messages: {e}"))?;
+    {
         for timeline_event in msg_resp.chunk.iter().rev() {
             let raw = timeline_event.kind.raw();
             let Ok(any_ev) = raw.deserialize() else { continue };
@@ -2498,10 +2926,7 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
             };
 
             let ts_millis = u64::from(msg.origin_server_ts().0);
-            let secs = ts_millis / 1000;
-            let hours = ((secs / 3600) % 24) as u8;
-            let mins = ((secs / 60) % 60) as u8;
-            let timestamp = format!("{:02}:{:02}", hours, mins);
+            let timestamp = ts_millis.to_string();
             let event_id = msg.event_id().to_string();
 
             // Check if this is an edit (replacement) event
@@ -2566,6 +2991,17 @@ pub async fn get_messages_before(room_id: String, from_event_id: String, limit: 
             };
             raw_messages.push((event_id, chat_msg));
         }
+    }
+
+    let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
+    if let Some(next_from) = msg_resp.end {
+        if next_from == from {
+            tokens.remove(&room_id);
+        } else {
+            tokens.insert(room_id.clone(), next_from);
+        }
+    } else {
+        tokens.remove(&room_id);
     }
 
     // Apply edits

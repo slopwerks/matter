@@ -5,6 +5,7 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
+import 'chat_timestamp.dart';
 import 'image_message_bubble.dart';
 import 'message_input.dart';
 
@@ -144,7 +145,7 @@ class MessageGroupWidget extends ConsumerWidget {
             : message.msgType == MessageType.image && message.imageUrl != null
             ? ImageMessageBubble(
                 imageUrl: message.imageUrl!,
-                timestamp: message.timestamp,
+                timestamp: formatMessageTime(message.timestamp),
                 isMe: isMe,
                 onLoaded: onImageLoaded,
               )
@@ -209,7 +210,7 @@ class MessageGroupWidget extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  message.timestamp,
+                  formatMessageTime(message.timestamp),
                   style: TextStyle(
                     color: isMe
                         ? Colors.white.withValues(alpha: 0.65)

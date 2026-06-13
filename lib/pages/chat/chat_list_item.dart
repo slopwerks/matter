@@ -3,12 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
+import 'chat_timestamp.dart';
 import 'chat_detail_page.dart';
+import 'space_detail_page.dart';
 
 class ChatListItem extends ConsumerWidget {
   final ChatRoom room;
+  final bool dense;
+  final bool showRoomTypeIcon;
 
-  const ChatListItem({super.key, required this.room});
+  const ChatListItem({
+    super.key,
+    required this.room,
+    this.dense = false,
+    this.showRoomTypeIcon = true,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,23 +27,35 @@ class ChatListItem extends ConsumerWidget {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => ChatDetailPage(
-              roomId: room.id,
-              roomName: room.name,
-              avatarUrl: room.avatarUrl,
-              isDm: room.roomType == 'dm',
-              subtitle: room.unreadCount > 0
-                  ? '${room.unreadCount} 条未读消息'
-                  : '在线',
-            ),
+            builder: (_) => room.roomType == 'space'
+                ? SpaceDetailPage(
+                    space: Space(
+                      id: room.id,
+                      name: room.name,
+                      avatarUrl: room.avatarUrl,
+                    ),
+                  )
+                : ChatDetailPage(
+                    roomId: room.id,
+                    roomName: room.name,
+                    avatarUrl: room.avatarUrl,
+                    isDm: room.roomType == 'dm',
+                    subtitle: room.unreadCount > 0
+                        ? '${room.unreadCount} 条未读消息'
+                        : '在线',
+                  ),
           ),
         );
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: dense ? 6 : 8),
         child: Row(
           children: [
-            AppAvatar(fallback: room.name, size: 52, url: room.avatarUrl),
+            AppAvatar(
+              fallback: room.name,
+              size: dense ? 44 : 52,
+              url: room.avatarUrl,
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -42,8 +63,10 @@ class ChatListItem extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      _roomTypeIcon(room.roomType),
-                      const SizedBox(width: 4),
+                      if (showRoomTypeIcon) ...[
+                        _roomTypeIcon(room.roomType),
+                        const SizedBox(width: 4),
+                      ],
                       Expanded(
                         child: Text(
                           room.name,
@@ -58,7 +81,7 @@ class ChatListItem extends ConsumerWidget {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        room.lastMessageTime,
+                        formatChatListTime(room.lastMessageTime),
                         style: TextStyle(
                           color: room.unreadCount > 0
                               ? AppColors.primary
@@ -97,7 +120,7 @@ class ChatListItem extends ConsumerWidget {
                           room.lastMessage,
                           style: const TextStyle(
                             color: AppColors.onSurfaceVariant,
-                            fontSize: 14,
+                            fontSize: 13.5,
                             height: 1.3,
                           ),
                           maxLines: 1,

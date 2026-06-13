@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `active_session_meta`, `app_log`, `build_sdk_data_dir`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `format_timestamp`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `notify_sync_event`, `sanitize_for_path`, `set_connection_status`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
+// These functions are ignored because they are not marked as `pub`: `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `notify_sync_event`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Stream app log entries from Rust → Dart (live).
 Stream<AppLogEntry> watchAppLogs() =>
@@ -230,8 +230,55 @@ Future<String> createGroupRoom({required String name, String? topic}) => RustLib
     .api
     .crateApiMatrixCreateGroupRoom(name: name, topic: topic);
 
+/// Create a space room with a name and optional topic.
+Future<String> createSpace({required String name, String? topic}) =>
+    RustLib.instance.api.crateApiMatrixCreateSpace(name: name, topic: topic);
+
+/// Join a room or space by room ID or alias.
+Future<String> joinRoom({required String identifier}) =>
+    RustLib.instance.api.crateApiMatrixJoinRoom(identifier: identifier);
+
 Future<List<Space>> getSpaces() =>
     RustLib.instance.api.crateApiMatrixGetSpaces();
+
+Future<SpaceDetails> getSpaceDetails({required String spaceId}) =>
+    RustLib.instance.api.crateApiMatrixGetSpaceDetails(spaceId: spaceId);
+
+Future<List<ChatRoom>> getSpaceChildren({required String spaceId}) =>
+    RustLib.instance.api.crateApiMatrixGetSpaceChildren(spaceId: spaceId);
+
+Future<void> updateSpaceDetails({
+  required String spaceId,
+  required String name,
+  String? topic,
+}) => RustLib.instance.api.crateApiMatrixUpdateSpaceDetails(
+  spaceId: spaceId,
+  name: name,
+  topic: topic,
+);
+
+/// Add a room to a space, and advertise the reciprocal parent relation.
+Future<void> addRoomToSpace({
+  required String spaceId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixAddRoomToSpace(
+  spaceId: spaceId,
+  roomId: roomId,
+);
+
+Future<void> removeRoomFromSpace({
+  required String spaceId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixRemoveRoomFromSpace(
+  spaceId: spaceId,
+  roomId: roomId,
+);
+
+Future<void> leaveSpace({required String spaceId}) =>
+    RustLib.instance.api.crateApiMatrixLeaveSpace(spaceId: spaceId);
+
+Future<List<ChatRoom>> getUngroupedRooms() =>
+    RustLib.instance.api.crateApiMatrixGetUngroupedRooms();
 
 Future<List<Contact>> getContacts() =>
     RustLib.instance.api.crateApiMatrixGetContacts();
@@ -636,6 +683,34 @@ class Space {
           id == other.id &&
           name == other.name &&
           avatarUrl == other.avatarUrl;
+}
+
+class SpaceDetails {
+  final String id;
+  final String name;
+  final String? avatarUrl;
+  final String? topic;
+
+  const SpaceDetails({
+    required this.id,
+    required this.name,
+    this.avatarUrl,
+    this.topic,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ avatarUrl.hashCode ^ topic.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SpaceDetails &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          avatarUrl == other.avatarUrl &&
+          topic == other.topic;
 }
 
 /// Session data to persist across app restarts.

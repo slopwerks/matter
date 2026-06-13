@@ -132,6 +132,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Space dco_decode_space(dynamic raw);
 
   @protected
+  SpaceDetails dco_decode_space_details(dynamic raw);
+
+  @protected
   StoredSession dco_decode_stored_session(dynamic raw);
 
   @protected
@@ -277,6 +280,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Space sse_decode_space(SseDeserializer deserializer);
+
+  @protected
+  SpaceDetails sse_decode_space_details(SseDeserializer deserializer);
 
   @protected
   StoredSession sse_decode_stored_session(SseDeserializer deserializer);
@@ -456,6 +462,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_space(Space self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_space_details(SpaceDetails self, SseSerializer serializer);
 
   @protected
   void sse_encode_stored_session(StoredSession self, SseSerializer serializer);

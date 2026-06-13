@@ -29,7 +29,10 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       ref.invalidate(chatRoomsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('私聊已创建'), duration: Duration(seconds: 1)),
+          const SnackBar(
+            content: Text('私聊已创建'),
+            duration: Duration(seconds: 1),
+          ),
         );
         Navigator.of(context).pop();
       }
@@ -52,7 +55,10 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       ref.invalidate(chatRoomsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('群组已创建'), duration: Duration(seconds: 1)),
+          const SnackBar(
+            content: Text('群组已创建'),
+            duration: Duration(seconds: 1),
+          ),
         );
         Navigator.of(context).pop();
       }
@@ -73,29 +79,57 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.surface)),
-        title: const Text('加入房间', style: TextStyle(color: AppColors.onBackground)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.surface),
+        ),
+        title: const Text(
+          '加入房间',
+          style: TextStyle(color: AppColors.onBackground),
+        ),
         content: TextField(
           controller: roomIdController,
           style: const TextStyle(color: AppColors.onBackground),
           decoration: const InputDecoration(
             hintText: '!room_id:matrix.akass.cn',
             hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.surfaceVariant)),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: AppColors.surfaceVariant),
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消', style: TextStyle(color: AppColors.onSurfaceVariant)),
+            child: const Text(
+              '取消',
+              style: TextStyle(color: AppColors.onSurfaceVariant),
+            ),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              // TODO: implement join room
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('加入房间功能开发中'), duration: Duration(seconds: 1)),
-              );
+            onPressed: () async {
+              final value = roomIdController.text.trim();
+              if (value.isEmpty) return;
+              try {
+                await rust.joinRoom(identifier: value);
+                ref.invalidate(chatRoomsProvider);
+                ref.invalidate(ungroupedRoomsProvider);
+                if (!mounted || !ctx.mounted) return;
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已加入房间'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('加入失败: $e'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
             },
             child: const Text('加入', style: TextStyle(color: AppColors.primary)),
           ),
@@ -113,7 +147,10 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.onBackground),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.onBackground,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text(
@@ -139,11 +176,21 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
               ),
               child: TextField(
                 controller: _searchController,
-                style: const TextStyle(color: AppColors.onBackground, fontSize: 15),
+                style: const TextStyle(
+                  color: AppColors.onBackground,
+                  fontSize: 15,
+                ),
                 decoration: const InputDecoration(
                   hintText: '输入 @用户 ID 发起私聊',
-                  hintStyle: TextStyle(color: AppColors.onSurfaceVariant, fontSize: 15),
-                  prefixIcon: Icon(Icons.search_rounded, color: AppColors.onSurfaceVariant, size: 20),
+                  hintStyle: TextStyle(
+                    color: AppColors.onSurfaceVariant,
+                    fontSize: 15,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: AppColors.onSurfaceVariant,
+                    size: 20,
+                  ),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(vertical: 14),
                   isDense: true,
@@ -176,9 +223,18 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
                       )
-                    : const Text('发起私聊', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    : const Text(
+                        '发起私聊',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 32),
@@ -194,21 +250,33 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                   context: context,
                   builder: (ctx) => AlertDialog(
                     backgroundColor: AppColors.surface,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.surface)),
-                    title: const Text('创建群组', style: TextStyle(color: AppColors.onBackground)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadii.surface),
+                    ),
+                    title: const Text(
+                      '创建群组',
+                      style: TextStyle(color: AppColors.onBackground),
+                    ),
                     content: TextField(
                       controller: nameController,
                       style: const TextStyle(color: AppColors.onBackground),
                       decoration: const InputDecoration(
                         hintText: '群组名称',
                         hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.surfaceVariant)),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(
+                            color: AppColors.surfaceVariant,
+                          ),
+                        ),
                       ),
                     ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.of(ctx).pop(),
-                        child: const Text('取消', style: TextStyle(color: AppColors.onSurfaceVariant)),
+                        child: const Text(
+                          '取消',
+                          style: TextStyle(color: AppColors.onSurfaceVariant),
+                        ),
                       ),
                       TextButton(
                         onPressed: () {
@@ -216,22 +284,13 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                           final name = nameController.text.trim();
                           if (name.isNotEmpty) _createGroup(name);
                         },
-                        child: const Text('创建', style: TextStyle(color: AppColors.primary)),
+                        child: const Text(
+                          '创建',
+                          style: TextStyle(color: AppColors.primary),
+                        ),
                       ),
                     ],
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            _ActionCard(
-              icon: Icons.workspaces_rounded,
-              iconColor: AppColors.secondary,
-              title: '创建 Space',
-              subtitle: '创建一个新的空间',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Space 功能开发中'), duration: Duration(seconds: 1)),
                 );
               },
             ),
@@ -242,18 +301,6 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
               title: '加入房间',
               subtitle: '通过房间 ID 加入已有房间',
               onTap: _showJoinRoomDialog,
-            ),
-            const SizedBox(height: 8),
-            _ActionCard(
-              icon: Icons.explore_rounded,
-              iconColor: AppColors.success,
-              title: '加入 Space',
-              subtitle: '通过 Space ID 加入已有空间',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Space 功能开发中'), duration: Duration(seconds: 1)),
-                );
-              },
             ),
           ],
         ),
@@ -325,7 +372,11 @@ class _ActionCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: AppColors.onSurfaceVariant, size: 20),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.onSurfaceVariant,
+                size: 20,
+              ),
             ],
           ),
         ),

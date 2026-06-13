@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'auth_provider.dart';
+import 'connection_provider.dart';
 import 'mutable_state.dart';
 
 final chatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
@@ -12,13 +13,37 @@ final chatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
 
 final spacesProvider = FutureProvider<List<rust.Space>>((ref) async {
   if (!ref.watch(sessionReadyProvider)) return [];
-  final spaces = await rust.getSpaces();
-  return spaces;
+  return rust.getSpaces();
 });
 
-final selectedSpaceIdProvider = NotifierProvider<MutableState<String>, String>(
-  () => MutableState('all'),
-);
+final spaceDetailsProvider = FutureProvider.family<rust.SpaceDetails, String>((
+  ref,
+  spaceId,
+) async {
+  if (!ref.watch(sessionReadyProvider)) {
+    throw StateError('Session not ready');
+  }
+  return rust.getSpaceDetails(spaceId: spaceId);
+});
+
+final inboxRoomsProvider = Provider<AsyncValue<List<rust.ChatRoom>>>((ref) {
+  return ref
+      .watch(chatRoomsProvider)
+      .whenData(
+        (rooms) => rooms.where((room) => room.roomType != 'space').toList(),
+      );
+});
+
+final ungroupedRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
+  if (!ref.watch(sessionReadyProvider)) return [];
+  return rust.getUngroupedRooms();
+});
+
+final spaceChildrenProvider =
+    FutureProvider.family<List<rust.ChatRoom>, String>((ref, spaceId) async {
+      if (!ref.watch(sessionReadyProvider)) return [];
+      return rust.getSpaceChildren(spaceId: spaceId);
+    });
 
 final contactsProvider = FutureProvider<List<rust.Contact>>((ref) async {
   if (!ref.watch(sessionReadyProvider)) return [];
@@ -135,7 +160,13 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
   final stream = rust.watchSyncEvents();
   DateTime? lastMessageRefresh;
   DateTime? lastRoomRefresh;
+  final statusTimer = Timer.periodic(
+    const Duration(seconds: 1),
+    (_) => pollConnectionStatus(ref),
+  );
+  Future.microtask(() => pollConnectionStatus(ref));
   final subscription = stream.listen((event) {
+    pollConnectionStatus(ref);
     switch (event) {
       case rust.SyncEvent_SyncCompleted():
         // Debounce room-list refreshes to avoid flooding during rapid syncs
@@ -144,6 +175,8 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
             now.difference(lastRoomRefresh!).inMilliseconds >= 2000) {
           lastRoomRefresh = now;
           ref.invalidate(chatRoomsProvider);
+          ref.invalidate(spacesProvider);
+          ref.invalidate(ungroupedRoomsProvider);
         }
         // Refresh messages for the currently open room, but debounce to avoid flicker
         final currentRoomId = ref.read(currentRoomIdProvider);
@@ -163,6 +196,7 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
   });
 
   ref.onDispose(() {
+    statusTimer.cancel();
     subscription.cancel();
   });
 

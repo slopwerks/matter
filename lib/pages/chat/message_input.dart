@@ -178,22 +178,25 @@ class _MessageInputState extends ConsumerState<MessageInput> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.image_outlined,
-                      color: AppColors.onSurfaceVariant,
-                      size: 26,
-                    ),
-                    onPressed: _isSending ? null : _pickImage,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 40,
-                      minHeight: 40,
+                  SizedBox.square(
+                    dimension: 44,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.image_outlined,
+                        color: AppColors.onSurfaceVariant,
+                        size: 26,
+                      ),
+                      onPressed: _isSending ? null : _pickImage,
+                      padding: EdgeInsets.zero,
                     ),
                   ),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Container(
-                      constraints: const BoxConstraints(maxHeight: 120),
+                      constraints: const BoxConstraints(
+                        minHeight: 44,
+                        maxHeight: 120,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.surfaceVariant,
                         borderRadius: BorderRadius.circular(AppRadii.surface),
@@ -212,7 +215,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                           ),
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 14,
-                            vertical: 10,
+                            vertical: 11,
                           ),
                           border: InputBorder.none,
                           isDense: true,
@@ -224,52 +227,53 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    width: _hasText ? 40 : 0,
-                    height: 40,
-                    child: _hasText
-                        ? GestureDetector(
-                            onTap: _isSending ? null : _sendMessage,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: _isSending
-                                    ? AppColors.onSurfaceVariant
-                                    : AppColors.primary,
-                                shape: BoxShape.circle,
-                              ),
-                              child: _isSending
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(10),
+                  SizedBox.square(
+                    dimension: 44,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 160),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.85, end: 1).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOut,
+                            ),
+                          ),
+                          child: child,
+                        ),
+                      ),
+                      child: _hasText
+                          ? IconButton(
+                              key: const ValueKey('send'),
+                              onPressed: _isSending ? null : _sendMessage,
+                              padding: EdgeInsets.zero,
+                              icon: _isSending
+                                  ? const SizedBox.square(
+                                      dimension: 20,
                                       child: CircularProgressIndicator(
-                                        color: Colors.white,
+                                        color: AppColors.primary,
                                         strokeWidth: 2,
                                       ),
                                     )
                                   : const Icon(
                                       Icons.send_rounded,
-                                      color: Colors.white,
-                                      size: 20,
+                                      color: AppColors.primary,
+                                      size: 25,
                                     ),
+                            )
+                          : IconButton(
+                              key: const ValueKey('mic'),
+                              icon: const Icon(
+                                Icons.mic_none_rounded,
+                                color: AppColors.onSurfaceVariant,
+                                size: 26,
+                              ),
+                              onPressed: () {},
+                              padding: EdgeInsets.zero,
                             ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  if (!_hasText)
-                    IconButton(
-                      icon: const Icon(
-                        Icons.mic_none_rounded,
-                        color: AppColors.onSurfaceVariant,
-                        size: 26,
-                      ),
-                      onPressed: () {},
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 40,
-                        minHeight: 40,
-                      ),
                     ),
+                  ),
                 ],
               ),
             ),

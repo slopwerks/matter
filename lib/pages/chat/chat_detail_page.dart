@@ -4,6 +4,7 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
+import 'chat_timestamp.dart';
 import 'date_separator.dart';
 import 'message_group.dart';
 import 'message_input.dart';
@@ -32,6 +33,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   final _scrollController = ScrollController();
   final Map<int, double> _heights = {};
   final Map<int, GlobalKey> _keys = {};
+  final List<ChatMessage> _olderMessages = [];
+  List<ChatMessage> _displayedMessages = [];
+  bool _isLoadingOlder = false;
+  bool _hasMoreMessages = true;
 
   /// senderId → avatar HTTP URL, populated from room members.
   Map<String, String?> _avatarMap = {};
@@ -47,6 +52,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_maybeLoadOlderMessages);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(replyingToProvider(widget.roomId).notifier).value = null;
       ref.read(currentRoomIdProvider.notifier).value = widget.roomId;
@@ -69,14 +75,79 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_maybeLoadOlderMessages);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _maybeLoadOlderMessages() {
+    if (!_scrollController.hasClients ||
+        _isLoadingOlder ||
+        !_hasMoreMessages ||
+        _displayedMessages.isEmpty) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      _loadOlderMessages();
+    }
+  }
+
+  Future<void> _loadOlderMessages() async {
+    if (_isLoadingOlder || !_hasMoreMessages || _displayedMessages.isEmpty) {
+      return;
+    }
+
+    setState(() => _isLoadingOlder = true);
+    try {
+      final older = await getMessagesBefore(
+        roomId: widget.roomId,
+        fromEventId: _displayedMessages.first.id,
+        limit: 100,
+      );
+      if (!mounted) return;
+
+      final knownIds = _displayedMessages.map((message) => message.id).toSet();
+      final newMessages = older
+          .where((message) => !knownIds.contains(message.id))
+          .toList();
+      setState(() {
+        _olderMessages.insertAll(0, newMessages);
+        _hasMoreMessages = older.isNotEmpty;
+        _isLoadingOlder = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoadingOlder = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('加载更早消息失败: $error')));
+    }
+  }
+
+  List<ChatMessage> _mergeMessages(List<ChatMessage> latestMessages) {
+    final byId = <String, ChatMessage>{
+      for (final message in _olderMessages) message.id: message,
+      for (final message in latestMessages) message.id: message,
+    };
+    final messages = byId.values.toList()
+      ..sort((a, b) {
+        final aTime = int.tryParse(a.timestamp) ?? 0;
+        final bTime = int.tryParse(b.timestamp) ?? 0;
+        return aTime.compareTo(bTime);
+      });
+    return messages;
   }
 
   List<MessageGroup> _groupMessages(List<ChatMessage> messages) {
     final groups = <MessageGroup>[];
     for (final message in messages) {
-      if (groups.isEmpty || groups.last.senderId != message.senderId) {
+      final startsNewGroup =
+          groups.isEmpty ||
+          groups.last.senderId != message.senderId ||
+          chatDateKey(groups.last.messages.last.timestamp) !=
+              chatDateKey(message.timestamp);
+      if (startsNewGroup) {
         groups.add(
           MessageGroup(
             senderId: message.senderId,
@@ -226,14 +297,20 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           Expanded(
             child: messagesAsync.when(
               data: (messages) {
-                final groups = _groupMessages(messages);
+                final displayedMessages = _mergeMessages(messages);
+                _displayedMessages = displayedMessages;
+                final groups = _groupMessages(displayedMessages);
+
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _maybeLoadOlderMessages(),
+                );
 
                 // Resolve member avatars
                 final membersAsync = ref.read(
                   roomMembersProvider(widget.roomId),
                 );
                 membersAsync.whenData(
-                  (members) => _buildAvatarMap(messages, members),
+                  (members) => _buildAvatarMap(displayedMessages, members),
                 );
 
                 // Lazily create keys only for new indices; remove stale ones.
@@ -262,7 +339,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                   controller: _scrollController,
                   slivers: [
                     const SliverPadding(padding: EdgeInsets.only(bottom: 8)),
-                    for (int i = groups.length - 1; i >= 0; i--)
+                    for (int i = groups.length - 1; i >= 0; i--) ...[
                       if (!_needsStickyAvatar(groups[i]))
                         SliverToBoxAdapter(
                           child: MessageGroupWidget(
@@ -320,9 +397,32 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                             );
                           },
                         ),
-                    const SliverToBoxAdapter(
-                      child: DateSeparator(dateLabel: '今天'),
-                    ),
+                      if (i == 0 ||
+                          chatDateKey(groups[i - 1].messages.first.timestamp) !=
+                              chatDateKey(groups[i].messages.first.timestamp))
+                        SliverToBoxAdapter(
+                          child: DateSeparator(
+                            dateLabel: formatChatDate(
+                              groups[i].messages.first.timestamp,
+                            ),
+                          ),
+                        ),
+                    ],
+                    if (_isLoadingOlder)
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(
+                                color: AppColors.primary,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     const SliverPadding(padding: EdgeInsets.only(top: 8)),
                   ],
                 );
