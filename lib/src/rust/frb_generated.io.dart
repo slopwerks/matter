@@ -55,9 +55,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
-
-  @protected
   StoredSession dco_decode_box_autoadd_stored_session(dynamic raw);
 
   @protected
@@ -137,9 +134,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_device_verification_status(dynamic raw);
 
   @protected
-  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
-
-  @protected
   StoredSession? dco_decode_opt_box_autoadd_stored_session(dynamic raw);
 
   @protected
@@ -214,9 +208,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeviceVerificationStatus sse_decode_box_autoadd_device_verification_status(
     SseDeserializer deserializer,
   );
-
-  @protected
-  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
   StoredSession sse_decode_box_autoadd_stored_session(
@@ -312,9 +303,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
-
-  @protected
   StoredSession? sse_decode_opt_box_autoadd_stored_session(
     SseDeserializer deserializer,
   );
@@ -401,12 +389,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_device_verification_status(
     DeviceVerificationStatus self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_i_64(
-    PlatformInt64 self,
     SseSerializer serializer,
   );
 
@@ -521,12 +503,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_device_verification_status(
     DeviceVerificationStatus? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_i_64(
-    PlatformInt64? self,
     SseSerializer serializer,
   );
 

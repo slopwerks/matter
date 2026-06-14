@@ -54,8 +54,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
-  integration_test:
-    sdk: flutter
+  # integration_test: removed — Flutter 3.44 release build fails to resolve the
+  # integration_test Android plugin class (flutter/flutter#169336). Re-add when
+  # fixed upstream.
   freezed: ^3.2.5
   build_runner: ^2.15.0
 

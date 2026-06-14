@@ -2908,12 +2908,10 @@ impl SseDecode for crate::api::matrix::MessageReader {
         let mut var_userId = <String>::sse_decode(deserializer);
         let mut var_displayName = <String>::sse_decode(deserializer);
         let mut var_avatarUrl = <Option<String>>::sse_decode(deserializer);
-        let mut var_readTs = <Option<i64>>::sse_decode(deserializer);
         return crate::api::matrix::MessageReader {
             user_id: var_userId,
             display_name: var_displayName,
             avatar_url: var_avatarUrl,
-            read_ts: var_readTs,
         };
     }
 }
@@ -2949,17 +2947,6 @@ impl SseDecode for Option<crate::api::matrix::DeviceVerificationStatus> {
             return Some(<crate::api::matrix::DeviceVerificationStatus>::sse_decode(
                 deserializer,
             ));
-        } else {
-            return None;
-        }
-    }
-}
-
-impl SseDecode for Option<i64> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<i64>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -3503,7 +3490,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::matrix::MessageReader {
             self.user_id.into_into_dart().into_dart(),
             self.display_name.into_into_dart().into_dart(),
             self.avatar_url.into_into_dart().into_dart(),
-            self.read_ts.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4017,7 +4003,6 @@ impl SseEncode for crate::api::matrix::MessageReader {
         <String>::sse_encode(self.user_id, serializer);
         <String>::sse_encode(self.display_name, serializer);
         <Option<String>>::sse_encode(self.avatar_url, serializer);
-        <Option<i64>>::sse_encode(self.read_ts, serializer);
     }
 }
 
@@ -4054,16 +4039,6 @@ impl SseEncode for Option<crate::api::matrix::DeviceVerificationStatus> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::matrix::DeviceVerificationStatus>::sse_encode(value, serializer);
-        }
-    }
-}
-
-impl SseEncode for Option<i64> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <i64>::sse_encode(value, serializer);
         }
     }
 }

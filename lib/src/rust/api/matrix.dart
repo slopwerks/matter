@@ -730,22 +730,15 @@ class MessageReader {
   /// mxc:// avatar URL, if any.
   final String? avatarUrl;
 
-  /// Unix milliseconds when the member read up to this message, if known.
-  final PlatformInt64? readTs;
-
   const MessageReader({
     required this.userId,
     required this.displayName,
     this.avatarUrl,
-    this.readTs,
   });
 
   @override
   int get hashCode =>
-      userId.hashCode ^
-      displayName.hashCode ^
-      avatarUrl.hashCode ^
-      readTs.hashCode;
+      userId.hashCode ^ displayName.hashCode ^ avatarUrl.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -754,8 +747,7 @@ class MessageReader {
           runtimeType == other.runtimeType &&
           userId == other.userId &&
           displayName == other.displayName &&
-          avatarUrl == other.avatarUrl &&
-          readTs == other.readTs;
+          avatarUrl == other.avatarUrl;
 }
 
 enum MessageType {

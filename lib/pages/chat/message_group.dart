@@ -962,21 +962,6 @@ class _ReadReceiptsSheet extends ConsumerWidget {
 
   const _ReadReceiptsSheet({required this.message, required this.roomId});
 
-  String _formatReadTime(int? tsMillis) {
-    if (tsMillis == null) return '';
-    final dt = DateTime.fromMillisecondsSinceEpoch(tsMillis);
-    final now = DateTime.now();
-    final sameDay = dt.year == now.year &&
-        dt.month == now.month &&
-        dt.day == now.day;
-    final hms = '${dt.hour.toString().padLeft(2, '0')}:'
-        '${dt.minute.toString().padLeft(2, '0')}';
-    if (sameDay) return '今天 $hms';
-    final ymd = '${dt.year}/${dt.month.toString().padLeft(2, '0')}/'
-        '${dt.day.toString().padLeft(2, '0')}';
-    return '$ymd $hms';
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
@@ -1041,9 +1026,6 @@ class _ReadReceiptsSheet extends ConsumerWidget {
                           final reader = message.readers[index];
                           return _ReadReceiptRow(
                             reader: reader,
-                            timeLabel: _formatReadTime(
-                              reader.readTs?.toInt(),
-                            ),
                             roomId: roomId,
                           );
                         },
@@ -1057,15 +1039,15 @@ class _ReadReceiptsSheet extends ConsumerWidget {
   }
 }
 
-/// A single row in the read-receipts sheet: avatar + name + read time.
+/// A single row in the read-receipts sheet: avatar + name.
+/// (No read time: the Matrix protocol stores one receipt position per user,
+/// not a per-message read time, so we surface *who* read but not *when*.)
 class _ReadReceiptRow extends ConsumerStatefulWidget {
   final MessageReader reader;
-  final String timeLabel;
   final String roomId;
 
   const _ReadReceiptRow({
     required this.reader,
-    required this.timeLabel,
     required this.roomId,
   });
 
@@ -1103,31 +1085,15 @@ class _ReadReceiptRowState extends ConsumerState<_ReadReceiptRow> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.reader.displayName,
-                  style: const TextStyle(
-                    color: AppColors.onBackground,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (widget.timeLabel.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      widget.timeLabel,
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-              ],
+            child: Text(
+              widget.reader.displayName,
+              style: const TextStyle(
+                color: AppColors.onBackground,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

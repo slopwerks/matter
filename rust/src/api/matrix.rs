@@ -531,11 +531,6 @@ pub struct MessageReader {
     pub display_name: String,
     /// mxc:// avatar URL, if any.
     pub avatar_url: Option<String>,
-    /// Unix milliseconds when the member read up to here. Only set on the
-    /// single message this member's receipt points at (their latest read); the
-    /// Matrix protocol stores one receipt position per user, so older messages
-    /// the member has also read carry `None`.
-    pub read_ts: Option<i64>,
 }
 
 #[frb]
@@ -2391,16 +2386,19 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     // ── Compute per-message read receipts (only meaningful for own messages) ──
     //
     // For each joined member (excluding us) we get their last read-receipt
-    // timestamp, then a member counts as having read message i if their receipt
+    // timestamp; a member counts as having read message i when their receipt
     // time >= the message's origin_server_ts. Comparing by *timestamp* (rather
     // than matching the receipt event id against the window) ensures members
     // are counted even when their last-read event falls outside the current
     // 100-message window or onto someone else's message.
+    //
+    // The Matrix protocol stores only one receipt position per user and no
+    // per-message read time, so we surface *who* read but not *when*.
     use matrix_sdk::ruma::events::receipt::{ReceiptThread, ReceiptType};
 
     let mut total_members: i32 = 0;
-    /// (user_id, display_name, avatar_url, receipt time in ms, receipt event id)
-    let mut reader_records: Vec<(String, String, Option<String>, i64, String)> = Vec::new();
+    /// (user_id, display_name, avatar_url, receipt time in ms)
+    let mut reader_records: Vec<(String, String, Option<String>, i64)> = Vec::new();
 
     if let Ok(joined) = room.members(matrix_sdk::RoomMemberships::JOIN).await {
         total_members = joined.len() as i32;
@@ -2411,15 +2409,15 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
             if my_user_id == Some(uid) {
                 continue;
             }
-            if let Ok(Some((receipt_event_id, receipt))) = room
+            if let Ok(Some((_receipt_event_id, receipt))) = room
                 .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, uid)
                 .await
             {
-                // The receipt's own timestamp marks when the member read up to
-                // their last-seen event. Fall back to 0 if the homeserver
-                // omitted it (then the member never counts as a reader).
-                let read_ts = receipt.ts.map(|t| i64::from(t.0)).unwrap_or(0);
-                if read_ts > 0 {
+                // The receipt time marks when the member read up to their
+                // last-seen event. Members without a receipt time can't be
+                // positioned, so skip them.
+                if let Some(ts) = receipt.ts {
+                    let read_ts = i64::from(ts.0);
                     let name = member.name().to_string();
                     let display_name = if name == uid.as_str() {
                         uid.localpart().to_string()
@@ -2427,44 +2425,26 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         name
                     };
                     let avatar = member.avatar_url().map(|u| u.to_string());
-                    reader_records.push((
-                        uid.to_string(),
-                        display_name,
-                        avatar,
-                        read_ts,
-                        receipt_event_id.to_string(),
-                    ));
+                    reader_records.push((uid.to_string(), display_name, avatar, read_ts));
                 }
             }
         }
     }
 
-    // Attach readers to each of our own messages: a member read message i when
-    // their receipt time >= the message's server timestamp. The timestamp is
-    // only surfaced on the single message the member's receipt points at
-    // (Matrix stores one receipt position per user, so older read messages have
-    // no per-message read time).
+    // Attach readers to each of our own messages.
     for msg in messages.iter_mut() {
         msg.total_members = total_members;
         if msg.is_me {
             let msg_ts = msg.timestamp.parse::<i64>().unwrap_or(0);
-            let mut readers: Vec<MessageReader> = reader_records
+            msg.readers = reader_records
                 .iter()
-                .filter(|(_, _, _, read_ts, _)| *read_ts >= msg_ts)
-                .map(|(uid, name, avatar, read_ts, receipt_event_id)| MessageReader {
+                .filter(|(_, _, _, read_ts)| *read_ts >= msg_ts)
+                .map(|(uid, name, avatar, _)| MessageReader {
                     user_id: uid.clone(),
                     display_name: name.clone(),
                     avatar_url: avatar.clone(),
-                    read_ts: if receipt_event_id == &msg.id {
-                        Some(*read_ts)
-                    } else {
-                        None
-                    },
                 })
                 .collect();
-            // Most recent reads first (nicer UX in the detail sheet).
-            readers.sort_by(|a, b| b.read_ts.cmp(&a.read_ts));
-            msg.readers = readers;
         }
     }
 

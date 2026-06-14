@@ -2412,12 +2412,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_i_64(raw);
-  }
-
-  @protected
   StoredSession dco_decode_box_autoadd_stored_session(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_stored_session(raw);
@@ -2608,13 +2602,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MessageReader dco_decode_message_reader(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return MessageReader(
       userId: dco_decode_String(arr[0]),
       displayName: dco_decode_String(arr[1]),
       avatarUrl: dco_decode_opt_String(arr[2]),
-      readTs: dco_decode_opt_box_autoadd_i_64(arr[3]),
     );
   }
 
@@ -2637,12 +2630,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return raw == null
         ? null
         : dco_decode_box_autoadd_device_verification_status(raw);
-  }
-
-  @protected
-  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null ? null : dco_decode_box_autoadd_i_64(raw);
   }
 
   @protected
@@ -2879,12 +2866,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_device_verification_status(deserializer));
-  }
-
-  @protected
-  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_i_64(deserializer));
   }
 
   @protected
@@ -3183,12 +3164,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_userId = sse_decode_String(deserializer);
     var var_displayName = sse_decode_String(deserializer);
     var var_avatarUrl = sse_decode_opt_String(deserializer);
-    var var_readTs = sse_decode_opt_box_autoadd_i_64(deserializer);
     return MessageReader(
       userId: var_userId,
       displayName: var_displayName,
       avatarUrl: var_avatarUrl,
-      readTs: var_readTs,
     );
   }
 
@@ -3219,17 +3198,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_device_verification_status(deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
-  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_i_64(deserializer));
     } else {
       return null;
     }
@@ -3488,15 +3456,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_box_autoadd_i_64(
-    PlatformInt64 self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_64(self, serializer);
-  }
-
-  @protected
   void sse_encode_box_autoadd_stored_session(
     StoredSession self,
     SseSerializer serializer,
@@ -3740,7 +3699,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.userId, serializer);
     sse_encode_String(self.displayName, serializer);
     sse_encode_opt_String(self.avatarUrl, serializer);
-    sse_encode_opt_box_autoadd_i_64(self.readTs, serializer);
   }
 
   @protected
@@ -3769,19 +3727,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_device_verification_status(self, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_opt_box_autoadd_i_64(
-    PlatformInt64? self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_i_64(self, serializer);
     }
   }
 
