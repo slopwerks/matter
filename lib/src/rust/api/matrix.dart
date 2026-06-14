@@ -10,7 +10,7 @@ part 'matrix.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `notify_sync_event`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Stream app log entries from Rust → Dart (live).
 Stream<AppLogEntry> watchAppLogs() =>
@@ -85,6 +85,32 @@ Future<String?> getCurrentUserId() =>
 /// Get the currently active user ID (the account being used).
 Future<String?> getActiveUserId() =>
     RustLib.instance.api.crateApiMatrixGetActiveUserId();
+
+/// Fetch the current user's profile (display name + avatar mxc URL) from the
+/// homeserver. Used to populate the profile editor with current values.
+Future<UserProfile> getProfile() =>
+    RustLib.instance.api.crateApiMatrixGetProfile();
+
+/// Update the current user's display name. Empty string clears it.
+Future<void> setDisplayName({required String name}) =>
+    RustLib.instance.api.crateApiMatrixSetDisplayName(name: name);
+
+/// Update the current user's avatar. `mxc` is an `mxc://` URI obtained from
+/// `upload_avatar`. Pass an empty string to remove the avatar.
+Future<void> setAvatarUrl({required String mxc}) =>
+    RustLib.instance.api.crateApiMatrixSetAvatarUrl(mxc: mxc);
+
+/// Upload raw image bytes as avatar media and return the resulting `mxc://`
+/// URI. Call `set_avatar_url` afterwards to actually apply it. Split into two
+/// steps so the UI can show progress if needed and a failed upload won't leave
+/// a half-set profile.
+Future<String> uploadAvatar({
+  required String contentType,
+  required List<int> data,
+}) => RustLib.instance.api.crateApiMatrixUploadAvatar(
+  contentType: contentType,
+  data: data,
+);
 
 /// List all logged-in accounts.
 Future<List<AccountInfo>> listAccounts() =>
@@ -894,6 +920,34 @@ class TypingNotification {
           runtimeType == other.runtimeType &&
           roomId == other.roomId &&
           userIds == other.userIds;
+}
+
+/// The current user's profile, fetched from the homeserver for the editor.
+class UserProfile {
+  final String userId;
+  final String displayName;
+
+  /// `mxc://` avatar URI, if set.
+  final String? avatarUrl;
+
+  const UserProfile({
+    required this.userId,
+    required this.displayName,
+    this.avatarUrl,
+  });
+
+  @override
+  int get hashCode =>
+      userId.hashCode ^ displayName.hashCode ^ avatarUrl.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UserProfile &&
+          runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          displayName == other.displayName &&
+          avatarUrl == other.avatarUrl;
 }
 
 class VerificationDevice {

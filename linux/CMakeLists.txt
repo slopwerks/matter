@@ -88,6 +88,7 @@ else()
 endif()
 
 add_custom_target(build_rust_lib ALL
+  COMMAND cargo clean -p rust_lib_matter
   COMMAND ${CARGO_BUILD_CMD}
   WORKING_DIRECTORY "${RUST_DIR}"
   COMMENT "Building Rust library (${CMAKE_BUILD_TYPE})"

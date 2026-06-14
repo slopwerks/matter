@@ -578,6 +578,16 @@ pub struct AuthResult {
     pub flows: Option<String>,
 }
 
+/// The current user's profile, fetched from the homeserver for the editor.
+#[frb]
+#[derive(Clone, Debug)]
+pub struct UserProfile {
+    pub user_id: String,
+    pub display_name: String,
+    /// `mxc://` avatar URI, if set.
+    pub avatar_url: Option<String>,
+}
+
 /// Info about a logged-in account (for listing / switching).
 #[frb]
 #[derive(Clone, Debug)]
@@ -982,6 +992,95 @@ pub async fn get_current_user_id() -> Option<String> {
 pub async fn get_active_user_id() -> Option<String> {
     let active = ACTIVE_USER.read().await;
     active.clone()
+}
+
+/// Fetch the current user's profile (display name + avatar mxc URL) from the
+/// homeserver. Used to populate the profile editor with current values.
+#[frb]
+pub async fn get_profile() -> Result<UserProfile, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+    let user_id = client
+        .user_id()
+        .ok_or("Not logged in.")?;
+
+    let account = client.account();
+    let display_name = account.get_display_name().await
+        .map_err(|e| format!("Failed to fetch display name: {e}"))?
+        .unwrap_or_default();
+    let avatar_url = account
+        .get_avatar_url()
+        .await
+        .map_err(|e| format!("Failed to fetch avatar: {e}"))?
+        .map(|u| u.to_string());
+
+    Ok(UserProfile {
+        user_id: user_id.to_string(),
+        display_name,
+        avatar_url,
+    })
+}
+
+/// Update the current user's display name. Empty string clears it.
+#[frb]
+pub async fn set_display_name(name: String) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+    let account = client.account();
+    let trimmed = name.trim();
+    account
+        .set_display_name(if trimmed.is_empty() { None } else { Some(trimmed) })
+        .await
+        .map_err(|e| format!("Failed to set display name: {e}"))?;
+    Ok(())
+}
+
+/// Update the current user's avatar. `mxc` is an `mxc://` URI obtained from
+/// `upload_avatar`. Pass an empty string to remove the avatar.
+#[frb]
+pub async fn set_avatar_url(mxc: String) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+    let account = client.account();
+    let trimmed = mxc.trim();
+    if trimmed.is_empty() {
+        account
+            .set_avatar_url(None)
+            .await
+            .map_err(|e| format!("Failed to remove avatar: {e}"))?;
+    } else {
+        use std::convert::TryFrom;
+        let mxc_uri = matrix_sdk::ruma::OwnedMxcUri::try_from(trimmed)
+            .map_err(|e| format!("Invalid mxc URI: {e}"))?;
+        account
+            .set_avatar_url(Some(&mxc_uri))
+            .await
+            .map_err(|e| format!("Failed to set avatar: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Upload raw image bytes as avatar media and return the resulting `mxc://`
+/// URI. Call `set_avatar_url` afterwards to actually apply it. Split into two
+/// steps so the UI can show progress if needed and a failed upload won't leave
+/// a half-set profile.
+#[frb]
+pub async fn upload_avatar(content_type: String, data: Vec<u8>) -> Result<String, String> {
+    let client = get_client()
+        .await
+        .ok_or("No client created.")?;
+    let account = client.account();
+    let mime: mime::Mime = content_type
+        .parse()
+        .map_err(|e| format!("Invalid content type '{content_type}': {e}"))?;
+    let mxc = account
+        .upload_avatar(&mime, data)
+        .await
+        .map_err(|e| format!("Failed to upload avatar: {e}"))?;
+    Ok(mxc.to_string())
 }
 
 /// List all logged-in accounts.
@@ -2328,20 +2427,42 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                                 .trim_start_matches('@')
                                 .to_string();
                             match m.as_original() {
-                                Some(orig) => match &orig.content.membership {
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Join => Some(format!("{} 加入了房间", target_name)),
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Leave => {
-                                        if is_me {
-                                            Some(format!("{} 离开了房间", target_name))
-                                        } else {
-                                            None // skip own leave
+                                Some(orig) => {
+                                    // A member event whose membership is Join but
+                                    // whose prev_membership was also Join is a
+                                    // profile update (avatar/displayname change),
+                                    // not a real join — must not render as
+                                    // "joined the room".
+                                    let prev_membership = orig.unsigned
+                                        .prev_content
+                                        .as_ref()
+                                        .map(|pc| &pc.membership);
+                                    match &orig.content.membership {
+                                        matrix_sdk::ruma::events::room::member::MembershipState::Join => {
+                                            // Real join: no prev, or prev was not Join.
+                                            let is_profile_update = matches!(
+                                                prev_membership,
+                                                Some(matrix_sdk::ruma::events::room::member::MembershipState::Join)
+                                            );
+                                            if is_profile_update {
+                                                None
+                                            } else {
+                                                Some(format!("{} 加入了房间", target_name))
+                                            }
                                         }
+                                        matrix_sdk::ruma::events::room::member::MembershipState::Leave => {
+                                            if is_me {
+                                                Some(format!("{} 离开了房间", target_name))
+                                            } else {
+                                                None // skip own leave
+                                            }
+                                        }
+                                        matrix_sdk::ruma::events::room::member::MembershipState::Ban => Some(format!("{} 被封禁", target_name)),
+                                        matrix_sdk::ruma::events::room::member::MembershipState::Invite => Some(format!("{} 被邀请加入房间", target_name)),
+                                        matrix_sdk::ruma::events::room::member::MembershipState::Knock => Some(format!("{} 请求加入房间", target_name)),
+                                        _ => None,
                                     }
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Ban => Some(format!("{} 被封禁", target_name)),
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Invite => Some(format!("{} 被邀请加入房间", target_name)),
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Knock => Some(format!("{} 请求加入房间", target_name)),
-                                    _ => None,
-                                },
+                                }
                                 None => None,
                             }
                         }

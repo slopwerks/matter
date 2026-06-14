@@ -17,6 +17,18 @@ class CurrentUser {
     this.avatarUrl,
     required this.homeserver,
   });
+
+  CurrentUser copyWith({
+    String? displayName,
+    String? avatarUrl,
+  }) {
+    return CurrentUser(
+      id: id,
+      displayName: displayName ?? this.displayName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      homeserver: homeserver,
+    );
+  }
 }
 
 final isLoggedInProvider = NotifierProvider<MutableState<bool>, bool>(

@@ -6,9 +6,11 @@ import '../../providers/connection_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 
 import '../../theme/app_theme.dart';
+import '../../widgets/app_avatar.dart';
 import '../../widgets/app_card.dart';
 import 'encryption_page.dart';
 import 'log_viewer_page.dart';
+import 'profile_edit_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -201,41 +203,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   // Profile card
                   AppCard(
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('个人资料功能开发中'),
-                          duration: Duration(seconds: 1),
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileEditPage(),
                         ),
                       );
                     },
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(
-                              AppRadii.content,
-                            ),
-                          ),
-                          child: Center(
-                            child: currentUser != null
-                                ? Text(
-                                    currentUser.displayName[0].toUpperCase(),
-                                    style: const TextStyle(
-                                      color: AppColors.primary,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.person_rounded,
-                                    color: AppColors.primary,
-                                    size: 28,
-                                  ),
-                          ),
+                        AppAvatar(
+                          fallback: currentUser?.displayName ?? '我',
+                          size: 60,
+                          url: currentUser?.avatarUrl,
                         ),
                         const SizedBox(width: 16),
                         Expanded(
