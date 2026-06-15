@@ -165,8 +165,8 @@ class _MessageInputState extends ConsumerState<MessageInput> {
       } else if (replyTo != null) {
         ref.read(replyingToProvider(widget.roomId).notifier).value = null;
       }
-      // Refresh message list after sending
-      ref.invalidate(messagesProvider(widget.roomId));
+      // Refresh message list after sending without dropping current UI state.
+      unawaited(refreshMessages(ref, widget.roomId));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -202,7 +202,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
         filename: filename,
       );
 
-      ref.invalidate(messagesProvider(widget.roomId));
+      unawaited(refreshMessages(ref, widget.roomId));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -329,7 +329,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
         );
       }
       _stopTyping();
-      ref.invalidate(messagesProvider(widget.roomId));
+      unawaited(refreshMessages(ref, widget.roomId));
       if (mounted) {
         setState(() => _showPicker = false);
       }

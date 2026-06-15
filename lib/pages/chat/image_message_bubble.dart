@@ -25,6 +25,8 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
 class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   String? _resolvedUrl;
   String? _originalMxcUrl;
+  int? _thumbnailWidth;
+  int? _thumbnailHeight;
 
   @override
   void initState() {
@@ -32,7 +34,22 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     _originalMxcUrl = widget.imageUrl.startsWith('mxc://')
         ? widget.imageUrl
         : null;
-    _resolveUrl();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final size = MediaQuery.sizeOf(context);
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final nextWidth = (size.width * 0.65 * pixelRatio).round();
+    final nextHeight = (280 * pixelRatio).round();
+    if (_thumbnailWidth != nextWidth ||
+        _thumbnailHeight != nextHeight ||
+        _resolvedUrl == null) {
+      _thumbnailWidth = nextWidth;
+      _thumbnailHeight = nextHeight;
+      _resolveUrl();
+    }
   }
 
   @override
@@ -45,7 +62,12 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   Future<void> _resolveUrl() async {
     if (widget.imageUrl.startsWith('mxc://')) {
-      final url = await resolveMxcUrl(ref, widget.imageUrl);
+      final url = await resolveMxcUrl(
+        ref,
+        widget.imageUrl,
+        width: _thumbnailWidth,
+        height: _thumbnailHeight,
+      );
       if (mounted && url != null) {
         setState(() => _resolvedUrl = url);
         widget.onLoaded?.call();
@@ -103,8 +125,13 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
             alignment: Alignment.bottomRight,
             children: [
               AuthenticatedImageMessage(
+                key: ValueKey(
+                  'msg-image:${widget.imageUrl}:${widget.timestamp}',
+                ),
                 imageUrl: url,
                 onLoaded: widget.onLoaded,
+                cacheWidth: _thumbnailWidth,
+                cacheHeight: _thumbnailHeight,
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

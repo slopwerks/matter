@@ -50,12 +50,15 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
       _nameController.text = profile.displayName;
       // Resolve avatar for preview.
       _avatarHttpUrl =
-          await resolveMxcUrl(ref, profile.avatarUrl) ??
-          await resolveMxcUrl(ref, ref.read(currentUserProvider)?.avatarUrl);
+          await resolveMxcUrlAvatar(ref, profile.avatarUrl) ??
+          await resolveMxcUrlAvatar(
+            ref,
+            ref.read(currentUserProvider)?.avatarUrl,
+          );
     } catch (e) {
       // Fall back to whatever the local session already has.
       final current = ref.read(currentUserProvider);
-      _avatarHttpUrl = await resolveMxcUrl(ref, current?.avatarUrl);
+      _avatarHttpUrl = await resolveMxcUrlAvatar(ref, current?.avatarUrl);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -63,9 +66,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
 
   Future<void> _pickAvatar() async {
     try {
-      final picked = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-      );
+      final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
       if (picked == null) return;
 
       // Crop step via image_cropper: full pan/zoom UI, locked to square for an
@@ -99,7 +100,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
       );
       await rust.setAvatarUrl(mxc: mxc);
       // Refresh local preview.
-      final http = await resolveMxcUrl(ref, mxc);
+      final http = await resolveMxcUrlAvatar(ref, mxc);
       if (mounted) {
         setState(() {
           _avatarHttpUrl = http;
@@ -118,9 +119,9 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('头像更新失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('头像更新失败: $e')));
       }
     }
   }
@@ -128,9 +129,9 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
   Future<void> _saveName() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('昵称不能为空')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('昵称不能为空')));
       return;
     }
     // Skip if unchanged.
@@ -152,9 +153,9 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('昵称更新失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('昵称更新失败: $e')));
       }
     }
   }
@@ -174,8 +175,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
 
   @override
   Widget build(BuildContext context) {
-    final fallbackName =
-        _profile?.displayName.isNotEmpty == true
+    final fallbackName = _profile?.displayName.isNotEmpty == true
         ? _profile!.displayName
         : (ref.read(currentUserProvider)?.displayName ?? '我');
     return Scaffold(
@@ -261,9 +261,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
                       filled: true,
                       fillColor: AppColors.surface,
                       hintText: '输入你的昵称',
-                      hintStyle: TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                      ),
+                      hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(AppRadii.content),
                         borderSide: BorderSide.none,
@@ -274,7 +272,9 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('保存'),
                       ),

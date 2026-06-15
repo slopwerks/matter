@@ -1,15 +1,11 @@
+import 'dart:math' as math;
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
-import '../src/rust/api/matrix.dart' as rust;
 import '../theme/app_theme.dart';
-
-/// Cached access token for authenticated image loading.
-final _accessTokenProvider = FutureProvider<String?>((ref) async {
-  ref.watch(activeUserIdProvider);
-  return rust.getAccessToken();
-});
 
 class AppAvatar extends ConsumerStatefulWidget {
   final double size;
@@ -31,18 +27,31 @@ class AppAvatar extends ConsumerStatefulWidget {
 
 class _AppAvatarState extends ConsumerState<AppAvatar> {
   String? _resolvedUrl;
+  int? _targetPixelSize;
 
   @override
   void initState() {
     super.initState();
-    _maybeResolve();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextPixelSize = _avatarPixelSize(context, widget.size);
+    if (_targetPixelSize != nextPixelSize || _resolvedUrl == null) {
+      _targetPixelSize = nextPixelSize;
+      _resolvedUrl = null;
+      _maybeResolve();
+    }
   }
 
   @override
   void didUpdateWidget(covariant AppAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Retry if URL changed, or if previous resolution failed (still null)
-    if (widget.url != oldWidget.url || _resolvedUrl == null) {
+    if (widget.url != oldWidget.url ||
+        widget.size != oldWidget.size ||
+        _resolvedUrl == null) {
       _resolvedUrl = null;
       _maybeResolve();
     }
@@ -52,13 +61,17 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     final url = widget.url;
     if (url == null || url.isEmpty) return;
     if (url.startsWith('mxc://')) {
-      final resolved = await resolveMxcUrl(ref, url);
+      final resolved = await resolveMxcUrlAvatar(ref, url);
       if (mounted && resolved != null) {
         setState(() => _resolvedUrl = resolved);
       }
       // If null, _resolvedUrl stays null → shows fallback; retried on next rebuild
     } else {
-      _resolvedUrl = url;
+      if (mounted) {
+        setState(() => _resolvedUrl = url);
+      } else {
+        _resolvedUrl = url;
+      }
     }
   }
 
@@ -71,7 +84,7 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     }
 
     // For HTTP URLs, use authenticated image loading
-    final tokenAsync = ref.watch(_accessTokenProvider);
+    final token = ref.watch(currentAccessTokenProvider);
     return Container(
       width: widget.size,
       height: widget.size,
@@ -80,14 +93,15 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
         borderRadius: BorderRadius.circular(widget.radius),
       ),
       clipBehavior: Clip.antiAlias,
-      child: tokenAsync.when(
-        data: (token) => _AuthenticatedImage(
-          url: url,
-          token: token,
-          fallback: _buildFallback(),
-        ),
-        loading: () => _buildFallback(),
-        error: (_, _) => _buildFallback(),
+      child: _AuthenticatedImage(
+        key: ValueKey('avatar-image:$url:${widget.size}'),
+        url: url,
+        token: token,
+        fallback: _buildFallback(),
+        width: widget.size,
+        height: widget.size,
+        cacheWidth: _targetPixelSize,
+        cacheHeight: _targetPixelSize,
       ),
     );
   }
@@ -129,42 +143,58 @@ class _AuthenticatedImage extends StatelessWidget {
   final Widget fallback;
   final BoxFit? fit;
   final VoidCallback? onLoaded;
+  final double? width;
+  final double? height;
+  final int? cacheWidth;
+  final int? cacheHeight;
 
   const _AuthenticatedImage({
+    super.key,
     required this.url,
     required this.token,
     required this.fallback,
     this.fit,
     this.onLoaded,
+    this.width,
+    this.height,
+    this.cacheWidth,
+    this.cacheHeight,
   });
 
   @override
   Widget build(BuildContext context) {
-    var notifiedLoaded = false;
     final isMatrixMedia =
         Uri.tryParse(url)?.path.startsWith('/_matrix/client/') ?? false;
-    return Image.network(
-      url,
-      headers: token == null || !isMatrixMedia
+    return CachedNetworkImage(
+      imageUrl: url,
+      httpHeaders: token == null || !isMatrixMedia
           ? null
           : {'Authorization': 'Bearer $token'},
       fit: fit ?? BoxFit.cover,
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if ((frame != null || wasSynchronouslyLoaded) && !notifiedLoaded) {
-          notifiedLoaded = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) => onLoaded?.call());
-        }
-        return child;
+      width: width,
+      height: height,
+      memCacheWidth: cacheWidth,
+      memCacheHeight: cacheHeight,
+      maxWidthDiskCache: cacheWidth,
+      maxHeightDiskCache: cacheHeight,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      imageBuilder: (context, imageProvider) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => onLoaded?.call());
+        return Image(
+          image: imageProvider,
+          fit: fit ?? BoxFit.cover,
+          width: width,
+          height: height,
+        );
       },
-      loadingBuilder: (context, child, progress) => progress == null
-          ? child
-          : const Center(
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-                strokeWidth: 1.5,
-              ),
-            ),
-      errorBuilder: (context, error, stackTrace) => fallback,
+      placeholder: (context, _) => const Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 1.5,
+        ),
+      ),
+      errorWidget: (context, url, error) => fallback,
     );
   }
 }
@@ -175,6 +205,8 @@ class AuthenticatedImageMessage extends ConsumerWidget {
   final VoidCallback? onTap;
   final BoxFit? fit;
   final VoidCallback? onLoaded;
+  final int? cacheWidth;
+  final int? cacheHeight;
 
   const AuthenticatedImageMessage({
     super.key,
@@ -182,6 +214,8 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     this.onTap,
     this.fit,
     this.onLoaded,
+    this.cacheWidth,
+    this.cacheHeight,
   });
 
   @override
@@ -197,7 +231,7 @@ class AuthenticatedImageMessage extends ConsumerWidget {
       );
     }
 
-    final tokenAsync = ref.watch(_accessTokenProvider);
+    final token = ref.watch(currentAccessTokenProvider);
     final brokenIcon = const Center(
       child: Icon(
         Icons.broken_image_rounded,
@@ -206,21 +240,14 @@ class AuthenticatedImageMessage extends ConsumerWidget {
       ),
     );
 
-    final imageWidget = tokenAsync.when(
-      data: (token) => _AuthenticatedImage(
-        url: imageUrl,
-        token: token,
-        fallback: brokenIcon,
-        fit: fit ?? BoxFit.cover,
-        onLoaded: onLoaded,
-      ),
-      loading: () => const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-          strokeWidth: 2,
-        ),
-      ),
-      error: (_, _) => brokenIcon,
+    final imageWidget = _AuthenticatedImage(
+      url: imageUrl,
+      token: token,
+      fallback: brokenIcon,
+      fit: fit ?? BoxFit.cover,
+      onLoaded: onLoaded,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
     );
 
     if (onTap != null) {
@@ -228,4 +255,9 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     }
     return imageWidget;
   }
+}
+
+int _avatarPixelSize(BuildContext context, double logicalSize) {
+  final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+  return math.max(48, (logicalSize * devicePixelRatio).round());
 }

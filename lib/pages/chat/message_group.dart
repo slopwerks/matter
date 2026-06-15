@@ -105,7 +105,11 @@ class MessageGroupWidget extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (showAvatar) _buildAvatar(group.senderName, senderAvatarUrl),
+          if (showAvatar)
+            KeyedSubtree(
+              key: ValueKey('group-avatar:${group.senderId}:$senderAvatarUrl'),
+              child: _buildAvatar(group.senderName, senderAvatarUrl),
+            ),
           if (showAvatar) const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -155,6 +159,7 @@ class MessageGroupWidget extends ConsumerWidget {
     final bubble =
         message.msgType == MessageType.image && message.imageUrl != null
         ? ImageMessageBubble(
+            key: ValueKey('image-bubble:${message.id}:${message.imageUrl}'),
             imageUrl: message.imageUrl!,
             timestamp: formatMessageTime(message.timestamp),
             isMe: isMe,
@@ -218,7 +223,7 @@ class MessageGroupWidget extends ConsumerWidget {
                     eventId: message.id,
                     key: reaction.key,
                   );
-                  ref.invalidate(messagesProvider(roomId));
+                  await refreshMessages(ref, roomId);
                 }
               } catch (e) {
                 if (context.mounted) {
@@ -683,7 +688,7 @@ class MessageGroupWidget extends ConsumerWidget {
   ) async {
     try {
       await sendReaction(roomId: roomId, eventId: eventId, key: emoji);
-      ref.invalidate(messagesProvider(roomId));
+      await refreshMessages(ref, roomId);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1061,7 +1066,7 @@ class _ReadReceiptRowState extends ConsumerState<_ReadReceiptRow> {
   }
 
   Future<void> _resolveAvatar() async {
-    final url = await resolveMxcUrl(ref, widget.reader.avatarUrl);
+    final url = await resolveMxcUrlAvatar(ref, widget.reader.avatarUrl);
     if (mounted && url != _avatarUrl) {
       setState(() => _avatarUrl = url);
     }

@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `notify_sync_event`, `pack_image_to_sticker`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `sticker_label_from_filename`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `usage_allows_sticker`
+// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `load_room_sticker_packs`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `sticker_label_from_filename`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `usage_allows_sticker`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -214,6 +214,22 @@ ConnectionStatus getConnectionStatus() =>
     RustLib.instance.api.crateApiMatrixGetConnectionStatus();
 
 Future<void> initClient() => RustLib.instance.api.crateApiMatrixInitClient();
+
+/// Convert an mxc:// URI to an avatar-sized thumbnail HTTP URL.
+/// Format: `{homeserver}/_matrix/client/v1/media/thumbnail/{server}/{mediaId}?width=96&height=96&method=scale`
+Future<String?> mxcToHttpAvatar({required String mxcUrl}) =>
+    RustLib.instance.api.crateApiMatrixMxcToHttpAvatar(mxcUrl: mxcUrl);
+
+/// Convert an mxc:// URI to a scaled thumbnail HTTP URL for message media.
+Future<String?> mxcToHttpThumbnail({
+  required String mxcUrl,
+  required int width,
+  required int height,
+}) => RustLib.instance.api.crateApiMatrixMxcToHttpThumbnail(
+  mxcUrl: mxcUrl,
+  width: width,
+  height: height,
+);
 
 /// Convert an mxc:// URI to a thumbnail HTTP URL for chat bubbles.
 /// Format: `{homeserver}/_matrix/client/v1/media/thumbnail/{server}/{mediaId}?width=800&height=600&method=scale`

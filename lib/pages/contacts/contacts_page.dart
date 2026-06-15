@@ -194,7 +194,7 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
   Future<void> _resolveAvatar() async {
     if (widget.contact.avatarUrl != null &&
         widget.contact.avatarUrl!.startsWith('mxc://')) {
-      final url = await resolveMxcUrl(ref, widget.contact.avatarUrl);
+      final url = await resolveMxcUrlAvatar(ref, widget.contact.avatarUrl);
       if (mounted && url != null) {
         setState(() => _resolvedAvatarUrl = url);
       }

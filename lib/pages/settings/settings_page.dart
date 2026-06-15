@@ -143,6 +143,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           // No accounts left, go to login
           ref.read(isLoggedInProvider.notifier).value = false;
           ref.read(currentUserProvider.notifier).value = null;
+          ref.read(currentAccessTokenProvider.notifier).value = null;
           ref.read(activeUserIdProvider.notifier).value = null;
         }
       }

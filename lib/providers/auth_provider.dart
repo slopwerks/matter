@@ -18,10 +18,7 @@ class CurrentUser {
     required this.homeserver,
   });
 
-  CurrentUser copyWith({
-    String? displayName,
-    String? avatarUrl,
-  }) {
+  CurrentUser copyWith({String? displayName, String? avatarUrl}) {
     return CurrentUser(
       id: id,
       displayName: displayName ?? this.displayName,
@@ -44,6 +41,9 @@ final currentUserProvider =
     NotifierProvider<MutableState<CurrentUser?>, CurrentUser?>(
       () => MutableState(null),
     );
+
+final currentAccessTokenProvider =
+    NotifierProvider<MutableState<String?>, String?>(() => MutableState(null));
 
 /// Provider for the homeserver URL
 final homeserverProvider = NotifierProvider<MutableState<String>, String>(

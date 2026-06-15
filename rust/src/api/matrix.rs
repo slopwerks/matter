@@ -2419,12 +2419,13 @@ pub async fn init_client() -> Result<(), String> {
     Ok(())
 }
 
-/// Convert an mxc:// URI to a thumbnail HTTP URL for chat bubbles.
-/// Format: `{homeserver}/_matrix/client/v1/media/thumbnail/{server}/{mediaId}?width=800&height=600&method=scale`
-#[frb]
-pub async fn mxc_to_http(mxc_url: String) -> Option<String> {
-    let client = get_client().await?;
-    let url = url::Url::parse(&mxc_url).ok()?;
+fn mxc_to_thumbnail_http(
+    client: &matrix_sdk::Client,
+    mxc_url: &str,
+    width: u32,
+    height: u32,
+) -> Option<String> {
+    let url = url::Url::parse(mxc_url).ok()?;
     if url.scheme() != "mxc" {
         return None;
     }
@@ -2435,16 +2436,51 @@ pub async fn mxc_to_http(mxc_url: String) -> Option<String> {
     }
     let raw_base = client.homeserver().to_string();
     let base = raw_base.trim_end_matches('/');
-    let media_url = format!(
-        "{}/_matrix/client/v1/media/thumbnail/{}/{}?width=800&height=600&method=scale",
-        base, server_name, media_id
-    );
+    Some(format!(
+        "{}/_matrix/client/v1/media/thumbnail/{}/{}?width={}&height={}&method=scale",
+        base, server_name, media_id, width, height
+    ))
+}
+
+/// Convert an mxc:// URI to an avatar-sized thumbnail HTTP URL.
+/// Format: `{homeserver}/_matrix/client/v1/media/thumbnail/{server}/{mediaId}?width=96&height=96&method=scale`
+#[frb]
+pub async fn mxc_to_http_avatar(mxc_url: String) -> Option<String> {
+    let client = get_client().await?;
+    let media_url = mxc_to_thumbnail_http(&client, &mxc_url, 96, 96)?;
     app_log(
         "info",
         "media",
-        format!("Resolved media thumbnail for {}", mxc_url),
+        format!("Resolved avatar thumbnail for {}", mxc_url),
     );
     Some(media_url)
+}
+
+/// Convert an mxc:// URI to a scaled thumbnail HTTP URL for message media.
+#[frb]
+pub async fn mxc_to_http_thumbnail(
+    mxc_url: String,
+    width: u32,
+    height: u32,
+) -> Option<String> {
+    let client = get_client().await?;
+    let media_url = mxc_to_thumbnail_http(&client, &mxc_url, width, height)?;
+    app_log(
+        "info",
+        "media",
+        format!(
+            "Resolved media thumbnail for {} at {}x{}",
+            mxc_url, width, height
+        ),
+    );
+    Some(media_url)
+}
+
+/// Convert an mxc:// URI to a thumbnail HTTP URL for chat bubbles.
+/// Format: `{homeserver}/_matrix/client/v1/media/thumbnail/{server}/{mediaId}?width=800&height=600&method=scale`
+#[frb]
+pub async fn mxc_to_http(mxc_url: String) -> Option<String> {
+    mxc_to_http_thumbnail(mxc_url, 800, 600).await
 }
 
 /// Convert an mxc:// URI to a full-quality download HTTP URL.

@@ -52,6 +52,7 @@ class ChatListItem extends ConsumerWidget {
         child: Row(
           children: [
             AppAvatar(
+              key: ValueKey('room-avatar:${room.id}:${room.avatarUrl}'),
               fallback: room.name,
               size: dense ? 44 : 52,
               url: room.avatarUrl,

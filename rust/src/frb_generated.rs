@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -767316983;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -241514794;
 
 // Section: executor
 
@@ -1640,6 +1640,44 @@ fn wire__crate__api__matrix__mxc_to_http_impl(
         },
     )
 }
+fn wire__crate__api__matrix__mxc_to_http_avatar_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "mxc_to_http_avatar",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_mxc_url = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::matrix::mxc_to_http_avatar(api_mxc_url).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__matrix__mxc_to_http_full_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1669,6 +1707,51 @@ fn wire__crate__api__matrix__mxc_to_http_full_impl(
                     (move || async move {
                         let output_ok = Result::<_, ()>::Ok(
                             crate::api::matrix::mxc_to_http_full(api_mxc_url).await,
+                        )?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__matrix__mxc_to_http_thumbnail_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "mxc_to_http_thumbnail",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_mxc_url = <String>::sse_decode(&mut deserializer);
+            let api_width = <u32>::sse_decode(&mut deserializer);
+            let api_height = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, ()>(
+                    (move || async move {
+                        let output_ok = Result::<_, ()>::Ok(
+                            crate::api::matrix::mxc_to_http_thumbnail(
+                                api_mxc_url,
+                                api_width,
+                                api_height,
+                            )
+                            .await,
                         )?;
                         Ok(output_ok)
                     })()
@@ -3514,55 +3597,59 @@ fn pde_ffi_dispatcher_primary_impl(
         42 => wire__crate__api__matrix__login_with_token_impl(port, ptr, rust_vec_len, data_len),
         43 => wire__crate__api__matrix__logout_impl(port, ptr, rust_vec_len, data_len),
         44 => wire__crate__api__matrix__mxc_to_http_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__matrix__mxc_to_http_full_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__matrix__recover_encryption_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__matrix__redact_message_impl(port, ptr, rust_vec_len, data_len),
-        48 => {
+        45 => wire__crate__api__matrix__mxc_to_http_avatar_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__matrix__mxc_to_http_full_impl(port, ptr, rust_vec_len, data_len),
+        47 => {
+            wire__crate__api__matrix__mxc_to_http_thumbnail_impl(port, ptr, rust_vec_len, data_len)
+        }
+        48 => wire__crate__api__matrix__recover_encryption_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__matrix__redact_message_impl(port, ptr, rust_vec_len, data_len),
+        50 => {
             wire__crate__api__matrix__register_complete_uiaa_impl(port, ptr, rust_vec_len, data_len)
         }
-        49 => wire__crate__api__matrix__register_get_uiaa_session_impl(
+        51 => wire__crate__api__matrix__register_get_uiaa_session_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__matrix__remove_account_impl(port, ptr, rust_vec_len, data_len),
-        51 => {
+        52 => wire__crate__api__matrix__remove_account_impl(port, ptr, rust_vec_len, data_len),
+        53 => {
             wire__crate__api__matrix__remove_room_from_space_impl(port, ptr, rust_vec_len, data_len)
         }
-        52 => wire__crate__api__matrix__restore_session_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__matrix__search_rooms_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__matrix__send_image_message_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__matrix__send_message_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__matrix__send_reaction_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__matrix__send_reply_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__matrix__send_sticker_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__matrix__send_typing_notice_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__matrix__set_avatar_url_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__matrix__set_display_name_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__matrix__start_device_verification_impl(
+        54 => wire__crate__api__matrix__restore_session_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__matrix__search_rooms_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__matrix__send_image_message_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__matrix__send_message_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__matrix__send_reaction_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__matrix__send_reply_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__matrix__send_sticker_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__matrix__send_typing_notice_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__matrix__set_avatar_url_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__matrix__set_display_name_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__matrix__start_device_verification_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        63 => wire__crate__api__matrix__start_sync_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__matrix__subscribe_typing_for_room_impl(
+        65 => wire__crate__api__matrix__start_sync_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__matrix__subscribe_typing_for_room_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__api__matrix__switch_account_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__matrix__sync_once_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__matrix__unsubscribe_typing_impl(port, ptr, rust_vec_len, data_len),
-        68 => {
+        67 => wire__crate__api__matrix__switch_account_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__matrix__sync_once_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__matrix__unsubscribe_typing_impl(port, ptr, rust_vec_len, data_len),
+        70 => {
             wire__crate__api__matrix__update_space_details_impl(port, ptr, rust_vec_len, data_len)
         }
-        69 => wire__crate__api__matrix__upload_avatar_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__matrix__watch_app_logs_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__matrix__watch_sync_events_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__matrix__watch_typing_notifications_impl(
+        71 => wire__crate__api__matrix__upload_avatar_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__matrix__watch_app_logs_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__matrix__watch_sync_events_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__matrix__watch_typing_notifications_impl(
             port,
             ptr,
             rust_vec_len,

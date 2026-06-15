@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'auth_provider.dart';
 import 'connection_provider.dart';
@@ -76,6 +78,8 @@ Future<void> applyActiveSessionState(
     displayName: displayName,
     homeserver: homeserver,
   );
+  ref.read(currentAccessTokenProvider.notifier).value = await rust
+      .getAccessToken();
   ref.read(homeserverProvider.notifier).value = homeserver;
   ref.read(activeUserIdProvider.notifier).value = userId;
   if (refreshStoredSessions) {
@@ -128,14 +132,87 @@ final currentRoomIdProvider = NotifierProvider<MutableState<String?>, String?>(
   () => MutableState(null),
 );
 
-final messagesProvider = FutureProvider.family<List<rust.ChatMessage>, String>((
-  ref,
-  roomId,
-) async {
-  if (!ref.watch(sessionReadyProvider)) return [];
-  final messages = await rust.getMessages(roomId: roomId);
-  return messages;
-});
+final _roomMessagesStoreProvider =
+    NotifierProvider<
+      MutableState<Map<String, AsyncValue<List<rust.ChatMessage>>>>,
+      Map<String, AsyncValue<List<rust.ChatMessage>>>
+    >(() => MutableState({}));
+
+Future<void> _fetchMessagesIntoStoreCore(
+  bool sessionReady,
+  Map<String, AsyncValue<List<rust.ChatMessage>>> currentStore,
+  Map<String, AsyncValue<List<rust.ChatMessage>>> Function() readStore,
+  void Function(Map<String, AsyncValue<List<rust.ChatMessage>>>) writeStore,
+  String roomId, {
+  bool force = false,
+}) async {
+  if (!sessionReady) {
+    writeStore({...currentStore, roomId: const AsyncData([])});
+    return;
+  }
+
+  final current = currentStore[roomId];
+  if (!force && current is AsyncLoading<List<rust.ChatMessage>>) return;
+
+  if (current == null) {
+    writeStore({...currentStore, roomId: const AsyncLoading()});
+  }
+
+  try {
+    final messages = await rust.getMessages(roomId: roomId);
+    final latestStore = readStore();
+    writeStore({...latestStore, roomId: AsyncData(messages)});
+  } catch (error, stackTrace) {
+    final latestStore = readStore();
+    if (current == null || !current.hasValue) {
+      writeStore({...latestStore, roomId: AsyncError(error, stackTrace)});
+    } else {
+      debugPrint('refresh messages failed for $roomId: $error');
+    }
+  }
+}
+
+final messagesProvider =
+    Provider.family<AsyncValue<List<rust.ChatMessage>>, String>((ref, roomId) {
+      if (!ref.watch(sessionReadyProvider)) return const AsyncData([]);
+
+      final store = ref.watch(_roomMessagesStoreProvider);
+      final current = store[roomId];
+      if (current != null) return current;
+
+      Future.microtask(
+        () => _fetchMessagesIntoStoreCore(
+          ref.read(sessionReadyProvider),
+          ref.read(_roomMessagesStoreProvider),
+          () => ref.read(_roomMessagesStoreProvider),
+          (next) => ref.read(_roomMessagesStoreProvider.notifier).value = next,
+          roomId,
+        ),
+      );
+      return const AsyncLoading();
+    });
+
+Future<void> refreshMessagesRef(Ref ref, String roomId) {
+  return _fetchMessagesIntoStoreCore(
+    ref.read(sessionReadyProvider),
+    ref.read(_roomMessagesStoreProvider),
+    () => ref.read(_roomMessagesStoreProvider),
+    (next) => ref.read(_roomMessagesStoreProvider.notifier).value = next,
+    roomId,
+    force: true,
+  );
+}
+
+Future<void> refreshMessages(WidgetRef ref, String roomId) {
+  return _fetchMessagesIntoStoreCore(
+    ref.read(sessionReadyProvider),
+    ref.read(_roomMessagesStoreProvider),
+    () => ref.read(_roomMessagesStoreProvider),
+    (next) => ref.read(_roomMessagesStoreProvider.notifier).value = next,
+    roomId,
+    force: true,
+  );
+}
 
 final stickerPacksProvider =
     FutureProvider.family<List<rust.StickerPack>, String>((ref, roomId) async {
@@ -150,21 +227,144 @@ final mxcUrlCacheProvider =
       () => MutableState({}),
     );
 
-Future<String?> resolveMxcUrl(WidgetRef ref, String? mxcUrl) async {
+const _kMxcCachePrefix = 'mxc_http_cache_v1';
+const _kMaxPersistedMxcEntriesPerUser = 500;
+final _loadedMxcCacheUsers = <String>{};
+
+String _mxcStorageNamespace(WidgetRef ref) =>
+    ref.read(activeUserIdProvider) ?? 'anonymous';
+
+String _mxcStorageKey(String namespace) => '${_kMxcCachePrefix}_$namespace';
+
+String _scopedMxcCacheKey(String namespace, String cacheKey) =>
+    '$namespace::$cacheKey';
+
+Future<void> _ensureMxcCacheLoaded(WidgetRef ref) async {
+  final namespace = _mxcStorageNamespace(ref);
+  if (_loadedMxcCacheUsers.contains(namespace)) return;
+
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_mxcStorageKey(namespace));
+  if (raw != null && raw.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final trimmed = _trimPersistedMxcEntries(
+        decoded.map((key, value) => MapEntry(key, '$value')),
+      );
+      final loadedEntries = decoded.map(
+        (key, value) => MapEntry(
+          _scopedMxcCacheKey(namespace, key),
+          trimmed[key] ?? '$value',
+        ),
+      );
+      final cache = ref.read(mxcUrlCacheProvider);
+      ref.read(mxcUrlCacheProvider.notifier).value = {
+        ...cache,
+        ...loadedEntries,
+      };
+      if (trimmed.length != decoded.length) {
+        await prefs.setString(_mxcStorageKey(namespace), jsonEncode(trimmed));
+      }
+    } catch (error) {
+      debugPrint('Failed to load persisted MXC cache for $namespace: $error');
+    }
+  }
+
+  _loadedMxcCacheUsers.add(namespace);
+}
+
+Future<void> _persistMxcCacheEntry(
+  WidgetRef ref,
+  String namespace,
+  String unscopedCacheKey,
+  String httpUrl,
+) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final storageKey = _mxcStorageKey(namespace);
+    final raw = prefs.getString(storageKey);
+    final persisted = raw == null || raw.isEmpty
+        ? <String, String>{}
+        : (jsonDecode(raw) as Map<String, dynamic>).map(
+            (key, value) => MapEntry(key, '$value'),
+          );
+    persisted.remove(unscopedCacheKey);
+    persisted[unscopedCacheKey] = httpUrl;
+    final trimmed = _trimPersistedMxcEntries(persisted);
+    await prefs.setString(storageKey, jsonEncode(trimmed));
+  } catch (error) {
+    debugPrint('Failed to persist MXC cache entry: $error');
+  }
+}
+
+Map<String, String> _trimPersistedMxcEntries(Map<String, String> entries) {
+  if (entries.length <= _kMaxPersistedMxcEntriesPerUser) return entries;
+  final trimmed = Map<String, String>.from(entries);
+  while (trimmed.length > _kMaxPersistedMxcEntriesPerUser) {
+    trimmed.remove(trimmed.keys.first);
+  }
+  return trimmed;
+}
+
+String _mxcCacheKey(String mxcUrl, {int? width, int? height}) {
+  if (width == null && height == null) return mxcUrl;
+  return '$mxcUrl|${width ?? 0}x${height ?? 0}';
+}
+
+Future<String?> resolveMxcUrlAvatar(WidgetRef ref, String? mxcUrl) async {
   if (mxcUrl == null || !mxcUrl.startsWith('mxc://')) return null;
+  await _ensureMxcCacheLoaded(ref);
+  final namespace = _mxcStorageNamespace(ref);
+  final rawCacheKey = _mxcCacheKey(mxcUrl, width: 96, height: 96);
+  final cacheKey = _scopedMxcCacheKey(namespace, rawCacheKey);
+
+  final cache = ref.read(mxcUrlCacheProvider);
+  if (cache.containsKey(cacheKey)) return cache[cacheKey];
+
+  try {
+    final httpUrl = await rust.mxcToHttpAvatar(mxcUrl: mxcUrl);
+    if (httpUrl == null || httpUrl.isEmpty) return null;
+    ref.read(mxcUrlCacheProvider.notifier).value = {
+      ...cache,
+      cacheKey: httpUrl,
+    };
+    unawaited(_persistMxcCacheEntry(ref, namespace, rawCacheKey, httpUrl));
+    return httpUrl;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<String?> resolveMxcUrl(
+  WidgetRef ref,
+  String? mxcUrl, {
+  int? width,
+  int? height,
+}) async {
+  if (mxcUrl == null || !mxcUrl.startsWith('mxc://')) return null;
+  await _ensureMxcCacheLoaded(ref);
+  final namespace = _mxcStorageNamespace(ref);
+  final rawCacheKey = _mxcCacheKey(mxcUrl, width: width, height: height);
+  final cacheKey = _scopedMxcCacheKey(namespace, rawCacheKey);
 
   // Check cache first
   final cache = ref.read(mxcUrlCacheProvider);
-  if (cache.containsKey(mxcUrl)) return cache[mxcUrl];
+  if (cache.containsKey(cacheKey)) return cache[cacheKey];
 
   try {
-    final httpUrl = await rust.mxcToHttp(mxcUrl: mxcUrl);
-    if (httpUrl != null) {
-      ref.read(mxcUrlCacheProvider.notifier).value = {
-        ...cache,
-        mxcUrl: httpUrl,
-      };
-    }
+    final httpUrl = width != null && height != null
+        ? await rust.mxcToHttpThumbnail(
+            mxcUrl: mxcUrl,
+            width: width,
+            height: height,
+          )
+        : await rust.mxcToHttp(mxcUrl: mxcUrl);
+    if (httpUrl == null || httpUrl.isEmpty) return null;
+    ref.read(mxcUrlCacheProvider.notifier).value = {
+      ...cache,
+      cacheKey: httpUrl,
+    };
+    unawaited(_persistMxcCacheEntry(ref, namespace, rawCacheKey, httpUrl));
     return httpUrl;
   } catch (_) {
     return null;
@@ -214,7 +414,7 @@ Future<void> sendReply(
     message: message,
     replyToEventId: replyToEventId,
   );
-  ref.invalidate(messagesProvider(roomId));
+  await refreshMessagesRef(ref, roomId);
   ref.invalidate(chatRoomsProvider);
 }
 
@@ -226,7 +426,7 @@ Future<void> redactMessage(
   String? reason,
 }) async {
   await rust.redactMessage(roomId: roomId, eventId: eventId, reason: reason);
-  ref.invalidate(messagesProvider(roomId));
+  await refreshMessages(ref, roomId);
   ref.invalidate(chatRoomsProvider);
 }
 
@@ -266,7 +466,7 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
     final roomIds = pendingMessageRefreshes.toList();
     pendingMessageRefreshes.clear();
     for (final roomId in roomIds) {
-      ref.invalidate(messagesProvider(roomId));
+      unawaited(refreshMessagesRef(ref, roomId));
     }
   }
 
