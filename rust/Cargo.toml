@@ -12,7 +12,7 @@ matrix-sdk = { version = "0.18", default-features = false, features = [
   "e2e-encryption",
   "bundled-sqlite",
 ] }
-ruma = { version = "0.16", features = ["client-api-c"] }
+ruma = { version = "0.16", features = ["client-api-c", "unstable-msc2545"] }
 tokio = { version = "1", features = [
   "rt",
   "rt-multi-thread",

@@ -18,7 +18,7 @@ use matrix_sdk::{
     Client, SessionMeta, SessionTokens,
 };
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{Mutex, RwLock};
@@ -436,6 +436,30 @@ pub struct ChatRoom {
 
 #[frb]
 #[derive(Clone, Debug)]
+pub struct StickerPack {
+    pub id: String,
+    pub title: String,
+    pub avatar_url: Option<String>,
+    /// "room" or "user"
+    pub source: String,
+    pub stickers: Vec<Sticker>,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
+pub struct Sticker {
+    pub id: String,
+    pub shortcode: String,
+    pub body: String,
+    pub image_url: String,
+    pub thumbnail_url: Option<String>,
+    pub mime_type: Option<String>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+}
+
+#[frb]
+#[derive(Clone, Debug)]
 pub struct Space {
     pub id: String,
     pub name: String,
@@ -492,6 +516,210 @@ fn room_to_chat_room(room: &matrix_sdk::Room) -> ChatRoom {
         unread_count,
         room_type,
     }
+}
+
+fn room_display_name(room: &matrix_sdk::Room) -> String {
+    let room_id = room.room_id().to_string();
+    let mut name = room.name().filter(|n| !n.is_empty()).unwrap_or_default();
+    if name.is_empty() {
+        name = room
+            .cached_display_name()
+            .map(|dn| dn.to_string())
+            .unwrap_or_default();
+    }
+    name = name.trim().to_string();
+    if name.is_empty() {
+        room_id
+    } else {
+        name
+    }
+}
+
+fn usage_allows_sticker(usage: &BTreeSet<ruma::events::image_pack::PackUsage>) -> bool {
+    usage.is_empty() || usage.contains(&ruma::events::image_pack::PackUsage::Sticker)
+}
+
+fn uint_to_i32(value: Option<matrix_sdk::ruma::UInt>) -> Option<i32> {
+    value.and_then(|value| u64::from(value).try_into().ok())
+}
+
+fn pack_image_to_sticker(
+    shortcode: String,
+    image: ruma::events::image_pack::PackImage,
+    pack_allows_sticker: bool,
+) -> Option<Sticker> {
+    let image_allows_sticker = if image.usage.is_empty() {
+        pack_allows_sticker
+    } else {
+        usage_allows_sticker(&image.usage)
+    };
+    if !image_allows_sticker {
+        return None;
+    }
+
+    let body = image
+        .body
+        .as_deref()
+        .map(str::trim)
+        .filter(|body| !body.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| shortcode.clone());
+    let image_url = image.url.to_string();
+    let thumbnail_url = None;
+    let mime_type = image.info.as_ref().and_then(|info| info.mimetype.clone());
+    let width = image.info.as_ref().and_then(|info| uint_to_i32(info.width));
+    let height = image
+        .info
+        .as_ref()
+        .and_then(|info| uint_to_i32(info.height));
+
+    Some(Sticker {
+        id: shortcode.clone(),
+        shortcode,
+        body,
+        image_url,
+        thumbnail_url,
+        mime_type,
+        width,
+        height,
+    })
+}
+
+fn room_image_pack_to_sticker_pack(
+    room: &matrix_sdk::Room,
+    state_key: String,
+    content: ruma::events::image_pack::RoomImagePackEventContent,
+) -> Option<StickerPack> {
+    let pack_allows_sticker = content
+        .pack
+        .as_ref()
+        .is_none_or(|pack| usage_allows_sticker(&pack.usage));
+    let mut stickers = content
+        .images
+        .into_iter()
+        .filter_map(|(shortcode, image)| {
+            pack_image_to_sticker(shortcode, image, pack_allows_sticker)
+        })
+        .collect::<Vec<_>>();
+    if stickers.is_empty() {
+        return None;
+    }
+    stickers.sort_by(|a, b| a.body.to_lowercase().cmp(&b.body.to_lowercase()));
+
+    let title = content
+        .pack
+        .as_ref()
+        .and_then(|pack| pack.display_name.as_deref())
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| {
+            let trimmed = state_key.trim();
+            if trimmed.is_empty() {
+                room_display_name(room)
+            } else {
+                trimmed.to_string()
+            }
+        });
+    let avatar_url = content
+        .pack
+        .as_ref()
+        .and_then(|pack| pack.avatar_url.as_ref().map(ToString::to_string))
+        .or_else(|| room.avatar_url().map(|url| url.to_string()));
+    let normalized_state_key = if state_key.trim().is_empty() {
+        "default".to_string()
+    } else {
+        state_key
+    };
+
+    Some(StickerPack {
+        id: format!("room:{}:{normalized_state_key}", room.room_id()),
+        title,
+        avatar_url,
+        source: "room".to_string(),
+        stickers,
+    })
+}
+
+async fn load_room_sticker_packs(
+    room: &matrix_sdk::Room,
+    enabled_state_keys: Option<&std::collections::HashSet<String>>,
+) -> Result<Vec<StickerPack>, String> {
+    let room_pack_events = room
+        .get_state_events_static::<ruma::events::image_pack::RoomImagePackEventContent>()
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to load sticker packs for room {}: {e}",
+                room.room_id()
+            )
+        })?;
+
+    let mut packs = Vec::new();
+    for raw_pack in room_pack_events {
+        let Ok(pack_event) = raw_pack.deserialize() else {
+            continue;
+        };
+        let (state_key, content) = match pack_event {
+            matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(
+                matrix_sdk::ruma::events::SyncStateEvent::Original(event),
+            ) => (event.state_key, event.content),
+            _ => continue,
+        };
+
+        if let Some(enabled_state_keys) = enabled_state_keys {
+            if !enabled_state_keys.contains(state_key.as_str()) {
+                continue;
+            }
+        }
+
+        if let Some(pack) = room_image_pack_to_sticker_pack(room, state_key, content) {
+            packs.push(pack);
+        }
+    }
+
+    Ok(packs)
+}
+
+fn account_image_pack_to_sticker_pack(
+    content: ruma::events::image_pack::AccountImagePackEventContent,
+) -> Option<StickerPack> {
+    let pack_allows_sticker = content
+        .pack
+        .as_ref()
+        .is_none_or(|pack| usage_allows_sticker(&pack.usage));
+    let mut stickers = content
+        .images
+        .into_iter()
+        .filter_map(|(shortcode, image)| {
+            pack_image_to_sticker(shortcode, image, pack_allows_sticker)
+        })
+        .collect::<Vec<_>>();
+    if stickers.is_empty() {
+        return None;
+    }
+    stickers.sort_by(|a, b| a.body.to_lowercase().cmp(&b.body.to_lowercase()));
+
+    let title = content
+        .pack
+        .as_ref()
+        .and_then(|pack| pack.display_name.as_deref())
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "我的贴纸".to_string());
+    let avatar_url = content
+        .pack
+        .as_ref()
+        .and_then(|pack| pack.avatar_url.as_ref().map(ToString::to_string));
+
+    Some(StickerPack {
+        id: "user:default".to_string(),
+        title,
+        avatar_url,
+        source: "user".to_string(),
+        stickers,
+    })
 }
 
 #[frb]
@@ -2403,6 +2631,11 @@ fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
                     }
                 }),
                 matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                    matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Sticker(sticker),
+                ) => sticker
+                    .as_original()
+                    .map(|o| format!("[贴纸] {}", o.content.body)),
+                matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
                     matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(_),
                 ) => Some("❤️ 表情回应".to_string()),
                 _ => None,
@@ -2450,6 +2683,20 @@ fn strip_reply_fallback(body: &str) -> String {
         }
     }
     body.to_string()
+}
+
+fn sticker_label_from_filename(filename: &str) -> Option<String> {
+    filename
+        .strip_prefix("sticker__")
+        .map(|rest| {
+            rest.trim_end_matches(".png")
+                .trim_end_matches(".webp")
+                .trim_end_matches(".gif")
+                .trim_end_matches(".jpg")
+                .trim_end_matches(".jpeg")
+                .to_string()
+        })
+        .filter(|label| !label.is_empty())
 }
 
 /// Extract edit text from a replacement relation's new_content.
@@ -2665,6 +2912,48 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                     }
                 };
                 raw_messages.push((event_id_str.clone(), chat_msg));
+            }
+            matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Sticker(sticker),
+            ) => {
+                let Some(original) = sticker.as_original() else {
+                    continue;
+                };
+
+                let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
+                    if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
+                        Some(reply.in_reply_to.event_id.to_string())
+                    } else {
+                        None
+                    }
+                });
+
+                let url = match &original.content.source {
+                    matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(mxc) => {
+                        Some(mxc.to_string())
+                    }
+                    _ => None,
+                };
+
+                raw_messages.push((
+                    event_id_str.clone(),
+                    ChatMessage {
+                        id: event_id_str.clone(),
+                        sender_id: sender_id.clone(),
+                        sender_name: sender_name.clone(),
+                        content: original.content.body.clone(),
+                        timestamp: timestamp.clone(),
+                        is_me,
+                        msg_type: MessageType::Image,
+                        image_url: url,
+                        in_reply_to,
+                        is_edited: false,
+                        edit_history: Vec::new(),
+                        reactions: Vec::new(),
+                        readers: Vec::new(),
+                        total_members: 0,
+                    },
+                ));
             }
 
             // ── Reaction events (m.reaction / m.annotation) ──
@@ -2917,6 +3206,84 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
 
     Ok(messages)
 }
+
+#[frb]
+pub async fn get_sticker_packs(room_id: String) -> Result<Vec<StickerPack>, String> {
+    let client = get_client().await.ok_or("No client created.")?;
+
+    let parsed_room_id = matrix_sdk::ruma::RoomId::parse(room_id.clone())
+        .map_err(|e| format!("Invalid room id: {e}"))?;
+    let room = client
+        .get_room(&parsed_room_id)
+        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+
+    let imported_room_packs = client
+        .account()
+        .account_data::<ruma::events::image_pack::ImagePackRoomsEventContent>()
+        .await
+        .map_err(|e| format!("Failed to load image-pack room mapping: {e}"))?
+        .and_then(|raw| raw.deserialize().ok())
+        .map(|content| {
+            content
+                .rooms
+                .into_iter()
+                .map(|(source_room_id, packs)| {
+                    (
+                        source_room_id.to_string(),
+                        packs
+                            .keys()
+                            .map(|state_key| state_key.to_string())
+                            .collect::<std::collections::HashSet<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let mut packs = Vec::new();
+    let mut seen_pack_ids = std::collections::HashSet::new();
+
+    for pack in load_room_sticker_packs(&room, None).await? {
+        if seen_pack_ids.insert(pack.id.clone()) {
+            packs.push(pack);
+        }
+    }
+
+    for (source_room_id, enabled_state_keys) in imported_room_packs {
+        let parsed_source_room_id = match matrix_sdk::ruma::RoomId::parse(source_room_id.clone()) {
+            Ok(room_id) => room_id,
+            Err(_) => continue,
+        };
+        let Some(source_room) = client.get_room(&parsed_source_room_id) else {
+            continue;
+        };
+
+        for pack in load_room_sticker_packs(&source_room, Some(&enabled_state_keys)).await? {
+            if seen_pack_ids.insert(pack.id.clone()) {
+                packs.push(pack);
+            }
+        }
+    }
+
+    if let Some(user_pack_raw) = client
+        .account()
+        .account_data::<ruma::events::image_pack::AccountImagePackEventContent>()
+        .await
+        .map_err(|e| format!("Failed to load user sticker pack: {e}"))?
+    {
+        if let Ok(user_pack_content) = user_pack_raw.deserialize() {
+            if let Some(pack) = account_image_pack_to_sticker_pack(user_pack_content) {
+                if seen_pack_ids.insert(pack.id.clone()) {
+                    packs.push(pack);
+                }
+            }
+        }
+    }
+
+    packs.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    Ok(packs)
+}
+
 #[frb]
 pub async fn send_message(room_id: String, message: String) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
@@ -2991,24 +3358,105 @@ pub async fn send_image_message(
     let content_uri = upload_response.content_uri;
     app_log("info", "media", format!("Image uploaded: {}", content_uri));
 
-    // Build image message content
-    use matrix_sdk::ruma::events::room::message::{
-        ImageMessageEventContent, MessageType, RoomMessageEventContent,
-    };
+    if let Some(label) = sticker_label_from_filename(&filename) {
+        let mut info = matrix_sdk::ruma::events::room::ImageInfo::new();
+        info.width = Some(matrix_sdk::ruma::UInt::new(512).expect("valid sticker width"));
+        info.height = Some(matrix_sdk::ruma::UInt::new(512).expect("valid sticker height"));
+        info.mimetype = Some(mime_type.to_string());
 
-    let image_content = ImageMessageEventContent::plain(filename.clone(), content_uri);
-    let content = RoomMessageEventContent::new(MessageType::Image(image_content));
+        let content =
+            matrix_sdk::ruma::events::sticker::StickerEventContent::new(label, info, content_uri);
+
+        room.send(content)
+            .await
+            .map_err(|e| format!("Send sticker message failed: {e}"))?;
+
+        app_log(
+            "info",
+            "rooms",
+            format!("Sticker message sent to {}", room_id),
+        );
+        info!("Sticker message sent to {}", room_id);
+    } else {
+        // Build image message content
+        use matrix_sdk::ruma::events::room::message::{
+            ImageMessageEventContent, MessageType, RoomMessageEventContent,
+        };
+
+        let image_content = ImageMessageEventContent::plain(filename.clone(), content_uri);
+        let content = RoomMessageEventContent::new(MessageType::Image(image_content));
+
+        room.send(content)
+            .await
+            .map_err(|e| format!("Send image message failed: {e}"))?;
+
+        app_log(
+            "info",
+            "rooms",
+            format!("Image message sent to {}", room_id),
+        );
+        info!("Image message sent to {}", room_id);
+    }
+
+    notify_sync_event(SyncEvent::MessageSent {
+        room_id: room_id.clone(),
+    });
+    Ok(())
+}
+
+#[frb]
+pub async fn send_sticker(
+    room_id: String,
+    image_url: String,
+    body: String,
+    mime_type: Option<String>,
+    width: Option<i32>,
+    height: Option<i32>,
+) -> Result<(), String> {
+    let client = get_client().await.ok_or("No client created.")?;
+
+    let room = client
+        .get_room(
+            &matrix_sdk::ruma::RoomId::parse(room_id.clone())
+                .map_err(|e| format!("Invalid room id: {e}"))?,
+        )
+        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+
+    let content_uri = matrix_sdk::ruma::OwnedMxcUri::try_from(image_url.trim())
+        .map_err(|e| format!("Invalid sticker MXC URI: {e}"))?;
+
+    let mut info = matrix_sdk::ruma::events::room::ImageInfo::new();
+    if let Some(mime_type) = mime_type.filter(|value| !value.trim().is_empty()) {
+        info.mimetype = Some(mime_type);
+    }
+    if let Some(width) = width.filter(|value| *value > 0) {
+        info.width = matrix_sdk::ruma::UInt::new(width as u64);
+    }
+    if let Some(height) = height.filter(|value| *value > 0) {
+        info.height = matrix_sdk::ruma::UInt::new(height as u64);
+    }
+
+    let label = body.trim();
+    let content = matrix_sdk::ruma::events::sticker::StickerEventContent::new(
+        if label.is_empty() {
+            "贴纸".to_string()
+        } else {
+            label.to_string()
+        },
+        info,
+        content_uri,
+    );
 
     room.send(content)
         .await
-        .map_err(|e| format!("Send image message failed: {e}"))?;
+        .map_err(|e| format!("Send sticker message failed: {e}"))?;
 
     app_log(
         "info",
         "rooms",
-        format!("Image message sent to {}", room_id),
+        format!("Sticker message sent to {}", room_id),
     );
-    info!("Image message sent to {}", room_id);
+    info!("Sticker message sent to {}", room_id);
     notify_sync_event(SyncEvent::MessageSent {
         room_id: room_id.clone(),
     });
@@ -3875,6 +4323,68 @@ pub async fn get_messages_before(
                         entry.1 = Some(reaction_event_id);
                     }
                 }
+                continue;
+            }
+
+            if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Sticker(sticker),
+            ) = &any_ev
+            {
+                let Some(original) = sticker.as_original() else {
+                    continue;
+                };
+
+                let event_id = sticker.event_id().to_string();
+                let sender_id = sticker.sender().to_string();
+                let is_me = my_user_id.as_ref() == Some(&sender_id);
+                let sender_name = if is_me {
+                    "\u{6211}".to_string()
+                } else {
+                    sender_id
+                        .split(':')
+                        .next()
+                        .unwrap_or(&sender_id)
+                        .trim_start_matches('@')
+                        .to_string()
+                };
+
+                let ts_millis = u64::from(sticker.origin_server_ts().0);
+                let timestamp = ts_millis.to_string();
+
+                let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
+                    if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
+                        Some(reply.in_reply_to.event_id.to_string())
+                    } else {
+                        None
+                    }
+                });
+
+                let url = match &original.content.source {
+                    matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(mxc) => {
+                        Some(mxc.to_string())
+                    }
+                    _ => None,
+                };
+
+                raw_messages.push((
+                    event_id.clone(),
+                    ChatMessage {
+                        id: event_id,
+                        sender_id,
+                        sender_name,
+                        content: original.content.body.clone(),
+                        timestamp,
+                        is_me,
+                        msg_type: MessageType::Image,
+                        image_url: url,
+                        in_reply_to,
+                        is_edited: false,
+                        edit_history: Vec::new(),
+                        reactions: Vec::new(),
+                        readers: Vec::new(),
+                        total_members: 0,
+                    },
+                ));
                 continue;
             }
 

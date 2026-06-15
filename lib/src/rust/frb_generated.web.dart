@@ -57,6 +57,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw);
+
+  @protected
   StoredSession dco_decode_box_autoadd_stored_session(dynamic raw);
 
   @protected
@@ -117,6 +120,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<Space> dco_decode_list_space(dynamic raw);
 
   @protected
+  List<Sticker> dco_decode_list_sticker(dynamic raw);
+
+  @protected
+  List<StickerPack> dco_decode_list_sticker_pack(dynamic raw);
+
+  @protected
   List<VerificationDevice> dco_decode_list_verification_device(dynamic raw);
 
   @protected
@@ -136,6 +145,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_device_verification_status(dynamic raw);
 
   @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
+
+  @protected
   StoredSession? dco_decode_opt_box_autoadd_stored_session(dynamic raw);
 
   @protected
@@ -149,6 +161,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SpaceDetails dco_decode_space_details(dynamic raw);
+
+  @protected
+  Sticker dco_decode_sticker(dynamic raw);
+
+  @protected
+  StickerPack dco_decode_sticker_pack(dynamic raw);
 
   @protected
   StoredSession dco_decode_stored_session(dynamic raw);
@@ -213,6 +231,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeviceVerificationStatus sse_decode_box_autoadd_device_verification_status(
     SseDeserializer deserializer,
   );
+
+  @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
 
   @protected
   StoredSession sse_decode_box_autoadd_stored_session(
@@ -283,6 +304,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<Space> sse_decode_list_space(SseDeserializer deserializer);
 
   @protected
+  List<Sticker> sse_decode_list_sticker(SseDeserializer deserializer);
+
+  @protected
+  List<StickerPack> sse_decode_list_sticker_pack(SseDeserializer deserializer);
+
+  @protected
   List<VerificationDevice> sse_decode_list_verification_device(
     SseDeserializer deserializer,
   );
@@ -308,6 +335,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
+
+  @protected
   StoredSession? sse_decode_opt_box_autoadd_stored_session(
     SseDeserializer deserializer,
   );
@@ -323,6 +353,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SpaceDetails sse_decode_space_details(SseDeserializer deserializer);
+
+  @protected
+  Sticker sse_decode_sticker(SseDeserializer deserializer);
+
+  @protected
+  StickerPack sse_decode_sticker_pack(SseDeserializer deserializer);
 
   @protected
   StoredSession sse_decode_stored_session(SseDeserializer deserializer);
@@ -399,6 +435,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     DeviceVerificationStatus self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_stored_session(
@@ -488,6 +527,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_space(List<Space> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_sticker(List<Sticker> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_sticker_pack(
+    List<StickerPack> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_verification_device(
     List<VerificationDevice> self,
     SseSerializer serializer,
@@ -515,6 +563,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_stored_session(
     StoredSession? self,
     SseSerializer serializer,
@@ -534,6 +585,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_space_details(SpaceDetails self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sticker(Sticker self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sticker_pack(StickerPack self, SseSerializer serializer);
 
   @protected
   void sse_encode_stored_session(StoredSession self, SseSerializer serializer);

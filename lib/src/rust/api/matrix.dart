@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `notify_sync_event`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`
+// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `notify_sync_event`, `pack_image_to_sticker`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `sticker_label_from_filename`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `usage_allows_sticker`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Stream app log entries from Rust → Dart (live).
 Stream<AppLogEntry> watchAppLogs() =>
@@ -241,6 +241,9 @@ Future<List<ChatRoom>> getChatRooms() =>
 Future<List<ChatMessage>> getMessages({required String roomId}) =>
     RustLib.instance.api.crateApiMatrixGetMessages(roomId: roomId);
 
+Future<List<StickerPack>> getStickerPacks({required String roomId}) =>
+    RustLib.instance.api.crateApiMatrixGetStickerPacks(roomId: roomId);
+
 Future<void> sendMessage({required String roomId, required String message}) =>
     RustLib.instance.api.crateApiMatrixSendMessage(
       roomId: roomId,
@@ -258,6 +261,22 @@ Future<void> sendImageMessage({
   roomId: roomId,
   imageData: imageData,
   filename: filename,
+);
+
+Future<void> sendSticker({
+  required String roomId,
+  required String imageUrl,
+  required String body,
+  String? mimeType,
+  int? width,
+  int? height,
+}) => RustLib.instance.api.crateApiMatrixSendSticker(
+  roomId: roomId,
+  imageUrl: imageUrl,
+  body: body,
+  mimeType: mimeType,
+  width: width,
+  height: height,
 );
 
 /// Create a new direct chat room with a user.
@@ -849,6 +868,90 @@ class SpaceDetails {
           name == other.name &&
           avatarUrl == other.avatarUrl &&
           topic == other.topic;
+}
+
+class Sticker {
+  final String id;
+  final String shortcode;
+  final String body;
+  final String imageUrl;
+  final String? thumbnailUrl;
+  final String? mimeType;
+  final int? width;
+  final int? height;
+
+  const Sticker({
+    required this.id,
+    required this.shortcode,
+    required this.body,
+    required this.imageUrl,
+    this.thumbnailUrl,
+    this.mimeType,
+    this.width,
+    this.height,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      shortcode.hashCode ^
+      body.hashCode ^
+      imageUrl.hashCode ^
+      thumbnailUrl.hashCode ^
+      mimeType.hashCode ^
+      width.hashCode ^
+      height.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Sticker &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          shortcode == other.shortcode &&
+          body == other.body &&
+          imageUrl == other.imageUrl &&
+          thumbnailUrl == other.thumbnailUrl &&
+          mimeType == other.mimeType &&
+          width == other.width &&
+          height == other.height;
+}
+
+class StickerPack {
+  final String id;
+  final String title;
+  final String? avatarUrl;
+
+  /// "room" or "user"
+  final String source;
+  final List<Sticker> stickers;
+
+  const StickerPack({
+    required this.id,
+    required this.title,
+    this.avatarUrl,
+    required this.source,
+    required this.stickers,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      title.hashCode ^
+      avatarUrl.hashCode ^
+      source.hashCode ^
+      stickers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StickerPack &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          avatarUrl == other.avatarUrl &&
+          source == other.source &&
+          stickers == other.stickers;
 }
 
 /// Session data to persist across app restarts.

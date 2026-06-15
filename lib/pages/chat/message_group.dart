@@ -28,6 +28,7 @@ class MessageGroupWidget extends ConsumerWidget {
   final MessageGroup group;
   final bool showAvatar;
   final String roomId;
+  final Map<String, ChatMessage> messageIndex;
   final String? senderAvatarUrl;
   final bool compact;
   final VoidCallback? onImageLoaded;
@@ -36,6 +37,7 @@ class MessageGroupWidget extends ConsumerWidget {
     super.key,
     required this.group,
     required this.roomId,
+    required this.messageIndex,
     this.showAvatar = true,
     this.senderAvatarUrl,
     this.compact = false,
@@ -141,13 +143,17 @@ class MessageGroupWidget extends ConsumerWidget {
       return GestureDetector(
         onLongPress: () => _showContextMenu(context, ref, message),
         child: Padding(
-          padding: EdgeInsets.only(top: isFirst ? 2 : 1, bottom: isLast ? 10 : 1),
+          padding: EdgeInsets.only(
+            top: isFirst ? 2 : 1,
+            bottom: isLast ? 10 : 1,
+          ),
           child: _buildEventMessage(context, message),
         ),
       );
     }
 
-    final bubble = message.msgType == MessageType.image && message.imageUrl != null
+    final bubble =
+        message.msgType == MessageType.image && message.imageUrl != null
         ? ImageMessageBubble(
             imageUrl: message.imageUrl!,
             timestamp: formatMessageTime(message.timestamp),
@@ -167,8 +173,9 @@ class MessageGroupWidget extends ConsumerWidget {
       child: Padding(
         padding: EdgeInsets.only(top: isFirst ? 2 : 1, bottom: isLast ? 10 : 1),
         child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             bubble,
@@ -268,7 +275,7 @@ class MessageGroupWidget extends ConsumerWidget {
             ),
           // Reply preview
           if (message.inReplyTo != null)
-            _buildReplyPreview(context, ref, message, isMe),
+            _buildReplyPreview(context, message, isMe),
           Text(
             message.content,
             style: TextStyle(
@@ -449,51 +456,40 @@ class MessageGroupWidget extends ConsumerWidget {
 
   Widget _buildReplyPreview(
     BuildContext context,
-    WidgetRef ref,
     ChatMessage message,
     bool isMe,
   ) {
-    return FutureBuilder<String?>(
-      future: _getReplyContent(ref, message.inReplyTo!),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        final replyContent = snapshot.data!;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: (isMe ? Colors.white : AppColors.primary).withValues(
-              alpha: 0.1,
-            ),
-            borderRadius: BorderRadius.circular(AppRadii.tag),
-            border: Border(
-              left: BorderSide(
-                color: isMe ? Colors.white : AppColors.primary,
-                width: 2,
-              ),
-            ),
+    final replyContent = _getReplyContent(message.inReplyTo!);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: (isMe ? Colors.white : AppColors.primary).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppRadii.tag),
+        border: Border(
+          left: BorderSide(
+            color: isMe ? Colors.white : AppColors.primary,
+            width: 2,
           ),
-          child: Text(
-            replyContent,
-            style: TextStyle(
-              color: isMe
-                  ? Colors.white.withValues(alpha: 0.7)
-                  : AppColors.onSurfaceVariant,
-              fontSize: 12,
-              height: 1.3,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        );
-      },
+        ),
+      ),
+      child: Text(
+        replyContent,
+        style: TextStyle(
+          color: isMe
+              ? Colors.white.withValues(alpha: 0.7)
+              : AppColors.onSurfaceVariant,
+          fontSize: 12,
+          height: 1.3,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 
-  Future<String> _getReplyContent(WidgetRef ref, String replyToId) async {
-    // Look for the replied-to message in current messages
-    final messages = await ref.read(messagesProvider(roomId).future);
-    final found = messages.where((m) => m.id == replyToId).firstOrNull;
+  String _getReplyContent(String replyToId) {
+    final found = messageIndex[replyToId];
     if (found != null) {
       return '${found.senderName}: ${found.content}';
     }
@@ -584,8 +580,8 @@ class MessageGroupWidget extends ConsumerWidget {
     final color = allRead
         ? Colors.white.withValues(alpha: 0.85)
         : (anyRead
-            ? Colors.white.withValues(alpha: 0.55)
-            : Colors.white.withValues(alpha: 0.45));
+              ? Colors.white.withValues(alpha: 0.55)
+              : Colors.white.withValues(alpha: 0.45));
     // Pure visual indicator; the whole bubble is tappable (see _buildMessage).
     return Padding(
       padding: const EdgeInsets.only(right: 2),
@@ -603,10 +599,8 @@ class MessageGroupWidget extends ConsumerWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (sheetContext) => _ReadReceiptsSheet(
-        message: message,
-        roomId: roomId,
-      ),
+      builder: (sheetContext) =>
+          _ReadReceiptsSheet(message: message, roomId: roomId),
     );
   }
 
@@ -631,7 +625,9 @@ class MessageGroupWidget extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            ...quickEmojis.map((emoji) => _quickEmoji(context, ref, message, emoji)),
+            ...quickEmojis.map(
+              (emoji) => _quickEmoji(context, ref, message, emoji),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: InkWell(
@@ -928,27 +924,29 @@ class _ReactionChip extends StatelessWidget {
           color: highlight,
           borderRadius: BorderRadius.circular(AppRadii.tag),
           border: reacted && !isMe
-              ? Border.all(color: AppColors.primary.withValues(alpha: 0.4), width: 1)
+              ? Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.4),
+                  width: 1,
+                )
               : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              reaction.key,
-              style: const TextStyle(fontSize: 13),
-            ),
+            Text(reaction.key, style: const TextStyle(fontSize: 13)),
             const SizedBox(width: 3),
-              Text(
-                '${reaction.senders.length}',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: reacted
-                      ? (isMe ? Colors.white.withValues(alpha: 0.9) : AppColors.primary)
-                      : AppColors.onSurfaceVariant,
-                ),
+            Text(
+              '${reaction.senders.length}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: reacted
+                    ? (isMe
+                          ? Colors.white.withValues(alpha: 0.9)
+                          : AppColors.primary)
+                    : AppColors.onSurfaceVariant,
               ),
+            ),
           ],
         ),
       ),
@@ -1047,10 +1045,7 @@ class _ReadReceiptRow extends ConsumerStatefulWidget {
   final MessageReader reader;
   final String roomId;
 
-  const _ReadReceiptRow({
-    required this.reader,
-    required this.roomId,
-  });
+  const _ReadReceiptRow({required this.reader, required this.roomId});
 
   @override
   ConsumerState<_ReadReceiptRow> createState() => _ReadReceiptRowState();

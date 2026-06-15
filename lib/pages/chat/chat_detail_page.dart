@@ -311,6 +311,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
               data: (messages) {
                 final displayedMessages = _mergeMessages(messages);
                 _displayedMessages = displayedMessages;
+                final messageIndex = <String, ChatMessage>{
+                  for (final message in displayedMessages) message.id: message,
+                };
                 final groups = _groupMessages(displayedMessages);
 
                 WidgetsBinding.instance.addPostFrameCallback(
@@ -357,6 +360,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                           child: MessageGroupWidget(
                             group: groups[i],
                             roomId: widget.roomId,
+                            messageIndex: messageIndex,
                           ),
                         )
                       else
@@ -388,6 +392,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                                   MessageGroupWidget(
                                     group: groups[i],
                                     roomId: widget.roomId,
+                                    messageIndex: messageIndex,
                                     showAvatar: false,
                                     compact: widget.isDm,
                                     onImageLoaded: _measureHeights,

@@ -137,6 +137,12 @@ final messagesProvider = FutureProvider.family<List<rust.ChatMessage>, String>((
   return messages;
 });
 
+final stickerPacksProvider =
+    FutureProvider.family<List<rust.StickerPack>, String>((ref, roomId) async {
+      if (!ref.watch(sessionReadyProvider)) return [];
+      return rust.getStickerPacks(roomId: roomId);
+    });
+
 /// Convert mxc:// URI to HTTP URL for display.
 /// Returns null if conversion fails or URL is not mxc://.
 final mxcUrlCacheProvider =
@@ -241,6 +247,13 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
     ref.invalidate(ungroupedRoomsProvider);
   }
 
+  void refreshCurrentRoomMeta() {
+    final currentRoomId = ref.read(currentRoomIdProvider);
+    if (currentRoomId != null) {
+      ref.invalidate(stickerPacksProvider(currentRoomId));
+    }
+  }
+
   void scheduleRoomRefresh() {
     roomRefreshTimer?.cancel();
     roomRefreshTimer = Timer(const Duration(milliseconds: 500), () {
@@ -276,6 +289,7 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
     switch (event) {
       case rust.SyncEvent_SyncCompleted():
         scheduleRoomRefresh();
+        refreshCurrentRoomMeta();
         final currentRoomId = ref.read(currentRoomIdProvider);
         if (currentRoomId != null) {
           scheduleMessageRefresh(currentRoomId);
@@ -283,6 +297,7 @@ final syncStreamProvider = Provider<StreamSubscription<rust.SyncEvent>>((ref) {
       case rust.SyncEvent_MessageSent(:final roomId):
         scheduleMessageRefresh(roomId);
         scheduleRoomRefresh();
+        ref.invalidate(stickerPacksProvider(roomId));
     }
   });
 
