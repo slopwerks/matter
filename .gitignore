@@ -70,3 +70,4 @@ ios/Runner/GoogleService-Info.plist
 android/app/src/main/jniLibs/
 build/
 local.properties
+*.p12
