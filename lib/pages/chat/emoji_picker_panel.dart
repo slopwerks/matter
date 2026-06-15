@@ -10,8 +10,13 @@ import 'emoji_keywords.dart';
 class EmojiPickerPanel extends StatefulWidget {
   /// Called with the selected emoji string when a cell is tapped.
   final ValueChanged<String> onEmojiSelected;
+  final ScrollController? scrollController;
 
-  const EmojiPickerPanel({super.key, required this.onEmojiSelected});
+  const EmojiPickerPanel({
+    super.key,
+    required this.onEmojiSelected,
+    this.scrollController,
+  });
 
   @override
   State<EmojiPickerPanel> createState() => _EmojiPickerPanelState();
@@ -114,6 +119,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
         // Emoji grid.
         Expanded(
           child: GridView.builder(
+            controller: widget.scrollController,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 44,
@@ -152,13 +158,11 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
-                      children:
-                          List.generate(kEmojiCategories.length, (i) {
+                      children: List.generate(kEmojiCategories.length, (i) {
                         final cat = kEmojiCategories[i];
                         final selected = i == _categoryIndex;
                         return IconButton(
-                          onPressed: () =>
-                              setState(() => _categoryIndex = i),
+                          onPressed: () => setState(() => _categoryIndex = i),
                           icon: Text(
                             cat.icon,
                             style: TextStyle(
@@ -181,9 +185,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
                 ),
                 IconButton(
                   icon: Icon(
-                    _showSearch
-                        ? Icons.close_rounded
-                        : Icons.search_rounded,
+                    _showSearch ? Icons.close_rounded : Icons.search_rounded,
                     color: AppColors.onSurfaceVariant,
                     size: 20,
                   ),
