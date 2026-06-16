@@ -35,7 +35,7 @@ class ComposerPickerPanel extends StatefulWidget {
 
 class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
   late final DraggableScrollableController _sheetController;
-  double? _currentExtent;
+  late final ValueNotifier<double> _sheetExtent;
 
   double _maxPanelHeight(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
@@ -51,11 +51,13 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
   void initState() {
     super.initState();
     _sheetController = DraggableScrollableController();
+    _sheetExtent = ValueNotifier<double>(0);
   }
 
   @override
   void dispose() {
     _sheetController.dispose();
+    _sheetExtent.dispose();
     super.dispose();
   }
 
@@ -63,14 +65,20 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
   Widget build(BuildContext context) {
     final maxHeight = _maxPanelHeight(context);
     final minSize = ComposerPickerPanel.baseHeight / maxHeight;
-    final currentExtent = _currentExtent ?? minSize;
-    final visibleHeight = (currentExtent * maxHeight).clamp(
-      ComposerPickerPanel.baseHeight,
-      maxHeight,
-    );
 
-    return SizedBox(
-      height: visibleHeight,
+    if (_sheetExtent.value == 0) {
+      _sheetExtent.value = minSize;
+    }
+
+    return ValueListenableBuilder<double>(
+      valueListenable: _sheetExtent,
+      builder: (context, currentExtent, child) {
+        final visibleHeight = (currentExtent * maxHeight).clamp(
+          ComposerPickerPanel.baseHeight,
+          maxHeight,
+        );
+        return SizedBox(height: visibleHeight, child: child);
+      },
       child: ClipRect(
         child: OverflowBox(
           alignment: Alignment.bottomCenter,
@@ -79,80 +87,77 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
           child: SizedBox(
             height: maxHeight,
             child: NotificationListener<DraggableScrollableNotification>(
-              onNotification: (notification) {
-                if (_currentExtent != notification.extent && mounted) {
-                  setState(() => _currentExtent = notification.extent);
-                }
-                return false;
-              },
+              onNotification: _handleSheetNotification,
               child: DraggableScrollableSheet(
                 controller: _sheetController,
                 expand: false,
                 initialChildSize: minSize,
                 minChildSize: minSize,
                 maxChildSize: 1,
-                builder: (context, scrollController) {
-                  return Container(
-                    clipBehavior: Clip.antiAlias,
-                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(AppRadii.surface),
-                      border: Border.all(
-                        color: AppColors.surfaceVariant.withValues(alpha: 0.65),
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                          child: Row(
-                            children: [
-                              _PickerTabChip(
-                                label: 'Emoji',
-                                selected: widget.tab == ComposerPickerTab.emoji,
-                                onTap: () => widget.onTabChanged(
-                                  ComposerPickerTab.emoji,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _PickerTabChip(
-                                label: '贴纸',
-                                selected:
-                                    widget.tab == ComposerPickerTab.sticker,
-                                onTap: () => widget.onTabChanged(
-                                  ComposerPickerTab.sticker,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(
-                          height: 1,
-                          color: AppColors.surfaceVariant,
-                        ),
-                        Expanded(
-                          child: switch (widget.tab) {
-                            ComposerPickerTab.emoji => EmojiPickerPanel(
-                              onEmojiSelected: widget.onEmojiSelected,
-                              scrollController: scrollController,
-                            ),
-                            ComposerPickerTab.sticker => StickerPackPanel(
-                              roomId: widget.roomId,
-                              onStickerSelected: widget.onStickerSelected,
-                              scrollController: scrollController,
-                            ),
-                          },
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                builder: _buildSheet,
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  bool _handleSheetNotification(DraggableScrollableNotification notification) {
+    if (!mounted) return false;
+    if ((_sheetExtent.value - notification.extent).abs() > 0.0005) {
+      _sheetExtent.value = notification.extent;
+    }
+    return false;
+  }
+
+  Widget _buildSheet(BuildContext context, ScrollController scrollController) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.surface),
+        border: Border.all(
+          color: AppColors.surfaceVariant.withValues(alpha: 0.65),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Row(
+              children: [
+                _PickerTabChip(
+                  label: 'Emoji',
+                  selected: widget.tab == ComposerPickerTab.emoji,
+                  onTap: () => widget.onTabChanged(ComposerPickerTab.emoji),
+                ),
+                const SizedBox(width: 8),
+                _PickerTabChip(
+                  label: '贴纸',
+                  selected: widget.tab == ComposerPickerTab.sticker,
+                  onTap: () => widget.onTabChanged(ComposerPickerTab.sticker),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.surfaceVariant),
+          Expanded(
+            child: switch (widget.tab) {
+              ComposerPickerTab.emoji => EmojiPickerPanel(
+                onEmojiSelected: widget.onEmojiSelected,
+                scrollController: scrollController,
+              ),
+              ComposerPickerTab.sticker => StickerPackPanel(
+                roomId: widget.roomId,
+                onStickerSelected: widget.onStickerSelected,
+                scrollController: scrollController,
+              ),
+            },
+          ),
+        ],
       ),
     );
   }
@@ -177,8 +182,12 @@ class StickerPackPanel extends ConsumerStatefulWidget {
 class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   final GlobalKey _scrollViewportKey = GlobalKey();
   final List<GlobalKey> _headerKeys = [];
+  final Map<String, GlobalKey> _stickerKeys = {};
+  final Map<String, StickerItem> _visibleStickers = {};
   int _activePackIndex = 0;
   bool _isJumpingToPack = false;
+  OverlayEntry? _holdPreviewOverlay;
+  StickerItem? _holdPreviewSticker;
 
   void _syncPackKeys(int count) {
     while (_headerKeys.length < count) {
@@ -187,6 +196,21 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     while (_headerKeys.length > count) {
       _headerKeys.removeLast();
     }
+  }
+
+  GlobalKey _stickerKeyFor(StickerItem sticker) {
+    return _stickerKeys.putIfAbsent(sticker.id, GlobalKey.new);
+  }
+
+  void _syncVisibleStickers(List<StickerPack> packs) {
+    _visibleStickers
+      ..clear()
+      ..addEntries(
+        packs.expand(
+          (pack) =>
+              pack.stickers.map((sticker) => MapEntry(sticker.id, sticker)),
+        ),
+      );
   }
 
   void _jumpToPack(int index) {
@@ -254,6 +278,59 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     return false;
   }
 
+  void _showHoldPreview(StickerItem sticker) {
+    _holdPreviewSticker = sticker;
+    final overlay = Overlay.of(context);
+    _holdPreviewOverlay ??= OverlayEntry(
+      builder: (context) {
+        final sticker = _holdPreviewSticker;
+        if (sticker == null) return const SizedBox.shrink();
+        return _StickerHoldPreviewOverlay(sticker: sticker);
+      },
+    );
+    if (!_holdPreviewOverlay!.mounted) {
+      overlay.insert(_holdPreviewOverlay!);
+    } else {
+      _holdPreviewOverlay!.markNeedsBuild();
+    }
+  }
+
+  void _updateHoldPreviewAt(Offset globalPosition) {
+    final sticker = _stickerAt(globalPosition);
+    if (sticker == null || sticker.id == _holdPreviewSticker?.id) return;
+    _holdPreviewSticker = sticker;
+    _holdPreviewOverlay?.markNeedsBuild();
+  }
+
+  StickerItem? _stickerAt(Offset globalPosition) {
+    for (final entry in _stickerKeys.entries) {
+      final context = entry.value.currentContext;
+      final box = context?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached || !box.hasSize) continue;
+      final topLeft = box.localToGlobal(Offset.zero);
+      if ((topLeft & box.size).contains(globalPosition)) {
+        return _visibleStickerById(entry.key);
+      }
+    }
+    return null;
+  }
+
+  StickerItem? _visibleStickerById(String id) {
+    return _visibleStickers[id];
+  }
+
+  void _hideHoldPreview() {
+    _holdPreviewSticker = null;
+    _holdPreviewOverlay?.remove();
+    _holdPreviewOverlay = null;
+  }
+
+  @override
+  void dispose() {
+    _hideHoldPreview();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final packsAsync = ref.watch(stickerPacksProvider(widget.roomId));
@@ -262,6 +339,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
       data: (remotePacks) {
         final packs = stickerPacksFromRemote(remotePacks);
         _syncPackKeys(packs.length);
+        _syncVisibleStickers(packs);
         return _buildPackStream(packs);
       },
       loading: () => const Center(
@@ -399,10 +477,15 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                           ) {
                             final sticker = packs[i].stickers[index];
                             return _StickerCard(
+                              key: _stickerKeyFor(sticker),
                               sticker: sticker,
                               onTap: () => widget.onStickerSelected(sticker),
-                              onLongPress: () =>
-                                  _showStickerPreview(context, sticker),
+                              onLongPressStart: (_) =>
+                                  _showHoldPreview(sticker),
+                              onLongPressMoveUpdate: (details) =>
+                                  _updateHoldPreviewAt(details.globalPosition),
+                              onLongPressEnd: (_) => _hideHoldPreview(),
+                              onLongPressCancel: _hideHoldPreview,
                             );
                           }, childCount: packs[i].stickers.length),
                           gridDelegate:
@@ -423,66 +506,6 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
           ),
         ),
       ],
-    );
-  }
-
-  void _showStickerPreview(BuildContext context, StickerItem sticker) {
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.72),
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: AspectRatio(
-                aspectRatio: sticker.aspectRatio,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadii.surface),
-                  child: sticker.isRemote
-                      ? _RemoteStickerPreview(
-                          sticker: sticker,
-                          fit: BoxFit.contain,
-                        )
-                      : DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: sticker.colors,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              sticker.glyph ?? sticker.body,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 72,
-                                fontWeight: FontWeight.w700,
-                                height: 1.0,
-                              ),
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              sticker.label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -557,20 +580,30 @@ class _PackThumb extends StatelessWidget {
 class _StickerCard extends StatelessWidget {
   final StickerItem sticker;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
+  final GestureLongPressStartCallback onLongPressStart;
+  final GestureLongPressMoveUpdateCallback onLongPressMoveUpdate;
+  final GestureLongPressEndCallback onLongPressEnd;
+  final VoidCallback onLongPressCancel;
 
   const _StickerCard({
+    super.key,
     required this.sticker,
     required this.onTap,
-    required this.onLongPress,
+    required this.onLongPressStart,
+    required this.onLongPressMoveUpdate,
+    required this.onLongPressEnd,
+    required this.onLongPressCancel,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
+    return GestureDetector(
       onTap: onTap,
-      onLongPress: onLongPress,
+      onLongPressStart: onLongPressStart,
+      onLongPressMoveUpdate: onLongPressMoveUpdate,
+      onLongPressEnd: onLongPressEnd,
+      onLongPressCancel: onLongPressCancel,
+      behavior: HitTestBehavior.opaque,
       child: Ink(
         decoration: BoxDecoration(
           color: sticker.isRemote
@@ -609,6 +642,123 @@ class _StickerCard extends StatelessWidget {
                     ),
                   ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StickerHoldPreviewOverlay extends StatelessWidget {
+  final StickerItem sticker;
+
+  const _StickerHoldPreviewOverlay({required this.sticker});
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+    final previewMaxSide = math.min(screenSize.width * 0.62, 260.0);
+
+    return IgnorePointer(
+      child: Material(
+        type: MaterialType.transparency,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.18),
+                ),
+              ),
+            ),
+            Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 90),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeOut,
+                child: Column(
+                  key: ValueKey(sticker.id),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      constraints: BoxConstraints(
+                        maxWidth: previewMaxSide,
+                        maxHeight: previewMaxSide,
+                      ),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(AppRadii.surface),
+                        border: Border.all(
+                          color: AppColors.surfaceVariant.withValues(
+                            alpha: 0.65,
+                          ),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.28),
+                            blurRadius: 28,
+                            offset: const Offset(0, 16),
+                          ),
+                        ],
+                      ),
+                      child: AspectRatio(
+                        aspectRatio: sticker.aspectRatio,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: sticker.isRemote
+                              ? _RemoteStickerPreview(
+                                  sticker: sticker,
+                                  fit: BoxFit.contain,
+                                )
+                              : DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: sticker.colors,
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      sticker.glyph ?? sticker.body,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 72,
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.42),
+                        borderRadius: BorderRadius.circular(AppRadii.button),
+                      ),
+                      child: Text(
+                        sticker.label,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
