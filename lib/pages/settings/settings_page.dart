@@ -44,12 +44,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final activeId = ref.read(activeUserIdProvider);
     if (userId == activeId) return;
 
+    var switchedClient = false;
     try {
       ref.read(sessionReadyProvider.notifier).value = false;
       final success = await rust.switchAccount(userId: userId);
       if (!success) {
         throw StateError('账号切换未生效');
       }
+      switchedClient = true;
       if (mounted) {
         final sessions = await loadAllSessions();
         final session = sessions.cast<rust.StoredSession?>().firstWhere(
@@ -76,6 +78,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         );
       }
     } catch (e) {
+      if (switchedClient && activeId != null) {
+        try {
+          final reverted = await rust.switchAccount(userId: activeId);
+          if (reverted) {
+            final sessions = await loadAllSessions();
+            final activeSession = sessions
+                .cast<rust.StoredSession?>()
+                .firstWhere((s) => s?.userId == activeId, orElse: () => null);
+            if (activeSession != null) {
+              final displayName = await loadDisplayName(activeId);
+              await applyActiveSessionState(
+                ref,
+                userId: activeId,
+                displayName: displayName,
+                homeserver: activeSession.homeserverUrl,
+                refreshStoredSessions: true,
+              );
+            }
+          }
+        } catch (rollbackError) {
+          debugPrint('Failed to roll back account switch: $rollbackError');
+        }
+      }
       ref.read(sessionReadyProvider.notifier).value = true;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -141,10 +166,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           await _switchAccount(nextSession.userId);
         } else {
           // No accounts left, go to login
-          ref.read(isLoggedInProvider.notifier).value = false;
-          ref.read(currentUserProvider.notifier).value = null;
-          ref.read(currentAccessTokenProvider.notifier).value = null;
-          ref.read(activeUserIdProvider.notifier).value = null;
+          clearActiveSessionState(ref, markSessionReady: true);
         }
       }
 

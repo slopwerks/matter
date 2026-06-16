@@ -51,6 +51,55 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (_error != null) setState(() => _error = null);
   }
 
+  void _setFriendlyError(String fallbackMessage, [Object? error]) {
+    final message = _friendlyAuthErrorMessage(
+      fallbackMessage: fallbackMessage,
+      error: error,
+    );
+    debugPrint('Auth flow failed: ${error ?? message}');
+    if (mounted) {
+      setState(() => _error = message);
+    }
+  }
+
+  String _friendlyAuthErrorMessage({
+    required String fallbackMessage,
+    Object? error,
+  }) {
+    final raw = '$error';
+    final text = raw.toLowerCase();
+    if (text.isEmpty || raw == 'null') {
+      return fallbackMessage;
+    }
+    if (text.contains('timed out') || text.contains('timeout')) {
+      return '连接超时，请检查网络或服务器地址';
+    }
+    if (text.contains('network') ||
+        text.contains('socket') ||
+        text.contains('dns') ||
+        text.contains('connection refused')) {
+      return '无法连接到服务器，请检查网络或 Homeserver 地址';
+    }
+    if (text.contains('401') ||
+        text.contains('403') ||
+        text.contains('forbidden') ||
+        text.contains('unauthorized') ||
+        text.contains('invalid password') ||
+        text.contains('unknown token') ||
+        text.contains('access denied')) {
+      return '认证失败，请检查账号、密码或 Token';
+    }
+    if (text.contains('uiaa') ||
+        text.contains('registration token') ||
+        text.contains('missing token')) {
+      return '注册需要有效的注册 Token';
+    }
+    if (text.contains('no client created')) {
+      return '客户端初始化失败，请重试';
+    }
+    return fallbackMessage;
+  }
+
   Future<void> _onAuthSuccess(String userId, String displayName) async {
     // Keep API-backed providers gated until the new crypto store has completed
     // its first sync. Querying rooms while that sync initializes can leave the
@@ -132,10 +181,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (result.success) {
         await _onAuthSuccess(result.userId ?? '', _usernameController.text);
       } else if (mounted) {
-        setState(() => _error = result.error ?? '登录失败');
+        _setFriendlyError('登录失败，请稍后重试', result.error);
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      _setFriendlyError('登录失败，请稍后重试', e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -192,10 +241,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (result.success) {
         await _onAuthSuccess(result.userId ?? '', _usernameController.text);
       } else if (mounted) {
-        setState(() => _error = result.error ?? '注册失败');
+        _setFriendlyError('注册失败，请稍后重试', result.error);
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      _setFriendlyError('注册失败，请稍后重试', e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -228,10 +277,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           userId.split(':').first.replaceFirst('@', ''),
         );
       } else if (mounted) {
-        setState(() => _error = result.error ?? 'Token 登录失败');
+        _setFriendlyError('Token 登录失败，请检查输入信息', result.error);
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      _setFriendlyError('Token 登录失败，请检查输入信息', e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

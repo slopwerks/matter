@@ -15,10 +15,11 @@ use matrix_sdk::{
         request::ToDeviceKeyVerificationRequestEvent, VerificationMethod,
     },
     store::RoomLoadSettings,
-    Client, SessionMeta, SessionTokens,
+    Client, Room, SessionMeta, SessionTokens,
 };
 use once_cell::sync::Lazy;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{Mutex, RwLock};
@@ -45,8 +46,8 @@ static APP_LOG_TX: Lazy<tokio::sync::broadcast::Sender<AppLogEntry>> =
 
 /// Ring buffer that keeps the last 500 log entries so late-joining
 /// subscribers (Dart) can retrieve them via `get_recent_logs()`.
-static LOG_RING: Lazy<std::sync::Mutex<Vec<AppLogEntry>>> =
-    Lazy::new(|| std::sync::Mutex::new(Vec::new()));
+static LOG_RING: Lazy<std::sync::Mutex<VecDeque<AppLogEntry>>> =
+    Lazy::new(|| std::sync::Mutex::new(VecDeque::new()));
 const LOG_RING_CAP: usize = 500;
 
 fn app_log(level: &str, tag: &str, message: String) {
@@ -71,9 +72,9 @@ fn app_log(level: &str, tag: &str, message: String) {
     // Push to ring buffer (for get_recent_logs)
     if let Ok(mut ring) = LOG_RING.lock() {
         if ring.len() >= LOG_RING_CAP {
-            ring.remove(0);
+            ring.pop_front();
         }
-        ring.push(entry);
+        ring.push_back(entry);
     }
 }
 
@@ -95,7 +96,7 @@ pub fn watch_app_logs(sink: crate::frb_generated::StreamSink<AppLogEntry>) {
 #[frb(sync)]
 pub fn get_recent_logs() -> Vec<AppLogEntry> {
     if let Ok(ring) = LOG_RING.lock() {
-        ring.clone()
+        ring.iter().cloned().collect()
     } else {
         vec![]
     }
@@ -311,7 +312,8 @@ async fn finalize_pending() -> Result<String, String> {
                 user_id
             ),
         );
-        std::fs::remove_dir_all(&sdk_dir)
+        remove_dir_all_if_exists(&sdk_dir)
+            .await
             .map_err(|e| format!("Failed to reset existing account store: {e}"))?;
     }
 
@@ -400,7 +402,7 @@ async fn finalize_pending() -> Result<String, String> {
             format!("Cleaning up pending dir: {}", temp_dir.display()),
         );
         info!("Cleaning up pending dir: {}", temp_dir.display());
-        if let Err(e) = std::fs::remove_dir_all(&temp_dir) {
+        if let Err(e) = remove_dir_all_if_exists(&temp_dir).await {
             warn!("Failed to delete pending dir: {e}");
         }
     }
@@ -541,6 +543,19 @@ fn usage_allows_sticker(usage: &BTreeSet<ruma::events::image_pack::PackUsage>) -
 
 fn uint_to_i32(value: Option<matrix_sdk::ruma::UInt>) -> Option<i32> {
     value.and_then(|value| u64::from(value).try_into().ok())
+}
+
+fn image_info_dimensions(
+    info: Option<&Box<matrix_sdk::ruma::events::room::ImageInfo>>,
+) -> (Option<i32>, Option<i32>) {
+    info.map(|info| (uint_to_i32(info.width), uint_to_i32(info.height)))
+        .unwrap_or((None, None))
+}
+
+fn sticker_info_dimensions(
+    info: &matrix_sdk::ruma::events::room::ImageInfo,
+) -> (Option<i32>, Option<i32>) {
+    (uint_to_i32(info.width), uint_to_i32(info.height))
 }
 
 fn pack_image_to_sticker(
@@ -800,6 +815,8 @@ pub struct ChatMessage {
     pub is_me: bool,
     pub msg_type: MessageType,
     pub image_url: Option<String>,
+    pub image_width: Option<i32>,
+    pub image_height: Option<i32>,
     /// Event ID this message is replying to, if any.
     pub in_reply_to: Option<String>,
     /// Whether this message has been edited.
@@ -938,6 +955,69 @@ fn uiaa_to_auth_result(uiaa_info: &UiaaInfo) -> AuthResult {
     }
 }
 
+fn get_room_by_id(client: &Client, room_id: &str) -> Result<Room, String> {
+    let parsed_room_id =
+        matrix_sdk::ruma::RoomId::parse(room_id).map_err(|e| format!("Invalid room ID: {e}"))?;
+    client
+        .get_room(parsed_room_id.as_ref())
+        .ok_or_else(|| format!("Room not found: {room_id}"))
+}
+
+async fn remove_dir_all_if_exists(path: &Path) -> Result<bool, String> {
+    match tokio::fs::remove_dir_all(path).await {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn friendly_auth_error(raw: &str, fallback: &str) -> String {
+    let text = raw.to_lowercase();
+
+    if text.contains("timed out") || text.contains("timeout") {
+        return "连接超时，请检查网络或服务器地址".to_string();
+    }
+
+    if text.contains("network")
+        || text.contains("socket")
+        || text.contains("dns")
+        || text.contains("connection refused")
+        || text.contains("tls")
+    {
+        return "无法连接到服务器，请检查网络或 Homeserver 地址".to_string();
+    }
+
+    if text.contains("401")
+        || text.contains("403")
+        || text.contains("forbidden")
+        || text.contains("unauthorized")
+        || text.contains("invalid password")
+        || text.contains("unknown token")
+        || text.contains("access denied")
+        || text.contains("m_forbidden")
+    {
+        return "认证失败，请检查账号、密码或 Token".to_string();
+    }
+
+    if text.contains("registration token")
+        || text.contains("m.login.registration_token")
+        || text.contains("missing token")
+        || text.contains("invalid token")
+    {
+        return "注册需要有效的注册 Token".to_string();
+    }
+
+    if text.contains("user id") && text.contains("invalid") {
+        return "用户 ID 格式无效".to_string();
+    }
+
+    if text.contains("no client created") {
+        return "客户端初始化失败，请重试".to_string();
+    }
+
+    fallback.to_string()
+}
+
 // ── Auth functions ───────────────────────────────────────────────────
 
 /// Create a Matrix client for the given homeserver URL.
@@ -961,7 +1041,7 @@ pub async fn create_client(homeserver_url: String, data_dir: String) -> Result<(
     // Clean up any stale pending directory
     if sdk_dir.exists() {
         info!("Removing stale pending dir: {}", sdk_dir.display());
-        if let Err(e) = std::fs::remove_dir_all(&sdk_dir) {
+        if let Err(e) = remove_dir_all_if_exists(&sdk_dir).await {
             warn!("Failed to clean pending dir: {e}");
         }
     }
@@ -1045,7 +1125,7 @@ pub async fn register_get_uiaa_session(
                 user_id: None,
                 device_id: None,
                 access_token: None,
-                error: Some(err_str),
+                error: Some(friendly_auth_error(&err_str, "注册失败，请稍后重试")),
                 needs_uiaa: false,
                 session: None,
                 flows: None,
@@ -1118,7 +1198,7 @@ pub async fn register_complete_uiaa(
                 user_id: None,
                 device_id: None,
                 access_token: None,
-                error: Some(err_str),
+                error: Some(friendly_auth_error(&err_str, "注册失败，请稍后重试")),
                 needs_uiaa: false,
                 session: None,
                 flows: None,
@@ -1172,7 +1252,7 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
             user_id: None,
             device_id: None,
             access_token: None,
-            error: Some(format!("{e}")),
+            error: Some(friendly_auth_error(&format!("{e}"), "登录失败，请稍后重试")),
             needs_uiaa: false,
             session: None,
             flows: None,
@@ -1191,8 +1271,8 @@ pub async fn login_with_token(
         .await
         .ok_or("No client created. Call create_client first.")?;
 
-    let parsed_user_id =
-        matrix_sdk::ruma::UserId::parse(&user_id).map_err(|e| format!("Invalid user ID: {e}"))?;
+    let parsed_user_id = matrix_sdk::ruma::UserId::parse(&user_id)
+        .map_err(|e| friendly_auth_error(&format!("Invalid user ID: {e}"), "用户 ID 格式无效"))?;
     let parsed_device_id = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
 
     let session = MatrixSession {
@@ -1210,43 +1290,33 @@ pub async fn login_with_token(
         .matrix_auth()
         .restore_session(session, RoomLoadSettings::default())
         .await
-        .map_err(|e| format!("Restore session failed: {e}"))?;
+        .map_err(|e| {
+            friendly_auth_error(
+                &format!("Restore session failed: {e}"),
+                "Token 登录失败，请检查输入信息",
+            )
+        })?;
 
-    // Auto-finalize: migrate pending client to per-user store
-    match finalize_pending().await {
-        Ok(_) => {
-            app_log(
-                "info",
-                "auth",
-                "Account finalized after token login".to_string(),
-            );
-            info!("Account finalized after token login");
-        }
-        Err(e) => {
-            app_log(
-                "warn",
-                "auth",
-                format!("Finalization failed after token login: {e}"),
-            );
-            warn!("Finalization failed after token login: {e}");
-            // For token login, we keep the pending client as a fallback
-            // since the account is already logged in.
-        }
-    }
+    let finalized_user = finalize_pending().await.map_err(|e| {
+        let raw = format!("Finalization failed after token login: {e}");
+        app_log("error", "auth", raw.clone());
+        friendly_auth_error(&raw, "Token 登录失败，请稍后重试")
+    })?;
+    app_log(
+        "info",
+        "auth",
+        format!("Account finalized after token login: {}", finalized_user),
+    );
+    info!("Account finalized after token login: {}", finalized_user);
 
-    // Try to get the user_id from the finalized client first,
-    // fallback to the pending client (if finalization failed)
-    let final_client = get_client().await;
-    let final_user_id = final_client
-        .as_ref()
-        .and_then(|c| c.user_id().map(|u| u.to_string()));
+    let final_client = get_client()
+        .await
+        .ok_or_else(|| "Token 登录成功，但无法获取最终会话".to_string())?;
 
     Ok(AuthResult {
         success: true,
-        user_id: final_user_id.or_else(|| Some(user_id)),
-        device_id: get_client()
-            .await
-            .and_then(|c| c.device_id().map(|d| d.to_string())),
+        user_id: final_client.user_id().map(|u| u.to_string()),
+        device_id: final_client.device_id().map(|d| d.to_string()),
         access_token: None,
         error: None,
         needs_uiaa: false,
@@ -1466,7 +1536,7 @@ pub async fn logout() -> Result<(), String> {
             format!("Deleting SDK store for {}: {}", user_id, sdk_dir.display()),
         );
         info!("Deleting SDK store for {}: {}", user_id, sdk_dir.display());
-        if let Err(e) = std::fs::remove_dir_all(&sdk_dir) {
+        if let Err(e) = remove_dir_all_if_exists(&sdk_dir).await {
             warn!("Failed to delete SDK store: {e}");
         }
     }
@@ -1537,7 +1607,7 @@ pub async fn remove_account(user_id: String) -> Result<(), String> {
             format!("Deleting SDK store for {}: {}", user_id, sdk_dir.display()),
         );
         info!("Deleting SDK store for {}: {}", user_id, sdk_dir.display());
-        if let Err(e) = std::fs::remove_dir_all(&sdk_dir) {
+        if let Err(e) = remove_dir_all_if_exists(&sdk_dir).await {
             warn!("Failed to delete SDK store: {e}");
         }
     }
@@ -2196,67 +2266,86 @@ pub async fn start_sync() -> Result<(), String> {
 async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String> {
     use futures_util::StreamExt;
     use matrix_sdk::ruma::events::StateEventType as RoomStateType;
-    use matrix_sdk::sliding_sync::{SlidingSyncList, SlidingSyncMode, Version};
+    use matrix_sdk::sliding_sync::{SlidingSync, SlidingSyncList, SlidingSyncMode, Version};
 
-    // Build the Sliding Sync instance
-    let sliding_sync = client
-        .sliding_sync("main")
-        .map_err(|e| format!("Failed to create Sliding Sync: {e}"))?
-        // Use native MSC4186 protocol (or proxy)
-        .version(Version::Native)
-        .with_all_extensions()
-        // List: all visible rooms, growing from 0
-        .add_list(
-            SlidingSyncList::builder("all_rooms")
-                .sync_mode(SlidingSyncMode::Growing {
-                    batch_size: 50,
-                    maximum_number_of_rooms_to_fetch: Some(500),
-                })
-                .required_state(vec![
-                    (RoomStateType::RoomName, "".to_owned()),
-                    (RoomStateType::RoomAvatar, "".to_owned()),
-                    (RoomStateType::RoomCanonicalAlias, "".to_owned()),
-                    (RoomStateType::RoomMember, "".to_owned()),
-                    (RoomStateType::RoomTopic, "".to_owned()),
-                    // Space membership: without these, get_space_children and
-                    // get_ungrouped_rooms see no parent/child relationships and
-                    // every grouped room appears "ungrouped".
-                    (RoomStateType::SpaceChild, "".to_owned()),
-                    (RoomStateType::SpaceParent, "".to_owned()),
-                    // Room type (m.room.create) so is_space() resolves reliably
-                    // without a second round-trip.
-                    (RoomStateType::RoomCreate, "".to_owned()),
-                ])
-                .timeline_limit(10u32),
-        )
-        .build()
-        .await
-        .map_err(|e| format!("Failed to build Sliding Sync: {e}"))?;
+    async fn build_sliding_sync(client: &Client) -> Result<SlidingSync, String> {
+        client
+            .sliding_sync("main")
+            .map_err(|e| format!("Failed to create Sliding Sync: {e}"))?
+            .version(Version::Native)
+            .with_all_extensions()
+            .add_list(
+                SlidingSyncList::builder("all_rooms")
+                    .sync_mode(SlidingSyncMode::Growing {
+                        batch_size: 50,
+                        maximum_number_of_rooms_to_fetch: Some(500),
+                    })
+                    .required_state(vec![
+                        (RoomStateType::RoomName, "".to_owned()),
+                        (RoomStateType::RoomAvatar, "".to_owned()),
+                        (RoomStateType::RoomCanonicalAlias, "".to_owned()),
+                        (RoomStateType::RoomMember, "".to_owned()),
+                        (RoomStateType::RoomTopic, "".to_owned()),
+                        // Space membership: without these, get_space_children and
+                        // get_ungrouped_rooms see no parent/child relationships and
+                        // every grouped room appears "ungrouped".
+                        (RoomStateType::SpaceChild, "".to_owned()),
+                        (RoomStateType::SpaceParent, "".to_owned()),
+                        // Room type (m.room.create) so is_space() resolves reliably
+                        // without a second round-trip.
+                        (RoomStateType::RoomCreate, "".to_owned()),
+                    ])
+                    .timeline_limit(10u32),
+            )
+            .build()
+            .await
+            .map_err(|e| format!("Failed to build Sliding Sync: {e}"))
+    }
+
+    build_sliding_sync(&client).await?;
 
     // Spawn the sync loop
     let handle = tokio::spawn(async move {
         app_log("info", "sync", "Sliding Sync loop started".to_string());
-        let stream = sliding_sync.sync();
-        futures_util::pin_mut!(stream);
-        while let Some(update) = stream.next().await {
-            match update {
-                Ok(summary) => {
-                    app_log(
-                        "info",
-                        "sync",
-                        format!("Sliding Sync update: {} rooms", summary.rooms.len()),
-                    );
-                    set_connection_status(ConnectionStatus::Connected);
-                    notify_sync_event(SyncEvent::SyncCompleted);
-                }
+        loop {
+            let sliding_sync = match build_sliding_sync(&client).await {
+                Ok(sync) => sync,
                 Err(e) => {
-                    app_log("error", "sync", format!("Sliding Sync error: {e}"));
+                    app_log("error", "sync", format!("Sliding Sync rebuild failed: {e}"));
                     set_connection_status(ConnectionStatus::Disconnected);
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let stream = sliding_sync.sync();
+            futures_util::pin_mut!(stream);
+            while let Some(update) = stream.next().await {
+                match update {
+                    Ok(summary) => {
+                        app_log(
+                            "info",
+                            "sync",
+                            format!("Sliding Sync update: {} rooms", summary.rooms.len()),
+                        );
+                        set_connection_status(ConnectionStatus::Connected);
+                        notify_sync_event(SyncEvent::SyncCompleted);
+                    }
+                    Err(e) => {
+                        app_log("error", "sync", format!("Sliding Sync error: {e}"));
+                        set_connection_status(ConnectionStatus::Disconnected);
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    }
                 }
             }
+            app_log(
+                "warn",
+                "sync",
+                "Sliding Sync stream ended; restarting".to_string(),
+            );
+            set_connection_status(ConnectionStatus::Disconnected);
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
-        app_log("warn", "sync", "Sliding Sync stream ended".to_string());
     });
 
     Ok(handle)
@@ -2345,12 +2434,7 @@ pub fn watch_typing_notifications(sink: crate::frb_generated::StreamSink<TypingN
 #[frb]
 pub async fn subscribe_typing_for_room(room_id: String) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     // Cancel any previous typing task before starting a new one.
     {
@@ -2458,11 +2542,7 @@ pub async fn mxc_to_http_avatar(mxc_url: String) -> Option<String> {
 
 /// Convert an mxc:// URI to a scaled thumbnail HTTP URL for message media.
 #[frb]
-pub async fn mxc_to_http_thumbnail(
-    mxc_url: String,
-    width: u32,
-    height: u32,
-) -> Option<String> {
+pub async fn mxc_to_http_thumbnail(mxc_url: String, width: u32, height: u32) -> Option<String> {
     let client = get_client().await?;
     let media_url = mxc_to_thumbnail_http(&client, &mxc_url, width, height)?;
     app_log(
@@ -2752,12 +2832,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     let client = get_client().await.ok_or("No client created.")?;
 
     let my_user_id = client.user_id().map(|u| u.to_string());
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
     let mut edits: HashMap<String, Vec<String>> = HashMap::new();
@@ -2848,6 +2923,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Text,
                             image_url: None,
+                            image_width: None,
+                            image_height: None,
                             in_reply_to,
                             is_edited: false,
                             edit_history: Vec::new(),
@@ -2872,6 +2949,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Text,
                             image_url: None,
+                            image_width: None,
+                            image_height: None,
                             in_reply_to,
                             is_edited: false,
                             edit_history: Vec::new(),
@@ -2895,6 +2974,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Text,
                             image_url: None,
+                            image_width: None,
+                            image_height: None,
                             in_reply_to,
                             is_edited: false,
                             edit_history: Vec::new(),
@@ -2910,6 +2991,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             }
                             _ => None,
                         };
+                        let (image_width, image_height) = image_info_dimensions(t.info.as_ref());
                         ChatMessage {
                             id: event_id_str.clone(),
                             sender_id: sender_id.clone(),
@@ -2919,6 +3001,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Image,
                             image_url: url,
+                            image_width,
+                            image_height,
                             in_reply_to,
                             is_edited: false,
                             edit_history: Vec::new(),
@@ -2936,6 +3020,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         is_me,
                         msg_type: MessageType::Text,
                         image_url: None,
+                        image_width: None,
+                        image_height: None,
                         in_reply_to,
                         is_edited: false,
                         edit_history: Vec::new(),
@@ -2970,6 +3056,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                     }
                     _ => None,
                 };
+                let (image_width, image_height) = sticker_info_dimensions(&original.content.info);
 
                 raw_messages.push((
                     event_id_str.clone(),
@@ -2982,6 +3069,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         is_me,
                         msg_type: MessageType::Image,
                         image_url: url,
+                        image_width,
+                        image_height,
                         in_reply_to,
                         is_edited: false,
                         edit_history: Vec::new(),
@@ -3086,6 +3175,8 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me: false,
                             msg_type: MessageType::Event,
                             image_url: None,
+                            image_width: None,
+                            image_height: None,
                             in_reply_to: None,
                             is_edited: false,
                             edit_history: Vec::new(),
@@ -3323,12 +3414,7 @@ pub async fn get_sticker_packs(room_id: String) -> Result<Vec<StickerPack>, Stri
 #[frb]
 pub async fn send_message(room_id: String, message: String) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     let content =
         matrix_sdk::ruma::events::room::message::RoomMessageEventContent::text_plain(&message);
@@ -3353,14 +3439,11 @@ pub async fn send_image_message(
     room_id: String,
     image_data: Vec<u8>,
     filename: String,
+    width: Option<i32>,
+    height: Option<i32>,
 ) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     // Detect MIME type from filename extension
     let mime_type: mime::Mime = if filename.ends_with(".png") {
@@ -3419,7 +3502,16 @@ pub async fn send_image_message(
             ImageMessageEventContent, MessageType, RoomMessageEventContent,
         };
 
-        let image_content = ImageMessageEventContent::plain(filename.clone(), content_uri);
+        let mut image_content = ImageMessageEventContent::plain(filename.clone(), content_uri);
+        let mut info = matrix_sdk::ruma::events::room::ImageInfo::new();
+        info.mimetype = Some(mime_type.to_string());
+        if let Some(width) = width.filter(|value| *value > 0) {
+            info.width = matrix_sdk::ruma::UInt::new(width as u64);
+        }
+        if let Some(height) = height.filter(|value| *value > 0) {
+            info.height = matrix_sdk::ruma::UInt::new(height as u64);
+        }
+        image_content.info = Some(Box::new(info));
         let content = RoomMessageEventContent::new(MessageType::Image(image_content));
 
         room.send(content)
@@ -4054,12 +4146,7 @@ pub async fn send_reply(
     reply_to_event_id: String,
 ) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     // Parse the event ID we're replying to
     let event_id = matrix_sdk::ruma::EventId::parse(&reply_to_event_id)
@@ -4102,12 +4189,7 @@ pub async fn edit_message(
     new_text: String,
 ) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     let parsed_event_id = matrix_sdk::ruma::EventId::parse(&event_id)
         .map_err(|e| format!("Invalid event ID: {e}"))?;
@@ -4145,12 +4227,7 @@ pub async fn send_reaction(
     key: String,
 ) -> Result<String, String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     let parsed_event_id = matrix_sdk::ruma::EventId::parse(&event_id)
         .map_err(|e| format!("Invalid event ID: {e}"))?;
@@ -4185,12 +4262,7 @@ pub async fn redact_message(
     reason: Option<String>,
 ) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     let parsed_event_id = matrix_sdk::ruma::EventId::parse(&event_id)
         .map_err(|e| format!("Invalid event ID: {e}"))?;
@@ -4213,12 +4285,7 @@ pub async fn redact_message(
 #[frb]
 pub async fn send_typing_notice(room_id: String, typing: bool) -> Result<(), String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     room.typing_notice(typing)
         .await
@@ -4230,12 +4297,7 @@ pub async fn send_typing_notice(room_id: String, typing: bool) -> Result<(), Str
 #[frb]
 pub async fn get_room_members(room_id: String) -> Result<Vec<Contact>, String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     let members = room
         .members(matrix_sdk::RoomMemberships::JOIN)
@@ -4275,10 +4337,7 @@ pub async fn get_room_members(room_id: String) -> Result<Vec<Contact>, String> {
 #[frb]
 pub async fn get_room_avatar_url(room_id: String) -> Option<String> {
     let client = get_client().await?;
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)?;
+    let room = get_room_by_id(&client, &room_id).ok()?;
     room.avatar_url().map(|u| u.to_string())
 }
 
@@ -4304,12 +4363,7 @@ pub async fn get_messages_before(
     let client = get_client().await.ok_or("No client created.")?;
 
     let my_user_id = client.user_id().map(|u| u.to_string());
-
-    let room = client
-        .rooms()
-        .into_iter()
-        .find(|r| r.room_id().to_string() == room_id)
-        .ok_or_else(|| format!("Room not found: {room_id}"))?;
+    let room = get_room_by_id(&client, &room_id)?;
 
     let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
     let mut edits: HashMap<String, Vec<String>> = HashMap::new();
@@ -4401,6 +4455,7 @@ pub async fn get_messages_before(
                     }
                     _ => None,
                 };
+                let (image_width, image_height) = sticker_info_dimensions(&original.content.info);
 
                 raw_messages.push((
                     event_id.clone(),
@@ -4413,6 +4468,8 @@ pub async fn get_messages_before(
                         is_me,
                         msg_type: MessageType::Image,
                         image_url: url,
+                        image_width,
+                        image_height,
                         in_reply_to,
                         is_edited: false,
                         edit_history: Vec::new(),
@@ -4490,6 +4547,8 @@ pub async fn get_messages_before(
                         is_me,
                         msg_type: MessageType::Text,
                         image_url: None,
+                        image_width: None,
+                        image_height: None,
                         in_reply_to,
                         is_edited: false,
                         edit_history: Vec::new(),
@@ -4505,6 +4564,7 @@ pub async fn get_messages_before(
                         }
                         _ => None,
                     };
+                    let (image_width, image_height) = image_info_dimensions(t.info.as_ref());
                     ChatMessage {
                         id: event_id.clone(),
                         sender_id,
@@ -4514,6 +4574,8 @@ pub async fn get_messages_before(
                         is_me,
                         msg_type: MessageType::Image,
                         image_url: url,
+                        image_width,
+                        image_height,
                         in_reply_to,
                         is_edited: false,
                         edit_history: Vec::new(),
