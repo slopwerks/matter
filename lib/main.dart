@@ -130,11 +130,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     }
 
     if (restoredActiveId == null) {
-      ref.read(isLoggedInProvider.notifier).value = false;
-      ref.read(currentUserProvider.notifier).value = null;
-      ref.read(currentAccessTokenProvider.notifier).value = null;
-      ref.read(activeUserIdProvider.notifier).value = null;
-      ref.read(sessionReadyProvider.notifier).value = true;
+      clearActiveSessionState(ref, markSessionReady: true);
       if (mounted) {
         setState(() {
           _hasSessions = false;
