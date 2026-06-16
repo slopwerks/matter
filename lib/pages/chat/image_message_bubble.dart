@@ -6,6 +6,8 @@ import '../../widgets/app_avatar.dart';
 
 class ImageMessageBubble extends ConsumerStatefulWidget {
   final String imageUrl;
+  final int? imageWidth;
+  final int? imageHeight;
   final String timestamp;
   final bool isMe;
   final VoidCallback? onLoaded;
@@ -13,6 +15,8 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
   const ImageMessageBubble({
     super.key,
     required this.imageUrl,
+    this.imageWidth,
+    this.imageHeight,
     required this.timestamp,
     required this.isMe,
     this.onLoaded,
@@ -39,10 +43,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final size = MediaQuery.sizeOf(context);
     final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-    final nextWidth = (size.width * 0.65 * pixelRatio).round();
-    final nextHeight = (280 * pixelRatio).round();
+    final bubbleSize = _bubbleSize(context);
+    final nextWidth = (bubbleSize.width * pixelRatio).round();
+    final nextHeight = (bubbleSize.height * pixelRatio).round();
     if (_thumbnailWidth != nextWidth ||
         _thumbnailHeight != nextHeight ||
         _resolvedUrl == null) {
@@ -82,9 +86,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   @override
   Widget build(BuildContext context) {
     final url = _resolvedUrl;
+    final bubbleSize = _bubbleSize(context);
 
     if (url == null || url.isEmpty) {
-      return _buildBroken();
+      return _buildBroken(context, bubbleSize);
     }
 
     return GestureDetector(
@@ -101,10 +106,8 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       child: Hero(
         tag: url,
         child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.65,
-            maxHeight: 280,
-          ),
+          width: bubbleSize.width,
+          height: bubbleSize.height,
           decoration: BoxDecoration(
             color: isMe
                 ? AppColors.primary.withValues(alpha: 0.3)
@@ -124,14 +127,16 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
           child: Stack(
             alignment: Alignment.bottomRight,
             children: [
-              AuthenticatedImageMessage(
-                key: ValueKey(
-                  'msg-image:${widget.imageUrl}:${widget.timestamp}',
+              Positioned.fill(
+                child: AuthenticatedImageMessage(
+                  key: ValueKey(
+                    'msg-image:${widget.imageUrl}:${widget.timestamp}',
+                  ),
+                  imageUrl: url,
+                  onLoaded: widget.onLoaded,
+                  cacheWidth: _thumbnailWidth,
+                  cacheHeight: _thumbnailHeight,
                 ),
-                imageUrl: url,
-                onLoaded: widget.onLoaded,
-                cacheWidth: _thumbnailWidth,
-                cacheHeight: _thumbnailHeight,
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -163,12 +168,32 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   bool get isMe => widget.isMe;
 
-  Widget _buildBroken() {
+  Size _bubbleSize(BuildContext context) {
+    const maxHeight = 280.0;
+    final maxWidth = MediaQuery.sizeOf(context).width * 0.65;
+    final sourceWidth = widget.imageWidth;
+    final sourceHeight = widget.imageHeight;
+    final aspectRatio =
+        sourceWidth != null &&
+            sourceHeight != null &&
+            sourceWidth > 0 &&
+            sourceHeight > 0
+        ? sourceWidth / sourceHeight
+        : 1.0;
+
+    var width = maxWidth;
+    var height = width / aspectRatio;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
+    }
+    return Size(width, height);
+  }
+
+  Widget _buildBroken(BuildContext context, Size bubbleSize) {
     return Container(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.5,
-        maxHeight: 120,
-      ),
+      width: bubbleSize.width,
+      height: bubbleSize.height,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: isMe

@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `get_client`, `get_last_message_info`, `install_verification_event_handler`, `load_room_sticker_packs`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `sticker_label_from_filename`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `usage_allows_sticker`
+// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `install_verification_event_handler`, `load_room_sticker_packs`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `remove_dir_all_if_exists`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `sticker_info_dimensions`, `sticker_label_from_filename`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `usage_allows_sticker`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -273,10 +273,14 @@ Future<void> sendImageMessage({
   required String roomId,
   required List<int> imageData,
   required String filename,
+  int? width,
+  int? height,
 }) => RustLib.instance.api.crateApiMatrixSendImageMessage(
   roomId: roomId,
   imageData: imageData,
   filename: filename,
+  width: width,
+  height: height,
 );
 
 Future<void> sendSticker({
@@ -563,6 +567,8 @@ class ChatMessage {
   final bool isMe;
   final MessageType msgType;
   final String? imageUrl;
+  final int? imageWidth;
+  final int? imageHeight;
 
   /// Event ID this message is replying to, if any.
   final String? inReplyTo;
@@ -592,6 +598,8 @@ class ChatMessage {
     required this.isMe,
     required this.msgType,
     this.imageUrl,
+    this.imageWidth,
+    this.imageHeight,
     this.inReplyTo,
     required this.isEdited,
     required this.editHistory,
@@ -610,6 +618,8 @@ class ChatMessage {
       isMe.hashCode ^
       msgType.hashCode ^
       imageUrl.hashCode ^
+      imageWidth.hashCode ^
+      imageHeight.hashCode ^
       inReplyTo.hashCode ^
       isEdited.hashCode ^
       editHistory.hashCode ^
@@ -630,6 +640,8 @@ class ChatMessage {
           isMe == other.isMe &&
           msgType == other.msgType &&
           imageUrl == other.imageUrl &&
+          imageWidth == other.imageWidth &&
+          imageHeight == other.imageHeight &&
           inReplyTo == other.inReplyTo &&
           isEdited == other.isEdited &&
           editHistory == other.editHistory &&

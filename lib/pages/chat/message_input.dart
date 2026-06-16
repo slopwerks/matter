@@ -195,11 +195,14 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
       final bytes = await pickedFile.readAsBytes();
       final filename = pickedFile.name;
+      final imageSize = await _decodeImageSize(bytes);
 
       await rust.sendImageMessage(
         roomId: widget.roomId,
         imageData: bytes,
         filename: filename,
+        width: imageSize?.width.round(),
+        height: imageSize?.height.round(),
       );
 
       unawaited(refreshMessages(ref, widget.roomId));
@@ -214,6 +217,19 @@ class _MessageInputState extends ConsumerState<MessageInput> {
       }
     } finally {
       if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<Size?> _decodeImageSize(Uint8List bytes) async {
+    try {
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromList(bytes, completer.complete);
+      final image = await completer.future;
+      final size = Size(image.width.toDouble(), image.height.toDouble());
+      image.dispose();
+      return size;
+    } catch (_) {
+      return null;
     }
   }
 

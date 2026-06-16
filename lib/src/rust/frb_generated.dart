@@ -248,6 +248,8 @@ abstract class RustLibApi extends BaseApi {
     required String roomId,
     required List<int> imageData,
     required String filename,
+    int? width,
+    int? height,
   });
 
   Future<void> crateApiMatrixSendMessage({
@@ -1994,6 +1996,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String roomId,
     required List<int> imageData,
     required String filename,
+    int? width,
+    int? height,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2002,6 +2006,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(roomId, serializer);
           sse_encode_list_prim_u_8_loose(imageData, serializer);
           sse_encode_String(filename, serializer);
+          sse_encode_opt_box_autoadd_i_32(width, serializer);
+          sse_encode_opt_box_autoadd_i_32(height, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2014,7 +2020,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiMatrixSendImageMessageConstMeta,
-        argValues: [roomId, imageData, filename],
+        argValues: [roomId, imageData, filename, width, height],
         apiImpl: this,
       ),
     );
@@ -2023,7 +2029,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiMatrixSendImageMessageConstMeta =>
       const TaskConstMeta(
         debugName: "send_image_message",
-        argNames: ["roomId", "imageData", "filename"],
+        argNames: ["roomId", "imageData", "filename", "width", "height"],
       );
 
   @override
@@ -2716,8 +2722,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ChatMessage dco_decode_chat_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return ChatMessage(
       id: dco_decode_String(arr[0]),
       senderId: dco_decode_String(arr[1]),
@@ -2727,12 +2733,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isMe: dco_decode_bool(arr[5]),
       msgType: dco_decode_message_type(arr[6]),
       imageUrl: dco_decode_opt_String(arr[7]),
-      inReplyTo: dco_decode_opt_String(arr[8]),
-      isEdited: dco_decode_bool(arr[9]),
-      editHistory: dco_decode_list_String(arr[10]),
-      reactions: dco_decode_list_reaction(arr[11]),
-      readers: dco_decode_list_message_reader(arr[12]),
-      totalMembers: dco_decode_i_32(arr[13]),
+      imageWidth: dco_decode_opt_box_autoadd_i_32(arr[8]),
+      imageHeight: dco_decode_opt_box_autoadd_i_32(arr[9]),
+      inReplyTo: dco_decode_opt_String(arr[10]),
+      isEdited: dco_decode_bool(arr[11]),
+      editHistory: dco_decode_list_String(arr[12]),
+      reactions: dco_decode_list_reaction(arr[13]),
+      readers: dco_decode_list_message_reader(arr[14]),
+      totalMembers: dco_decode_i_32(arr[15]),
     );
   }
 
@@ -3251,6 +3259,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_isMe = sse_decode_bool(deserializer);
     var var_msgType = sse_decode_message_type(deserializer);
     var var_imageUrl = sse_decode_opt_String(deserializer);
+    var var_imageWidth = sse_decode_opt_box_autoadd_i_32(deserializer);
+    var var_imageHeight = sse_decode_opt_box_autoadd_i_32(deserializer);
     var var_inReplyTo = sse_decode_opt_String(deserializer);
     var var_isEdited = sse_decode_bool(deserializer);
     var var_editHistory = sse_decode_list_String(deserializer);
@@ -3266,6 +3276,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isMe: var_isMe,
       msgType: var_msgType,
       imageUrl: var_imageUrl,
+      imageWidth: var_imageWidth,
+      imageHeight: var_imageHeight,
       inReplyTo: var_inReplyTo,
       isEdited: var_isEdited,
       editHistory: var_editHistory,
@@ -3934,6 +3946,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.isMe, serializer);
     sse_encode_message_type(self.msgType, serializer);
     sse_encode_opt_String(self.imageUrl, serializer);
+    sse_encode_opt_box_autoadd_i_32(self.imageWidth, serializer);
+    sse_encode_opt_box_autoadd_i_32(self.imageHeight, serializer);
     sse_encode_opt_String(self.inReplyTo, serializer);
     sse_encode_bool(self.isEdited, serializer);
     sse_encode_list_String(self.editHistory, serializer);

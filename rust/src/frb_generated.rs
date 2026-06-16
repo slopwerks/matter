@@ -2102,6 +2102,8 @@ fn wire__crate__api__matrix__send_image_message_impl(
             let api_room_id = <String>::sse_decode(&mut deserializer);
             let api_image_data = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_filename = <String>::sse_decode(&mut deserializer);
+            let api_width = <Option<i32>>::sse_decode(&mut deserializer);
+            let api_height = <Option<i32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -2110,6 +2112,8 @@ fn wire__crate__api__matrix__send_image_message_impl(
                             api_room_id,
                             api_image_data,
                             api_filename,
+                            api_width,
+                            api_height,
                         )
                         .await?;
                         Ok(output_ok)
@@ -2938,6 +2942,8 @@ impl SseDecode for crate::api::matrix::ChatMessage {
         let mut var_isMe = <bool>::sse_decode(deserializer);
         let mut var_msgType = <crate::api::matrix::MessageType>::sse_decode(deserializer);
         let mut var_imageUrl = <Option<String>>::sse_decode(deserializer);
+        let mut var_imageWidth = <Option<i32>>::sse_decode(deserializer);
+        let mut var_imageHeight = <Option<i32>>::sse_decode(deserializer);
         let mut var_inReplyTo = <Option<String>>::sse_decode(deserializer);
         let mut var_isEdited = <bool>::sse_decode(deserializer);
         let mut var_editHistory = <Vec<String>>::sse_decode(deserializer);
@@ -2953,6 +2959,8 @@ impl SseDecode for crate::api::matrix::ChatMessage {
             is_me: var_isMe,
             msg_type: var_msgType,
             image_url: var_imageUrl,
+            image_width: var_imageWidth,
+            image_height: var_imageHeight,
             in_reply_to: var_inReplyTo,
             is_edited: var_isEdited,
             edit_history: var_editHistory,
@@ -3760,6 +3768,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::matrix::ChatMessage {
             self.is_me.into_into_dart().into_dart(),
             self.msg_type.into_into_dart().into_dart(),
             self.image_url.into_into_dart().into_dart(),
+            self.image_width.into_into_dart().into_dart(),
+            self.image_height.into_into_dart().into_dart(),
             self.in_reply_to.into_into_dart().into_dart(),
             self.is_edited.into_into_dart().into_dart(),
             self.edit_history.into_into_dart().into_dart(),
@@ -4272,6 +4282,8 @@ impl SseEncode for crate::api::matrix::ChatMessage {
         <bool>::sse_encode(self.is_me, serializer);
         <crate::api::matrix::MessageType>::sse_encode(self.msg_type, serializer);
         <Option<String>>::sse_encode(self.image_url, serializer);
+        <Option<i32>>::sse_encode(self.image_width, serializer);
+        <Option<i32>>::sse_encode(self.image_height, serializer);
         <Option<String>>::sse_encode(self.in_reply_to, serializer);
         <bool>::sse_encode(self.is_edited, serializer);
         <Vec<String>>::sse_encode(self.edit_history, serializer);
