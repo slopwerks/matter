@@ -150,6 +150,71 @@ final messagesProvider = FutureProvider.family<List<rust.ChatMessage>, String>((
   return rust.getMessages(roomId: roomId);
 });
 
+const localOutgoingPendingPrefix = 'local_sticker_pending:';
+const localOutgoingFailedPrefix = 'local_sticker_failed:';
+
+bool isLocalOutgoingMessage(String id) =>
+    id.startsWith(localOutgoingPendingPrefix) ||
+    id.startsWith(localOutgoingFailedPrefix);
+
+bool isLocalOutgoingFailedMessage(String id) =>
+    id.startsWith(localOutgoingFailedPrefix);
+
+String failedLocalOutgoingId(String pendingId) {
+  if (!pendingId.startsWith(localOutgoingPendingPrefix)) return pendingId;
+  return '$localOutgoingFailedPrefix${pendingId.substring(localOutgoingPendingPrefix.length)}';
+}
+
+class LocalOutgoingMessage {
+  final rust.ChatMessage message;
+  final String sourceImageUrl;
+
+  const LocalOutgoingMessage({
+    required this.message,
+    required this.sourceImageUrl,
+  });
+}
+
+final localOutgoingMessagesProvider =
+    NotifierProvider.family<
+      MutableState<List<LocalOutgoingMessage>>,
+      List<LocalOutgoingMessage>,
+      String
+    >((_) => MutableState(const <LocalOutgoingMessage>[]));
+
+void upsertLocalOutgoingMessage(
+  WidgetRef ref,
+  String roomId,
+  LocalOutgoingMessage message,
+) {
+  final messages = ref.read(localOutgoingMessagesProvider(roomId));
+  final index = messages.indexWhere(
+    (existing) => existing.message.id == message.message.id,
+  );
+  if (index == -1) {
+    ref.read(localOutgoingMessagesProvider(roomId).notifier).value = [
+      ...messages,
+      message,
+    ];
+    return;
+  }
+
+  final next = [...messages];
+  next[index] = message;
+  ref.read(localOutgoingMessagesProvider(roomId).notifier).value = next;
+}
+
+void removeLocalOutgoingMessage(
+  WidgetRef ref,
+  String roomId,
+  String messageId,
+) {
+  final messages = ref.read(localOutgoingMessagesProvider(roomId));
+  ref.read(localOutgoingMessagesProvider(roomId).notifier).value = messages
+      .where((message) => message.message.id != messageId)
+      .toList();
+}
+
 Future<void> refreshMessagesRef(Ref ref, String roomId) {
   ref.invalidate(messagesProvider(roomId));
   return ref.read(messagesProvider(roomId).future);
@@ -255,6 +320,41 @@ Map<String, String> _trimPersistedMxcEntries(Map<String, String> entries) {
 String _mxcCacheKey(String mxcUrl, {int? width, int? height}) {
   if (width == null && height == null) return mxcUrl;
   return '$mxcUrl|${width ?? 0}x${height ?? 0}';
+}
+
+String? cachedResolvedMxcUrl(
+  WidgetRef ref,
+  String? mxcUrl, {
+  int? width,
+  int? height,
+}) {
+  if (mxcUrl == null || !mxcUrl.startsWith('mxc://')) return null;
+  final namespace = _mxcStorageNamespace(ref);
+  final rawCacheKey = _mxcCacheKey(mxcUrl, width: width, height: height);
+  final cacheKey = _scopedMxcCacheKey(namespace, rawCacheKey);
+  return ref.read(mxcUrlCacheProvider)[cacheKey];
+}
+
+void rememberResolvedMxcUrl(
+  WidgetRef ref,
+  String? mxcUrl,
+  String? httpUrl, {
+  int? width,
+  int? height,
+}) {
+  if (mxcUrl == null ||
+      httpUrl == null ||
+      !mxcUrl.startsWith('mxc://') ||
+      httpUrl.isEmpty) {
+    return;
+  }
+  final namespace = _mxcStorageNamespace(ref);
+  final rawCacheKey = _mxcCacheKey(mxcUrl, width: width, height: height);
+  final cacheKey = _scopedMxcCacheKey(namespace, rawCacheKey);
+  final cache = ref.read(mxcUrlCacheProvider);
+  if (cache[cacheKey] == httpUrl) return;
+  ref.read(mxcUrlCacheProvider.notifier).value = {...cache, cacheKey: httpUrl};
+  unawaited(_persistMxcCacheEntry(ref, namespace, rawCacheKey, httpUrl));
 }
 
 Future<String?> resolveMxcUrlAvatar(WidgetRef ref, String? mxcUrl) async {

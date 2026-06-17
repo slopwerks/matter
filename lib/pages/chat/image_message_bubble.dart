@@ -51,6 +51,16 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     final bubbleSize = _bubbleSize(context);
     final nextWidth = (bubbleSize.width * pixelRatio).round();
     final nextHeight = (bubbleSize.height * pixelRatio).round();
+    final useOriginalCache = _shouldUseOriginalCache;
+    final cachedUrl = cachedResolvedMxcUrl(
+      ref,
+      widget.imageUrl,
+      width: useOriginalCache ? null : nextWidth,
+      height: useOriginalCache ? null : nextHeight,
+    );
+    if (cachedUrl != null && _resolvedUrl != cachedUrl) {
+      _resolvedUrl = cachedUrl;
+    }
     if (_thumbnailWidth != nextWidth ||
         _thumbnailHeight != nextHeight ||
         _resolvedUrl == null) {

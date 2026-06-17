@@ -147,6 +147,69 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     return messages;
   }
 
+  List<ChatMessage> _mergeLocalOutgoingMessages(
+    List<ChatMessage> latestMessages,
+    List<LocalOutgoingMessage> localMessages,
+  ) {
+    if (localMessages.isEmpty) return latestMessages;
+    final matchedLocalIds = _matchedLocalOutgoingIds(
+      latestMessages,
+      localMessages,
+    );
+    if (matchedLocalIds.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        for (final id in matchedLocalIds) {
+          LocalOutgoingMessage? local;
+          for (final message in localMessages) {
+            if (message.message.id == id) {
+              local = message;
+              break;
+            }
+          }
+          rememberResolvedMxcUrl(
+            ref,
+            local?.sourceImageUrl,
+            local?.message.imageUrl,
+          );
+          removeLocalOutgoingMessage(ref, widget.roomId, id);
+        }
+      });
+    }
+
+    return [
+      ...latestMessages,
+      ...localMessages
+          .where((message) => !matchedLocalIds.contains(message.message.id))
+          .map((message) => message.message),
+    ];
+  }
+
+  Set<String> _matchedLocalOutgoingIds(
+    List<ChatMessage> latestMessages,
+    List<LocalOutgoingMessage> localMessages,
+  ) {
+    final ids = <String>{};
+    for (final local in localMessages) {
+      final localTime = int.tryParse(local.message.timestamp) ?? 0;
+      final matched = latestMessages.any((remote) {
+        if (!remote.isMe ||
+            remote.msgType != MessageType.image ||
+            remote.imageUrl == null) {
+          return false;
+        }
+        final remoteTime = int.tryParse(remote.timestamp) ?? 0;
+        return remote.imageUrl == local.sourceImageUrl &&
+            remote.content == local.message.content &&
+            remoteTime >= localTime - 60000;
+      });
+      if (matched) {
+        ids.add(local.message.id);
+      }
+    }
+    return ids;
+  }
+
   List<MessageGroup> _groupMessages(List<ChatMessage> messages) {
     final groups = <MessageGroup>[];
     for (final message in messages) {
@@ -295,6 +358,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   Widget build(BuildContext context) {
     final messagesAsync = ref.watch(messagesProvider(widget.roomId));
     final membersAsync = ref.watch(roomMembersProvider(widget.roomId));
+    final localOutgoingMessages = ref.watch(
+      localOutgoingMessagesProvider(widget.roomId),
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -371,7 +437,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           Expanded(
             child: messagesAsync.when(
               data: (messages) {
-                _rebuildDerivedMessages(messages);
+                final timelineMessages = _mergeLocalOutgoingMessages(
+                  messages,
+                  localOutgoingMessages,
+                );
+                _rebuildDerivedMessages(timelineMessages);
                 final displayedMessages = _displayedMessages;
                 final avatarMap = membersAsync.maybeWhen(
                   data: (members) =>

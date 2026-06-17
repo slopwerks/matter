@@ -202,6 +202,8 @@ class MessageGroupWidget extends ConsumerWidget {
       );
     }
 
+    final isLocalOutgoing = isLocalOutgoingMessage(message.id);
+    final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
     final bubble =
         message.msgType == MessageType.image && message.imageUrl != null
         ? ImageMessageBubble(
@@ -217,7 +219,9 @@ class MessageGroupWidget extends ConsumerWidget {
         : _buildTextBubble(context, ref, message, isMe, isFirst: isFirst);
 
     return GestureDetector(
-      onLongPress: () => _showContextMenu(context, ref, message),
+      onLongPress: isLocalOutgoing
+          ? null
+          : () => _showContextMenu(context, ref, message),
       // Tapping an own message with readers opens the read-receipts sheet.
       // (Whole-bubble hit area is far easier to hit than the tiny tick.)
       onTap: (isMe && message.readers.isNotEmpty)
@@ -235,10 +239,43 @@ class MessageGroupWidget extends ConsumerWidget {
               : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            bubble,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (isMe && isLocalOutgoing) ...[
+                  _buildLocalOutgoingStatus(isLocalFailed),
+                  const SizedBox(width: 6),
+                ],
+                bubble,
+                if (!isMe && isLocalOutgoing) ...[
+                  const SizedBox(width: 6),
+                  _buildLocalOutgoingStatus(isLocalFailed),
+                ],
+              ],
+            ),
             if (message.reactions.isNotEmpty)
               _buildReactionsRow(context, ref, message, isMe),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocalOutgoingStatus(bool failed) {
+    if (failed) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 6),
+        child: Icon(Icons.error_rounded, color: AppColors.error, size: 18),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: SizedBox.square(
+        dimension: 12,
+        child: CircularProgressIndicator(
+          strokeWidth: 1.6,
+          color: AppColors.onSurfaceVariant.withValues(alpha: 0.72),
         ),
       ),
     );

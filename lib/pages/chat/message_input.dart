@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
@@ -248,15 +249,64 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     _insertComposerText(emoji);
   }
 
-  Future<void> _sendSticker(StickerItem sticker) async {
-    if (_isSending) return;
+  rust.ChatMessage _localStickerMessage({
+    required String id,
+    required StickerItem sticker,
+    required String displayImageUrl,
+  }) {
+    final currentUser = ref.read(currentUserProvider);
+    final now = DateTime.now().millisecondsSinceEpoch.toString();
+    return rust.ChatMessage(
+      id: id,
+      senderId: currentUser?.id ?? '',
+      senderName: '我',
+      content: sticker.body,
+      timestamp: now,
+      isMe: true,
+      msgType: rust.MessageType.image,
+      imageUrl: displayImageUrl,
+      imageWidth: sticker.width,
+      imageHeight: sticker.height,
+      isEdited: false,
+      editHistory: const [],
+      reactions: const [],
+      readers: const [],
+      totalMembers: 0,
+    );
+  }
 
-    setState(() => _isSending = true);
+  Future<void> _sendSticker(StickerItem sticker) async {
+    final imageUrl = sticker.imageUrl;
+    if (imageUrl == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('贴纸缺少图片地址'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final localId =
+        '$localOutgoingPendingPrefix${DateTime.now().microsecondsSinceEpoch}';
+    final displayImageUrl =
+        cachedResolvedMxcUrl(ref, sticker.thumbnailUrl ?? imageUrl) ??
+        cachedResolvedMxcUrl(ref, imageUrl) ??
+        imageUrl;
+    upsertLocalOutgoingMessage(
+      ref,
+      widget.roomId,
+      LocalOutgoingMessage(
+        message: _localStickerMessage(
+          id: localId,
+          sticker: sticker,
+          displayImageUrl: displayImageUrl,
+        ),
+        sourceImageUrl: imageUrl,
+      ),
+    );
+
     try {
-      final imageUrl = sticker.imageUrl;
-      if (imageUrl == null) {
-        throw StateError('贴纸缺少图片地址');
-      }
       await rust.sendSticker(
         roomId: widget.roomId,
         imageUrl: imageUrl,
@@ -269,15 +319,20 @@ class _MessageInputState extends ConsumerState<MessageInput> {
       unawaited(refreshMessages(ref, widget.roomId));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('发送贴纸失败: $e'),
-            duration: const Duration(seconds: 2),
+        removeLocalOutgoingMessage(ref, widget.roomId, localId);
+        upsertLocalOutgoingMessage(
+          ref,
+          widget.roomId,
+          LocalOutgoingMessage(
+            message: _localStickerMessage(
+              id: failedLocalOutgoingId(localId),
+              sticker: sticker,
+              displayImageUrl: displayImageUrl,
+            ),
+            sourceImageUrl: imageUrl,
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _isSending = false);
     }
   }
 
