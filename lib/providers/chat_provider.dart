@@ -400,13 +400,6 @@ final syncStreamProvider =
         ref.invalidate(ungroupedRoomsProvider);
       }
 
-      void refreshCurrentRoomMeta() {
-        final currentRoomId = ref.read(currentRoomIdProvider);
-        if (currentRoomId != null) {
-          ref.invalidate(stickerPacksProvider(currentRoomId));
-        }
-      }
-
       void scheduleRoomRefresh() {
         roomRefreshTimer?.cancel();
         roomRefreshTimer = Timer(const Duration(milliseconds: 500), () {
@@ -442,7 +435,6 @@ final syncStreamProvider =
         switch (event) {
           case rust.SyncEvent_SyncCompleted():
             scheduleRoomRefresh();
-            refreshCurrentRoomMeta();
             final currentRoomId = ref.read(currentRoomIdProvider);
             if (currentRoomId != null) {
               scheduleMessageRefresh(currentRoomId);
@@ -450,7 +442,6 @@ final syncStreamProvider =
           case rust.SyncEvent_MessageSent(:final roomId):
             scheduleMessageRefresh(roomId);
             scheduleRoomRefresh();
-            ref.invalidate(stickerPacksProvider(roomId));
         }
       });
 

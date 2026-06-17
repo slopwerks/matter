@@ -74,10 +74,17 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   }
 
   void _onTextChanged() {
-    setState(() {
-      _hasText = _controller.text.trim().isNotEmpty;
-    });
-    _handleTyping();
+    final hasText = _controller.text.trim().isNotEmpty;
+    if (_hasText != hasText) {
+      setState(() {
+        _hasText = hasText;
+      });
+    }
+    if (hasText) {
+      _handleTyping();
+    } else {
+      _stopTyping();
+    }
   }
 
   void _handleTyping() {
@@ -316,6 +323,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
       size.toInt(),
     );
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
     if (bytes == null) {
       throw StateError('生成贴纸图片失败');
     }

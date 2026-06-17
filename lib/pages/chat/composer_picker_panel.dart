@@ -765,7 +765,7 @@ class _StickerHoldPreviewOverlay extends StatelessWidget {
   }
 }
 
-class _RemoteStickerPreview extends ConsumerWidget {
+class _RemoteStickerPreview extends ConsumerStatefulWidget {
   final StickerItem sticker;
   final BoxFit fit;
 
@@ -775,8 +775,44 @@ class _RemoteStickerPreview extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final imageUrl = sticker.thumbnailUrl ?? sticker.imageUrl;
+  ConsumerState<_RemoteStickerPreview> createState() =>
+      _RemoteStickerPreviewState();
+}
+
+class _RemoteStickerPreviewState extends ConsumerState<_RemoteStickerPreview> {
+  String? _sourceUrl;
+  Future<String?>? _resolvedFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFuture();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RemoteStickerPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.sticker.thumbnailUrl != oldWidget.sticker.thumbnailUrl ||
+        widget.sticker.imageUrl != oldWidget.sticker.imageUrl) {
+      _syncFuture();
+    }
+  }
+
+  void _syncFuture() {
+    final nextSourceUrl =
+        widget.sticker.thumbnailUrl ?? widget.sticker.imageUrl;
+    if (_sourceUrl == nextSourceUrl && _resolvedFuture != null) return;
+    _sourceUrl = nextSourceUrl;
+    _resolvedFuture = nextSourceUrl == null
+        ? Future<String?>.value(null)
+        : nextSourceUrl.startsWith('mxc://')
+        ? resolveMxcUrl(ref, nextSourceUrl)
+        : Future<String?>.value(nextSourceUrl);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = _sourceUrl;
     if (imageUrl == null) {
       return const Center(
         child: Icon(
@@ -788,9 +824,7 @@ class _RemoteStickerPreview extends ConsumerWidget {
     }
 
     return FutureBuilder<String?>(
-      future: imageUrl.startsWith('mxc://')
-          ? resolveMxcUrl(ref, imageUrl)
-          : Future.value(imageUrl),
+      future: _resolvedFuture,
       builder: (context, snapshot) {
         final resolvedUrl = snapshot.data;
         if (resolvedUrl == null) {
@@ -816,7 +850,10 @@ class _RemoteStickerPreview extends ConsumerWidget {
 
         return ClipRRect(
           borderRadius: BorderRadius.circular(10),
-          child: AuthenticatedImageMessage(imageUrl: resolvedUrl, fit: fit),
+          child: AuthenticatedImageMessage(
+            imageUrl: resolvedUrl,
+            fit: widget.fit,
+          ),
         );
       },
     );
