@@ -11,11 +11,15 @@ val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
+val configuredNdkVersion =
+    System.getenv("ANDROID_NDK_VERSION")
+        ?: project.findProperty("android.ndkVersion") as String?
+        ?: flutter.ndkVersion
 
 android {
     namespace = "moe.aks.matter"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = configuredNdkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
