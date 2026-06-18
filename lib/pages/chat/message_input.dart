@@ -187,6 +187,8 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
     final editing = ref.read(editingMessageProvider(widget.roomId));
     final replyTo = ref.read(replyingToProvider(widget.roomId));
+    final shouldRestoreKeyboard =
+        widget.panelMode == InputPanelMode.keyboard || _focusNode.hasFocus;
 
     setState(() => _isSending = true);
 
@@ -225,7 +227,17 @@ class _MessageInputState extends ConsumerState<MessageInput> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isSending = false);
+      if (mounted) {
+        setState(() => _isSending = false);
+        if (shouldRestoreKeyboard) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            widget.onPanelModeChanged(InputPanelMode.keyboard);
+            _focusNode.requestFocus();
+            SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+          });
+        }
+      }
     }
   }
 
@@ -455,7 +467,6 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                       child: TextField(
                         controller: _controller,
                         focusNode: _focusNode,
-                        readOnly: _isSending,
                         style: const TextStyle(
                           color: AppColors.onBackground,
                           fontSize: 15,
