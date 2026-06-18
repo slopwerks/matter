@@ -14,6 +14,7 @@ enum ComposerPickerTab { emoji, sticker }
 class ComposerPickerPanel extends StatefulWidget {
   static const double baseHeight = 316;
 
+  final double? height;
   final String roomId;
   final ComposerPickerTab tab;
   final ValueChanged<ComposerPickerTab> onTabChanged;
@@ -22,6 +23,7 @@ class ComposerPickerPanel extends StatefulWidget {
 
   const ComposerPickerPanel({
     super.key,
+    this.height,
     required this.roomId,
     required this.tab,
     required this.onTabChanged,
@@ -41,10 +43,8 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
     final mediaQuery = MediaQuery.of(context);
     final screenHeight = mediaQuery.size.height;
     final safeTop = mediaQuery.padding.top;
-    return math.max(
-      ComposerPickerPanel.baseHeight,
-      screenHeight - safeTop - 88,
-    );
+    final baseHeight = widget.height ?? ComposerPickerPanel.baseHeight;
+    return math.max(baseHeight, screenHeight - safeTop - 88);
   }
 
   @override
@@ -64,7 +64,8 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
   @override
   Widget build(BuildContext context) {
     final maxHeight = _maxPanelHeight(context);
-    final minSize = ComposerPickerPanel.baseHeight / maxHeight;
+    final baseHeight = widget.height ?? ComposerPickerPanel.baseHeight;
+    final minSize = baseHeight / maxHeight;
 
     if (_sheetExtent.value == 0) {
       _sheetExtent.value = minSize;
@@ -74,7 +75,7 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
       valueListenable: _sheetExtent,
       builder: (context, currentExtent, child) {
         final visibleHeight = (currentExtent * maxHeight).clamp(
-          ComposerPickerPanel.baseHeight,
+          baseHeight,
           maxHeight,
         );
         return SizedBox(height: visibleHeight, child: child);

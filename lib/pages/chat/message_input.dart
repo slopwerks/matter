@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -28,10 +28,25 @@ final editingMessageProvider =
       String
     >((_) => MutableState(null));
 
+enum InputPanelMode { none, keyboard, emoji }
+
 class MessageInput extends ConsumerStatefulWidget {
   final String roomId;
+  final InputPanelMode panelMode;
+  final double pickerHeight;
+  final double pickerFullHeight;
+  final bool animatePickerHeight;
+  final ValueChanged<InputPanelMode> onPanelModeChanged;
 
-  const MessageInput({super.key, required this.roomId});
+  const MessageInput({
+    super.key,
+    required this.roomId,
+    required this.panelMode,
+    required this.pickerHeight,
+    required this.pickerFullHeight,
+    required this.animatePickerHeight,
+    required this.onPanelModeChanged,
+  });
 
   @override
   ConsumerState<MessageInput> createState() => _MessageInputState();
@@ -45,7 +60,6 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   Timer? _typingTimer;
   bool _isTyping = false;
   final _imagePicker = ImagePicker();
-  bool _showPicker = false;
   ComposerPickerTab _pickerTab = ComposerPickerTab.emoji;
   int _pickerInstance = 0;
 
@@ -58,10 +72,20 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     super.initState();
     _controller.addListener(_onTextChanged);
     _focusNode.addListener(() {
-      if (_focusNode.hasFocus && _showPicker && mounted) {
-        setState(() => _showPicker = false);
+      if (_focusNode.hasFocus && mounted) {
+        widget.onPanelModeChanged(InputPanelMode.keyboard);
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant MessageInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.panelMode != widget.panelMode &&
+        widget.panelMode == InputPanelMode.none) {
+      _focusNode.unfocus();
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    }
   }
 
   @override
@@ -117,19 +141,31 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   }
 
   void _togglePicker([ComposerPickerTab? tab]) {
-    setState(() {
-      final nextTab = tab ?? _pickerTab;
-      final sameTab = nextTab == _pickerTab;
-      if (_showPicker && sameTab) {
-        _showPicker = false;
-      } else {
-        if (!_showPicker) {
-          _pickerInstance++;
-        }
-        _pickerTab = nextTab;
-        _showPicker = true;
-        _focusNode.unfocus();
-      }
+    final nextTab = tab ?? _pickerTab;
+    final sameTab = nextTab == _pickerTab;
+    if (widget.panelMode == InputPanelMode.emoji && sameTab) {
+      widget.onPanelModeChanged(InputPanelMode.none);
+      return;
+    }
+
+    if (widget.panelMode != InputPanelMode.emoji) {
+      _pickerInstance++;
+    }
+    setState(() => _pickerTab = nextTab);
+    _focusNode.unfocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onPanelModeChanged(InputPanelMode.emoji);
+    });
+  }
+
+  void _showKeyboard() {
+    widget.onPanelModeChanged(InputPanelMode.keyboard);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNode.requestFocus();
+      SystemChannels.textInput.invokeMethod<void>('TextInput.show');
     });
   }
 
@@ -387,18 +423,20 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                     dimension: 44,
                     child: IconButton(
                       icon: Icon(
-                        _showPicker
+                        widget.panelMode == InputPanelMode.emoji
                             ? Icons.keyboard_rounded
                             : (_pickerTab == ComposerPickerTab.sticker
                                   ? Icons.sticky_note_2_rounded
                                   : Icons.sentiment_satisfied_alt_rounded),
-                        color: _showPicker
+                        color: widget.panelMode == InputPanelMode.emoji
                             ? AppColors.primary
                             : AppColors.onSurfaceVariant,
                         size: 25,
                       ),
                       onPressed: _isSending
                           ? null
+                          : widget.panelMode == InputPanelMode.emoji
+                          ? _showKeyboard
                           : () => _togglePicker(ComposerPickerTab.emoji),
                       padding: EdgeInsets.zero,
                     ),
@@ -439,9 +477,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                         textInputAction: TextInputAction.newline,
                         keyboardType: TextInputType.multiline,
                         onTap: () {
-                          if (_showPicker) {
-                            setState(() => _showPicker = false);
-                          }
+                          widget.onPanelModeChanged(InputPanelMode.keyboard);
                         },
                       ),
                     ),
@@ -511,25 +547,38 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                 ],
               ),
             ),
-            AnimatedCrossFade(
-              firstChild: const SizedBox.shrink(),
-              secondChild: ComposerPickerPanel(
-                key: ValueKey(
-                  'composer_picker_${widget.roomId}_$_pickerInstance',
+            AnimatedContainer(
+              duration: widget.animatePickerHeight
+                  ? const Duration(milliseconds: 180)
+                  : Duration.zero,
+              curve: Curves.easeOutCubic,
+              height: widget.pickerHeight,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topCenter,
+                  minHeight: widget.pickerFullHeight,
+                  maxHeight: widget.pickerFullHeight,
+                  child: SizedBox(
+                    height: widget.pickerFullHeight,
+                    child: widget.pickerHeight > 0
+                        ? ComposerPickerPanel(
+                            key: ValueKey(
+                              'composer_picker_${widget.roomId}_$_pickerInstance',
+                            ),
+                            height: widget.pickerFullHeight,
+                            roomId: widget.roomId,
+                            tab: _pickerTab,
+                            onTabChanged: (tab) =>
+                                setState(() => _pickerTab = tab),
+                            onEmojiSelected: _insertEmoji,
+                            onStickerSelected: (sticker) {
+                              _sendSticker(sticker);
+                            },
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                 ),
-                roomId: widget.roomId,
-                tab: _pickerTab,
-                onTabChanged: (tab) => setState(() => _pickerTab = tab),
-                onEmojiSelected: _insertEmoji,
-                onStickerSelected: (sticker) {
-                  _sendSticker(sticker);
-                },
               ),
-              crossFadeState: _showPicker
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 180),
-              sizeCurve: Curves.easeOutCubic,
             ),
           ],
         ),

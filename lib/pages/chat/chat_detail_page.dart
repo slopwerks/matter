@@ -1,10 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
 import 'chat_timestamp.dart';
+import 'composer_picker_panel.dart';
 import 'date_separator.dart';
 import 'message_group.dart';
 import 'message_input.dart';
@@ -41,9 +46,27 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   bool _hasMoreMessages = true;
   bool _olderLoadArmed = true;
   String _derivedMessagesFingerprint = '';
+  InputPanelMode _inputPanelMode = InputPanelMode.none;
+  double _inputChromeHeight = 68;
+  double _panelBaselineHeight = 0;
+  bool _keepPickerDuringKeyboardOpen = false;
+  bool _keyboardWasVisible = false;
 
   static const double _olderLoadTriggerDistance = 24.0;
   static const double _olderLoadRearmDistance = 240.0;
+
+  void _setInputPanelMode(InputPanelMode mode) {
+    if (_inputPanelMode == mode) return;
+    setState(() {
+      _keepPickerDuringKeyboardOpen =
+          _inputPanelMode == InputPanelMode.emoji &&
+          mode == InputPanelMode.keyboard;
+      if (mode == InputPanelMode.none) {
+        _keepPickerDuringKeyboardOpen = false;
+      }
+      _inputPanelMode = mode;
+    });
+  }
 
   @override
   void initState() {
@@ -361,138 +384,234 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     final localOutgoingMessages = ref.watch(
       localOutgoingMessagesProvider(widget.roomId),
     );
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+    if (keyboardHeight > 0 && keyboardHeight > _panelBaselineHeight) {
+      _panelBaselineHeight = keyboardHeight;
+    }
+    final keyboardVisible = keyboardHeight > 0;
+    if (keyboardVisible) {
+      _keyboardWasVisible = true;
+    } else if (_keyboardWasVisible &&
+        _inputPanelMode == InputPanelMode.keyboard &&
+        !_keepPickerDuringKeyboardOpen) {
+      _keyboardWasVisible = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _inputPanelMode != InputPanelMode.keyboard) return;
+        setState(() => _inputPanelMode = InputPanelMode.none);
+      });
+    }
+    final keepsStablePicker =
+        _inputPanelMode == InputPanelMode.emoji ||
+        _keepPickerDuringKeyboardOpen;
+    final pickerFullHeight = _panelBaselineHeight > 0
+        ? _panelBaselineHeight
+        : ComposerPickerPanel.baseHeight;
+    final pickerHeight = keepsStablePicker
+        ? math.max(0.0, pickerFullHeight - keyboardHeight)
+        : 0.0;
+    final bottomOffset =
+        (_inputPanelMode == InputPanelMode.keyboard || keepsStablePicker)
+        ? keyboardHeight
+        : 0.0;
+    final panelReservedHeight = keepsStablePicker
+        ? pickerFullHeight
+        : (_inputPanelMode == InputPanelMode.keyboard ? keyboardHeight : 0.0);
+    final messageBottomPadding = _inputChromeHeight + panelReservedHeight;
+    final animatePanelChange = !keyboardVisible;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background.withValues(alpha: 0.92),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.onBackground,
-          ),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            AppAvatar(
-              fallback: widget.roomName,
-              size: 36,
-              radius: AppRadii.content,
-              url: widget.avatarUrl,
+    if (_keepPickerDuringKeyboardOpen &&
+        keyboardHeight >= pickerFullHeight - 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_keepPickerDuringKeyboardOpen) return;
+        setState(() => _keepPickerDuringKeyboardOpen = false);
+      });
+    }
+
+    return PopScope(
+      canPop: _inputPanelMode == InputPanelMode.none && !keyboardVisible,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+        _setInputPanelMode(InputPanelMode.none);
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.background.withValues(alpha: 0.92),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_rounded,
+              color: AppColors.onBackground,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.roomName,
-                    style: const TextStyle(
-                      color: AppColors.onBackground,
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w700,
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              AppAvatar(
+                fallback: widget.roomName,
+                size: 36,
+                radius: AppRadii.content,
+                url: widget.avatarUrl,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.roomName,
+                      style: const TextStyle(
+                        color: AppColors.onBackground,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    Text(
+                      widget.subtitle,
+                      style: const TextStyle(
+                        color: AppColors.onSurfaceVariant,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: '搜索暂未提供',
+              icon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.onBackground,
+              ),
+              onPressed: null,
+            ),
+            IconButton(
+              icon: const Icon(
+                Icons.more_vert_rounded,
+                color: AppColors.onBackground,
+              ),
+              onPressed: () {
+                _showRoomDetails(context);
+              },
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: messagesAsync.when(
+                data: (messages) {
+                  final timelineMessages = _mergeLocalOutgoingMessages(
+                    messages,
+                    localOutgoingMessages,
+                  );
+                  _rebuildDerivedMessages(timelineMessages);
+                  final displayedMessages = _displayedMessages;
+                  final avatarMap = membersAsync.maybeWhen(
+                    data: (members) =>
+                        _buildAvatarMap(displayedMessages, members),
+                    orElse: () => const <String, String?>{},
+                  );
+                  return TweenAnimationBuilder<double>(
+                    tween: Tween<double>(end: messageBottomPadding),
+                    duration: animatePanelChange
+                        ? const Duration(milliseconds: 180)
+                        : Duration.zero,
+                    curve: Curves.easeOutCubic,
+                    builder: (context, animatedBottomPadding, _) {
+                      return NotificationListener<ScrollNotification>(
+                        onNotification: _handleScrollNotification,
+                        child: CustomScrollView(
+                          key: _scrollViewportKey,
+                          reverse: true,
+                          controller: _scrollController,
+                          slivers: [
+                            SliverPadding(
+                              padding: EdgeInsets.only(
+                                bottom: 8 + animatedBottomPadding,
+                              ),
+                            ),
+                            SliverList.builder(
+                              itemCount: _timelineEntries.length,
+                              itemBuilder: (context, index) {
+                                return _buildTimelineEntry(
+                                  _timelineEntries[index],
+                                  avatarMap,
+                                );
+                              },
+                            ),
+                            const SliverPadding(
+                              padding: EdgeInsets.only(top: 8),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: const SizedBox.shrink(),
+                  );
+                },
+                loading: () => const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 2,
                   ),
-                  Text(
-                    widget.subtitle,
-                    style: const TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
+                ),
+                error: (err, _) => Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SelectableText(
+                      '加载失败: $err',
+                      style: const TextStyle(color: AppColors.onSurfaceVariant),
                     ),
                   ),
-                ],
+                ),
+              ),
+            ),
+            AnimatedPositioned(
+              left: 0,
+              right: 0,
+              bottom: bottomOffset,
+              duration: Duration.zero,
+              curve: Curves.easeOutCubic,
+              child: _MeasuredSize(
+                onChanged: (size) {
+                  final chromeHeight = math.max(
+                    0.0,
+                    size.height - pickerHeight,
+                  );
+                  if ((_inputChromeHeight - chromeHeight).abs() < 0.5) {
+                    return;
+                  }
+                  setState(() => _inputChromeHeight = chromeHeight);
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildTypingIndicator(),
+                    MessageInput(
+                      key: ValueKey('msg_input_${widget.roomId}'),
+                      roomId: widget.roomId,
+                      panelMode: _inputPanelMode,
+                      pickerHeight: pickerHeight,
+                      pickerFullHeight: pickerFullHeight,
+                      animatePickerHeight: animatePanelChange,
+                      onPanelModeChanged: _setInputPanelMode,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            tooltip: '搜索暂未提供',
-            icon: const Icon(
-              Icons.search_rounded,
-              color: AppColors.onBackground,
-            ),
-            onPressed: null,
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.more_vert_rounded,
-              color: AppColors.onBackground,
-            ),
-            onPressed: () {
-              _showRoomDetails(context);
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: messagesAsync.when(
-              data: (messages) {
-                final timelineMessages = _mergeLocalOutgoingMessages(
-                  messages,
-                  localOutgoingMessages,
-                );
-                _rebuildDerivedMessages(timelineMessages);
-                final displayedMessages = _displayedMessages;
-                final avatarMap = membersAsync.maybeWhen(
-                  data: (members) =>
-                      _buildAvatarMap(displayedMessages, members),
-                  orElse: () => const <String, String?>{},
-                );
-                return NotificationListener<ScrollNotification>(
-                  onNotification: _handleScrollNotification,
-                  child: CustomScrollView(
-                    key: _scrollViewportKey,
-                    reverse: true,
-                    controller: _scrollController,
-                    slivers: [
-                      const SliverPadding(padding: EdgeInsets.only(bottom: 8)),
-                      SliverList.builder(
-                        itemCount: _timelineEntries.length,
-                        itemBuilder: (context, index) {
-                          return _buildTimelineEntry(
-                            _timelineEntries[index],
-                            avatarMap,
-                          );
-                        },
-                      ),
-                      const SliverPadding(padding: EdgeInsets.only(top: 8)),
-                    ],
-                  ),
-                );
-              },
-              loading: () => const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.primary,
-                  strokeWidth: 2,
-                ),
-              ),
-              error: (err, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: SelectableText(
-                    '加载失败: $err',
-                    style: const TextStyle(color: AppColors.onSurfaceVariant),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          _buildTypingIndicator(),
-          MessageInput(
-            key: ValueKey('msg_input_${widget.roomId}'),
-            roomId: widget.roomId,
-          ),
-        ],
       ),
     );
   }
@@ -715,5 +834,42 @@ class _DetailMenuItem extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _MeasuredSize extends SingleChildRenderObjectWidget {
+  final ValueChanged<Size> onChanged;
+
+  const _MeasuredSize({required this.onChanged, required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderMeasuredSize(onChanged);
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderMeasuredSize renderObject,
+  ) {
+    renderObject.onChanged = onChanged;
+  }
+}
+
+class _RenderMeasuredSize extends RenderProxyBox {
+  ValueChanged<Size> onChanged;
+  Size? _oldSize;
+
+  _RenderMeasuredSize(this.onChanged);
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final newSize = child?.size ?? Size.zero;
+    if (_oldSize == newSize) return;
+    _oldSize = newSize;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      onChanged(newSize);
+    });
   }
 }
