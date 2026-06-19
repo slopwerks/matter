@@ -776,6 +776,7 @@ pub struct EncryptionRecoveryInfo {
 pub enum MessageType {
     Text,
     Image,
+    Video,
     /// State/member change event (join, leave, etc.)
     Event,
 }
@@ -2737,6 +2738,9 @@ fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
                         matrix_sdk::ruma::events::room::message::MessageType::Image(t) => {
                             Some(format!("[图片] {}", t.body))
                         }
+                        matrix_sdk::ruma::events::room::message::MessageType::Video(t) => {
+                            Some(format!("[视频] {}", t.filename()))
+                        }
                         matrix_sdk::ruma::events::room::message::MessageType::File(t) => {
                             Some(format!("[文件] {}", t.body))
                         }
@@ -3000,6 +3004,37 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             timestamp: timestamp.clone(),
                             is_me,
                             msg_type: MessageType::Image,
+                            image_url: url,
+                            image_width,
+                            image_height,
+                            in_reply_to,
+                            is_edited: false,
+                            edit_history: Vec::new(),
+                            reactions: Vec::new(),
+                            readers: Vec::new(),
+                            total_members: 0,
+                        }
+                    }
+                    matrix_sdk::ruma::events::room::message::MessageType::Video(t) => {
+                        let url = match &t.source {
+                            matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => {
+                                Some(mxc.to_string())
+                            }
+                            _ => None,
+                        };
+                        let (image_width, image_height) = t
+                            .info
+                            .as_ref()
+                            .map(|info| (uint_to_i32(info.width), uint_to_i32(info.height)))
+                            .unwrap_or((None, None));
+                        ChatMessage {
+                            id: event_id_str.clone(),
+                            sender_id: sender_id.clone(),
+                            sender_name: sender_name.clone(),
+                            content: t.body.clone(),
+                            timestamp: timestamp.clone(),
+                            is_me,
+                            msg_type: MessageType::Video,
                             image_url: url,
                             image_width,
                             image_height,
@@ -4589,6 +4624,37 @@ pub async fn get_messages_before(
                         timestamp,
                         is_me,
                         msg_type: MessageType::Image,
+                        image_url: url,
+                        image_width,
+                        image_height,
+                        in_reply_to,
+                        is_edited: false,
+                        edit_history: Vec::new(),
+                        reactions: Vec::new(),
+                        readers: Vec::new(),
+                        total_members: 0,
+                    }
+                }
+                matrix_sdk::ruma::events::room::message::MessageType::Video(t) => {
+                    let url = match &t.source {
+                        matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => {
+                            Some(mxc.to_string())
+                        }
+                        _ => None,
+                    };
+                    let (image_width, image_height) = t
+                        .info
+                        .as_ref()
+                        .map(|info| (uint_to_i32(info.width), uint_to_i32(info.height)))
+                        .unwrap_or((None, None));
+                    ChatMessage {
+                        id: event_id.clone(),
+                        sender_id,
+                        sender_name,
+                        content: t.body.clone(),
+                        timestamp,
+                        is_me,
+                        msg_type: MessageType::Video,
                         image_url: url,
                         image_width,
                         image_height,

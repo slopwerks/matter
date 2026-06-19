@@ -3264,7 +3264,8 @@ impl SseDecode for crate::api::matrix::MessageType {
         return match inner {
             0 => crate::api::matrix::MessageType::Text,
             1 => crate::api::matrix::MessageType::Image,
-            2 => crate::api::matrix::MessageType::Event,
+            2 => crate::api::matrix::MessageType::Video,
+            3 => crate::api::matrix::MessageType::Event,
             _ => unreachable!("Invalid variant for MessageType: {}", inner),
         };
     }
@@ -3931,7 +3932,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::matrix::MessageType {
         match self {
             Self::Text => 0.into_dart(),
             Self::Image => 1.into_dart(),
-            Self::Event => 2.into_dart(),
+            Self::Video => 2.into_dart(),
+            Self::Event => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -4524,7 +4526,8 @@ impl SseEncode for crate::api::matrix::MessageType {
             match self {
                 crate::api::matrix::MessageType::Text => 0,
                 crate::api::matrix::MessageType::Image => 1,
-                crate::api::matrix::MessageType::Event => 2,
+                crate::api::matrix::MessageType::Video => 2,
+                crate::api::matrix::MessageType::Event => 3,
                 _ => {
                     unimplemented!("");
                 }

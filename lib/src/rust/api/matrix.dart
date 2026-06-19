@@ -818,6 +818,7 @@ class MessageReader {
 enum MessageType {
   text,
   image,
+  video,
 
   /// State/member change event (join, leave, etc.)
   event,
