@@ -11,8 +11,10 @@ use matrix_sdk::{
         account::register::v3::Request as RegistrationRequest,
         uiaa::{AuthData, Dummy, RegistrationToken, UiaaInfo},
     },
-    ruma::events::key::verification::{
-        request::ToDeviceKeyVerificationRequestEvent, VerificationMethod,
+    ruma::events::{
+        key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod},
+        receipt::SyncReceiptEvent,
+        room::message::OriginalSyncRoomMessageEvent,
     },
     store::RoomLoadSettings,
     Client, Room, SessionMeta, SessionTokens,
@@ -236,6 +238,22 @@ fn install_verification_event_handler(client: &Client) {
     );
 }
 
+fn install_live_update_event_handlers(client: &Client) {
+    client.add_event_handler(
+        |_event: OriginalSyncRoomMessageEvent, room: Room| async move {
+            notify_sync_event(SyncEvent::MessageSent {
+                room_id: room.room_id().to_string(),
+            });
+        },
+    );
+
+    client.add_event_handler(|_event: SyncReceiptEvent, room: Room| async move {
+        let room_id = room.room_id().to_string();
+        RECEIPT_CACHE.lock().await.remove(&room_id);
+        notify_sync_event(SyncEvent::MessageSent { room_id });
+    });
+}
+
 fn sanitize_for_path(s: &str) -> String {
     s.replace('@', "_at_")
         .replace(':', "_colon_")
@@ -362,6 +380,7 @@ async fn finalize_pending() -> Result<String, String> {
     );
     info!("finalize_pending: session restored for {}", user_id);
     install_verification_event_handler(&new_client);
+    install_live_update_event_handlers(&new_client);
 
     // Store in the multi-account map
     {
@@ -1715,6 +1734,7 @@ pub async fn restore_session(session: StoredSession, data_dir: String) -> Result
             msg
         })?;
     install_verification_event_handler(&client);
+    install_live_update_event_handlers(&client);
 
     // Add to multi-account store
     {

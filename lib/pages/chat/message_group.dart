@@ -205,6 +205,7 @@ class MessageGroupWidget extends ConsumerWidget {
 
     final isLocalOutgoing = isLocalOutgoingMessage(message.id);
     final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
+    final isLocalSent = isLocalOutgoingSentMessage(message.id);
     final bubble =
         message.msgType == MessageType.video &&
             (message.imageUrl != null || message.mediaSourceJson != null)
@@ -261,13 +262,13 @@ class MessageGroupWidget extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (isMe && isLocalOutgoing) ...[
-                  _buildLocalOutgoingStatus(isLocalFailed),
+                  _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
                   const SizedBox(width: 6),
                 ],
                 bubble,
                 if (!isMe && isLocalOutgoing) ...[
                   const SizedBox(width: 6),
-                  _buildLocalOutgoingStatus(isLocalFailed),
+                  _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
                 ],
               ],
             ),
@@ -279,11 +280,24 @@ class MessageGroupWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildLocalOutgoingStatus(bool failed) {
+  Widget _buildLocalOutgoingStatus(bool failed, bool sent) {
     if (failed) {
       return const Padding(
         padding: EdgeInsets.only(bottom: 6),
         child: Icon(Icons.error_rounded, color: AppColors.error, size: 18),
+      );
+    }
+    if (sent) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 6),
+        child: Tooltip(
+          message: '已发送，等待服务器同步',
+          child: Icon(
+            Icons.schedule_rounded,
+            color: AppColors.onSurfaceVariant,
+            size: 16,
+          ),
+        ),
       );
     }
     return Padding(

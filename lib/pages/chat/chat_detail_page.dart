@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,12 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/message_ordering.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
 import 'chat_timestamp.dart';
 import 'composer_picker_panel.dart';
 import 'date_separator.dart';
+import 'floating_date_header.dart';
 import 'message_group.dart';
 import 'message_input.dart';
 
@@ -42,6 +45,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   final List<MessageGroup> _groupedMessages = [];
   final Map<String, ChatMessage> _messageIndex = {};
   final List<_TimelineEntry> _timelineEntries = [];
+  final Map<String, GlobalKey> _dateSeparatorKeys = {};
   List<ChatMessage> _displayedMessages = [];
   bool _isLoadingOlder = false;
   bool _hasMoreMessages = true;
@@ -50,6 +54,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   InputPanelMode _inputPanelMode = InputPanelMode.none;
   double _inputChromeHeight = 68;
   double _panelBaselineHeight = 0;
+  double _expandedPickerHeight = 0;
+  bool _isPickerResizing = false;
+  Timer? _pickerResizeTimer;
   bool _keepPickerDuringKeyboardOpen = false;
   bool _keyboardWasVisible = false;
 
@@ -65,6 +72,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
       if (mode == InputPanelMode.none) {
         _keepPickerDuringKeyboardOpen = false;
       }
+      if (mode != InputPanelMode.emoji) {
+        _expandedPickerHeight = 0;
+      }
       _inputPanelMode = mode;
     });
   }
@@ -78,6 +88,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
       // Subscribe Rust-side typing events for this room.
       subscribeTypingForRoom(roomId: widget.roomId).catchError((e) {
         debugPrint('subscribeTypingForRoom failed: $e');
+      });
+      // Prime the message cache from disk so the previous snapshot renders
+      // instantly, then refresh from the network in the background.
+      primeMessageCache(ref, widget.roomId).then((_) {
+        if (!mounted) return;
+        refreshMessagesFromNetwork(ref, widget.roomId);
       });
     });
   }
@@ -101,6 +117,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
 
   @override
   void dispose() {
+    _pickerResizeTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -161,12 +178,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
       for (final message in _olderMessages) message.id: message,
       for (final message in latestMessages) message.id: message,
     };
-    final messages = byId.values.toList()
-      ..sort((a, b) {
-        final aTime = int.tryParse(a.timestamp) ?? 0;
-        final bTime = int.tryParse(b.timestamp) ?? 0;
-        return aTime.compareTo(bTime);
-      });
+    final messages = byId.values.toList()..sort(compareChatMessages);
     return messages;
   }
 
@@ -213,21 +225,30 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     List<LocalOutgoingMessage> localMessages,
   ) {
     final ids = <String>{};
+    final matchedRemoteIds = <String>{};
     for (final local in localMessages) {
       final localTime = int.tryParse(local.message.timestamp) ?? 0;
-      final matched = latestMessages.any((remote) {
-        if (!remote.isMe ||
-            remote.msgType != MessageType.image ||
-            remote.imageUrl == null) {
-          return false;
-        }
+      ChatMessage? matched;
+      for (final remote in latestMessages) {
+        if (matchedRemoteIds.contains(remote.id) || !remote.isMe) continue;
         final remoteTime = int.tryParse(remote.timestamp) ?? 0;
-        return remote.imageUrl == local.sourceImageUrl &&
-            remote.content == local.message.content &&
-            remoteTime >= localTime - 60000;
-      });
-      if (matched) {
+        final samePayload = local.message.msgType == MessageType.image
+            ? remote.msgType == MessageType.image &&
+                  remote.imageUrl == local.sourceImageUrl &&
+                  remote.content == local.message.content
+            : remote.msgType == MessageType.text &&
+                  remote.content == local.message.content &&
+                  remote.inReplyTo == local.message.inReplyTo;
+        if (samePayload &&
+            remoteTime >= localTime - 60000 &&
+            remoteTime <= localTime + 300000) {
+          matched = remote;
+          break;
+        }
+      }
+      if (matched != null) {
         ids.add(local.message.id);
+        matchedRemoteIds.add(matched.id);
       }
     }
     return ids;
@@ -309,18 +330,50 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
 
   List<_TimelineEntry> _buildTimelineEntries(List<MessageGroup> groups) {
     final entries = <_TimelineEntry>[];
+    final activeDateIds = <String>{};
     for (var i = groups.length - 1; i >= 0; i--) {
       final group = groups[i];
-      entries.add(_TimelineEntry.group(group));
+      final dateKey = chatDateKey(group.messages.first.timestamp);
+      final anchorId = '$dateKey:${group.senderId}:$i';
+      entries.add(
+        _TimelineEntry.group(
+          group,
+          formatChatDate(group.messages.first.timestamp),
+          ValueKey(anchorId),
+        ),
+      );
       if (i == 0 ||
           chatDateKey(groups[i - 1].messages.first.timestamp) !=
               chatDateKey(group.messages.first.timestamp)) {
+        activeDateIds.add(dateKey);
         entries.add(
-          _TimelineEntry.date(formatChatDate(group.messages.first.timestamp)),
+          _TimelineEntry.date(
+            formatChatDate(group.messages.first.timestamp),
+            _dateSeparatorKeys.putIfAbsent(dateKey, GlobalKey.new),
+          ),
         );
       }
     }
+    _dateSeparatorKeys.removeWhere((key, _) => !activeDateIds.contains(key));
     return entries;
+  }
+
+  void _handlePickerHeightChanged(double height, double baseHeight) {
+    if (!mounted || _inputPanelMode != InputPanelMode.emoji) return;
+    _pickerResizeTimer?.cancel();
+    final nextHeight = math.max(baseHeight, height);
+    if ((_expandedPickerHeight - nextHeight).abs() >= 0.5 ||
+        !_isPickerResizing) {
+      setState(() {
+        _isPickerResizing = true;
+        _expandedPickerHeight = nextHeight;
+      });
+    }
+    _pickerResizeTimer = Timer(const Duration(milliseconds: 80), () {
+      if (mounted && _isPickerResizing) {
+        setState(() => _isPickerResizing = false);
+      }
+    });
   }
 
   @override
@@ -351,17 +404,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   Widget _buildTimelineEntry(
     _TimelineEntry entry,
     Map<String, String?> avatarMap,
+    Map<String, ChatMessage> messageIndex,
   ) {
     switch (entry.type) {
       case _TimelineEntryType.group:
         final group = entry.group!;
         return MessageGroupWidget(
-          key: ValueKey(
-            'group:${group.senderId}:${group.messages.first.id}:${group.messages.last.id}',
-          ),
+          key: entry.anchorKey,
           group: group,
           roomId: widget.roomId,
-          messageIndex: _messageIndex,
+          messageIndex: messageIndex,
           showAvatar: _needsStickyAvatar(group),
           compact: widget.isDm,
           senderAvatarUrl: avatarMap[group.senderId],
@@ -371,15 +423,33 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
         );
       case _TimelineEntryType.date:
         return DateSeparator(
-          key: ValueKey('date:${entry.dateLabel}'),
+          key: entry.separatorKey,
           dateLabel: entry.dateLabel!,
         );
     }
   }
 
+  int? _findTimelineEntryIndex(List<_TimelineEntry> entries, Key key) {
+    for (var index = 0; index < entries.length; index++) {
+      final entry = entries[index];
+      if (entry.itemKey == key) return index;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final messagesAsync = ref.watch(messagesProvider(widget.roomId));
+    // Watch the in-memory snapshot so the timeline never blanks during a
+    // network fetch; the cache is primed from disk in initState and kept in
+    // sync by refreshMessagesFromNetwork / syncStreamProvider.
+    final cachedMessages = ref.watch(messageCacheProvider(widget.roomId));
+    final messageCachePrimed = ref.watch(
+      messageCachePrimedProvider(widget.roomId),
+    );
+    final messageCacheOwner = ref.watch(
+      messageCacheOwnerProvider(widget.roomId),
+    );
+    final activeUserId = ref.watch(activeUserIdProvider) ?? 'anonymous';
     final membersAsync = ref.watch(roomMembersProvider(widget.roomId));
     ref.watch(typingStreamProvider);
     final localOutgoingMessages = ref.watch(
@@ -404,9 +474,22 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     final keepsStablePicker =
         _inputPanelMode == InputPanelMode.emoji ||
         _keepPickerDuringKeyboardOpen;
-    final pickerFullHeight = _panelBaselineHeight > 0
+    final pickerBaseHeight = _panelBaselineHeight > 0
         ? _panelBaselineHeight
         : ComposerPickerPanel.baseHeight;
+    final pickerFullHeight = keepsStablePicker
+        ? math.max(pickerBaseHeight, _expandedPickerHeight)
+        : pickerBaseHeight;
+    final mediaQuery = MediaQuery.of(context);
+    final pickerMaxHeight = math.max(
+      pickerBaseHeight,
+      mediaQuery.size.height -
+          mediaQuery.padding.top -
+          mediaQuery.padding.bottom -
+          kToolbarHeight -
+          _inputChromeHeight -
+          8,
+    );
     final pickerHeight = keepsStablePicker
         ? math.max(0.0, pickerFullHeight - keyboardHeight)
         : 0.0;
@@ -418,7 +501,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
         ? pickerFullHeight
         : (_inputPanelMode == InputPanelMode.keyboard ? keyboardHeight : 0.0);
     final messageBottomPadding = _inputChromeHeight + panelReservedHeight;
-    final animatePanelChange = !keyboardVisible;
+    final animatePanelChange = !keyboardVisible && !_isPickerResizing;
 
     if (_keepPickerDuringKeyboardOpen &&
         keyboardHeight >= pickerFullHeight - 1) {
@@ -509,14 +592,36 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
         body: Stack(
           children: [
             Positioned.fill(
-              child: messagesAsync.when(
-                data: (messages) {
+              child: Builder(
+                builder: (context) {
+                  final messages = messageCacheOwner == activeUserId
+                      ? cachedMessages
+                      : const <ChatMessage>[];
+                  // On a cold first entry (disk cache not primed yet) show a
+                  // loader for a single frame; once primed the snapshot renders
+                  // instantly and later updates flow in via the cache.
+                  if (!messageCachePrimed &&
+                      messages.isEmpty &&
+                      localOutgoingMessages.isEmpty) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                        strokeWidth: 2,
+                      ),
+                    );
+                  }
                   final timelineMessages = _mergeLocalOutgoingMessages(
                     messages,
                     localOutgoingMessages,
                   );
                   _rebuildDerivedMessages(timelineMessages);
                   final displayedMessages = _displayedMessages;
+                  final timelineEntries = List<_TimelineEntry>.unmodifiable(
+                    _timelineEntries,
+                  );
+                  final messageIndex = Map<String, ChatMessage>.unmodifiable(
+                    _messageIndex,
+                  );
                   final avatarMap = membersAsync.maybeWhen(
                     data: (members) =>
                         _buildAvatarMap(displayedMessages, members),
@@ -541,14 +646,20 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                                 bottom: 8 + animatedBottomPadding,
                               ),
                             ),
-                            SliverList.builder(
-                              itemCount: _timelineEntries.length,
-                              itemBuilder: (context, index) {
-                                return _buildTimelineEntry(
-                                  _timelineEntries[index],
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) => _buildTimelineEntry(
+                                  timelineEntries[index],
                                   avatarMap,
-                                );
-                              },
+                                  messageIndex,
+                                ),
+                                childCount: timelineEntries.length,
+                                findChildIndexCallback: (key) =>
+                                    _findTimelineEntryIndex(
+                                      timelineEntries,
+                                      key,
+                                    ),
+                              ),
                             ),
                             const SliverPadding(
                               padding: EdgeInsets.only(top: 8),
@@ -560,23 +671,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                     child: const SizedBox.shrink(),
                   );
                 },
-                loading: () => const Center(
-                  child: CircularProgressIndicator(
-                    color: AppColors.primary,
-                    strokeWidth: 2,
-                  ),
-                ),
-                error: (err, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: SelectableText(
-                      '加载失败: $err',
-                      style: const TextStyle(color: AppColors.onSurfaceVariant),
-                    ),
-                  ),
-                ),
               ),
             ),
+            // Telegram-style floating date that tracks the day at the top edge
+            // of the viewport while scrolling, then fades out.
+            if (_timelineEntries.any(
+              (entry) => entry.type == _TimelineEntryType.group,
+            ))
+              FloatingDateHeader(
+                scrollController: _scrollController,
+                scrollViewportKey: _scrollViewportKey,
+                boundaries: _floatingDateBoundaries(),
+                separatorKeys: _floatingDateSeparatorKeys(),
+              ),
             AnimatedPositioned(
               left: 0,
               right: 0,
@@ -604,8 +711,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                       panelMode: _inputPanelMode,
                       pickerHeight: pickerHeight,
                       pickerFullHeight: pickerFullHeight,
+                      pickerBaseHeight: pickerBaseHeight,
+                      pickerMaxHeight: pickerMaxHeight,
                       animatePickerHeight: animatePanelChange,
                       onPanelModeChanged: _setInputPanelMode,
+                      onPickerHeightChanged: (height) =>
+                          _handlePickerHeightChanged(height, pickerBaseHeight),
                     ),
                   ],
                 ),
@@ -615,6 +726,37 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
         ),
       ),
     );
+  }
+
+  /// Day boundaries (oldest → newest) for the floating date header.
+  List<DateBoundary> _floatingDateBoundaries() {
+    final labels = <String>[];
+    for (final entry in _timelineEntries) {
+      if (entry.type == _TimelineEntryType.date && entry.dateLabel != null) {
+        labels.add(entry.dateLabel!);
+      }
+    }
+    final reversed = labels.reversed.toList();
+    return [
+      for (var i = 0; i < reversed.length; i++)
+        DateBoundary(
+          label: reversed[i],
+          // A synthetic monotonic key is enough to order boundaries; the real
+          // positioning comes from the separator geometry.
+          leadingTimestamp: '${i + 1}',
+        ),
+    ];
+  }
+
+  /// Date separator anchors ordered oldest → newest.
+  List<GlobalKey> _floatingDateSeparatorKeys() {
+    final keys = <GlobalKey>[];
+    for (final entry in _timelineEntries) {
+      if (entry.type == _TimelineEntryType.date && entry.separatorKey != null) {
+        keys.add(entry.separatorKey!);
+      }
+    }
+    return keys.reversed.toList();
   }
 
   /// "… is typing" indicator shown above the message input.
@@ -795,14 +937,40 @@ class _TimelineEntry {
   final MessageGroup? group;
   final String? dateLabel;
 
-  const _TimelineEntry._({required this.type, this.group, this.dateLabel});
+  /// GlobalKey of the rendered [DateSeparator], used by the floating date
+  /// header to read on-screen positions. Null for group entries.
+  final GlobalKey? separatorKey;
+  final Key? anchorKey;
 
-  factory _TimelineEntry.group(MessageGroup group) {
-    return _TimelineEntry._(type: _TimelineEntryType.group, group: group);
+  Key get itemKey => anchorKey ?? separatorKey!;
+
+  const _TimelineEntry._({
+    required this.type,
+    this.group,
+    this.dateLabel,
+    this.separatorKey,
+    this.anchorKey,
+  });
+
+  factory _TimelineEntry.group(
+    MessageGroup group,
+    String dateLabel,
+    Key anchorKey,
+  ) {
+    return _TimelineEntry._(
+      type: _TimelineEntryType.group,
+      group: group,
+      dateLabel: dateLabel,
+      anchorKey: anchorKey,
+    );
   }
 
-  factory _TimelineEntry.date(String label) {
-    return _TimelineEntry._(type: _TimelineEntryType.date, dateLabel: label);
+  factory _TimelineEntry.date(String label, GlobalKey key) {
+    return _TimelineEntry._(
+      type: _TimelineEntryType.date,
+      dateLabel: label,
+      separatorKey: key,
+    );
   }
 }
 

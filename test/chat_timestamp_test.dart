@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_timestamp.dart';
+import 'package:matter/pages/chat/floating_date_header.dart';
 
 void main() {
   String timestamp(DateTime value) => value.millisecondsSinceEpoch.toString();
@@ -30,6 +31,28 @@ void main() {
     expect(
       chatDateKey(timestamp(DateTime(2026, 6, 12, 23, 59))),
       isNot(chatDateKey(timestamp(DateTime(2026, 6, 13, 0, 1)))),
+    );
+  });
+
+  test('floating date selects the older side when scrolling into history', () {
+    expect(
+      resolveFloatingDateBoundaryIndex(
+        separatorIndex: 2,
+        boundaryCount: 3,
+        scrollingTowardOlder: true,
+      ),
+      1,
+    );
+  });
+
+  test('floating date keeps the newer side when scrolling toward present', () {
+    expect(
+      resolveFloatingDateBoundaryIndex(
+        separatorIndex: 1,
+        boundaryCount: 3,
+        scrollingTowardOlder: false,
+      ),
+      1,
     );
   });
 }

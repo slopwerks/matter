@@ -120,6 +120,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
         Expanded(
           child: GridView.builder(
             controller: widget.scrollController,
+            physics: const ClampingScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 44,

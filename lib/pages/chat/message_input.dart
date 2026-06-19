@@ -35,8 +35,11 @@ class MessageInput extends ConsumerStatefulWidget {
   final InputPanelMode panelMode;
   final double pickerHeight;
   final double pickerFullHeight;
+  final double pickerBaseHeight;
+  final double pickerMaxHeight;
   final bool animatePickerHeight;
   final ValueChanged<InputPanelMode> onPanelModeChanged;
+  final ValueChanged<double> onPickerHeightChanged;
 
   const MessageInput({
     super.key,
@@ -44,8 +47,11 @@ class MessageInput extends ConsumerStatefulWidget {
     required this.panelMode,
     required this.pickerHeight,
     required this.pickerFullHeight,
+    required this.pickerBaseHeight,
+    required this.pickerMaxHeight,
     required this.animatePickerHeight,
     required this.onPanelModeChanged,
+    required this.onPickerHeightChanged,
   });
 
   @override
@@ -193,6 +199,28 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     final shouldRestoreKeyboard =
         widget.panelMode == InputPanelMode.keyboard || _focusNode.hasFocus;
 
+    final isNewMessage = editing == null;
+    final localId = isNewMessage
+        ? '$localOutgoingPendingPrefix${DateTime.now().microsecondsSinceEpoch}'
+        : null;
+    if (localId != null) {
+      upsertLocalOutgoingMessage(
+        ref,
+        widget.roomId,
+        LocalOutgoingMessage(
+          message: _localTextMessage(
+            id: localId,
+            text: text,
+            inReplyTo: replyTo?.id,
+          ),
+        ),
+      );
+      _controller.clear();
+      if (replyTo != null) {
+        ref.read(replyingToProvider(widget.roomId).notifier).value = null;
+      }
+    }
+
     setState(() => _isSending = true);
 
     try {
@@ -211,16 +239,37 @@ class _MessageInputState extends ConsumerState<MessageInput> {
       } else {
         await rust.sendMessage(roomId: widget.roomId, message: text);
       }
+      if (!mounted) return;
       _stopTyping();
-      _controller.clear();
+      if (!isNewMessage) _controller.clear();
       if (editing != null) {
         ref.read(editingMessageProvider(widget.roomId).notifier).value = null;
-      } else if (replyTo != null) {
-        ref.read(replyingToProvider(widget.roomId).notifier).value = null;
       }
-      // Refresh message list after sending without dropping current UI state.
-      unawaited(refreshMessages(ref, widget.roomId));
+      if (localId != null && mounted) {
+        final sentId = markLocalOutgoingMessageSent(
+          ref,
+          widget.roomId,
+          localId,
+        );
+        unawaited(_reconcileSentLocalMessage(sentId));
+      } else {
+        unawaited(refreshMessages(ref, widget.roomId));
+      }
     } catch (e) {
+      if (localId != null && mounted) {
+        removeLocalOutgoingMessage(ref, widget.roomId, localId);
+        upsertLocalOutgoingMessage(
+          ref,
+          widget.roomId,
+          LocalOutgoingMessage(
+            message: _localTextMessage(
+              id: failedLocalOutgoingId(localId),
+              text: text,
+              inReplyTo: replyTo?.id,
+            ),
+          ),
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -242,6 +291,49 @@ class _MessageInputState extends ConsumerState<MessageInput> {
         }
       }
     }
+  }
+
+  Future<void> _reconcileSentLocalMessage(String localId) async {
+    const retryDelays = [
+      Duration.zero,
+      Duration(milliseconds: 500),
+      Duration(seconds: 1),
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+    ];
+    for (final delay in retryDelays) {
+      if (delay != Duration.zero) await Future<void>.delayed(delay);
+      if (!mounted) return;
+      final stillLocal = ref
+          .read(localOutgoingMessagesProvider(widget.roomId))
+          .any((message) => message.message.id == localId);
+      if (!stillLocal) return;
+      await refreshMessages(ref, widget.roomId);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+  }
+
+  rust.ChatMessage _localTextMessage({
+    required String id,
+    required String text,
+    String? inReplyTo,
+  }) {
+    final currentUser = ref.read(currentUserProvider);
+    return rust.ChatMessage(
+      id: id,
+      senderId: currentUser?.id ?? '',
+      senderName: '我',
+      content: text,
+      timestamp: DateTime.now().millisecondsSinceEpoch.toString(),
+      isMe: true,
+      msgType: rust.MessageType.text,
+      inReplyTo: inReplyTo,
+      isEdited: false,
+      editHistory: const [],
+      reactions: const [],
+      readers: const [],
+      totalMembers: 0,
+    );
   }
 
   Future<void> _pickImage() async {
@@ -367,7 +459,9 @@ class _MessageInputState extends ConsumerState<MessageInput> {
         height: sticker.height,
       );
       _stopTyping();
-      unawaited(refreshMessages(ref, widget.roomId));
+      if (!mounted) return;
+      final sentId = markLocalOutgoingMessageSent(ref, widget.roomId, localId);
+      unawaited(_reconcileSentLocalMessage(sentId));
     } catch (e) {
       if (mounted) {
         removeLocalOutgoingMessage(ref, widget.roomId, localId);
@@ -612,7 +706,8 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                             key: ValueKey(
                               'composer_picker_${widget.roomId}_$_pickerInstance',
                             ),
-                            height: widget.pickerFullHeight,
+                            height: widget.pickerBaseHeight,
+                            maxHeight: widget.pickerMaxHeight,
                             roomId: widget.roomId,
                             tab: _pickerTab,
                             onTabChanged: (tab) =>
@@ -621,6 +716,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                             onStickerSelected: (sticker) {
                               _sendSticker(sticker);
                             },
+                            onHeightChanged: widget.onPickerHeightChanged,
                           )
                         : const SizedBox.shrink(),
                   ),

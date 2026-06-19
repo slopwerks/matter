@@ -15,20 +15,24 @@ class ComposerPickerPanel extends StatefulWidget {
   static const double baseHeight = 316;
 
   final double? height;
+  final double? maxHeight;
   final String roomId;
   final ComposerPickerTab tab;
   final ValueChanged<ComposerPickerTab> onTabChanged;
   final ValueChanged<String> onEmojiSelected;
   final ValueChanged<StickerItem> onStickerSelected;
+  final ValueChanged<double>? onHeightChanged;
 
   const ComposerPickerPanel({
     super.key,
     this.height,
+    this.maxHeight,
     required this.roomId,
     required this.tab,
     required this.onTabChanged,
     required this.onEmojiSelected,
     required this.onStickerSelected,
+    this.onHeightChanged,
   });
 
   @override
@@ -40,10 +44,13 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
   late final ValueNotifier<double> _sheetExtent;
 
   double _maxPanelHeight(BuildContext context) {
+    final baseHeight = widget.height ?? ComposerPickerPanel.baseHeight;
+    if (widget.maxHeight != null) {
+      return math.max(baseHeight, widget.maxHeight!);
+    }
     final mediaQuery = MediaQuery.of(context);
     final screenHeight = mediaQuery.size.height;
     final safeTop = mediaQuery.padding.top;
-    final baseHeight = widget.height ?? ComposerPickerPanel.baseHeight;
     return math.max(baseHeight, screenHeight - safeTop - 88);
   }
 
@@ -62,10 +69,31 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
   }
 
   @override
+  void didUpdateWidget(covariant ComposerPickerPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tab != widget.tab && widget.tab == ComposerPickerTab.emoji) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted || !_sheetController.isAttached) return;
+        final maxHeight = _maxPanelHeight(context);
+        final baseHeight = widget.height ?? ComposerPickerPanel.baseHeight;
+        await _sheetController.animateTo(
+          baseHeight / maxHeight,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+        );
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final maxHeight = _maxPanelHeight(context);
     final baseHeight = widget.height ?? ComposerPickerPanel.baseHeight;
     final minSize = baseHeight / maxHeight;
+    final lockToBaseHeight =
+        widget.tab == ComposerPickerTab.emoji &&
+        _sheetExtent.value <= minSize + 0.001;
 
     if (_sheetExtent.value == 0) {
       _sheetExtent.value = minSize;
@@ -94,7 +122,7 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
                 expand: false,
                 initialChildSize: minSize,
                 minChildSize: minSize,
-                maxChildSize: 1,
+                maxChildSize: lockToBaseHeight ? minSize : 1,
                 builder: _buildSheet,
               ),
             ),
@@ -108,6 +136,9 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
     if (!mounted) return false;
     if ((_sheetExtent.value - notification.extent).abs() > 0.0005) {
       _sheetExtent.value = notification.extent;
+      widget.onHeightChanged?.call(
+        notification.extent * _maxPanelHeight(context),
+      );
     }
     return false;
   }
