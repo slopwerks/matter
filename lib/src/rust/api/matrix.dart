@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `install_verification_event_handler`, `load_room_sticker_packs`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `remove_dir_all_if_exists`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `sticker_info_dimensions`, `sticker_label_from_filename`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `usage_allows_sticker`
+// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_sdk_data_dir`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `extract_edit_text`, `finalize_pending`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `install_verification_event_handler`, `load_room_sticker_packs`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `remove_dir_all_if_exists`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_to_chat_room`, `sanitize_for_path`, `set_connection_status`, `sticker_info_dimensions`, `sticker_label_from_filename`, `stop_sync_task`, `strip_reply_fallback`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `unable_to_decrypt_message`, `usage_allows_sticker`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -245,6 +245,13 @@ Future<String?> mxcToHttpFull({required String mxcUrl}) =>
 /// This is more reliable than constructing URLs and loading from Flutter.
 Future<Uint8List?> downloadMediaBytes({required String mxcUrl}) =>
     RustLib.instance.api.crateApiMatrixDownloadMediaBytes(mxcUrl: mxcUrl);
+
+/// Download a Matrix media source, decrypting and integrity-checking encrypted
+/// attachments through the SDK when necessary.
+Future<Uint8List> downloadMediaSourceBytes({required String mediaSourceJson}) =>
+    RustLib.instance.api.crateApiMatrixDownloadMediaSourceBytes(
+      mediaSourceJson: mediaSourceJson,
+    );
 
 /// Get the current access token for authenticated media requests.
 Future<String?> getAccessToken() =>
@@ -567,6 +574,9 @@ class ChatMessage {
   final bool isMe;
   final MessageType msgType;
   final String? imageUrl;
+
+  /// Serialized Matrix MediaSource. Required to download encrypted media.
+  final String? mediaSourceJson;
   final int? imageWidth;
   final int? imageHeight;
 
@@ -598,6 +608,7 @@ class ChatMessage {
     required this.isMe,
     required this.msgType,
     this.imageUrl,
+    this.mediaSourceJson,
     this.imageWidth,
     this.imageHeight,
     this.inReplyTo,
@@ -618,6 +629,7 @@ class ChatMessage {
       isMe.hashCode ^
       msgType.hashCode ^
       imageUrl.hashCode ^
+      mediaSourceJson.hashCode ^
       imageWidth.hashCode ^
       imageHeight.hashCode ^
       inReplyTo.hashCode ^
@@ -640,6 +652,7 @@ class ChatMessage {
           isMe == other.isMe &&
           msgType == other.msgType &&
           imageUrl == other.imageUrl &&
+          mediaSourceJson == other.mediaSourceJson &&
           imageWidth == other.imageWidth &&
           imageHeight == other.imageHeight &&
           inReplyTo == other.inReplyTo &&

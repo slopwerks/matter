@@ -1,13 +1,17 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/chat_provider.dart';
+import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
 
 enum _OriginalImageState { thumbnail, resolving, loading, loaded, failed }
 
 class ImageMessageBubble extends ConsumerStatefulWidget {
-  final String imageUrl;
+  final String? imageUrl;
+  final String? mediaSourceJson;
   final int? imageWidth;
   final int? imageHeight;
   final String timestamp;
@@ -17,7 +21,8 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
 
   const ImageMessageBubble({
     super.key,
-    required this.imageUrl,
+    this.imageUrl,
+    this.mediaSourceJson,
     this.imageWidth,
     this.imageHeight,
     required this.timestamp,
@@ -32,6 +37,9 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
 
 class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   String? _resolvedUrl;
+  Uint8List? _decryptedBytes;
+  bool _isLoadingEncrypted = false;
+  bool _encryptedLoadFailed = false;
   String? _originalMxcUrl;
   int? _thumbnailWidth;
   int? _thumbnailHeight;
@@ -39,7 +47,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   @override
   void initState() {
     super.initState();
-    _originalMxcUrl = widget.imageUrl.startsWith('mxc://')
+    _originalMxcUrl = widget.imageUrl?.startsWith('mxc://') == true
         ? widget.imageUrl
         : null;
   }
@@ -52,12 +60,14 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     final nextWidth = (bubbleSize.width * pixelRatio).round();
     final nextHeight = (bubbleSize.height * pixelRatio).round();
     final useOriginalCache = _shouldUseOriginalCache;
-    final cachedUrl = cachedResolvedMxcUrl(
-      ref,
-      widget.imageUrl,
-      width: useOriginalCache ? null : nextWidth,
-      height: useOriginalCache ? null : nextHeight,
-    );
+    final cachedUrl = widget.imageUrl == null
+        ? null
+        : cachedResolvedMxcUrl(
+            ref,
+            widget.imageUrl,
+            width: useOriginalCache ? null : nextWidth,
+            height: useOriginalCache ? null : nextHeight,
+          );
     if (cachedUrl != null && _resolvedUrl != cachedUrl) {
       _resolvedUrl = cachedUrl;
     }
@@ -76,17 +86,37 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     if (widget.imageUrl != oldWidget.imageUrl ||
         widget.imageWidth != oldWidget.imageWidth ||
         widget.imageHeight != oldWidget.imageHeight ||
-        _resolvedUrl == null) {
+        widget.mediaSourceJson != oldWidget.mediaSourceJson ||
+        (_resolvedUrl == null && _decryptedBytes == null)) {
       _resolveUrl();
     }
   }
 
   Future<void> _resolveUrl() async {
-    if (widget.imageUrl.startsWith('mxc://')) {
+    final imageUrl = widget.imageUrl;
+    if (imageUrl == null) {
+      final mediaSourceJson = widget.mediaSourceJson;
+      if (mediaSourceJson == null || _isLoadingEncrypted) return;
+      _isLoadingEncrypted = true;
+      _encryptedLoadFailed = false;
+      try {
+        final bytes = await rust.downloadMediaSourceBytes(
+          mediaSourceJson: mediaSourceJson,
+        );
+        if (mounted) {
+          setState(() => _decryptedBytes = Uint8List.fromList(bytes));
+          widget.onLoaded?.call();
+        }
+      } catch (_) {
+        if (mounted) setState(() => _encryptedLoadFailed = true);
+      } finally {
+        _isLoadingEncrypted = false;
+      }
+    } else if (imageUrl.startsWith('mxc://')) {
       final useOriginalCache = _shouldUseOriginalCache;
       final url = await resolveMxcUrl(
         ref,
-        widget.imageUrl,
+        imageUrl,
         width: useOriginalCache ? null : _thumbnailWidth,
         height: useOriginalCache ? null : _thumbnailHeight,
       );
@@ -96,9 +126,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       }
     } else {
       if (mounted) {
-        setState(() => _resolvedUrl = widget.imageUrl);
+        setState(() => _resolvedUrl = imageUrl);
       } else {
-        _resolvedUrl = widget.imageUrl;
+        _resolvedUrl = imageUrl;
       }
       widget.onLoaded?.call();
     }
@@ -107,9 +137,13 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   @override
   Widget build(BuildContext context) {
     final url = _resolvedUrl;
+    final bytes = _decryptedBytes;
     final bubbleSize = _bubbleSize(context);
 
-    if (url == null || url.isEmpty) {
+    if (url == null && bytes == null) {
+      if (_isLoadingEncrypted && !_encryptedLoadFailed) {
+        return _buildLoading(context, bubbleSize);
+      }
       return _buildBroken(context, bubbleSize);
     }
 
@@ -123,6 +157,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
             pageBuilder: (_, animation, _) => _BubbleExpandingPreview(
               heroTag: widget.heroTag,
               imageUrl: url,
+              imageBytes: bytes,
               originalMxcUrl: _originalMxcUrl,
               imageAspectRatio: _imageAspectRatio,
               animation: animation,
@@ -151,11 +186,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
                 flightShuttleBuilder: _roundedImageFlightShuttle,
                 child: _HeroImageClip(
                   borderRadius: _bubbleBorderRadius,
-                  child: AuthenticatedImageMessage(
-                    key: ValueKey(
-                      'msg-image:${widget.imageUrl}:${widget.timestamp}',
-                    ),
+                  child: _MediaImage(
+                    key: ValueKey('msg-image:${widget.heroTag}'),
                     imageUrl: url,
+                    imageBytes: bytes,
                     onLoaded: widget.onLoaded,
                     cacheWidth: _thumbnailWidth,
                     cacheHeight: _thumbnailHeight,
@@ -261,12 +295,25 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       ),
     );
   }
+
+  Widget _buildLoading(BuildContext context, Size bubbleSize) {
+    return Container(
+      width: bubbleSize.width,
+      height: bubbleSize.height,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: _bubbleBorderRadius,
+      ),
+      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    );
+  }
 }
 
 /// Full-screen image preview that expands from the bubble's on-screen position.
 class _BubbleExpandingPreview extends ConsumerStatefulWidget {
   final Object heroTag;
-  final String imageUrl;
+  final String? imageUrl;
+  final Uint8List? imageBytes;
   final String? originalMxcUrl;
   final double imageAspectRatio;
   final Animation<double> animation;
@@ -274,6 +321,7 @@ class _BubbleExpandingPreview extends ConsumerStatefulWidget {
   const _BubbleExpandingPreview({
     required this.heroTag,
     required this.imageUrl,
+    required this.imageBytes,
     required this.originalMxcUrl,
     required this.imageAspectRatio,
     required this.animation,
@@ -363,9 +411,14 @@ class _BubbleExpandingPreviewState
                 child: _PreviewImageFrame(
                   heroTag: widget.heroTag,
                   imageUrl: imageUrl,
+                  imageBytes: widget.imageBytes,
                   aspectRatio: widget.imageAspectRatio,
-                  onLoaded: () => _handlePreviewImageLoaded(imageUrl),
-                  onError: () => _handlePreviewImageError(imageUrl),
+                  onLoaded: imageUrl == null
+                      ? null
+                      : () => _handlePreviewImageLoaded(imageUrl),
+                  onError: imageUrl == null
+                      ? null
+                      : () => _handlePreviewImageError(imageUrl),
                 ),
               ),
               Positioned(
@@ -473,7 +526,8 @@ class _BubbleExpandingPreviewState
 
 class _PreviewImageFrame extends StatelessWidget {
   final Object heroTag;
-  final String imageUrl;
+  final String? imageUrl;
+  final Uint8List? imageBytes;
   final double aspectRatio;
   final VoidCallback? onLoaded;
   final VoidCallback? onError;
@@ -481,6 +535,7 @@ class _PreviewImageFrame extends StatelessWidget {
   const _PreviewImageFrame({
     required this.heroTag,
     required this.imageUrl,
+    required this.imageBytes,
     required this.aspectRatio,
     this.onLoaded,
     this.onError,
@@ -513,8 +568,9 @@ class _PreviewImageFrame extends StatelessWidget {
                   flightShuttleBuilder: _roundedImageFlightShuttle,
                   child: _HeroImageClip(
                     borderRadius: BorderRadius.zero,
-                    child: AuthenticatedImageMessage(
+                    child: _MediaImage(
                       imageUrl: imageUrl,
+                      imageBytes: imageBytes,
                       fit: BoxFit.contain,
                       onLoaded: onLoaded,
                       onError: onError,
@@ -552,6 +608,74 @@ class _HeroImageClip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(borderRadius: borderRadius, child: child);
+  }
+}
+
+class _MediaImage extends StatelessWidget {
+  final String? imageUrl;
+  final Uint8List? imageBytes;
+  final BoxFit fit;
+  final VoidCallback? onLoaded;
+  final VoidCallback? onError;
+  final int? cacheWidth;
+  final int? cacheHeight;
+
+  const _MediaImage({
+    required this.imageUrl,
+    required this.imageBytes,
+    this.fit = BoxFit.cover,
+    this.onLoaded,
+    this.onError,
+    this.cacheWidth,
+    this.cacheHeight,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = imageBytes;
+    if (bytes != null) {
+      var notified = false;
+      return Image.memory(
+        bytes,
+        fit: fit,
+        width: double.infinity,
+        height: double.infinity,
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (!notified && (frame != null || wasSynchronouslyLoaded)) {
+            notified = true;
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => onLoaded?.call(),
+            );
+          }
+          return child;
+        },
+        errorBuilder: (context, error, stackTrace) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => onError?.call());
+          return const ColoredBox(
+            color: AppColors.surfaceElevated,
+            child: Center(
+              child: Icon(Icons.broken_image_rounded, color: Colors.white54),
+            ),
+          );
+        },
+      );
+    }
+
+    final url = imageUrl;
+    if (url == null || url.isEmpty) {
+      return const ColoredBox(color: AppColors.surfaceElevated);
+    }
+    return AuthenticatedImageMessage(
+      imageUrl: url,
+      fit: fit,
+      onLoaded: onLoaded,
+      onError: onError,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
+    );
   }
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'app.dart';
 import 'pages/login/login_page.dart';
+import 'pages/chat/decrypted_video_source.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
 import 'src/rust/api/matrix.dart' as rust;
@@ -12,6 +13,7 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await cleanupStaleDecryptedVideoSources();
   await RustLib.init();
 
   var hasSessions = false;

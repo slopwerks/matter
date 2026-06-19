@@ -206,10 +206,13 @@ class MessageGroupWidget extends ConsumerWidget {
     final isLocalOutgoing = isLocalOutgoingMessage(message.id);
     final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
     final bubble =
-        message.msgType == MessageType.video && message.imageUrl != null
+        message.msgType == MessageType.video &&
+            (message.imageUrl != null || message.mediaSourceJson != null)
         ? VideoMessageBubble(
-            key: ValueKey('video-bubble:${message.id}:${message.imageUrl}'),
-            videoUrl: message.imageUrl!,
+            key: ValueKey('video-bubble:${message.id}'),
+            videoUrl: message.imageUrl,
+            mediaSourceJson: message.mediaSourceJson,
+            filename: message.content,
             videoWidth: message.imageWidth,
             videoHeight: message.imageHeight,
             timestamp: formatMessageTime(message.timestamp),
@@ -217,10 +220,12 @@ class MessageGroupWidget extends ConsumerWidget {
             heroTag: 'video-preview:${message.id}',
             onLoaded: onImageLoaded,
           )
-        : message.msgType == MessageType.image && message.imageUrl != null
+        : message.msgType == MessageType.image &&
+              (message.imageUrl != null || message.mediaSourceJson != null)
         ? ImageMessageBubble(
-            key: ValueKey('image-bubble:${message.id}:${message.imageUrl}'),
-            imageUrl: message.imageUrl!,
+            key: ValueKey('image-bubble:${message.id}'),
+            imageUrl: message.imageUrl,
+            mediaSourceJson: message.mediaSourceJson,
             imageWidth: message.imageWidth,
             imageHeight: message.imageHeight,
             timestamp: formatMessageTime(message.timestamp),

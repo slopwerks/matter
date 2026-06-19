@@ -7,10 +7,14 @@ import 'package:video_player/video_player.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import 'decrypted_video_source.dart';
 
 class VideoMessageBubble extends ConsumerStatefulWidget {
-  final String videoUrl;
+  final String? videoUrl;
+  final String? mediaSourceJson;
+  final String filename;
   final int? videoWidth;
   final int? videoHeight;
   final String timestamp;
@@ -20,7 +24,9 @@ class VideoMessageBubble extends ConsumerStatefulWidget {
 
   const VideoMessageBubble({
     super.key,
-    required this.videoUrl,
+    this.videoUrl,
+    this.mediaSourceJson,
+    required this.filename,
     this.videoWidth,
     this.videoHeight,
     required this.timestamp,
@@ -35,6 +41,7 @@ class VideoMessageBubble extends ConsumerStatefulWidget {
 
 class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
   VideoPlayerController? _controller;
+  PreparedVideoSource? _preparedSource;
   Object? _error;
   int _initializationId = 0;
   double _previewVolume = 0;
@@ -48,45 +55,72 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
   @override
   void didUpdateWidget(covariant VideoMessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.videoUrl != widget.videoUrl) _initialize();
+    if (oldWidget.videoUrl != widget.videoUrl ||
+        oldWidget.mediaSourceJson != widget.mediaSourceJson) {
+      _initialize();
+    }
   }
 
   Future<void> _initialize() async {
     final initializationId = ++_initializationId;
     final oldController = _controller;
+    final oldPreparedSource = _preparedSource;
     _controller = null;
+    _preparedSource = null;
     _error = null;
     await oldController?.dispose();
+    await oldPreparedSource?.cleanup();
 
-    final resolvedUrl = widget.videoUrl.startsWith('mxc://')
-        ? await resolveMxcUrlFull(ref, widget.videoUrl)
-        : widget.videoUrl;
-    if (!mounted || initializationId != _initializationId) return;
-    if (resolvedUrl == null || resolvedUrl.isEmpty) {
-      setState(() => _error = StateError('Unable to resolve video URL'));
-      return;
-    }
-
-    final isMatrixMedia =
-        Uri.tryParse(resolvedUrl)?.path.startsWith('/_matrix/client/') ?? false;
-    final token = ref.read(currentAccessTokenProvider);
-    final controller = VideoPlayerController.networkUrl(
-      Uri.parse(resolvedUrl),
-      httpHeaders: token == null || !isMatrixMedia
-          ? const {}
-          : {'Authorization': 'Bearer $token'},
-    );
+    VideoPlayerController? controller;
+    PreparedVideoSource? preparedSource;
     try {
+      final videoUrl = widget.videoUrl;
+      if (videoUrl == null) {
+        final mediaSourceJson = widget.mediaSourceJson;
+        if (mediaSourceJson == null) {
+          throw StateError('Missing encrypted video source');
+        }
+        final bytes = await rust.downloadMediaSourceBytes(
+          mediaSourceJson: mediaSourceJson,
+        );
+        preparedSource = await prepareDecryptedVideoSource(
+          Uint8List.fromList(bytes),
+          widget.filename,
+        );
+        controller = preparedSource.controller;
+      } else {
+        final resolvedUrl = videoUrl.startsWith('mxc://')
+            ? await resolveMxcUrlFull(ref, videoUrl)
+            : videoUrl;
+        if (resolvedUrl == null || resolvedUrl.isEmpty) {
+          throw StateError('Unable to resolve video URL');
+        }
+        final isMatrixMedia =
+            Uri.tryParse(resolvedUrl)?.path.startsWith('/_matrix/client/') ??
+            false;
+        final token = ref.read(currentAccessTokenProvider);
+        controller = VideoPlayerController.networkUrl(
+          Uri.parse(resolvedUrl),
+          httpHeaders: token == null || !isMatrixMedia
+              ? const {}
+              : {'Authorization': 'Bearer $token'},
+        );
+      }
       await controller.initialize();
       await controller.setVolume(0);
       if (!mounted || initializationId != _initializationId) {
         await controller.dispose();
+        await preparedSource?.cleanup();
         return;
       }
-      setState(() => _controller = controller);
+      setState(() {
+        _preparedSource = preparedSource;
+        _controller = controller;
+      });
       widget.onLoaded?.call();
     } catch (error) {
-      await controller.dispose();
+      await controller?.dispose();
+      await preparedSource?.cleanup();
       if (mounted) setState(() => _error = error);
     }
   }
@@ -94,8 +128,20 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
   @override
   void dispose() {
     _initializationId++;
-    _controller?.dispose();
+    final controller = _controller;
+    final preparedSource = _preparedSource;
+    _controller = null;
+    _preparedSource = null;
+    unawaited(_disposeVideoSource(controller, preparedSource));
     super.dispose();
+  }
+
+  Future<void> _disposeVideoSource(
+    VideoPlayerController? controller,
+    PreparedVideoSource? preparedSource,
+  ) async {
+    await controller?.dispose();
+    await preparedSource?.cleanup();
   }
 
   @override

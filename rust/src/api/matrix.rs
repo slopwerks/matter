@@ -816,6 +816,8 @@ pub struct ChatMessage {
     pub is_me: bool,
     pub msg_type: MessageType,
     pub image_url: Option<String>,
+    /// Serialized Matrix MediaSource. Required to download encrypted media.
+    pub media_source_json: Option<String>,
     pub image_width: Option<i32>,
     pub image_height: Option<i32>,
     /// Event ID this message is replying to, if any.
@@ -2635,6 +2637,29 @@ pub async fn download_media_bytes(mxc_url: String) -> Option<Vec<u8>> {
     }
 }
 
+/// Download a Matrix media source, decrypting and integrity-checking encrypted
+/// attachments through the SDK when necessary.
+#[frb]
+pub async fn download_media_source_bytes(media_source_json: String) -> Result<Vec<u8>, String> {
+    use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+
+    let client = get_client().await.ok_or("No client created.")?;
+    let source: matrix_sdk::ruma::events::room::MediaSource =
+        serde_json::from_str(&media_source_json)
+            .map_err(|e| format!("Invalid media source: {e}"))?;
+    client
+        .media()
+        .get_media_content(
+            &MediaRequestParameters {
+                source,
+                format: MediaFormat::File,
+            },
+            true,
+        )
+        .await
+        .map_err(|e| format!("Media download or decryption failed: {e}"))
+}
+
 /// Get the current access token for authenticated media requests.
 #[frb]
 pub async fn get_access_token() -> Option<String> {
@@ -2707,6 +2732,10 @@ fn get_last_message_info(room: &matrix_sdk::Room) -> (String, String) {
             // rooms whose newest event isn't a text message (e.g. a reaction or
             // a state change) don't sink to the bottom of the list.
             last_time = u64::from(any_ev.origin_server_ts().0).to_string();
+
+            if latest.kind.is_utd() {
+                return ("无法解密此消息".to_string(), last_time);
+            }
 
             let preview = match any_ev {
                 matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -2805,20 +2834,6 @@ fn strip_reply_fallback(body: &str) -> String {
     body.to_string()
 }
 
-fn sticker_label_from_filename(filename: &str) -> Option<String> {
-    filename
-        .strip_prefix("sticker__")
-        .map(|rest| {
-            rest.trim_end_matches(".png")
-                .trim_end_matches(".webp")
-                .trim_end_matches(".gif")
-                .trim_end_matches(".jpg")
-                .trim_end_matches(".jpeg")
-                .to_string()
-        })
-        .filter(|label| !label.is_empty())
-}
-
 /// Extract edit text from a replacement relation's new_content.
 fn extract_edit_text(
     new_content: &matrix_sdk::ruma::events::room::message::RoomMessageEventContentWithoutRelation,
@@ -2827,6 +2842,34 @@ fn extract_edit_text(
         matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
         matrix_sdk::ruma::events::room::message::MessageType::Notice(t) => Some(t.body.clone()),
         _ => None,
+    }
+}
+
+fn unable_to_decrypt_message(
+    id: String,
+    sender_id: String,
+    sender_name: String,
+    timestamp: String,
+    is_me: bool,
+) -> ChatMessage {
+    ChatMessage {
+        id,
+        sender_id,
+        sender_name,
+        content: "无法解密此消息（缺少会话密钥）".to_string(),
+        timestamp,
+        is_me,
+        msg_type: MessageType::Text,
+        image_url: None,
+        media_source_json: None,
+        image_width: None,
+        image_height: None,
+        in_reply_to: None,
+        is_edited: false,
+        edit_history: Vec::new(),
+        reactions: Vec::new(),
+        readers: Vec::new(),
+        total_members: 0,
     }
 }
 
@@ -2880,6 +2923,14 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
         let ts_millis = u64::from(any_ev.origin_server_ts().0);
         let timestamp = ts_millis.to_string();
 
+        if timeline_event.kind.is_utd() {
+            raw_messages.push((
+                event_id_str.clone(),
+                unable_to_decrypt_message(event_id_str, sender_id, sender_name, timestamp, is_me),
+            ));
+            continue;
+        }
+
         match &any_ev {
             // ── Message events ──
             matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
@@ -2927,6 +2978,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Text,
                             image_url: None,
+                            media_source_json: None,
                             image_width: None,
                             image_height: None,
                             in_reply_to,
@@ -2953,6 +3005,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Text,
                             image_url: None,
+                            media_source_json: None,
                             image_width: None,
                             image_height: None,
                             in_reply_to,
@@ -2978,6 +3031,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Text,
                             image_url: None,
+                            media_source_json: None,
                             image_width: None,
                             image_height: None,
                             in_reply_to,
@@ -3005,6 +3059,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Image,
                             image_url: url,
+                            media_source_json: serde_json::to_string(&t.source).ok(),
                             image_width,
                             image_height,
                             in_reply_to,
@@ -3036,6 +3091,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me,
                             msg_type: MessageType::Video,
                             image_url: url,
+                            media_source_json: serde_json::to_string(&t.source).ok(),
                             image_width,
                             image_height,
                             in_reply_to,
@@ -3055,6 +3111,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         is_me,
                         msg_type: MessageType::Text,
                         image_url: None,
+                        media_source_json: None,
                         image_width: None,
                         image_height: None,
                         in_reply_to,
@@ -3104,6 +3161,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         is_me,
                         msg_type: MessageType::Image,
                         image_url: url,
+                        media_source_json: serde_json::to_string(&original.content.source).ok(),
                         image_width,
                         image_height,
                         in_reply_to,
@@ -3210,6 +3268,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                             is_me: false,
                             msg_type: MessageType::Event,
                             image_url: None,
+                            media_source_json: None,
                             image_width: None,
                             image_height: None,
                             in_reply_to: None,
@@ -3518,64 +3577,32 @@ pub async fn send_image_message(
         ),
     );
 
-    // Upload image to homeserver
-    let upload_response = client
-        .media()
-        .upload(&mime_type, image_data, None)
+    use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
+
+    let image_info = BaseImageInfo {
+        width: width
+            .filter(|value| *value > 0)
+            .and_then(|value| matrix_sdk::ruma::UInt::new(value as u64)),
+        height: height
+            .filter(|value| *value > 0)
+            .and_then(|value| matrix_sdk::ruma::UInt::new(value as u64)),
+        size: matrix_sdk::ruma::UInt::new(image_data.len() as u64),
+        ..Default::default()
+    };
+    let config = AttachmentConfig::new().info(AttachmentInfo::Image(image_info));
+
+    // send_attachment encrypts both the event and media bytes when the room is
+    // encrypted, and keeps the normal plain-media flow for unencrypted rooms.
+    room.send_attachment(filename, &mime_type, image_data, config)
         .await
-        .map_err(|e| format!("Image upload failed: {e}"))?;
+        .map_err(|e| format!("Send image message failed: {e}"))?;
 
-    let content_uri = upload_response.content_uri;
-    app_log("info", "media", format!("Image uploaded: {}", content_uri));
-
-    if let Some(label) = sticker_label_from_filename(&filename) {
-        let mut info = matrix_sdk::ruma::events::room::ImageInfo::new();
-        info.width = Some(matrix_sdk::ruma::UInt::new(512).expect("valid sticker width"));
-        info.height = Some(matrix_sdk::ruma::UInt::new(512).expect("valid sticker height"));
-        info.mimetype = Some(mime_type.to_string());
-
-        let content =
-            matrix_sdk::ruma::events::sticker::StickerEventContent::new(label, info, content_uri);
-
-        room.send(content)
-            .await
-            .map_err(|e| format!("Send sticker message failed: {e}"))?;
-
-        app_log(
-            "info",
-            "rooms",
-            format!("Sticker message sent to {}", room_id),
-        );
-        info!("Sticker message sent to {}", room_id);
-    } else {
-        // Build image message content
-        use matrix_sdk::ruma::events::room::message::{
-            ImageMessageEventContent, MessageType, RoomMessageEventContent,
-        };
-
-        let mut image_content = ImageMessageEventContent::plain(filename.clone(), content_uri);
-        let mut info = matrix_sdk::ruma::events::room::ImageInfo::new();
-        info.mimetype = Some(mime_type.to_string());
-        if let Some(width) = width.filter(|value| *value > 0) {
-            info.width = matrix_sdk::ruma::UInt::new(width as u64);
-        }
-        if let Some(height) = height.filter(|value| *value > 0) {
-            info.height = matrix_sdk::ruma::UInt::new(height as u64);
-        }
-        image_content.info = Some(Box::new(info));
-        let content = RoomMessageEventContent::new(MessageType::Image(image_content));
-
-        room.send(content)
-            .await
-            .map_err(|e| format!("Send image message failed: {e}"))?;
-
-        app_log(
-            "info",
-            "rooms",
-            format!("Image message sent to {}", room_id),
-        );
-        info!("Image message sent to {}", room_id);
-    }
+    app_log(
+        "info",
+        "rooms",
+        format!("Image message sent to {}", room_id),
+    );
+    info!("Image message sent to {}", room_id);
 
     notify_sync_event(SyncEvent::MessageSent {
         room_id: room_id.clone(),
@@ -4444,6 +4471,28 @@ pub async fn get_messages_before(
                 continue;
             };
 
+            if timeline_event.kind.is_utd() {
+                let event_id = any_ev.event_id().to_string();
+                let sender_id = any_ev.sender().to_string();
+                let is_me = my_user_id.as_ref() == Some(&sender_id);
+                let sender_name = if is_me {
+                    "我".to_string()
+                } else {
+                    sender_id
+                        .split(':')
+                        .next()
+                        .unwrap_or(&sender_id)
+                        .trim_start_matches('@')
+                        .to_string()
+                };
+                let timestamp = u64::from(any_ev.origin_server_ts().0).to_string();
+                raw_messages.push((
+                    event_id.clone(),
+                    unable_to_decrypt_message(event_id, sender_id, sender_name, timestamp, is_me),
+                ));
+                continue;
+            }
+
             // Collect reaction events; they don't appear as messages themselves.
             if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
                 matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(r),
@@ -4519,6 +4568,7 @@ pub async fn get_messages_before(
                         is_me,
                         msg_type: MessageType::Image,
                         image_url: url,
+                        media_source_json: serde_json::to_string(&original.content.source).ok(),
                         image_width,
                         image_height,
                         in_reply_to,
@@ -4598,6 +4648,7 @@ pub async fn get_messages_before(
                         is_me,
                         msg_type: MessageType::Text,
                         image_url: None,
+                        media_source_json: None,
                         image_width: None,
                         image_height: None,
                         in_reply_to,
@@ -4625,6 +4676,7 @@ pub async fn get_messages_before(
                         is_me,
                         msg_type: MessageType::Image,
                         image_url: url,
+                        media_source_json: serde_json::to_string(&t.source).ok(),
                         image_width,
                         image_height,
                         in_reply_to,
@@ -4656,6 +4708,7 @@ pub async fn get_messages_before(
                         is_me,
                         msg_type: MessageType::Video,
                         image_url: url,
+                        media_source_json: serde_json::to_string(&t.source).ok(),
                         image_width,
                         image_height,
                         in_reply_to,
