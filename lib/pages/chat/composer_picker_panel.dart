@@ -21,7 +21,7 @@ class ComposerPickerPanel extends StatefulWidget {
   final ComposerPickerTab tab;
   final ValueChanged<ComposerPickerTab> onTabChanged;
   final ValueChanged<String> onEmojiSelected;
-  final ValueChanged<StickerItem> onStickerSelected;
+  final void Function(StickerItem sticker, Rect? sourceRect) onStickerSelected;
   final ValueChanged<double>? onHeightChanged;
 
   const ComposerPickerPanel({
@@ -144,8 +144,8 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
     return false;
   }
 
-  void _handleStickerSelected(StickerItem sticker) {
-    widget.onStickerSelected(sticker);
+  void _handleStickerSelected(StickerItem sticker, Rect? sourceRect) {
+    widget.onStickerSelected(sticker, sourceRect);
     unawaited(_collapseToBaseHeight());
   }
 
@@ -245,7 +245,7 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
 
 class StickerPackPanel extends ConsumerStatefulWidget {
   final String roomId;
-  final ValueChanged<StickerItem> onStickerSelected;
+  final void Function(StickerItem sticker, Rect? sourceRect) onStickerSelected;
   final Future<void> Function() onPackNavigation;
   final ScrollController scrollController;
 
@@ -486,6 +486,12 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     return _visibleStickers[id];
   }
 
+  Rect? _globalRectFor(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
   void _hideHoldPreview() {
     _holdPreviewSticker = null;
     _holdPreviewOverlay?.remove();
@@ -646,12 +652,14 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                             index,
                           ) {
                             final sticker = packs[i].stickers[index];
+                            final stickerKey = _stickerKeyFor(sticker);
                             return _StickerCard(
-                              key: _stickerKeyFor(sticker),
+                              key: stickerKey,
                               sticker: sticker,
                               onTap: () {
                                 _hideHoldPreview();
-                                widget.onStickerSelected(sticker);
+                                final sourceRect = _globalRectFor(stickerKey);
+                                widget.onStickerSelected(sticker, sourceRect);
                               },
                               onLongPressStart: (_) =>
                                   _showHoldPreview(sticker),
@@ -723,6 +731,17 @@ class _PackThumb extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class StickerFlightPreview extends StatelessWidget {
+  final StickerItem sticker;
+
+  const StickerFlightPreview({super.key, required this.sticker});
+
+  @override
+  Widget build(BuildContext context) {
+    return _RemoteStickerPreview(sticker: sticker, fallback: '');
   }
 }
 

@@ -13,6 +13,7 @@ import 'emoji_picker_panel.dart';
 import 'image_message_bubble.dart';
 import 'video_message_bubble.dart';
 import 'message_input.dart';
+import 'send_flight.dart';
 
 class MessageGroup {
   final String senderId;
@@ -245,6 +246,13 @@ class MessageGroupWidget extends ConsumerWidget {
             onLoaded: onImageLoaded,
           )
         : _buildTextBubble(context, ref, message, isMe, isFirst: isFirst);
+    final displayedBubble = isLocalOutgoing
+        ? SendFlightTarget(
+            key: ValueKey(sendFlightId(message.id)),
+            messageId: message.id,
+            child: bubble,
+          )
+        : bubble;
 
     return GestureDetector(
       onLongPress: isLocalOutgoing
@@ -270,7 +278,7 @@ class MessageGroupWidget extends ConsumerWidget {
                   _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
                   const SizedBox(width: 6),
                 ],
-                Flexible(fit: FlexFit.loose, child: bubble),
+                Flexible(fit: FlexFit.loose, child: displayedBubble),
                 if (!isMe && isLocalOutgoing) ...[
                   const SizedBox(width: 6),
                   _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
