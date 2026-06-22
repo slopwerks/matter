@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -206,6 +208,12 @@ class MessageGroupWidget extends ConsumerWidget {
     final isLocalOutgoing = isLocalOutgoingMessage(message.id);
     final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
     final isLocalSent = isLocalOutgoingSentMessage(message.id);
+    final metadata = _buildMessageMetadata(
+      context,
+      ref,
+      message,
+      overlay: message.msgType != MessageType.text,
+    );
     final bubble =
         message.msgType == MessageType.video &&
             (message.imageUrl != null || message.mediaSourceJson != null)
@@ -216,9 +224,9 @@ class MessageGroupWidget extends ConsumerWidget {
             filename: message.content,
             videoWidth: message.imageWidth,
             videoHeight: message.imageHeight,
-            timestamp: formatMessageTime(message.timestamp),
             isMe: isMe,
             heroTag: 'video-preview:${message.id}',
+            metadata: metadata,
             onLoaded: onImageLoaded,
           )
         : (message.msgType == MessageType.image ||
@@ -230,10 +238,10 @@ class MessageGroupWidget extends ConsumerWidget {
             mediaSourceJson: message.mediaSourceJson,
             imageWidth: message.imageWidth,
             imageHeight: message.imageHeight,
-            timestamp: formatMessageTime(message.timestamp),
             isMe: isMe,
             heroTag: 'image-preview:${message.id}',
             isSticker: message.msgType == MessageType.sticker,
+            metadata: metadata,
             onLoaded: onImageLoaded,
           )
         : _buildTextBubble(context, ref, message, isMe, isFirst: isFirst);
@@ -242,11 +250,6 @@ class MessageGroupWidget extends ConsumerWidget {
       onLongPress: isLocalOutgoing
           ? null
           : () => _showContextMenu(context, ref, message),
-      // Tapping an own message with readers opens the read-receipts sheet.
-      // (Whole-bubble hit area is far easier to hit than the tiny tick.)
-      onTap: (isMe && message.readers.isNotEmpty)
-          ? () => _showReadReceipts(context, ref, message)
-          : null,
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: EdgeInsets.only(
@@ -267,7 +270,7 @@ class MessageGroupWidget extends ConsumerWidget {
                   _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
                   const SizedBox(width: 6),
                 ],
-                bubble,
+                Flexible(fit: FlexFit.loose, child: bubble),
                 if (!isMe && isLocalOutgoing) ...[
                   const SizedBox(width: 6),
                   _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
@@ -371,10 +374,16 @@ class MessageGroupWidget extends ConsumerWidget {
     bool isMe, {
     bool isFirst = false,
   }) {
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.70;
+    final textStyle = TextStyle(
+      color: isMe ? Colors.white : AppColors.onBackground,
+      fontSize: 15,
+      height: 1.35,
+    );
+    final metadata = _buildMessageMetadata(context, ref, message);
     return Container(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.70,
-      ),
+      key: ValueKey('text-bubble:${message.id}'),
+      constraints: BoxConstraints(maxWidth: maxBubbleWidth),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: isMe ? AppColors.primary : AppColors.surfaceElevated,
@@ -400,57 +409,15 @@ class MessageGroupWidget extends ConsumerWidget {
                 ),
               ),
             ),
-          // Reply preview
           if (message.inReplyTo != null)
             _buildReplyPreview(context, message, isMe),
-          Text(
-            message.content,
-            style: TextStyle(
-              color: isMe ? Colors.white : AppColors.onBackground,
-              fontSize: 15,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Align(
-            alignment: Alignment.bottomRight,
-            widthFactor: 1.0,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (isMe) ...[
-                  _buildReadIndicator(context, ref, message),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  formatMessageTime(message.timestamp),
-                  style: TextStyle(
-                    color: isMe
-                        ? Colors.white.withValues(alpha: 0.65)
-                        : AppColors.onSurfaceVariant,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (message.isEdited) ...[
-                  const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: () => _showEditHistory(context, message),
-                    child: Text(
-                      '已编辑',
-                      style: TextStyle(
-                        color: isMe
-                            ? Colors.white.withValues(alpha: 0.45)
-                            : AppColors.onSurfaceVariant.withValues(alpha: 0.6),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          _AdaptiveTextMetadata(
+            key: ValueKey('adaptive-text-metadata:${message.id}'),
+            text: message.content,
+            textStyle: textStyle,
+            metadata: metadata,
+            metadataWidth: _messageMetadataWidth(context, message),
+            maxWidth: maxBubbleWidth - 28,
           ),
         ],
       ),
@@ -688,32 +655,116 @@ class MessageGroupWidget extends ConsumerWidget {
     );
   }
 
-  /// Read-receipt indicator (tick) for the current user's own messages.
-  /// Tapping it opens a sheet listing who read this message and when.
+  Widget _buildMessageMetadata(
+    BuildContext context,
+    WidgetRef ref,
+    ChatMessage message, {
+    bool overlay = false,
+  }) {
+    final foreground = overlay
+        ? Colors.white.withValues(alpha: 0.9)
+        : message.isMe
+        ? Colors.white.withValues(alpha: 0.65)
+        : AppColors.onSurfaceVariant;
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (message.isEdited) ...[
+          GestureDetector(
+            onTap: () => _showEditHistory(context, message),
+            child: Text(
+              '已编辑',
+              style: TextStyle(
+                color: foreground.withValues(alpha: 0.75),
+                fontSize: 10,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+        ],
+        Text(
+          formatMessageTime(message.timestamp),
+          style: TextStyle(
+            color: foreground,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (message.isMe) ...[
+          const SizedBox(width: 4),
+          _buildReadIndicator(context, ref, message, color: foreground),
+        ],
+      ],
+    );
+
+    if (!overlay) {
+      return KeyedSubtree(
+        key: ValueKey('message-metadata:${message.id}'),
+        child: content,
+      );
+    }
+    return Positioned(
+      right: 7,
+      bottom: 6,
+      child: Container(
+        key: ValueKey('message-metadata:${message.id}'),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: content,
+      ),
+    );
+  }
+
   Widget _buildReadIndicator(
     BuildContext context,
     WidgetRef ref,
-    ChatMessage message,
-  ) {
-    // No other members to acknowledge, or no data yet: hide the ticks.
+    ChatMessage message, {
+    required Color color,
+  }) {
     final others = message.totalMembers - 1;
     if (others <= 0) return const SizedBox.shrink();
 
     final readCount = message.readers.length;
-    final allRead = readCount >= others;
-    final anyRead = readCount > 0;
-    // Single tick = sent (no readers); double tick = read (partial or full).
     final icon = readCount == 0 ? Icons.done_rounded : Icons.done_all_rounded;
-    final color = allRead
-        ? Colors.white.withValues(alpha: 0.85)
-        : (anyRead
-              ? Colors.white.withValues(alpha: 0.55)
-              : Colors.white.withValues(alpha: 0.45));
-    // Pure visual indicator; the whole bubble is tappable (see _buildMessage).
-    return Padding(
-      padding: const EdgeInsets.only(right: 2),
-      child: Icon(icon, size: 15, color: color),
+    final label = readCount == 0 ? '尚未已读' : '已读 $readCount/$others，点击查看';
+    return Tooltip(
+      message: label,
+      child: GestureDetector(
+        key: ValueKey('message-read-receipt:${message.id}'),
+        onTap: readCount > 0
+            ? () => _showReadReceipts(context, ref, message)
+            : null,
+        behavior: HitTestBehavior.opaque,
+        child: Icon(icon, size: 15, color: color),
+      ),
     );
+  }
+
+  double _messageMetadataWidth(BuildContext context, ChatMessage message) {
+    double textWidth(String text, double fontSize) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(fontSize: fontSize),
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      return painter.width;
+    }
+
+    var width = textWidth(formatMessageTime(message.timestamp), 10.5);
+    if (message.isEdited) {
+      width += 5 + textWidth('已编辑', 10);
+    }
+    if (message.isMe && message.totalMembers > 1) {
+      width += 4 + 15;
+    }
+    return width;
   }
 
   /// Bottom sheet listing the members who read a message and when.
@@ -969,6 +1020,79 @@ class MessageGroupWidget extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AdaptiveTextMetadata extends StatelessWidget {
+  final String text;
+  final TextStyle textStyle;
+  final Widget metadata;
+  final double metadataWidth;
+  final double maxWidth;
+
+  const _AdaptiveTextMetadata({
+    super.key,
+    required this.text,
+    required this.textStyle,
+    required this.metadata,
+    required this.metadataWidth,
+    required this.maxWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? math.min(constraints.maxWidth, maxWidth)
+            : maxWidth;
+        final textScaler = MediaQuery.textScalerOf(context);
+        final textPainter = TextPainter(
+          text: TextSpan(text: text, style: textStyle),
+          textDirection: Directionality.of(context),
+          textScaler: textScaler,
+        )..layout(maxWidth: availableWidth);
+        final lines = textPainter.computeLineMetrics();
+        final lastLineWidth = lines.isEmpty ? 0.0 : lines.last.width;
+        final widestLine = lines.fold<double>(
+          0,
+          (width, line) => math.max(width, line.width),
+        );
+        const gap = 8.0;
+        final inline = lastLineWidth + gap + metadataWidth <= availableWidth;
+        final width = lines.length > 1
+            ? availableWidth
+            : math.min(
+                availableWidth,
+                math.max(widestLine, lastLineWidth + gap + metadataWidth),
+              );
+        final metadataHeight = math.max(15.0, textScaler.scale(10.5));
+        final height = inline
+            ? math.max(textPainter.height, metadataHeight)
+            : textPainter.height + 3 + metadataHeight;
+
+        return SizedBox(
+          width: width,
+          height: height,
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                width: width,
+                child: Text(text, style: textStyle),
+              ),
+              Positioned(
+                key: ValueKey(inline ? 'metadata-inline' : 'metadata-below'),
+                right: 0,
+                bottom: 0,
+                child: metadata,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

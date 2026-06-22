@@ -14,10 +14,10 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
   final String? mediaSourceJson;
   final int? imageWidth;
   final int? imageHeight;
-  final String timestamp;
   final bool isMe;
   final Object heroTag;
   final bool isSticker;
+  final Widget metadata;
   final VoidCallback? onLoaded;
 
   const ImageMessageBubble({
@@ -26,10 +26,10 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
     this.mediaSourceJson,
     this.imageWidth,
     this.imageHeight,
-    required this.timestamp,
     required this.isMe,
     required this.heroTag,
     this.isSticker = false,
+    required this.metadata,
     this.onLoaded,
   });
 
@@ -143,10 +143,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     final bubbleSize = _bubbleSize(context);
 
     if (url == null && bytes == null) {
-      if (_isLoadingEncrypted && !_encryptedLoadFailed) {
-        return _buildLoading(context, bubbleSize);
-      }
-      return _buildBroken(context, bubbleSize);
+      final placeholder = _isLoadingEncrypted && !_encryptedLoadFailed
+          ? _buildLoading(context, bubbleSize)
+          : _buildBroken(context, bubbleSize);
+      return Stack(children: [placeholder, widget.metadata]);
     }
 
     final media = _MediaImage(
@@ -187,27 +187,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
                     ),
                   ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.5),
-                ],
-              ),
-            ),
-            child: Text(
-              widget.timestamp,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
+          widget.metadata,
         ],
       ),
     );

@@ -305,7 +305,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
         ..write('#')
         ..write(message.reactions.length)
         ..write('#')
-        ..write(message.readers.length);
+        ..write(message.totalMembers)
+        ..write('#')
+        ..writeAll(message.readers.map((reader) => reader.userId), ',');
     }
     return buffer.toString();
   }

@@ -17,9 +17,9 @@ class VideoMessageBubble extends ConsumerStatefulWidget {
   final String filename;
   final int? videoWidth;
   final int? videoHeight;
-  final String timestamp;
   final bool isMe;
   final Object heroTag;
+  final Widget metadata;
   final VoidCallback? onLoaded;
 
   const VideoMessageBubble({
@@ -29,9 +29,9 @@ class VideoMessageBubble extends ConsumerStatefulWidget {
     required this.filename,
     this.videoWidth,
     this.videoHeight,
-    required this.timestamp,
     required this.isMe,
     required this.heroTag,
+    required this.metadata,
     this.onLoaded,
   });
 
@@ -163,13 +163,20 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
             : AppColors.surfaceElevated,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: controller == null
-          ? _buildPlaceholder(_error != null)
-          : ValueListenableBuilder<VideoPlayerValue>(
-              valueListenable: controller,
-              builder: (context, value, child) =>
-                  _buildPlayer(context, controller),
-            ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: controller == null
+                ? _buildPlaceholder(_error != null)
+                : ValueListenableBuilder<VideoPlayerValue>(
+                    valueListenable: controller,
+                    builder: (context, value, child) =>
+                        _buildPlayer(context, controller),
+                  ),
+          ),
+          widget.metadata,
+        ],
+      ),
     );
   }
 
@@ -201,25 +208,6 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
             onTap: controller.play,
             child: const SizedBox.square(dimension: 72),
           ),
-        Positioned(
-          right: 7,
-          bottom: 6,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.48),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              widget.timestamp,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
         Positioned(
           left: 0,
           right: 0,
