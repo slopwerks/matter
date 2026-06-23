@@ -7,13 +7,14 @@ import 'package:matter/src/rust/api/matrix.dart' as rust;
 rust.ChatMessage _message({
   required String id,
   required String timestamp,
+  String? content,
   rust.MessageType msgType = rust.MessageType.text,
   String? imageUrl,
 }) => rust.ChatMessage(
   id: id,
   senderId: '@alice:example.org',
   senderName: 'Alice',
-  content: id,
+  content: content ?? id,
   timestamp: timestamp,
   isMe: false,
   msgType: msgType,
@@ -60,9 +61,18 @@ void main() {
 
     test('detect sent and failed states', () {
       expect(isLocalOutgoingSentMessage('${localOutgoingSentPrefix}a'), isTrue);
-      expect(isLocalOutgoingSentMessage('${localOutgoingPendingPrefix}a'), isFalse);
-      expect(isLocalOutgoingFailedMessage('${localOutgoingFailedPrefix}a'), isTrue);
-      expect(isLocalOutgoingFailedMessage('${localOutgoingPendingPrefix}a'), isFalse);
+      expect(
+        isLocalOutgoingSentMessage('${localOutgoingPendingPrefix}a'),
+        isFalse,
+      );
+      expect(
+        isLocalOutgoingFailedMessage('${localOutgoingFailedPrefix}a'),
+        isTrue,
+      );
+      expect(
+        isLocalOutgoingFailedMessage('${localOutgoingPendingPrefix}a'),
+        isFalse,
+      );
     });
 
     test('promote pending id to sent', () {
@@ -131,6 +141,59 @@ void main() {
       final result = reconcileMessageSnapshot(current, latest);
       expect(result.map((m) => m.id), [r'$old', r'$a', r'$z']);
     });
+
+    test('latest window can replace an unable-to-decrypt placeholder', () {
+      final current = [
+        _message(
+          id: r'$event',
+          timestamp: '100',
+          content: unableToDecryptMessageContent,
+        ),
+      ];
+      final latest = [
+        _message(id: r'$event', timestamp: '100', content: 'decrypted'),
+      ];
+
+      final result = reconcileMessageSnapshot(current, latest);
+
+      expect(result.single.content, 'decrypted');
+    });
+
+    test('unable-to-decrypt refresh does not replace decrypted cache', () {
+      final current = [
+        _message(id: r'$event', timestamp: '100', content: 'decrypted'),
+      ];
+      final latest = [
+        _message(
+          id: r'$event',
+          timestamp: '100',
+          content: unableToDecryptMessageContent,
+        ),
+      ];
+
+      final result = reconcileMessageSnapshot(current, latest);
+
+      expect(result.single.content, 'decrypted');
+    });
+
+    test('historical additions replace cached unable-to-decrypt messages', () {
+      final current = [
+        _message(
+          id: r'$old',
+          timestamp: '100',
+          content: unableToDecryptMessageContent,
+        ),
+        _message(id: r'$new', timestamp: '200'),
+      ];
+      final incoming = [
+        _message(id: r'$old', timestamp: '100', content: 'decrypted'),
+      ];
+
+      final result = mergeMessageSnapshotAdditions(current, incoming);
+
+      expect(result.map((m) => m.id), [r'$old', r'$new']);
+      expect(result.first.content, 'decrypted');
+    });
   });
 
   group('local outgoing message state', () {
@@ -138,10 +201,18 @@ void main() {
       const roomId = '!room:example.org';
       final ref = await _captureRef(tester);
 
-      upsertLocalOutgoingMessage(ref, roomId, _local(id: '${localOutgoingPendingPrefix}1'));
+      upsertLocalOutgoingMessage(
+        ref,
+        roomId,
+        _local(id: '${localOutgoingPendingPrefix}1'),
+      );
       expect(ref.read(localOutgoingMessagesProvider(roomId)).length, 1);
 
-      upsertLocalOutgoingMessage(ref, roomId, _local(id: '${localOutgoingPendingPrefix}2'));
+      upsertLocalOutgoingMessage(
+        ref,
+        roomId,
+        _local(id: '${localOutgoingPendingPrefix}2'),
+      );
       expect(ref.read(localOutgoingMessagesProvider(roomId)).length, 2);
     });
 
@@ -177,11 +248,15 @@ void main() {
       final sentId = markLocalOutgoingMessageSent(ref, roomId, pendingId);
 
       expect(sentId, '${localOutgoingSentPrefix}flight');
-      final ids = ref.read(localOutgoingMessagesProvider(roomId)).map((m) => m.message.id);
+      final ids = ref
+          .read(localOutgoingMessagesProvider(roomId))
+          .map((m) => m.message.id);
       expect(ids, [sentId]);
     });
 
-    testWidgets('mark sent is a no-op when the pending message is gone', (tester) async {
+    testWidgets('mark sent is a no-op when the pending message is gone', (
+      tester,
+    ) async {
       const roomId = '!room:example.org';
       final ref = await _captureRef(tester);
       const pendingId = '${localOutgoingPendingPrefix}missing';
@@ -201,7 +276,9 @@ void main() {
       expect(ref.read(messageCacheProvider(roomId)), messages);
     });
 
-    testWidgets('updateMessageCache returns the existing list when unchanged', (tester) async {
+    testWidgets('updateMessageCache returns the existing list when unchanged', (
+      tester,
+    ) async {
       const roomId = '!room:example.org';
       final ref = await _captureRef(tester);
       final messages = [_message(id: r'$1', timestamp: '100')];

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/message_cache_persistence.dart';
 import '../../providers/message_ordering.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
@@ -179,12 +180,28 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
       final newMessages = older
           .where((message) => !knownIds.contains(message.id))
           .toList();
+      final namespace = ref.read(activeUserIdProvider) ?? 'anonymous';
+      final currentCache = ref.read(messageCacheProvider(widget.roomId));
+      final mergedCache = mergeMessageSnapshotAdditions(currentCache, older);
+      if (!identical(mergedCache, currentCache)) {
+        ref.read(messageCacheOwnerProvider(widget.roomId).notifier).value =
+            namespace;
+        ref.read(messageCacheProvider(widget.roomId).notifier).value =
+            mergedCache;
+        unawaited(
+          saveCachedMessages(
+            namespace: namespace,
+            roomId: widget.roomId,
+            messages: mergedCache,
+          ),
+        );
+      }
       setState(() {
         _olderMessages.insertAll(0, newMessages);
         if (newMessages.isNotEmpty) {
           _olderMessagesRevision++;
         }
-        _hasMoreMessages = older.isNotEmpty && newMessages.isNotEmpty;
+        _hasMoreMessages = older.isNotEmpty;
         _isLoadingOlder = false;
       });
     } catch (error) {

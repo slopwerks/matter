@@ -178,6 +178,52 @@ final messageCacheOwnerProvider =
       (_) => MutableState(null),
     );
 
+const unableToDecryptMessageContent = '无法解密此消息（缺少会话密钥）';
+
+bool isUnableToDecryptPlaceholder(rust.ChatMessage message) {
+  return message.msgType == rust.MessageType.text &&
+      message.content == unableToDecryptMessageContent &&
+      message.imageUrl == null &&
+      message.mediaSourceJson == null;
+}
+
+rust.ChatMessage chooseMessageForSameEvent(
+  rust.ChatMessage existing,
+  rust.ChatMessage incoming,
+) {
+  final existingUnableToDecrypt = isUnableToDecryptPlaceholder(existing);
+  final incomingUnableToDecrypt = isUnableToDecryptPlaceholder(incoming);
+  if (existingUnableToDecrypt && !incomingUnableToDecrypt) return incoming;
+  if (!existingUnableToDecrypt && incomingUnableToDecrypt) return existing;
+  return incoming;
+}
+
+List<rust.ChatMessage> mergeMessageSnapshotAdditions(
+  List<rust.ChatMessage> current,
+  List<rust.ChatMessage> incoming,
+) {
+  if (incoming.isEmpty) return current;
+  final byId = <String, rust.ChatMessage>{
+    for (final message in current) message.id: message,
+  };
+  var changed = false;
+  for (final message in incoming) {
+    final existing = byId[message.id];
+    if (existing == null) {
+      byId[message.id] = message;
+      changed = true;
+      continue;
+    }
+    final selected = chooseMessageForSameEvent(existing, message);
+    if (selected != existing) {
+      byId[message.id] = selected;
+      changed = true;
+    }
+  }
+  if (!changed) return current;
+  return byId.values.toList()..sort(compareChatMessages);
+}
+
 List<rust.ChatMessage> updateMessageCache(
   WidgetRef ref,
   String roomId,
@@ -211,12 +257,21 @@ List<rust.ChatMessage> reconcileMessageSnapshot(
   final oldestLatestTimestamp = latest
       .map((message) => int.tryParse(message.timestamp) ?? 0)
       .reduce(math.min);
-  final byId = <String, rust.ChatMessage>{
-    for (final message in current)
-      if ((int.tryParse(message.timestamp) ?? 0) < oldestLatestTimestamp)
-        message.id: message,
-    for (final message in latest) message.id: message,
+  final currentById = <String, rust.ChatMessage>{
+    for (final message in current) message.id: message,
   };
+  final byId = <String, rust.ChatMessage>{};
+  for (final message in current) {
+    if ((int.tryParse(message.timestamp) ?? 0) < oldestLatestTimestamp) {
+      byId[message.id] = message;
+    }
+  }
+  for (final message in latest) {
+    final existing = currentById[message.id] ?? byId[message.id];
+    byId[message.id] = existing == null
+        ? message
+        : chooseMessageForSameEvent(existing, message);
+  }
   return byId.values.toList()..sort(compareChatMessages);
 }
 
