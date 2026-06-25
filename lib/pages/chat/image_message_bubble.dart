@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,8 @@ import '../../widgets/app_avatar.dart';
 import 'message_text.dart';
 
 enum _OriginalImageState { thumbnail, resolving, loading, loaded, failed }
+
+const _minimumImageBubbleHeight = 72.0;
 
 class ImageMessageBubble extends ConsumerStatefulWidget {
   final String? imageUrl;
@@ -155,6 +158,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     final mediaBorderRadius = hasCaption
         ? BorderRadius.zero
         : _bubbleBorderRadius;
+    final needsShortImageBackdrop = _needsShortImageBackdrop(context);
 
     if (url == null && bytes == null) {
       final placeholder = _isLoadingEncrypted && !_encryptedLoadFailed
@@ -171,7 +175,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       key: ValueKey('msg-image:${widget.heroTag}'),
       imageUrl: url,
       imageBytes: bytes,
-      fit: widget.isSticker ? BoxFit.contain : BoxFit.cover,
+      fit: widget.isSticker || needsShortImageBackdrop
+          ? BoxFit.contain
+          : BoxFit.cover,
       onLoaded: widget.onLoaded,
       cacheWidth: _thumbnailWidth,
       cacheHeight: _thumbnailHeight,
@@ -191,6 +197,27 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       child: Stack(
         alignment: Alignment.bottomRight,
         children: [
+          if (needsShortImageBackdrop)
+            Positioned.fill(
+              child: ImageFiltered(
+                key: ValueKey('image-blurred-background:${widget.heroTag}'),
+                imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                child: Transform.scale(
+                  scale: 1.12,
+                  child: _MediaImage(
+                    imageUrl: url,
+                    imageBytes: bytes,
+                    fit: BoxFit.cover,
+                    cacheWidth: _thumbnailWidth,
+                    cacheHeight: _thumbnailHeight,
+                  ),
+                ),
+              ),
+            ),
+          if (needsShortImageBackdrop)
+            Positioned.fill(
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.12)),
+            ),
           Positioned.fill(
             child: widget.isSticker
                 ? RepaintBoundary(child: media)
@@ -300,6 +327,18 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   }
 
   Size _bubbleSize(BuildContext context) {
+    final fittedSize = _fittedBubbleSize(context);
+    if (widget.isSticker || fittedSize.height >= _minimumImageBubbleHeight) {
+      return fittedSize;
+    }
+    return Size(fittedSize.width, _minimumImageBubbleHeight);
+  }
+
+  bool _needsShortImageBackdrop(BuildContext context) =>
+      !widget.isSticker &&
+      _fittedBubbleSize(context).height < _minimumImageBubbleHeight;
+
+  Size _fittedBubbleSize(BuildContext context) {
     final maxHeight = widget.isSticker ? 160.0 : 280.0;
     final maxWidth = widget.isSticker
         ? 160.0

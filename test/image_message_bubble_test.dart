@@ -69,6 +69,93 @@ void main() {
     expect(captionRect.top, closeTo(imageRect.bottom, 0.1));
   });
 
+  testWidgets('short panoramic image uses a blurred minimum-height backdrop', (
+    tester,
+  ) async {
+    const message = ChatMessage(
+      id: r'$panorama',
+      senderId: '@me:example.org',
+      senderName: '我',
+      content: 'panorama',
+      mentionedUserIds: [],
+      mentionsRoom: false,
+      timestamp: '100',
+      isMe: true,
+      msgType: MessageType.image,
+      imageUrl: 'https://example.org/panorama.png',
+      imageWidth: 2400,
+      imageHeight: 200,
+      isEdited: false,
+      editHistory: [],
+      reactions: [],
+      readers: [],
+      totalMembers: 2,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MessageGroupWidget(
+              group: MessageGroup(
+                senderId: message.senderId,
+                senderName: message.senderName,
+                isMe: true,
+                messages: const [message],
+              ),
+              roomId: '!room:example.org',
+              messageIndex: const {r'$panorama': message},
+              showAvatar: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(
+        const ValueKey(r'image-blurred-background:image-preview:$panorama'),
+      ),
+      findsOneWidget,
+    );
+
+    final imageRect = tester.getRect(
+      find.byKey(const ValueKey(r'msg-image:image-preview:$panorama')),
+    );
+    final metadataRect = tester.getRect(
+      find.byKey(const ValueKey(r'message-metadata:$panorama')),
+    );
+    expect(imageRect.height, 72);
+    expect(metadataRect.top, greaterThanOrEqualTo(imageRect.top));
+    expect(metadataRect.bottom, lessThanOrEqualTo(imageRect.bottom));
+  });
+
+  testWidgets('regular image does not add a blurred backdrop', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ImageMessageBubble(
+              imageUrl: 'https://example.org/photo.png',
+              imageWidth: 640,
+              imageHeight: 480,
+              isMe: false,
+              heroTag: 'regular-photo',
+              metadata: SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('image-blurred-background:regular-photo')),
+      findsNothing,
+    );
+  });
+
   testWidgets('media read indicator opens the readers sheet', (tester) async {
     const message = ChatMessage(
       id: r'$sticker',
@@ -243,9 +330,7 @@ void main() {
     );
   });
 
-  testWidgets('outgoing message groups use joined corners', (
-    tester,
-  ) async {
+  testWidgets('outgoing message groups use joined corners', (tester) async {
     const first = ChatMessage(
       id: r'$group-first',
       senderId: '@me:example.org',
