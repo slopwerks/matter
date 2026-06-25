@@ -105,8 +105,3 @@ tasks.register<Exec>("stripRustSo") {
 tasks.named("preBuild").configure {
     dependsOn("stripRustSo")
 }
-
-dependencies {
-    // AppCompat provides Theme.AppCompat.* used by image_cropper's uCrop activity.
-    implementation("androidx.appcompat:appcompat:1.7.0")
-}

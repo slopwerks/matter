@@ -11,6 +11,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import 'chat_image_editor_page.dart';
 import 'composer_picker_panel.dart';
 import 'latest_message_control.dart';
 import 'send_flight.dart';
@@ -457,15 +458,26 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     try {
       final pickedFile = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 85,
+        maxWidth: 4096,
+        maxHeight: 4096,
+        imageQuality: 95,
       );
       if (pickedFile == null) return;
+
+      final sourceBytes = await pickedFile.readAsBytes();
+      if (!mounted) return;
+      final bytes = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => ChatImageEditorPage(imageBytes: sourceBytes),
+        ),
+      );
+      if (bytes == null || !mounted) return;
 
       final sendPresentation = widget.resolveSendPresentation();
       setState(() => _isSending = true);
 
-      final bytes = await pickedFile.readAsBytes();
-      final filename = pickedFile.name;
+      final filename = 'edited_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final imageSize = await _decodeImageSize(bytes);
 
       await rust.sendImageMessage(

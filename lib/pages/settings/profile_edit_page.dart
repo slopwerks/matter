@@ -1,6 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../providers/auth_provider.dart';
@@ -8,6 +9,7 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
+import 'avatar_crop_editor_page.dart';
 
 /// Edit the current user's display name and avatar.
 ///
@@ -66,32 +68,23 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
 
   Future<void> _pickAvatar() async {
     try {
-      final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 95,
+      );
       if (picked == null) return;
 
-      // Crop step via image_cropper: full pan/zoom UI, locked to square for an
-      // avatar. Returns the cropped file path, or null if the user cancels.
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: picked.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: '裁切头像',
-            toolbarColor: AppColors.surface,
-            toolbarWidgetColor: AppColors.onBackground,
-            activeControlsWidgetColor: AppColors.primary,
-            lockAspectRatio: true,
-            aspectRatioPresets: [CropAspectRatioPreset.square],
-          ),
-          IOSUiSettings(
-            title: '裁切头像',
-            aspectRatioPresets: [CropAspectRatioPreset.square],
-            aspectRatioLockEnabled: true,
-          ),
-        ],
+      final sourceBytes = await picked.readAsBytes();
+      if (!mounted) return;
+      final bytes = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => AvatarCropEditorPage(imageBytes: sourceBytes),
+        ),
       );
-      if (cropped == null) return;
-      final bytes = await cropped.readAsBytes();
+      if (bytes == null || !mounted) return;
 
       setState(() => _saving = true);
       final mxc = await rust.uploadAvatar(

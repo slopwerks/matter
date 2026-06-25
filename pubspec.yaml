@@ -46,13 +46,13 @@ dependencies:
   image_picker: ^1.1.2
   flutter_secure_storage: ^10.3.1
   image: ^4.9.1
-  image_cropper: ^12.2.1
   cached_network_image: ^3.4.1
   video_player: ^2.11.1
   web: ^1.1.1
   markdown: ^7.3.1
   html: ^0.15.6
   url_launcher: ^6.3.2
+  pro_image_editor: ^12.8.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
