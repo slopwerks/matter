@@ -130,6 +130,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await persistSession(
         homeserver: _homeserverController.text,
         accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
         userId: session.userId,
         deviceId: session.deviceId,
         displayName: displayName,
@@ -269,6 +270,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         deviceId: _deviceIdController.text.isEmpty
             ? 'MATTER'
             : _deviceIdController.text,
+        refreshToken: null,
       );
       if (result.success) {
         final userId = result.userId ?? _userIdController.text;

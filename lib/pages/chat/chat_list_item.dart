@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
@@ -8,6 +9,12 @@ import 'chat_detail_page.dart';
 import 'space_detail_page.dart';
 
 String chatListPreview(ChatRoom room) {
+  if (room.roomState == 'invited') {
+    return '邀请你加入';
+  }
+  if (room.roomState == 'knocked') {
+    return '等待对方批准';
+  }
   final sender = room.lastMessageSender?.trim();
   if (room.roomType != 'group' ||
       sender == null ||
@@ -34,9 +41,12 @@ class ChatListItem extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final room = this.room;
     final preview = chatListPreview(room);
+    final isPendingMembership =
+        room.roomState == 'invited' || room.roomState == 'knocked';
 
     return InkWell(
       onTap: () {
+        if (isPendingMembership) return;
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => room.roomType == 'space'
@@ -147,6 +157,10 @@ class ChatListItem extends ConsumerWidget {
                       ],
                     ],
                   ),
+                  if (isPendingMembership) ...[
+                    const SizedBox(height: 8),
+                    _PendingRoomActions(room: room),
+                  ],
                 ],
               ),
             ),
@@ -174,5 +188,112 @@ class ChatListItem extends ConsumerWidget {
         color: AppColors.onSurfaceVariant,
       ),
     };
+  }
+}
+
+class _PendingRoomActions extends ConsumerWidget {
+  final ChatRoom room;
+
+  const _PendingRoomActions({required this.room});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (room.roomState == 'invited') {
+      return Row(
+        children: [
+          _ActionButton(
+            icon: Icons.check_rounded,
+            label: '接受',
+            onPressed: () => _runAction(
+              context,
+              ref,
+              () => acceptRoomInvite(roomId: room.id),
+              successMessage: '已接受邀请',
+            ),
+          ),
+          const SizedBox(width: 8),
+          _ActionButton(
+            icon: Icons.close_rounded,
+            label: '拒绝',
+            destructive: true,
+            onPressed: () => _runAction(
+              context,
+              ref,
+              () => rejectRoomInvite(roomId: room.id),
+              successMessage: '已拒绝邀请',
+            ),
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        _ActionButton(
+          icon: Icons.undo_rounded,
+          label: '撤回',
+          destructive: true,
+          onPressed: () => _runAction(
+            context,
+            ref,
+            () => withdrawRoomKnock(roomId: room.id),
+            successMessage: '已撤回请求',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _runAction(
+    BuildContext context,
+    WidgetRef ref,
+    Future<void> Function() action, {
+    required String successMessage,
+  }) async {
+    try {
+      await action();
+      ref.invalidate(chatRoomsProvider);
+      ref.invalidate(ungroupedRoomsProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(successMessage)));
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('操作失败: $error')));
+    }
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool destructive;
+  final VoidCallback onPressed;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? AppColors.error : AppColors.primary;
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.55)),
+        visualDensity: VisualDensity.compact,
+        minimumSize: const Size(0, 34),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+    );
   }
 }

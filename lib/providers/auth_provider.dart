@@ -3,6 +3,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../src/rust/api/matrix.dart' as rust;
+import 'authenticated_media_cache.dart';
+import 'message_cache_persistence.dart';
 import 'mutable_state.dart';
 
 class CurrentUser {
@@ -66,6 +68,9 @@ const _secureStorage = FlutterSecureStorage();
 String _tokenKey(String userId) =>
     'matrix_access_token_${base64Url.encode(utf8.encode(userId))}';
 
+String _refreshTokenKey(String userId) =>
+    'matrix_refresh_token_${base64Url.encode(utf8.encode(userId))}';
+
 /// All saved sessions (for multi-account).
 final sessionsProvider =
     NotifierProvider<
@@ -82,6 +87,7 @@ final activeUserIdProvider = NotifierProvider<MutableState<String?>, String?>(
 Future<void> addSession({
   required String homeserver,
   required String accessToken,
+  String? refreshToken,
   required String userId,
   required String deviceId,
   required String displayName,
@@ -98,12 +104,21 @@ Future<void> addSession({
   final newSession = rust.StoredSession(
     homeserverUrl: homeserver,
     accessToken: accessToken,
+    refreshToken: refreshToken,
     userId: userId,
     deviceId: deviceId,
   );
   sessions.add(newSession);
 
   await _secureStorage.write(key: _tokenKey(userId), value: accessToken);
+  if (refreshToken != null && refreshToken.isNotEmpty) {
+    await _secureStorage.write(
+      key: _refreshTokenKey(userId),
+      value: refreshToken,
+    );
+  } else {
+    await _secureStorage.delete(key: _refreshTokenKey(userId));
+  }
 
   // Save
   await prefs.setString(
@@ -144,6 +159,9 @@ Future<List<rust.StoredSession>> loadAllSessions() async {
       final e = item as Map<String, dynamic>;
       final userId = e['user_id'] as String;
       var accessToken = await _secureStorage.read(key: _tokenKey(userId));
+      var refreshToken = await _secureStorage.read(
+        key: _refreshTokenKey(userId),
+      );
 
       // Migrate sessions written by older versions, then remove the token
       // from SharedPreferences when the sanitized metadata is saved below.
@@ -158,12 +176,27 @@ Future<List<rust.StoredSession>> loadAllSessions() async {
           );
         }
       }
+      final legacyRefreshToken = e['refresh_token'] as String?;
+      if (legacyRefreshToken != null) {
+        migratedPlaintextTokens = true;
+        if ((refreshToken == null || refreshToken.isEmpty) &&
+            legacyRefreshToken.isNotEmpty) {
+          refreshToken = legacyRefreshToken;
+          await _secureStorage.write(
+            key: _refreshTokenKey(userId),
+            value: legacyRefreshToken,
+          );
+        }
+      }
       if (accessToken == null || accessToken.isEmpty) continue;
 
       sessions.add(
         rust.StoredSession(
           homeserverUrl: e['homeserver_url'] as String,
           accessToken: accessToken,
+          refreshToken: (refreshToken == null || refreshToken.isEmpty)
+              ? null
+              : refreshToken,
           userId: userId,
           deviceId: e['device_id'] as String,
         ),
@@ -191,6 +224,21 @@ Future<void> saveActiveUserId(String userId) async {
   await prefs.setString(_kActiveUserId, userId);
 }
 
+Future<void> syncStoredSessionTokens(String userId) async {
+  final accessToken = await rust.getAccessToken();
+  if (accessToken == null || accessToken.isEmpty) return;
+  final refreshToken = await rust.getRefreshToken();
+  await _secureStorage.write(key: _tokenKey(userId), value: accessToken);
+  if (refreshToken != null && refreshToken.isNotEmpty) {
+    await _secureStorage.write(
+      key: _refreshTokenKey(userId),
+      value: refreshToken,
+    );
+  } else {
+    await _secureStorage.delete(key: _refreshTokenKey(userId));
+  }
+}
+
 /// Get the display name for a user.
 Future<String> loadDisplayName(String userId) async {
   final namesMap = await _loadDisplayNames();
@@ -201,9 +249,18 @@ Future<String> loadDisplayName(String userId) async {
 Future<void> removeSession(String userId) async {
   final prefs = await SharedPreferences.getInstance();
   final sessions = await loadAllSessions();
+  final removedSessions = sessions.where((s) => s.userId == userId).toList();
   sessions.removeWhere((s) => s.userId == userId);
   await _saveSessionMetadata(prefs, sessions);
   await _secureStorage.delete(key: _tokenKey(userId));
+  await _secureStorage.delete(key: _refreshTokenKey(userId));
+  await clearCachedMessagesForNamespace(userId);
+  for (final session in removedSessions) {
+    await clearAuthenticatedMediaCacheForSession(
+      userId: session.userId,
+      homeserver: session.homeserverUrl,
+    );
+  }
 
   final namesMap = await _loadDisplayNames();
   namesMap.remove(userId);
@@ -226,6 +283,12 @@ Future<void> clearAllSessions() async {
   final sessions = await loadAllSessions();
   for (final session in sessions) {
     await _secureStorage.delete(key: _tokenKey(session.userId));
+    await _secureStorage.delete(key: _refreshTokenKey(session.userId));
+    await clearCachedMessagesForNamespace(session.userId);
+    await clearAuthenticatedMediaCacheForSession(
+      userId: session.userId,
+      homeserver: session.homeserverUrl,
+    );
   }
   await prefs.remove(_kSessions);
   await prefs.remove(_kSessionDisplayNames);
@@ -261,6 +324,7 @@ Future<bool> migrateLegacySession() async {
   await addSession(
     homeserver: homeserver,
     accessToken: accessToken,
+    refreshToken: null,
     userId: userId,
     deviceId: deviceId,
     displayName: displayName ?? userId.split(':').first.replaceFirst('@', ''),
@@ -330,6 +394,7 @@ Future<void> clearPersistedSession() async {
 Future<void> persistSession({
   required String homeserver,
   required String accessToken,
+  String? refreshToken,
   required String userId,
   required String deviceId,
   required String displayName,
@@ -337,6 +402,7 @@ Future<void> persistSession({
   await addSession(
     homeserver: homeserver,
     accessToken: accessToken,
+    refreshToken: refreshToken,
     userId: userId,
     deviceId: deviceId,
     displayName: displayName,

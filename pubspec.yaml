@@ -53,6 +53,8 @@ dependencies:
   html: ^0.15.6
   url_launcher: ^6.3.2
   pro_image_editor: ^12.8.0
+  flutter_cache_manager: ^3.4.1
+  riverpod: ^3.3.2
 dev_dependencies:
   flutter_test:
     sdk: flutter

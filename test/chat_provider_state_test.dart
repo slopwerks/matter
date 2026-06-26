@@ -43,6 +43,17 @@ rust.ChatMessage _message(String id, String timestamp) => rust.ChatMessage(
   totalMembers: 2,
 );
 
+rust.ChatRoom _room(String id, {bool isEncrypted = false}) => rust.ChatRoom(
+  id: id,
+  name: 'Room',
+  lastMessage: '',
+  lastMessageTime: '0',
+  unreadCount: 0,
+  roomType: 'group',
+  isEncrypted: isEncrypted,
+  roomState: 'joined',
+);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -62,7 +73,8 @@ void main() {
       );
       ref.read(currentAccessTokenProvider.notifier).value = 'token';
       ref.read(activeUserIdProvider.notifier).value = '@alice:example.org';
-      ref.read(connectionProvider.notifier).value = AppConnectionState.connected;
+      ref.read(connectionProvider.notifier).value =
+          AppConnectionState.connected;
 
       clearActiveSessionState(ref);
 
@@ -83,7 +95,9 @@ void main() {
   });
 
   group('invalidateSessionCollections', () {
-    testWidgets('invalidates collection providers without throwing', (tester) async {
+    testWidgets('invalidates collection providers without throwing', (
+      tester,
+    ) async {
       final ref = await _captureRef(tester);
       expect(() => invalidateSessionCollections(ref), returnsNormally);
     });
@@ -100,24 +114,45 @@ void main() {
         'msg_cache_v2_$namespace::$roomId': encoded,
       });
 
-      final ref = await _captureRef(tester);
-      ref.read(activeUserIdProvider.notifier).value = namespace;
+      WidgetRef? ref;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            chatRoomsProvider.overrideWith((ref) async => [_room(roomId)]),
+          ],
+          child: Consumer(
+            builder: (context, r, _) {
+              ref = r;
+              return Container();
+            },
+          ),
+        ),
+      );
+      final widgetRef = ref!;
+      await widgetRef.read(chatRoomsProvider.future);
+      widgetRef.read(activeUserIdProvider.notifier).value = namespace;
 
-      await primeMessageCache(ref, roomId);
+      await primeMessageCache(widgetRef, roomId);
 
-      expect(ref.read(messageCacheProvider(roomId)).length, 1);
-      expect(ref.read(messageCacheProvider(roomId)).single.id, r'$cached');
-      expect(ref.read(messageCachePrimedProvider(roomId)), isTrue);
+      expect(widgetRef.read(messageCacheProvider(roomId)).length, 1);
+      expect(
+        widgetRef.read(messageCacheProvider(roomId)).single.id,
+        r'$cached',
+      );
+      expect(widgetRef.read(messageCachePrimedProvider(roomId)), isTrue);
     });
 
-    testWidgets('clears stale cache when the namespace changes', (tester) async {
+    testWidgets('clears stale cache when the namespace changes', (
+      tester,
+    ) async {
       const roomId = '!room:example.org';
       final ref = await _captureRef(tester);
       ref.read(activeUserIdProvider.notifier).value = '@alice:example.org';
       ref.read(messageCacheProvider(roomId).notifier).value = [
         _message(r'$stale', '100'),
       ];
-      ref.read(messageCacheOwnerProvider(roomId).notifier).value = '@bob:example.org';
+      ref.read(messageCacheOwnerProvider(roomId).notifier).value =
+          '@bob:example.org';
 
       await primeMessageCache(ref, roomId);
 
@@ -139,25 +174,35 @@ void main() {
   });
 
   group('MXC URL cache', () {
-    testWidgets('cachedResolvedMxcUrl reads from the in-memory cache', (tester) async {
+    testWidgets('cachedResolvedMxcUrl reads from the in-memory cache', (
+      tester,
+    ) async {
       const mxc = 'mxc://example.org/image';
       final ref = await _captureRef(tester);
       ref.read(activeUserIdProvider.notifier).value = '@alice:example.org';
       ref.read(mxcUrlCacheProvider.notifier).value = {
-        '@alice:example.org::mxc://example.org/image|96x96': 'https://example.org/image.png',
+        '@alice:example.org::mxc://example.org/image|96x96':
+            'https://example.org/image.png',
       };
 
       final url = cachedResolvedMxcUrl(ref, mxc, width: 96, height: 96);
       expect(url, 'https://example.org/image.png');
     });
 
-    testWidgets('cachedResolvedMxcUrl returns null for non-mxc URLs', (tester) async {
+    testWidgets('cachedResolvedMxcUrl returns null for non-mxc URLs', (
+      tester,
+    ) async {
       final ref = await _captureRef(tester);
-      expect(cachedResolvedMxcUrl(ref, 'https://example.org/image.png'), isNull);
+      expect(
+        cachedResolvedMxcUrl(ref, 'https://example.org/image.png'),
+        isNull,
+      );
       expect(cachedResolvedMxcUrl(ref, null), isNull);
     });
 
-    testWidgets('rememberResolvedMxcUrl updates the in-memory cache', (tester) async {
+    testWidgets('rememberResolvedMxcUrl updates the in-memory cache', (
+      tester,
+    ) async {
       const mxc = 'mxc://example.org/new';
       const httpUrl = 'https://example.org/new.png';
       final ref = await _captureRef(tester);
@@ -165,10 +210,7 @@ void main() {
 
       rememberResolvedMxcUrl(ref, mxc, httpUrl);
 
-      expect(
-        ref.read(mxcUrlCacheProvider).values,
-        contains(httpUrl),
-      );
+      expect(ref.read(mxcUrlCacheProvider).values, contains(httpUrl));
     });
   });
 }

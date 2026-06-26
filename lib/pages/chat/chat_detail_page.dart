@@ -289,6 +289,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           .where((message) => !knownIds.contains(message.id))
           .toList();
       final namespace = ref.read(activeUserIdProvider) ?? 'anonymous';
+      final allowDiskCache = !await isRoomEncrypted(roomId: widget.roomId);
       final currentCache = ref.read(messageCacheProvider(widget.roomId));
       final mergedCache = mergeMessageSnapshotAdditions(currentCache, older);
       if (!identical(mergedCache, currentCache)) {
@@ -301,6 +302,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
             namespace: namespace,
             roomId: widget.roomId,
             messages: mergedCache,
+            persistToDisk: allowDiskCache,
           ),
         );
       }

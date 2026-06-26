@@ -88,6 +88,7 @@ Future<void> applyActiveSessionState(
     await saveActiveUserId(userId);
   }
   final accessToken = await rust.getAccessToken();
+  await syncStoredSessionTokens(userId);
   final sessions = refreshStoredSessions ? await loadAllSessions() : null;
   ref.read(currentUserProvider.notifier).value = CurrentUser(
     id: userId,
@@ -152,6 +153,25 @@ final messagesProvider = FutureProvider.family<List<rust.ChatMessage>, String>((
   if (!ref.watch(sessionReadyProvider)) return const <rust.ChatMessage>[];
   return rust.getMessages(roomId: roomId);
 });
+
+Future<bool> _canPersistMessagesForRoom(dynamic read, String roomId) async {
+  final knownRooms =
+      (read(chatRoomsProvider) as AsyncValue<List<rust.ChatRoom>>)
+          .asData
+          ?.value;
+  if (knownRooms != null) {
+    for (final room in knownRooms) {
+      if (room.id == roomId) {
+        return !room.isEncrypted;
+      }
+    }
+  }
+  try {
+    return !await rust.isRoomEncrypted(roomId: roomId);
+  } catch (_) {
+    return false;
+  }
+}
 
 /// In-memory snapshot of the latest fetched messages per room.
 ///
@@ -281,6 +301,7 @@ List<rust.ChatMessage> reconcileMessageSnapshot(
 /// successful priming for a given room.
 Future<void> primeMessageCache(WidgetRef ref, String roomId) async {
   final namespace = ref.read(activeUserIdProvider) ?? 'anonymous';
+  final allowDiskCache = await _canPersistMessagesForRoom(ref.read, roomId);
   final owner = ref.read(messageCacheOwnerProvider(roomId));
   if (owner != namespace) {
     ref.read(messageCacheProvider(roomId).notifier).value = const [];
@@ -288,7 +309,14 @@ Future<void> primeMessageCache(WidgetRef ref, String roomId) async {
     ref.read(messageCacheOwnerProvider(roomId).notifier).value = namespace;
   }
   if (ref.read(messageCachePrimedProvider(roomId))) return;
-  final cached = await loadCachedMessages(namespace: namespace, roomId: roomId);
+  if (!allowDiskCache) {
+    await clearCachedMessagesForRoom(namespace: namespace, roomId: roomId);
+  }
+  final cached = await loadCachedMessages(
+    namespace: namespace,
+    roomId: roomId,
+    allowDiskRead: allowDiskCache,
+  );
   final current = ref.read(messageCacheProvider(roomId));
   if (current.isEmpty && cached.isNotEmpty) {
     ref.read(messageCacheProvider(roomId).notifier).value = cached;
@@ -304,6 +332,7 @@ Future<void> refreshMessagesFromNetwork(WidgetRef ref, String roomId) async {
   try {
     final latest = await ref.read(messagesProvider(roomId).future);
     final namespace = ref.read(activeUserIdProvider) ?? 'anonymous';
+    final allowDiskCache = await _canPersistMessagesForRoom(ref.read, roomId);
     ref.read(messageCacheOwnerProvider(roomId).notifier).value = namespace;
     final reconciled = updateMessageCache(ref, roomId, latest);
     // Persist off the widget tree so a slow disk write never blocks the UI.
@@ -312,6 +341,7 @@ Future<void> refreshMessagesFromNetwork(WidgetRef ref, String roomId) async {
         namespace: namespace,
         roomId: roomId,
         messages: reconciled,
+        persistToDisk: allowDiskCache,
       ),
     );
   } catch (_) {
@@ -445,8 +475,12 @@ Future<void> refreshMessagesRef(Ref ref, String roomId) {
   // loading state. This is the path used by syncStreamProvider.
   return ref
       .read(messagesProvider(roomId).future)
-      .then((latest) {
+      .then((latest) async {
         final namespace = ref.read(activeUserIdProvider) ?? 'anonymous';
+        final allowDiskCache = await _canPersistMessagesForRoom(
+          ref.read,
+          roomId,
+        );
         ref.read(messageCacheOwnerProvider(roomId).notifier).value = namespace;
         final current = ref.read(messageCacheProvider(roomId));
         final reconciled = reconcileMessageSnapshot(current, latest);
@@ -458,6 +492,7 @@ Future<void> refreshMessagesRef(Ref ref, String roomId) {
             namespace: namespace,
             roomId: roomId,
             messages: reconciled,
+            persistToDisk: allowDiskCache,
           ),
         );
       })

@@ -137,7 +137,9 @@ rust.ChatMessage chatMessageFromMap(Map<String, dynamic> map) {
 Future<List<rust.ChatMessage>> loadCachedMessages({
   required String namespace,
   required String roomId,
+  bool allowDiskRead = true,
 }) async {
+  if (!allowDiskRead) return const <rust.ChatMessage>[];
   try {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_msgStorageKey(namespace, roomId));
@@ -161,16 +163,39 @@ Future<void> saveCachedMessages({
   required String namespace,
   required String roomId,
   required List<rust.ChatMessage> messages,
+  bool persistToDisk = true,
 }) async {
   try {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _msgStorageKey(namespace, roomId);
+    if (!persistToDisk) {
+      await prefs.remove(key);
+      return;
+    }
     final sorted = [...messages]..sort(compareChatMessages);
     final trimmed = sorted.length > _kMaxCachedMessagesPerRoom
         ? sorted.sublist(sorted.length - _kMaxCachedMessagesPerRoom)
         : sorted;
     final encoded = jsonEncode(trimmed.map(chatMessageToMap).toList());
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_msgStorageKey(namespace, roomId), encoded);
+    await prefs.setString(key, encoded);
   } catch (error) {
     debugPrint('saveCachedMessages failed for $roomId: $error');
+  }
+}
+
+Future<void> clearCachedMessagesForRoom({
+  required String namespace,
+  required String roomId,
+}) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_msgStorageKey(namespace, roomId));
+}
+
+Future<void> clearCachedMessagesForNamespace(String namespace) async {
+  final prefs = await SharedPreferences.getInstance();
+  final prefix = '${_kMsgCachePrefix}_$namespace::';
+  final keys = prefs.getKeys().where((key) => key.startsWith(prefix)).toList();
+  for (final key in keys) {
+    await prefs.remove(key);
   }
 }

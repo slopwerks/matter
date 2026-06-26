@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,10 +9,20 @@ import 'package:matter/providers/auth_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, (call) async {
+          switch (call.method) {
+            case 'getTemporaryDirectory':
+            case 'getApplicationSupportDirectory':
+              return '/tmp/matter_auth_provider_test';
+          }
+          return null;
+        });
   });
 
   group('active user id persistence', () {
@@ -36,9 +47,7 @@ void main() {
   group('display name persistence', () {
     test('loadDisplayName returns the stored name', () async {
       SharedPreferences.setMockInitialValues({
-        'session_display_names': jsonEncode({
-          '@alice:example.org': 'Alice',
-        }),
+        'session_display_names': jsonEncode({'@alice:example.org': 'Alice'}),
       });
       expect(await loadDisplayName('@alice:example.org'), 'Alice');
     });
@@ -54,6 +63,7 @@ void main() {
       await addSession(
         homeserver: 'https://example.org',
         accessToken: 'token-a',
+        refreshToken: 'refresh-a',
         userId: '@alice:example.org',
         deviceId: 'DEVICE_A',
         displayName: 'Alice',
@@ -76,34 +86,60 @@ void main() {
 
       final secure = FlutterSecureStorage();
       final token = await secure.read(
-        key: 'matrix_access_token_${base64Url.encode(utf8.encode('@alice:example.org'))}',
+        key:
+            'matrix_access_token_${base64Url.encode(utf8.encode('@alice:example.org'))}',
       );
       expect(token, 'token-a');
+      final refreshToken = await secure.read(
+        key:
+            'matrix_refresh_token_${base64Url.encode(utf8.encode('@alice:example.org'))}',
+      );
+      expect(refreshToken, 'refresh-a');
     });
 
-    test('loadAllSessions restores sessions from metadata and secure storage', () async {
-      await addSession(
-        homeserver: 'https://example.org',
-        accessToken: 'token-a',
-        userId: '@alice:example.org',
-        deviceId: 'DEVICE_A',
-        displayName: 'Alice',
-      );
-      await addSession(
-        homeserver: 'https://matrix.org',
-        accessToken: 'token-b',
-        userId: '@bob:matrix.org',
-        deviceId: 'DEVICE_B',
-        displayName: 'Bob',
-      );
+    test(
+      'loadAllSessions restores sessions from metadata and secure storage',
+      () async {
+        await addSession(
+          homeserver: 'https://example.org',
+          accessToken: 'token-a',
+          userId: '@alice:example.org',
+          deviceId: 'DEVICE_A',
+          displayName: 'Alice',
+        );
+        await addSession(
+          homeserver: 'https://matrix.org',
+          accessToken: 'token-b',
+          userId: '@bob:matrix.org',
+          deviceId: 'DEVICE_B',
+          displayName: 'Bob',
+        );
 
-      final sessions = await loadAllSessions();
-      expect(sessions.map((s) => s.userId), [
-        '@alice:example.org',
-        '@bob:matrix.org',
-      ]);
-      expect(sessions.map((s) => s.accessToken), ['token-a', 'token-b']);
-    });
+        final sessions = await loadAllSessions();
+        expect(sessions.map((s) => s.userId), [
+          '@alice:example.org',
+          '@bob:matrix.org',
+        ]);
+        expect(sessions.map((s) => s.accessToken), ['token-a', 'token-b']);
+      },
+    );
+
+    test(
+      'loadAllSessions restores refresh tokens from secure storage',
+      () async {
+        await addSession(
+          homeserver: 'https://example.org',
+          accessToken: 'token-a',
+          refreshToken: 'refresh-a',
+          userId: '@alice:example.org',
+          deviceId: 'DEVICE_A',
+          displayName: 'Alice',
+        );
+
+        final sessions = await loadAllSessions();
+        expect(sessions.single.refreshToken, 'refresh-a');
+      },
+    );
 
     test('loadAllSessions skips sessions with missing tokens', () async {
       SharedPreferences.setMockInitialValues({
@@ -140,9 +176,15 @@ void main() {
 
       final secure = FlutterSecureStorage();
       final token = await secure.read(
-        key: 'matrix_access_token_${base64Url.encode(utf8.encode('@alice:example.org'))}',
+        key:
+            'matrix_access_token_${base64Url.encode(utf8.encode('@alice:example.org'))}',
       );
       expect(token, isNull);
+      final refreshToken = await secure.read(
+        key:
+            'matrix_refresh_token_${base64Url.encode(utf8.encode('@alice:example.org'))}',
+      );
+      expect(refreshToken, isNull);
     });
 
     test('removeSession switches active user when another exists', () async {

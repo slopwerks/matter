@@ -220,5 +220,64 @@ void main() {
       expect(restored.first.timestamp, '10');
       expect(restored.last.timestamp, '209');
     });
+
+    test(
+      'saveCachedMessages removes existing disk cache when disabled',
+      () async {
+        const namespace = '@alice:example.org';
+        const roomId = '!room:example.org';
+        await saveCachedMessages(
+          namespace: namespace,
+          roomId: roomId,
+          messages: [message(r'$a', '100')],
+        );
+
+        await saveCachedMessages(
+          namespace: namespace,
+          roomId: roomId,
+          messages: [message(r'$secret', '200')],
+          persistToDisk: false,
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('msg_cache_v2_$namespace::$roomId'), isNull);
+        expect(
+          await loadCachedMessages(
+            namespace: namespace,
+            roomId: roomId,
+            allowDiskRead: false,
+          ),
+          isEmpty,
+        );
+      },
+    );
+
+    test(
+      'clearCachedMessagesForNamespace removes only matching account keys',
+      () async {
+        await saveCachedMessages(
+          namespace: '@alice:example.org',
+          roomId: '!one:example.org',
+          messages: [message(r'$a', '100')],
+        );
+        await saveCachedMessages(
+          namespace: '@bob:example.org',
+          roomId: '!one:example.org',
+          messages: [message(r'$b', '100')],
+        );
+
+        await clearCachedMessagesForNamespace('@alice:example.org');
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getString('msg_cache_v2_@alice:example.org::!one:example.org'),
+          isNull,
+        );
+        expect(
+          prefs.getString('msg_cache_v2_@bob:example.org::!one:example.org'),
+          isNotNull,
+        );
+      },
+    );
   });
 }

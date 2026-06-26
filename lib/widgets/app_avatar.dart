@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/authenticated_media_cache.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../theme/app_theme.dart';
@@ -85,6 +86,10 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
 
     // For HTTP URLs, use authenticated image loading
     final token = ref.watch(currentAccessTokenProvider);
+    final currentUser = ref.watch(currentUserProvider);
+    final activeUserId = ref.watch(activeUserIdProvider);
+    final userId = currentUser?.id ?? activeUserId;
+    final homeserver = currentUser?.homeserver;
     return Container(
       width: widget.size,
       height: widget.size,
@@ -97,6 +102,8 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
         key: ValueKey('avatar-image:$url:${widget.size}'),
         url: url,
         token: token,
+        userId: userId,
+        homeserver: homeserver,
         fallback: _buildFallback(),
         width: widget.size,
         height: widget.size,
@@ -140,6 +147,8 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
 class _AuthenticatedImage extends StatelessWidget {
   final String url;
   final String? token;
+  final String? userId;
+  final String? homeserver;
   final Widget fallback;
   final BoxFit? fit;
   final VoidCallback? onLoaded;
@@ -153,6 +162,8 @@ class _AuthenticatedImage extends StatelessWidget {
     super.key,
     required this.url,
     required this.token,
+    required this.userId,
+    required this.homeserver,
     required this.fallback,
     this.fit,
     this.onLoaded,
@@ -167,8 +178,20 @@ class _AuthenticatedImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMatrixMedia =
         Uri.tryParse(url)?.path.startsWith('/_matrix/client/') ?? false;
+    final cacheKey = authenticatedMediaCacheKey(
+      url: url,
+      userId: userId,
+      homeserver: homeserver,
+    );
+    final cacheManager = authenticatedMediaCacheManager(
+      url: url,
+      userId: userId,
+      homeserver: homeserver,
+    );
     return CachedNetworkImage(
       imageUrl: url,
+      cacheKey: cacheKey,
+      cacheManager: cacheManager,
       httpHeaders: token == null || !isMatrixMedia
           ? null
           : {'Authorization': 'Bearer $token'},
@@ -240,6 +263,10 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     }
 
     final token = ref.watch(currentAccessTokenProvider);
+    final currentUser = ref.watch(currentUserProvider);
+    final activeUserId = ref.watch(activeUserIdProvider);
+    final userId = currentUser?.id ?? activeUserId;
+    final homeserver = currentUser?.homeserver;
     final brokenIcon = const Center(
       child: Icon(
         Icons.broken_image_rounded,
@@ -251,6 +278,8 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     final imageWidget = _AuthenticatedImage(
       url: imageUrl,
       token: token,
+      userId: userId,
+      homeserver: homeserver,
       fallback: brokenIcon,
       fit: fit ?? BoxFit.cover,
       onLoaded: onLoaded,

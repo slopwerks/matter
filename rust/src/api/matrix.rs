@@ -179,6 +179,38 @@ static SYNC_TASK: Lazy<Mutex<Option<SyncTask>>> = Lazy::new(|| Mutex::new(None))
 static MESSAGE_PAGINATION_TOKENS: Lazy<Mutex<HashMap<String, String>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Server pagination token scoped to the visible oldest event boundary.
+static MESSAGE_PAGINATION_BOUNDARY_TOKENS: Lazy<Mutex<HashMap<String, String>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn pagination_boundary_key(room_id: &str, event_id: &str) -> String {
+    format!("{room_id}\n{event_id}")
+}
+
+async fn set_pagination_boundary_token(
+    room_id: &str,
+    event_id: Option<&str>,
+    token: Option<String>,
+) {
+    let Some(event_id) = event_id else {
+        return;
+    };
+    let mut tokens = MESSAGE_PAGINATION_BOUNDARY_TOKENS.lock().await;
+    let key = pagination_boundary_key(room_id, event_id);
+    if let Some(token) = token {
+        tokens.insert(key, token);
+    } else {
+        tokens.remove(&key);
+    }
+}
+
+async fn remove_pagination_boundary_token(room_id: &str, event_id: &str) {
+    MESSAGE_PAGINATION_BOUNDARY_TOKENS
+        .lock()
+        .await
+        .remove(&pagination_boundary_key(room_id, event_id));
+}
+
 async fn stop_sync_task(user_id: Option<&str>) {
     let mut task = SYNC_TASK.lock().await;
     let should_stop = task
@@ -445,6 +477,7 @@ async fn finalize_pending() -> Result<String, String> {
     );
     info!("finalize_pending: creating client in {}", sdk_dir.display());
     let new_client = match Client::builder()
+        .handle_refresh_tokens()
         .homeserver_url(url)
         .with_encryption_settings(encryption_settings())
         .sqlite_store(&sdk_dir, None)
@@ -542,6 +575,9 @@ pub struct ChatRoom {
     pub unread_count: i32,
     /// "dm", "group", or "space"
     pub room_type: String,
+    pub is_encrypted: bool,
+    /// "joined", "invited", "knocked", "left", or "banned"
+    pub room_state: String,
 }
 
 #[frb]
@@ -644,6 +680,11 @@ async fn room_to_chat_room(room: &matrix_sdk::Room) -> ChatRoom {
     } else {
         "group".to_string()
     };
+    let is_encrypted = room
+        .latest_encryption_state()
+        .await
+        .map(|state| state.is_encrypted())
+        .unwrap_or(true);
 
     ChatRoom {
         id: room_id,
@@ -654,6 +695,18 @@ async fn room_to_chat_room(room: &matrix_sdk::Room) -> ChatRoom {
         last_message_time,
         unread_count,
         room_type,
+        is_encrypted,
+        room_state: room_state_label(room.state()).to_string(),
+    }
+}
+
+fn room_state_label(state: matrix_sdk::RoomState) -> &'static str {
+    match state {
+        matrix_sdk::RoomState::Joined => "joined",
+        matrix_sdk::RoomState::Invited => "invited",
+        matrix_sdk::RoomState::Knocked => "knocked",
+        matrix_sdk::RoomState::Left => "left",
+        matrix_sdk::RoomState::Banned => "banned",
     }
 }
 
@@ -1002,6 +1055,7 @@ pub struct AuthResult {
     pub user_id: Option<String>,
     pub device_id: Option<String>,
     pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
     pub error: Option<String>,
     /// If true, UIAA is needed — caller should call register_account again with token + session
     pub needs_uiaa: bool,
@@ -1087,6 +1141,7 @@ fn try_parse_uiaa_from_string(err_str: &str) -> Option<AuthResult> {
             user_id: None,
             device_id: None,
             access_token: None,
+            refresh_token: None,
             error: None,
             needs_uiaa: true,
             session,
@@ -1110,6 +1165,7 @@ fn uiaa_to_auth_result(uiaa_info: &UiaaInfo) -> AuthResult {
         user_id: None,
         device_id: None,
         access_token: None,
+        refresh_token: None,
         error: None,
         needs_uiaa: true,
         session,
@@ -1209,6 +1265,7 @@ pub async fn create_client(homeserver_url: String, data_dir: String) -> Result<(
     }
 
     let client = Client::builder()
+        .handle_refresh_tokens()
         .homeserver_url(url)
         .with_encryption_settings(encryption_settings())
         .sqlite_store(&sdk_dir, None)
@@ -1254,6 +1311,7 @@ pub async fn register_get_uiaa_session(
     request.username = Some(username);
     request.password = Some(password);
     request.initial_device_display_name = Some("Matter".to_owned());
+    request.refresh_token = true;
     request.auth = Some(AuthData::Dummy(Dummy::new()));
 
     match client.matrix_auth().register(request).await {
@@ -1262,6 +1320,7 @@ pub async fn register_get_uiaa_session(
             user_id: Some(response.user_id.to_string()),
             device_id: response.device_id.map(|d| d.to_string()),
             access_token: response.access_token,
+            refresh_token: response.refresh_token,
             error: None,
             needs_uiaa: false,
             session: None,
@@ -1288,6 +1347,7 @@ pub async fn register_get_uiaa_session(
                 user_id: None,
                 device_id: None,
                 access_token: None,
+                refresh_token: None,
                 error: Some(friendly_auth_error(&err_str, "注册失败，请稍后重试")),
                 needs_uiaa: false,
                 session: None,
@@ -1318,6 +1378,7 @@ pub async fn register_complete_uiaa(
     request.username = Some(username);
     request.password = Some(password);
     request.initial_device_display_name = Some("Matter".to_owned());
+    request.refresh_token = true;
 
     let mut reg_token = RegistrationToken::new(registration_token);
     reg_token.session = Some(session);
@@ -1336,6 +1397,7 @@ pub async fn register_complete_uiaa(
                 user_id: Some(response.user_id.to_string()),
                 device_id: response.device_id.map(|d| d.to_string()),
                 access_token: response.access_token,
+                refresh_token: response.refresh_token,
                 error: None,
                 needs_uiaa: false,
                 session: None,
@@ -1362,6 +1424,7 @@ pub async fn register_complete_uiaa(
                 user_id: None,
                 device_id: None,
                 access_token: None,
+                refresh_token: None,
                 error: Some(friendly_auth_error(&err_str, "注册失败，请稍后重试")),
                 needs_uiaa: false,
                 session: None,
@@ -1386,6 +1449,7 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
     match client
         .matrix_auth()
         .login_username(&username, &password)
+        .request_refresh_token()
         .initial_device_display_name("Matter")
         .await
     {
@@ -1406,6 +1470,7 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
                 user_id: Some(response.user_id.to_string()),
                 device_id: Some(response.device_id.to_string()),
                 access_token: Some(response.access_token),
+                refresh_token: response.refresh_token,
                 error: None,
                 needs_uiaa: false,
                 session: None,
@@ -1417,6 +1482,7 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
             user_id: None,
             device_id: None,
             access_token: None,
+            refresh_token: None,
             error: Some(friendly_auth_error(&format!("{e}"), "登录失败，请稍后重试")),
             needs_uiaa: false,
             session: None,
@@ -1431,6 +1497,7 @@ pub async fn login_with_token(
     access_token: String,
     user_id: String,
     device_id: String,
+    refresh_token: Option<String>,
 ) -> Result<AuthResult, String> {
     let client = get_client()
         .await
@@ -1447,7 +1514,7 @@ pub async fn login_with_token(
         },
         tokens: SessionTokens {
             access_token,
-            refresh_token: None,
+            refresh_token,
         },
     };
 
@@ -1484,6 +1551,10 @@ pub async fn login_with_token(
         user_id: final_client.user_id().map(|u| u.to_string()),
         device_id: final_client.device_id().map(|d| d.to_string()),
         access_token: None,
+        refresh_token: final_client
+            .matrix_auth()
+            .session()
+            .and_then(|session| session.tokens.refresh_token),
         error: None,
         needs_uiaa: false,
         session: None,
@@ -1796,6 +1867,7 @@ pub async fn remove_account(user_id: String) -> Result<(), String> {
 pub struct StoredSession {
     pub homeserver_url: String,
     pub access_token: String,
+    pub refresh_token: Option<String>,
     pub user_id: String,
     pub device_id: String,
 }
@@ -1812,6 +1884,7 @@ pub async fn get_session() -> Option<StoredSession> {
     Some(StoredSession {
         homeserver_url: client.homeserver().to_string(),
         access_token: session.tokens.access_token,
+        refresh_token: session.tokens.refresh_token,
         user_id: session.meta.user_id.to_string(),
         device_id: session.meta.device_id.to_string(),
     })
@@ -1843,6 +1916,7 @@ pub async fn restore_session(session: StoredSession, data_dir: String) -> Result
     );
 
     let client = Client::builder()
+        .handle_refresh_tokens()
         .homeserver_url(url)
         .with_encryption_settings(encryption_settings())
         .sqlite_store(&sdk_dir, None)
@@ -1865,7 +1939,7 @@ pub async fn restore_session(session: StoredSession, data_dir: String) -> Result
         meta: SessionMeta { user_id, device_id },
         tokens: SessionTokens {
             access_token: session.access_token,
-            refresh_token: None,
+            refresh_token: session.refresh_token,
         },
     };
 
@@ -2838,6 +2912,26 @@ pub async fn get_access_token() -> Option<String> {
 }
 
 #[frb]
+pub async fn get_refresh_token() -> Option<String> {
+    let client = get_client().await?;
+    let session = client.matrix_auth().session()?;
+    session.tokens.refresh_token
+}
+
+#[frb]
+pub async fn is_room_encrypted(room_id: String) -> Result<bool, String> {
+    let client = get_client()
+        .await
+        .ok_or_else(|| "No client created.".to_string())?;
+    let room = get_room_by_id(&client, &room_id)?;
+    Ok(room
+        .latest_encryption_state()
+        .await
+        .map(|state| state.is_encrypted())
+        .unwrap_or(true))
+}
+
+#[frb]
 pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
     let client = get_client().await.ok_or_else(|| {
         app_log(
@@ -2855,16 +2949,21 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
         format!("get_chat_rooms: found {} total rooms", rooms.len()),
     );
     let mut result = Vec::new();
-    let mut joined = 0;
+    let mut visible = 0;
 
     for room in rooms {
-        if room.state() != matrix_sdk::RoomState::Joined {
+        if !matches!(
+            room.state(),
+            matrix_sdk::RoomState::Joined
+                | matrix_sdk::RoomState::Invited
+                | matrix_sdk::RoomState::Knocked
+        ) {
             continue;
         }
-        joined += 1;
+        visible += 1;
 
         let mut chat_room = room_to_chat_room(&room).await;
-        if !room.is_space() {
+        if room.state() == matrix_sdk::RoomState::Joined && !room.is_space() {
             chat_room.room_type = match room.is_direct().await {
                 Ok(true) => "dm".to_string(),
                 _ => "group".to_string(),
@@ -2876,7 +2975,7 @@ pub async fn get_chat_rooms() -> Result<Vec<ChatRoom>, String> {
     app_log(
         "info",
         "rooms",
-        format!("get_chat_rooms: {} joined rooms returned", joined),
+        format!("get_chat_rooms: {} visible rooms returned", visible),
     );
     result.sort_by(|a, b| {
         let a_time = a.last_message_time.parse::<u64>().unwrap_or_default();
@@ -3056,9 +3155,7 @@ fn media_caption_parts(
     (caption, sanitized_formatted_body(formatted))
 }
 
-fn mentions_parts(
-    mentions: Option<&matrix_sdk::ruma::events::Mentions>,
-) -> (Vec<String>, bool) {
+fn mentions_parts(mentions: Option<&matrix_sdk::ruma::events::Mentions>) -> (Vec<String>, bool) {
     let Some(mentions) = mentions else {
         return (Vec::new(), false);
     };
@@ -3119,21 +3216,17 @@ fn extract_edit_content(
 
 #[cfg(test)]
 mod formatted_message_tests {
-    use super::{
-        FormattedMessageInput, build_text_content, text_message_parts,
-    };
+    use super::{build_text_content, text_message_parts, FormattedMessageInput};
     use matrix_sdk::ruma::events::{
-        Mentions,
         room::message::{FormattedBody, RoomMessageEventContent},
+        Mentions,
     };
 
     #[test]
     fn outgoing_html_is_sanitized_and_mentions_are_serialized() {
         let content = build_text_content(FormattedMessageInput {
             body: "Hello Alice".to_string(),
-            formatted_body: Some(
-                r#"<strong>Hello</strong><script>bad()</script>"#.to_string(),
-            ),
+            formatted_body: Some(r#"<strong>Hello</strong><script>bad()</script>"#.to_string()),
             mentioned_user_ids: vec!["@alice:example.org".to_string()],
             mentions_room: false,
         })
@@ -3142,7 +3235,10 @@ mod formatted_message_tests {
 
         assert_eq!(json["body"], "Hello Alice");
         assert_eq!(json["format"], "org.matrix.custom.html");
-        assert!(json["formatted_body"].as_str().unwrap().contains("<strong>"));
+        assert!(json["formatted_body"]
+            .as_str()
+            .unwrap()
+            .contains("<strong>"));
         assert!(!json["formatted_body"].as_str().unwrap().contains("<script"));
         assert_eq!(json["m.mentions"]["user_ids"][0], "@alice:example.org");
     }
@@ -3150,9 +3246,10 @@ mod formatted_message_tests {
     #[test]
     fn incoming_formatted_body_keeps_plain_fallback_separate() {
         let formatted = FormattedBody::html("<strong>Hello</strong>".to_string());
-        let mentions = Mentions::with_user_ids(vec![
-            matrix_sdk::ruma::UserId::parse("@alice:example.org").unwrap(),
-        ]);
+        let mentions =
+            Mentions::with_user_ids(vec![
+                matrix_sdk::ruma::UserId::parse("@alice:example.org").unwrap()
+            ]);
         let (body, html, user_ids, room) =
             text_message_parts("Hello", Some(&formatted), Some(&mentions), false);
 
@@ -3178,7 +3275,10 @@ mod formatted_message_tests {
         assert_eq!(json["m.mentions"], serde_json::json!({}));
         assert!(matches!(
             content,
-            RoomMessageEventContent { mentions: Some(_), .. }
+            RoomMessageEventContent {
+                mentions: Some(_),
+                ..
+            }
         ));
     }
 }
@@ -3734,11 +3834,14 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
         }
     }
 
-    let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
-    if let Some(next_from) = msg_resp.end {
-        tokens.insert(room_id.clone(), next_from);
-    } else {
-        tokens.remove(&room_id);
+    let next_from = msg_resp.end.clone();
+    {
+        let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
+        if let Some(next_from) = next_from.clone() {
+            tokens.insert(room_id.clone(), next_from);
+        } else {
+            tokens.remove(&room_id);
+        }
     }
 
     // Apply edits to the corresponding messages
@@ -3775,6 +3878,13 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
         }
         messages.push(msg);
     }
+
+    set_pagination_boundary_token(
+        &room_id,
+        messages.first().map(|message| message.id.as_str()),
+        next_from,
+    )
+    .await;
 
     // Send a read receipt only when the newest event changes. Re-sending the
     // same receipt on every UI refresh creates avoidable sync traffic.
@@ -4299,6 +4409,48 @@ pub async fn join_room(identifier: String) -> Result<String, String> {
 }
 
 #[frb]
+pub async fn accept_room_invite(room_id: String) -> Result<(), String> {
+    let client = get_client().await.ok_or("No client created.")?;
+    let room = get_room_by_id(&client, &room_id)?;
+    if room.state() != matrix_sdk::RoomState::Invited {
+        return Err(format!("Room is not an invite: {room_id}"));
+    }
+    room.join()
+        .await
+        .map_err(|e| format!("Accept invite failed: {e}"))?;
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(())
+}
+
+#[frb]
+pub async fn reject_room_invite(room_id: String) -> Result<(), String> {
+    let client = get_client().await.ok_or("No client created.")?;
+    let room = get_room_by_id(&client, &room_id)?;
+    if room.state() != matrix_sdk::RoomState::Invited {
+        return Err(format!("Room is not an invite: {room_id}"));
+    }
+    room.leave()
+        .await
+        .map_err(|e| format!("Reject invite failed: {e}"))?;
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(())
+}
+
+#[frb]
+pub async fn withdraw_room_knock(room_id: String) -> Result<(), String> {
+    let client = get_client().await.ok_or("No client created.")?;
+    let room = get_room_by_id(&client, &room_id)?;
+    if room.state() != matrix_sdk::RoomState::Knocked {
+        return Err(format!("Room is not a knock request: {room_id}"));
+    }
+    room.leave()
+        .await
+        .map_err(|e| format!("Withdraw knock failed: {e}"))?;
+    notify_sync_event(SyncEvent::SyncCompleted);
+    Ok(())
+}
+
+#[frb]
 pub async fn get_spaces() -> Result<Vec<Space>, String> {
     let client = get_client().await.ok_or("No client created.")?;
 
@@ -4782,8 +4934,7 @@ pub async fn edit_message(
         .map_err(|e| format!("Invalid event ID: {e}"))?;
 
     use matrix_sdk::ruma::events::room::message::ReplacementMetadata;
-    let previous_mentions =
-        build_mentions(&previous_mentioned_user_ids, previous_mentions_room)?;
+    let previous_mentions = build_mentions(&previous_mentioned_user_ids, previous_mentions_room)?;
     let content = build_text_content(message)?.make_replacement(ReplacementMetadata::new(
         parsed_event_id,
         Some(previous_mentions),
@@ -4947,7 +5098,7 @@ pub async fn search_rooms(query: String) -> Result<Vec<ChatRoom>, String> {
 #[frb]
 pub async fn get_messages_before(
     room_id: String,
-    _from_event_id: String,
+    from_event_id: String,
     limit: u32,
 ) -> Result<Vec<ChatMessage>, String> {
     let client = get_client().await.ok_or("No client created.")?;
@@ -4961,8 +5112,10 @@ pub async fn get_messages_before(
         HashMap::new();
 
     let from = {
-        let tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
-        tokens.get(&room_id).cloned()
+        let tokens = MESSAGE_PAGINATION_BOUNDARY_TOKENS.lock().await;
+        tokens
+            .get(&pagination_boundary_key(&room_id, &from_event_id))
+            .cloned()
     };
     let Some(from) = from else {
         return Ok(Vec::new());
@@ -5262,16 +5415,16 @@ pub async fn get_messages_before(
         }
     }
 
-    let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
-    if let Some(next_from) = msg_resp.end {
-        if next_from == from {
-            tokens.remove(&room_id);
-        } else {
+    let next_from = msg_resp.end.clone().filter(|token| token != &from);
+    {
+        let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
+        if let Some(next_from) = next_from.clone() {
             tokens.insert(room_id.clone(), next_from);
+        } else {
+            tokens.remove(&room_id);
         }
-    } else {
-        tokens.remove(&room_id);
     }
+    remove_pagination_boundary_token(&room_id, &from_event_id).await;
 
     // Apply edits
     let mut messages = Vec::new();
@@ -5305,6 +5458,13 @@ pub async fn get_messages_before(
         }
         messages.push(msg);
     }
+
+    set_pagination_boundary_token(
+        &room_id,
+        messages.first().map(|message| message.id.as_str()),
+        next_from,
+    )
+    .await;
 
     Ok(messages)
 }

@@ -12,6 +12,7 @@ void main() {
       String lastMessageTime = '0',
       int unreadCount = 0,
       String roomType = 'group',
+      String roomState = 'joined',
     }) => ChatRoom(
       id: '!room:example.org',
       name: name,
@@ -19,15 +20,15 @@ void main() {
       lastMessageTime: lastMessageTime,
       unreadCount: unreadCount,
       roomType: roomType,
+      isEncrypted: false,
+      roomState: roomState,
     );
 
     testWidgets('renders room name and last message', (tester) async {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            home: Scaffold(
-              body: ChatListItem(room: room()),
-            ),
+            home: Scaffold(body: ChatListItem(room: room())),
           ),
         ),
       );
@@ -41,9 +42,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            home: Scaffold(
-              body: ChatListItem(room: room(unreadCount: 5)),
-            ),
+            home: Scaffold(body: ChatListItem(room: room(unreadCount: 5))),
           ),
         ),
       );
@@ -56,9 +55,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            home: Scaffold(
-              body: ChatListItem(room: room(unreadCount: 150)),
-            ),
+            home: Scaffold(body: ChatListItem(room: room(unreadCount: 150))),
           ),
         ),
       );
@@ -101,15 +98,46 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            home: Scaffold(
-              body: ChatListItem(room: room(), dense: true),
-            ),
+            home: Scaffold(body: ChatListItem(room: room(), dense: true)),
           ),
         ),
       );
       await tester.pump();
 
       expect(find.text('Room'), findsOneWidget);
+    });
+
+    testWidgets('shows invite actions for invited rooms', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatListItem(room: room(roomState: 'invited')),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('邀请你加入'), findsOneWidget);
+      expect(find.text('接受'), findsOneWidget);
+      expect(find.text('拒绝'), findsOneWidget);
+    });
+
+    testWidgets('shows withdraw action for knocked rooms', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatListItem(room: room(roomState: 'knocked')),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('等待对方批准'), findsOneWidget);
+      expect(find.text('撤回'), findsOneWidget);
     });
   });
 }
