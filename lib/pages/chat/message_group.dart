@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/markdown/markdown_source_store.dart';
+import '../../features/matrix_html/matrix_html_node.dart';
+import '../../features/matrix_html/matrix_html_parser.dart';
 import '../../features/matrix_html/matrix_html_renderer.dart';
 import '../../features/matrix_html/matrix_link_router.dart';
 import '../../providers/chat_provider.dart';
@@ -41,6 +43,20 @@ class MessageGroup {
 }
 
 class MessageGroupWidget extends ConsumerWidget {
+  static const _htmlParser = MatrixHtmlParser();
+  static const _inlineHtmlTags = {
+    'p',
+    'strong',
+    'b',
+    'em',
+    'i',
+    'del',
+    's',
+    'code',
+    'br',
+    'a',
+  };
+
   final MessageGroup group;
   final bool showAvatar;
   final String roomId;
@@ -491,6 +507,78 @@ class MessageGroupWidget extends ConsumerWidget {
     final previewUri = urlMatches.isEmpty ? null : urlMatches.first.uri;
     const linkRouter = MatrixLinkRouter();
     final metadata = _buildMessageMetadata(context, ref, message);
+    final metadataWidth = _messageMetadataWidth(context, message);
+    final hasReply = message.inReplyTo != null;
+    final hasFormattedBody = message.formattedBody?.isNotEmpty == true;
+    final formattedLayoutText = hasFormattedBody
+        ? _simpleFormattedLayoutText(message.formattedBody!, message.content)
+        : null;
+    final replyContent = hasReply ? _getReplyContent(message.inReplyTo!) : null;
+    final replyPreviewWidth = replyContent == null
+        ? 0.0
+        : _replyPreviewWidth(context, replyContent, isMe, maxBubbleWidth - 28);
+    final senderHeader = !isMe && isFirst
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Text(
+              message.senderName,
+              style: TextStyle(
+                color: AppColors.primary.withValues(alpha: 0.85),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        : null;
+    final linkPreview = previewUri != null
+        ? Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: LinkPreviewCard(
+              key: ValueKey('link-preview:${message.id}:$previewUri'),
+              uri: previewUri,
+              isMe: isMe,
+              width: maxBubbleWidth - 28,
+              onOpen: linkRouter.open,
+            ),
+          )
+        : null;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ?senderHeader,
+        if (replyContent != null)
+          _buildReplyPreview(context, replyContent, isMe),
+        if (hasFormattedBody)
+          _FormattedBodyMetadata(
+            key: ValueKey('formatted-body-metadata:${message.id}'),
+            content: MatrixHtmlMessage(
+              key: ValueKey('matrix-html:${message.id}'),
+              html: message.formattedBody!,
+              style: textStyle,
+              accentColor: isMe ? Colors.white : AppColors.secondary,
+            ),
+            metadata: metadata,
+            metadataWidth: metadataWidth,
+            maxWidth: maxBubbleWidth - 28,
+            minWidth: replyPreviewWidth,
+            layoutText: formattedLayoutText,
+            textStyle: textStyle,
+          )
+        else
+          _AdaptiveTextMetadata(
+            key: ValueKey('adaptive-text-metadata:${message.id}'),
+            text: message.content,
+            textStyle: textStyle,
+            metadata: metadata,
+            metadataWidth: metadataWidth,
+            maxWidth: maxBubbleWidth - 28,
+            minWidth: replyPreviewWidth,
+            linkColor: isMe ? Colors.white : AppColors.secondary,
+            onUrlTap: linkRouter.open,
+          ),
+        ?linkPreview,
+      ],
+    );
     final bubble = Container(
       key: ValueKey('text-bubble:${message.id}'),
       constraints: BoxConstraints(maxWidth: maxBubbleWidth),
@@ -503,60 +591,7 @@ class MessageGroupWidget extends ConsumerWidget {
           isLast: isLast,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isMe && isFirst)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: Text(
-                message.senderName,
-                style: TextStyle(
-                  color: AppColors.primary.withValues(alpha: 0.85),
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          if (message.inReplyTo != null)
-            _buildReplyPreview(context, message, isMe),
-          if (message.formattedBody?.isNotEmpty == true)
-            _FormattedBodyMetadata(
-              key: ValueKey('formatted-body-metadata:${message.id}'),
-              content: MatrixHtmlMessage(
-                key: ValueKey('matrix-html:${message.id}'),
-                html: message.formattedBody!,
-                style: textStyle,
-                accentColor: isMe ? Colors.white : AppColors.secondary,
-              ),
-              metadata: metadata,
-              metadataWidth: _messageMetadataWidth(context, message),
-              maxWidth: maxBubbleWidth - 28,
-            )
-          else
-            _AdaptiveTextMetadata(
-              key: ValueKey('adaptive-text-metadata:${message.id}'),
-              text: message.content,
-              textStyle: textStyle,
-              metadata: metadata,
-              metadataWidth: _messageMetadataWidth(context, message),
-              maxWidth: maxBubbleWidth - 28,
-              linkColor: isMe ? Colors.white : AppColors.secondary,
-              onUrlTap: linkRouter.open,
-            ),
-          if (previewUri != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: LinkPreviewCard(
-                key: ValueKey('link-preview:${message.id}:$previewUri'),
-                uri: previewUri,
-                isMe: isMe,
-                width: maxBubbleWidth - 28,
-                onOpen: linkRouter.open,
-              ),
-            ),
-        ],
-      ),
+      child: content,
     );
     return bubble;
   }
@@ -710,10 +745,9 @@ class MessageGroupWidget extends ConsumerWidget {
 
   Widget _buildReplyPreview(
     BuildContext context,
-    ChatMessage message,
+    String replyContent,
     bool isMe,
   ) {
-    final replyContent = _getReplyContent(message.inReplyTo!);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(8),
@@ -729,17 +763,44 @@ class MessageGroupWidget extends ConsumerWidget {
       ),
       child: Text(
         replyContent,
-        style: TextStyle(
-          color: isMe
-              ? Colors.white.withValues(alpha: 0.7)
-              : AppColors.onSurfaceVariant,
-          fontSize: 12,
-          height: 1.3,
-        ),
+        style: _replyPreviewTextStyle(isMe),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
     );
+  }
+
+  TextStyle _replyPreviewTextStyle(bool isMe) {
+    return TextStyle(
+      color: isMe
+          ? Colors.white.withValues(alpha: 0.7)
+          : AppColors.onSurfaceVariant,
+      fontSize: 12,
+      height: 1.3,
+    );
+  }
+
+  double _replyPreviewWidth(
+    BuildContext context,
+    String replyContent,
+    bool isMe,
+    double maxWidth,
+  ) {
+    const horizontalPadding = 16.0;
+    final textMaxWidth = math.max(0.0, maxWidth - horizontalPadding);
+    final painter = TextPainter(
+      text: TextSpan(text: replyContent, style: _replyPreviewTextStyle(isMe)),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 2,
+      ellipsis: '...',
+    )..layout(maxWidth: textMaxWidth);
+    final lines = painter.computeLineMetrics();
+    final widestLine = lines.fold<double>(
+      0,
+      (width, line) => math.max(width, line.width),
+    );
+    return math.min(maxWidth, widestLine + horizontalPadding);
   }
 
   String _getReplyContent(String replyToId) {
@@ -748,6 +809,22 @@ class MessageGroupWidget extends ConsumerWidget {
       return '${found.senderName}: ${found.content}';
     }
     return '...';
+  }
+
+  String? _simpleFormattedLayoutText(String html, String fallback) {
+    final nodes = _htmlParser.parse(html);
+    if (nodes.length != 1) return null;
+    final node = nodes.single;
+    if (!_isInlineFormattedNode(node, root: true)) return null;
+    return fallback;
+  }
+
+  bool _isInlineFormattedNode(MatrixHtmlNode node, {bool root = false}) {
+    if (node is MatrixTextNode) return true;
+    final element = node as MatrixElementNode;
+    if (!_inlineHtmlTags.contains(element.tag)) return false;
+    if (root && element.tag != 'p') return false;
+    return element.children.every(_isInlineFormattedNode);
   }
 
   IconData _eventIcon(ChatMessage message) {
@@ -1355,6 +1432,9 @@ class _FormattedBodyMetadata extends StatelessWidget {
   final Widget metadata;
   final double metadataWidth;
   final double maxWidth;
+  final double minWidth;
+  final String? layoutText;
+  final TextStyle? textStyle;
 
   const _FormattedBodyMetadata({
     super.key,
@@ -1362,6 +1442,9 @@ class _FormattedBodyMetadata extends StatelessWidget {
     required this.metadata,
     required this.metadataWidth,
     required this.maxWidth,
+    this.minWidth = 0,
+    this.layoutText,
+    this.textStyle,
   });
 
   @override
@@ -1374,13 +1457,61 @@ class _FormattedBodyMetadata extends StatelessWidget {
         final textScaler = MediaQuery.textScalerOf(context);
         final metadataHeight = math.max(15.0, textScaler.scale(10.5));
         const gap = 4.0;
+        final layoutText = this.layoutText;
+        final textStyle = this.textStyle;
+        if (layoutText != null && textStyle != null) {
+          final textPainter = TextPainter(
+            text: TextSpan(text: layoutText, style: textStyle),
+            textDirection: Directionality.of(context),
+            textScaler: textScaler,
+          )..layout(maxWidth: availableWidth);
+          final lines = textPainter.computeLineMetrics();
+          final lastLineWidth = lines.isEmpty ? 0.0 : lines.last.width;
+          final widestLine = lines.fold<double>(
+            0,
+            (width, line) => math.max(width, line.width),
+          );
+          final inline = lastLineWidth + 8.0 + metadataWidth <= availableWidth;
+          final naturalWidth = lines.length > 1
+              ? availableWidth
+              : math.min(
+                  availableWidth,
+                  math.max(widestLine, lastLineWidth + 8.0 + metadataWidth),
+                );
+          final width = math.min(
+            availableWidth,
+            math.max(minWidth, naturalWidth),
+          );
+          final height = inline
+              ? math.max(textPainter.height, metadataHeight)
+              : textPainter.height + 3 + metadataHeight;
+
+          return SizedBox(
+            width: width,
+            height: height,
+            child: Stack(
+              children: [
+                Positioned(left: 0, top: 0, width: width, child: content),
+                Positioned(
+                  key: ValueKey(inline ? 'metadata-inline' : 'metadata-below'),
+                  right: 0,
+                  bottom: 0,
+                  child: metadata,
+                ),
+              ],
+            ),
+          );
+        }
+
         return ConstrainedBox(
           constraints: BoxConstraints(maxWidth: availableWidth),
           child: IntrinsicWidth(
             child: Stack(
               children: [
                 ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: metadataWidth),
+                  constraints: BoxConstraints(
+                    minWidth: math.max(metadataWidth, minWidth),
+                  ),
                   child: Padding(
                     padding: EdgeInsets.only(bottom: metadataHeight + gap),
                     child: content,
@@ -1402,6 +1533,7 @@ class _AdaptiveTextMetadata extends StatelessWidget {
   final Widget metadata;
   final double metadataWidth;
   final double maxWidth;
+  final double minWidth;
   final Color linkColor;
   final MessageUrlTapHandler? onUrlTap;
 
@@ -1412,6 +1544,7 @@ class _AdaptiveTextMetadata extends StatelessWidget {
     required this.metadata,
     required this.metadataWidth,
     required this.maxWidth,
+    this.minWidth = 0,
     required this.linkColor,
     this.onUrlTap,
   });
@@ -1442,12 +1575,16 @@ class _AdaptiveTextMetadata extends StatelessWidget {
         );
         const gap = 8.0;
         final inline = lastLineWidth + gap + metadataWidth <= availableWidth;
-        final width = lines.length > 1
+        final naturalWidth = lines.length > 1
             ? availableWidth
             : math.min(
                 availableWidth,
                 math.max(widestLine, lastLineWidth + gap + metadataWidth),
               );
+        final width = math.min(
+          availableWidth,
+          math.max(minWidth, naturalWidth),
+        );
         final metadataHeight = math.max(15.0, textScaler.scale(10.5));
         final height = inline
             ? math.max(textPainter.height, metadataHeight)

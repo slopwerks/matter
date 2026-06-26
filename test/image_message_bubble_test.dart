@@ -268,6 +268,160 @@ void main() {
     expect(bubbleRect.bottom - metadataRect.bottom, closeTo(10, 0.1));
   });
 
+  testWidgets(
+    'reply preview width keeps short text metadata inline at bubble edge',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const original = ChatMessage(
+        id: r'$original',
+        senderId: '@alice:example.org',
+        senderName: 'Alice',
+        content: '这是一条很长很长的被回复消息内容，用来把回复预览撑到接近气泡最大宽度',
+        mentionedUserIds: [],
+        mentionsRoom: false,
+        timestamp: '90',
+        isMe: false,
+        msgType: MessageType.text,
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        readers: [],
+        totalMembers: 2,
+      );
+      const reply = ChatMessage(
+        id: r'$reply',
+        senderId: '@me:example.org',
+        senderName: '我',
+        content: '收到',
+        mentionedUserIds: [],
+        mentionsRoom: false,
+        timestamp: '100',
+        isMe: true,
+        msgType: MessageType.text,
+        inReplyTo: r'$original',
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        readers: [],
+        totalMembers: 2,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: MessageGroupWidget(
+                group: MessageGroup(
+                  senderId: reply.senderId,
+                  senderName: reply.senderName,
+                  isMe: true,
+                  messages: const [reply],
+                ),
+                roomId: '!room:example.org',
+                messageIndex: const {r'$original': original, r'$reply': reply},
+                showAvatar: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final bubbleRect = tester.getRect(
+        find.byKey(const ValueKey(r'text-bubble:$reply')),
+      );
+      final metadataRect = tester.getRect(
+        find.byKey(const ValueKey(r'message-metadata:$reply')),
+      );
+
+      expect(find.byKey(const ValueKey('metadata-inline')), findsOneWidget);
+      expect(find.byKey(const ValueKey('metadata-below')), findsNothing);
+      expect(bubbleRect.right - metadataRect.right, closeTo(14, 0.1));
+      expect(bubbleRect.bottom - metadataRect.bottom, closeTo(10, 0.1));
+    },
+  );
+
+  testWidgets(
+    'reply preview width keeps formatted text metadata inline at bubble edge',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      const original = ChatMessage(
+        id: r'$formatted-original',
+        senderId: '@alice:example.org',
+        senderName: 'Alice',
+        content: '这是一条很长很长的被回复消息内容，用来把回复预览撑到接近气泡最大宽度',
+        mentionedUserIds: [],
+        mentionsRoom: false,
+        timestamp: '90',
+        isMe: false,
+        msgType: MessageType.text,
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        readers: [],
+        totalMembers: 2,
+      );
+      const reply = ChatMessage(
+        id: r'$formatted-reply',
+        senderId: '@me:example.org',
+        senderName: '我',
+        content: '光环新作',
+        formattedBody: '<p>光环新作</p>',
+        mentionedUserIds: [],
+        mentionsRoom: false,
+        timestamp: '100',
+        isMe: true,
+        msgType: MessageType.text,
+        inReplyTo: r'$formatted-original',
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        readers: [],
+        totalMembers: 2,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: MessageGroupWidget(
+                group: MessageGroup(
+                  senderId: reply.senderId,
+                  senderName: reply.senderName,
+                  isMe: true,
+                  messages: const [reply],
+                ),
+                roomId: '!room:example.org',
+                messageIndex: const {
+                  r'$formatted-original': original,
+                  r'$formatted-reply': reply,
+                },
+                showAvatar: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final bubbleRect = tester.getRect(
+        find.byKey(const ValueKey(r'text-bubble:$formatted-reply')),
+      );
+      final metadataRect = tester.getRect(
+        find.byKey(const ValueKey(r'message-metadata:$formatted-reply')),
+      );
+
+      expect(find.byKey(const ValueKey('metadata-inline')), findsOneWidget);
+      expect(find.byKey(const ValueKey('metadata-below')), findsNothing);
+      expect(bubbleRect.right - metadataRect.right, closeTo(14, 0.1));
+      expect(bubbleRect.bottom - metadataRect.bottom, closeTo(10, 0.1));
+    },
+  );
+
   testWidgets('own text bubble keeps read-indicator space before member data', (
     tester,
   ) async {
