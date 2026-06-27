@@ -11,7 +11,7 @@ Before implementing:
 
 # Simplicity First
 
-**Minimum code that solves the problem. Nothing speculative.**
+**Minimum behavior-preserving code that solves the problem. Nothing speculative.**
 
 - No features beyond what was asked.
 - No abstractions for single-use code.
@@ -58,6 +58,16 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+For bug fixes, prefer this order:
+
+1. Reproduce the bug with a failing test, log, or minimal scenario.
+2. Fix the root cause.
+3. Verify the failing case now passes.
+4. Verify nearby existing behavior still works.
+
+If no automated test is practical, state the manual verification steps and the specific behavior that must not regress.
+Bug fixes must preserve intended behavior. Do not remove, bypass, disable, or silently ignore behavior just to make the bug disappear.
 
 # Style Guide
 
