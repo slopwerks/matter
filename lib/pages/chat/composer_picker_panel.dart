@@ -911,7 +911,7 @@ class _RemoteStickerPreviewState extends ConsumerState<_RemoteStickerPreview> {
   @override
   void initState() {
     super.initState();
-    _syncFuture();
+    _resetResolution();
   }
 
   @override
@@ -919,26 +919,33 @@ class _RemoteStickerPreviewState extends ConsumerState<_RemoteStickerPreview> {
     super.didUpdateWidget(oldWidget);
     if (widget.sticker.thumbnailUrl != oldWidget.sticker.thumbnailUrl ||
         widget.sticker.imageUrl != oldWidget.sticker.imageUrl) {
-      _syncFuture();
+      _resetResolution();
     }
   }
 
-  void _syncFuture() {
-    final nextSourceUrl =
-        widget.sticker.thumbnailUrl ?? widget.sticker.imageUrl;
-    if (_sourceUrl == nextSourceUrl && _resolvedFuture != null) return;
-    _sourceUrl = nextSourceUrl;
-    _resolvedFuture = nextSourceUrl == null
-        ? Future<String?>.value(null)
-        : nextSourceUrl.startsWith('mxc://')
-        ? resolveMxcUrl(ref, nextSourceUrl)
-        : Future<String?>.value(nextSourceUrl);
+  void _resetResolution() {
+    final sourceUrl = widget.sticker.thumbnailUrl ?? widget.sticker.imageUrl;
+    _sourceUrl = sourceUrl;
+    if (sourceUrl == null) {
+      _resolvedFuture = Future<String?>.value(null);
+      return;
+    }
+    if (!sourceUrl.startsWith('mxc://')) {
+      _resolvedFuture = Future<String?>.value(sourceUrl);
+      return;
+    }
+    final cachedOriginalUrl = _matrixDownloadUrl(
+      cachedResolvedMxcUrl(ref, sourceUrl),
+    );
+    _resolvedFuture = cachedOriginalUrl == null
+        ? resolveMxcUrlFull(ref, sourceUrl)
+        : Future<String?>.value(cachedOriginalUrl);
   }
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = _sourceUrl;
-    if (imageUrl == null) {
+    final sourceUrl = _sourceUrl;
+    if (sourceUrl == null) {
       return _StickerFallback(label: widget.fallback);
     }
 
@@ -966,11 +973,39 @@ class _RemoteStickerPreviewState extends ConsumerState<_RemoteStickerPreview> {
           child: AuthenticatedImageMessage(
             imageUrl: resolvedUrl,
             fit: widget.fit,
+            onLoaded: sourceUrl.startsWith('mxc://')
+                ? () {
+                    if (_sourceUrl == sourceUrl) {
+                      rememberResolvedMxcUrl(ref, sourceUrl, resolvedUrl);
+                    }
+                  }
+                : null,
           ),
         );
       },
     );
   }
+}
+
+String? _matrixDownloadUrl(String? mediaUrl) {
+  final uri = mediaUrl == null ? null : Uri.tryParse(mediaUrl);
+  if (uri == null) return null;
+  final segments = List<String>.from(uri.pathSegments);
+  final endpointIndex = segments.indexWhere(
+    (segment) => segment == 'thumbnail' || segment == 'download',
+  );
+  if (endpointIndex <= 0 || segments[endpointIndex - 1] != 'media') {
+    return null;
+  }
+  segments[endpointIndex] = 'download';
+  return Uri(
+    scheme: uri.scheme,
+    userInfo: uri.userInfo,
+    host: uri.host,
+    port: uri.hasPort ? uri.port : null,
+    pathSegments: segments,
+    fragment: uri.hasFragment ? uri.fragment : null,
+  ).toString();
 }
 
 class _StickerFallback extends StatelessWidget {
