@@ -680,7 +680,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                         widget.panelMode == InputPanelMode.emoji
                             ? Icons.keyboard_rounded
                             : (_pickerTab == ComposerPickerTab.sticker
-                                  ? Icons.sticky_note_2_rounded
+                                  ? Icons.interests_rounded
                                   : Icons.sentiment_satisfied_alt_rounded),
                         color: widget.panelMode == InputPanelMode.emoji
                             ? AppColors.primary
@@ -691,7 +691,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                           ? null
                           : widget.panelMode == InputPanelMode.emoji
                           ? _showKeyboard
-                          : () => _togglePicker(ComposerPickerTab.emoji),
+                          : _togglePicker,
                       padding: EdgeInsets.zero,
                     ),
                   ),
