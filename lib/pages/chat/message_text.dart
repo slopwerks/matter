@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/matrix_html/matrix_link_router.dart';
+
 final RegExp _mentionPattern = RegExp(
   r'(?<![\w@])@[A-Za-z0-9\u3400-\u9FFF._=\-/]+(?::[A-Za-z0-9.-]+)?',
   unicode: true,
@@ -105,6 +107,7 @@ const Set<String> _trailingUrlPunctuation = {
 };
 
 typedef MessageUrlTapHandler = Future<void> Function(Uri uri);
+typedef MessageMentionTapHandler = void Function(String userId);
 
 class MessageUrlMatch {
   final String text;
@@ -126,6 +129,9 @@ class MessageText extends StatefulWidget {
   final Color mentionColor;
   final Color? linkColor;
   final MessageUrlTapHandler? onUrlTap;
+  final Map<String, String> mentionDisplayNames;
+  final List<String> mentionedUserIds;
+  final MessageMentionTapHandler? onMentionTap;
   final TextOverflow? overflow;
   final int? maxLines;
   final bool softWrap;
@@ -137,6 +143,9 @@ class MessageText extends StatefulWidget {
     required this.mentionColor,
     this.linkColor,
     this.onUrlTap,
+    this.mentionDisplayNames = const {},
+    this.mentionedUserIds = const [],
+    this.onMentionTap,
     this.overflow,
     this.maxLines,
     this.softWrap = true,
@@ -167,6 +176,9 @@ class _MessageTextState extends State<MessageText> {
       mentionColor: widget.mentionColor,
       linkColor: widget.linkColor,
       onUrlTap: widget.onUrlTap,
+      mentionDisplayNames: widget.mentionDisplayNames,
+      mentionedUserIds: widget.mentionedUserIds,
+      onMentionTap: widget.onMentionTap,
       gestureRecognizers: recognizers,
     );
     _recognizers = recognizers;
@@ -192,27 +204,72 @@ TextSpan messageTextSpan(
   required Color mentionColor,
   Color? linkColor,
   MessageUrlTapHandler? onUrlTap,
+  Map<String, String> mentionDisplayNames = const {},
+  List<String> mentionedUserIds = const [],
+  MessageMentionTapHandler? onMentionTap,
   List<TapGestureRecognizer>? gestureRecognizers,
 }) {
   final children = <InlineSpan>[];
   final tokens = _messageTextTokens(text);
+  final mentionCount = tokens.whereType<_MentionToken>().length;
   var offset = 0;
   for (final token in tokens) {
     if (token.start > offset) {
       children.add(TextSpan(text: text.substring(offset, token.start)));
     }
     if (token is _MentionToken) {
+      final userId = _mentionUserId(
+        token,
+        mentionCount: mentionCount,
+        mentionDisplayNames: mentionDisplayNames,
+        mentionedUserIds: mentionedUserIds,
+      );
+      TapGestureRecognizer? recognizer;
+      if (userId != null &&
+          onMentionTap != null &&
+          gestureRecognizers != null) {
+        recognizer = TapGestureRecognizer()..onTap = () => onMentionTap(userId);
+        gestureRecognizers.add(recognizer);
+      }
       children.add(
         TextSpan(
-          text: token.text,
+          text: userId == null
+              ? token.text
+              : matrixMentionLabel(userId, mentionDisplayNames[userId]),
           style: style.copyWith(
             color: mentionColor,
             fontWeight: FontWeight.w800,
             backgroundColor: mentionColor.withValues(alpha: 0.12),
           ),
+          recognizer: recognizer,
         ),
       );
     } else if (token is _UrlToken) {
+      final mentionUserId = matrixUserIdFromUri(token.uri);
+      if (mentionUserId != null) {
+        TapGestureRecognizer? recognizer;
+        if (onMentionTap != null && gestureRecognizers != null) {
+          recognizer = TapGestureRecognizer()
+            ..onTap = () => onMentionTap(mentionUserId);
+          gestureRecognizers.add(recognizer);
+        }
+        children.add(
+          TextSpan(
+            text: matrixMentionLabel(
+              mentionUserId,
+              mentionDisplayNames[mentionUserId],
+            ),
+            style: style.copyWith(
+              color: mentionColor,
+              fontWeight: FontWeight.w800,
+              backgroundColor: mentionColor.withValues(alpha: 0.12),
+            ),
+            recognizer: recognizer,
+          ),
+        );
+        offset = token.end;
+        continue;
+      }
       final color = linkColor ?? mentionColor;
       TapGestureRecognizer? recognizer;
       if (onUrlTap != null && gestureRecognizers != null) {
@@ -241,6 +298,32 @@ TextSpan messageTextSpan(
     children.add(TextSpan(text: text.substring(offset)));
   }
   return TextSpan(style: style, children: children);
+}
+
+String? _mentionUserId(
+  _MentionToken token, {
+  required int mentionCount,
+  required Map<String, String> mentionDisplayNames,
+  required List<String> mentionedUserIds,
+}) {
+  if (mentionedUserIds.contains(token.text) ||
+      mentionDisplayNames.containsKey(token.text)) {
+    return token.text;
+  }
+  final partialName = token.text.substring(1).toLowerCase();
+  final matchingUserIds = mentionedUserIds.where((userId) {
+    final displayName = mentionDisplayNames[userId]?.trim();
+    if (displayName == null || displayName.isEmpty) return false;
+    return displayName
+        .replaceFirst(RegExp(r'^@'), '')
+        .toLowerCase()
+        .startsWith(partialName);
+  }).toList();
+  if (matchingUserIds.length == 1) return matchingUserIds.single;
+  if (mentionCount == 1 && mentionedUserIds.length == 1) {
+    return mentionedUserIds.single;
+  }
+  return null;
 }
 
 List<MessageUrlMatch> detectMessageUrls(String text) {

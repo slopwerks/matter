@@ -22,6 +22,9 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
   final int? imageHeight;
   final String? caption;
   final String? captionFormattedBody;
+  final Map<String, String> mentionDisplayNames;
+  final List<String> mentionedUserIds;
+  final MessageMentionTapHandler? onMentionTap;
   final bool isMe;
   final Object heroTag;
   final bool isSticker;
@@ -37,6 +40,9 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
     this.imageHeight,
     this.caption,
     this.captionFormattedBody,
+    this.mentionDisplayNames = const {},
+    this.mentionedUserIds = const [],
+    this.onMentionTap,
     required this.isMe,
     required this.heroTag,
     this.isSticker = false,
@@ -282,6 +288,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
             text: caption,
             formattedBody: widget.captionFormattedBody,
             isMe: widget.isMe,
+            mentionDisplayNames: widget.mentionDisplayNames,
+            mentionedUserIds: widget.mentionedUserIds,
+            onMentionTap: widget.onMentionTap,
           ),
         ],
       ),
@@ -398,11 +407,17 @@ class _ImageCaption extends StatelessWidget {
   final String text;
   final String? formattedBody;
   final bool isMe;
+  final Map<String, String> mentionDisplayNames;
+  final List<String> mentionedUserIds;
+  final MessageMentionTapHandler? onMentionTap;
 
   const _ImageCaption({
     required this.text,
     required this.formattedBody,
     required this.isMe,
+    required this.mentionDisplayNames,
+    required this.mentionedUserIds,
+    required this.onMentionTap,
   });
 
   @override
@@ -421,6 +436,8 @@ class _ImageCaption extends StatelessWidget {
               html: formattedBody!,
               style: style,
               accentColor: isMe ? Colors.white : AppColors.secondary,
+              mentionDisplayNames: mentionDisplayNames,
+              onMentionTap: onMentionTap,
             )
           : MessageText(
               text,
@@ -428,6 +445,9 @@ class _ImageCaption extends StatelessWidget {
               mentionColor: isMe ? Colors.white : AppColors.secondary,
               linkColor: isMe ? Colors.white : AppColors.secondary,
               onUrlTap: const MatrixLinkRouter().open,
+              mentionDisplayNames: mentionDisplayNames,
+              mentionedUserIds: mentionedUserIds,
+              onMentionTap: onMentionTap,
             ),
     );
   }

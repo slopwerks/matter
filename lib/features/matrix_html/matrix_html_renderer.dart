@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
@@ -12,6 +13,8 @@ class MatrixHtmlMessage extends StatefulWidget {
   final TextStyle style;
   final Color accentColor;
   final MatrixLinkHandler? onLinkTap;
+  final Map<String, String> mentionDisplayNames;
+  final ValueChanged<String>? onMentionTap;
   final Widget? trailingMetadata;
   final double minWidth;
 
@@ -21,6 +24,8 @@ class MatrixHtmlMessage extends StatefulWidget {
     required this.style,
     required this.accentColor,
     this.onLinkTap,
+    this.mentionDisplayNames = const {},
+    this.onMentionTap,
     this.trailingMetadata,
     this.minWidth = 0,
   });
@@ -32,6 +37,7 @@ class MatrixHtmlMessage extends StatefulWidget {
 class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
   static const _parser = MatrixHtmlParser();
   late List<MatrixHtmlNode> _nodes;
+  List<TapGestureRecognizer> _recognizers = [];
 
   @override
   void initState() {
@@ -48,13 +54,34 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
   }
 
   @override
+  void dispose() {
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final previousRecognizers = _recognizers;
+    final recognizers = <TapGestureRecognizer>[];
     final renderer = _MatrixNodeRenderer(
       context: context,
       baseStyle: widget.style,
       accentColor: widget.accentColor,
       onLinkTap: widget.onLinkTap ?? const MatrixLinkRouter().open,
+      mentionDisplayNames: widget.mentionDisplayNames,
+      onMentionTap: widget.onMentionTap,
+      gestureRecognizers: recognizers,
     );
+    _recognizers = recognizers;
+    if (previousRecognizers.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final recognizer in previousRecognizers) {
+          recognizer.dispose();
+        }
+      });
+    }
     final trailingMetadata = widget.trailingMetadata;
     if (trailingMetadata != null) {
       final inline = renderer.singleInlineBlock(_nodes);
@@ -109,31 +136,83 @@ class _MatrixNodeRenderer {
   final TextStyle baseStyle;
   final Color accentColor;
   final MatrixLinkHandler onLinkTap;
+  final Map<String, String> mentionDisplayNames;
+  final ValueChanged<String>? onMentionTap;
+  final List<TapGestureRecognizer> gestureRecognizers;
 
   const _MatrixNodeRenderer({
     required this.context,
     required this.baseStyle,
     required this.accentColor,
     required this.onLinkTap,
+    required this.mentionDisplayNames,
+    required this.onMentionTap,
+    required this.gestureRecognizers,
   });
 
   List<Widget> renderBlocks(List<MatrixHtmlNode> nodes) {
     final widgets = <Widget>[];
-    for (final node in nodes) {
-      final widget = _renderBlock(node);
-      if (widget == null) continue;
+    final inlineNodes = <MatrixHtmlNode>[];
+
+    void addWidget(Widget? widget) {
+      if (widget == null) return;
       if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 7));
       widgets.add(widget);
     }
+
+    void flushInlineNodes() {
+      if (inlineNodes.isEmpty) return;
+      final hasContent = inlineNodes.any(
+        (node) => node is! MatrixTextNode || node.text.trim().isNotEmpty,
+      );
+      if (hasContent) {
+        addWidget(_richText(List.of(inlineNodes), baseStyle));
+      }
+      inlineNodes.clear();
+    }
+
+    for (final node in nodes) {
+      if (_isRootInlineNode(node)) {
+        inlineNodes.add(node);
+      } else {
+        flushInlineNodes();
+        addWidget(_renderBlock(node));
+      }
+    }
+    flushInlineNodes();
     return widgets;
   }
 
   _InlineBlock? singleInlineBlock(List<MatrixHtmlNode> nodes) {
-    final meaningful = nodes.where(
-      (node) => node is! MatrixTextNode || node.text.trim().isNotEmpty,
-    );
+    final meaningful = nodes
+        .where((node) => node is! MatrixTextNode || node.text.trim().isNotEmpty)
+        .toList();
+    if (meaningful.isEmpty) return null;
+    if (meaningful.every(_isRootInlineNode)) {
+      return _inlineBlock(meaningful, baseStyle);
+    }
     if (meaningful.length != 1) return null;
     return _inlineBlockForNode(meaningful.single);
+  }
+
+  bool _isRootInlineNode(MatrixHtmlNode node) {
+    if (node is MatrixTextNode) return true;
+    final tag = (node as MatrixElementNode).tag;
+    return !const {
+      'p',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'blockquote',
+      'ul',
+      'ol',
+      'li',
+      'pre',
+      'hr',
+    }.contains(tag);
   }
 
   List<Widget> renderBlocksWithTrailing(
@@ -400,30 +479,35 @@ class _MatrixNodeRenderer {
         final href = element.attributes['href'];
         if (href != null) {
           final uri = Uri.tryParse(href);
-          final isMention =
-              uri?.host.toLowerCase() == 'matrix.to' &&
-              Uri.decodeComponent(uri?.fragment ?? '').startsWith('/@');
+          final mentionUserId = uri == null ? null : matrixUserIdFromUri(uri);
+          final isMention = mentionUserId != null;
+          TapGestureRecognizer? recognizer;
+          if (isMention && onMentionTap != null) {
+            recognizer = TapGestureRecognizer()
+              ..onTap = () => onMentionTap!(mentionUserId);
+          } else if (!isMention && uri != null) {
+            recognizer = TapGestureRecognizer()..onTap = () => onLinkTap(uri);
+          }
+          if (recognizer != null) gestureRecognizers.add(recognizer);
           spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
-              child: InkWell(
-                onTap: uri == null ? null : () => onLinkTap(uri),
-                borderRadius: BorderRadius.circular(5),
-                child: Text(
-                  element.textContent,
-                  style: style.copyWith(
-                    color: accentColor,
-                    fontWeight: isMention ? FontWeight.w800 : FontWeight.w600,
-                    decoration: isMention
-                        ? TextDecoration.none
-                        : TextDecoration.underline,
-                    backgroundColor: isMention
-                        ? accentColor.withValues(alpha: 0.12)
-                        : null,
-                  ),
-                ),
+            TextSpan(
+              text: isMention
+                  ? matrixMentionLabel(
+                      mentionUserId,
+                      mentionDisplayNames[mentionUserId],
+                    )
+                  : element.textContent,
+              style: style.copyWith(
+                color: accentColor,
+                fontWeight: isMention ? FontWeight.w800 : FontWeight.w600,
+                decoration: isMention
+                    ? TextDecoration.none
+                    : TextDecoration.underline,
+                backgroundColor: isMention
+                    ? accentColor.withValues(alpha: 0.12)
+                    : null,
               ),
+              recognizer: recognizer,
             ),
           );
           continue;

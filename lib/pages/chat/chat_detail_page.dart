@@ -663,6 +663,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   Widget _buildTimelineEntry(
     _TimelineEntry entry,
     Map<String, String?> avatarMap,
+    Map<String, Contact> membersById,
     Map<String, ChatMessage> messageIndex,
     double stickyBottomInset,
   ) {
@@ -676,6 +677,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           messageIndex: messageIndex,
           remoteToLocalFlightId: _remoteToLocalFlightId,
           insertionAnimationIds: _insertionAnimationIds,
+          membersById: membersById,
           showAvatar: _needsStickyAvatar(group),
           compact: widget.isDm,
           senderAvatarUrl: avatarMap[group.senderId],
@@ -890,6 +892,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                     data: _buildAvatarMap,
                     orElse: () => const <String, String?>{},
                   );
+                  final membersById = <String, Contact>{
+                    for (final member
+                        in membersAsync.asData?.value ?? const <Contact>[])
+                      member.id: member,
+                  };
                   return TweenAnimationBuilder<double>(
                     tween: Tween<double>(end: messageBottomPadding),
                     duration: animatePanelChange
@@ -916,6 +923,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                                   (context, index) => _buildTimelineEntry(
                                     timelineEntries[index],
                                     avatarMap,
+                                    membersById,
                                     messageIndex,
                                     8 + animatedBottomPadding,
                                   ),

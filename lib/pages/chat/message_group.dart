@@ -47,6 +47,7 @@ class MessageGroupWidget extends ConsumerWidget {
   final Map<String, ChatMessage> messageIndex;
   final Map<String, String> remoteToLocalFlightId;
   final Set<String> insertionAnimationIds;
+  final Map<String, Contact> membersById;
   final String? senderAvatarUrl;
   final bool compact;
   final ScrollController? scrollController;
@@ -62,6 +63,7 @@ class MessageGroupWidget extends ConsumerWidget {
     required this.messageIndex,
     this.remoteToLocalFlightId = const {},
     this.insertionAnimationIds = const {},
+    this.membersById = const {},
     this.showAvatar = true,
     this.senderAvatarUrl,
     this.compact = false,
@@ -99,6 +101,9 @@ class MessageGroupWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isMe = group.isMe;
+    final mentionDisplayNames = <String, String>{
+      for (final entry in membersById.entries) entry.key: entry.value.name,
+    };
     final isEventGroup = group.messages.every(
       (m) => m.msgType == MessageType.event,
     );
@@ -123,6 +128,8 @@ class MessageGroupWidget extends ConsumerWidget {
                     ref,
                     e.value,
                     false,
+                    membersById: membersById,
+                    mentionDisplayNames: mentionDisplayNames,
                     isFirst: e.key == 0 && group.startsCluster,
                     isLast:
                         e.key == group.messages.length - 1 && group.endsCluster,
@@ -154,6 +161,8 @@ class MessageGroupWidget extends ConsumerWidget {
                     ref,
                     e.value,
                     true,
+                    membersById: membersById,
+                    mentionDisplayNames: mentionDisplayNames,
                     isFirst: e.key == 0 && group.startsCluster,
                     isLast:
                         e.key == group.messages.length - 1 && group.endsCluster,
@@ -178,6 +187,8 @@ class MessageGroupWidget extends ConsumerWidget {
                 ref,
                 e.value,
                 false,
+                membersById: membersById,
+                mentionDisplayNames: mentionDisplayNames,
                 isFirst: e.key == 0 && group.startsCluster,
                 isLast: e.key == group.messages.length - 1 && group.endsCluster,
               ),
@@ -225,6 +236,8 @@ class MessageGroupWidget extends ConsumerWidget {
                     ref,
                     e.value,
                     false,
+                    membersById: membersById,
+                    mentionDisplayNames: mentionDisplayNames,
                     isFirst: e.key == 0 && group.startsCluster,
                     isLast:
                         e.key == group.messages.length - 1 && group.endsCluster,
@@ -245,6 +258,8 @@ class MessageGroupWidget extends ConsumerWidget {
     WidgetRef ref,
     ChatMessage message,
     bool isMe, {
+    required Map<String, Contact> membersById,
+    required Map<String, String> mentionDisplayNames,
     bool isFirst = false,
     bool isLast = false,
     ValueNotifier<double>? linkedAvatarOffset,
@@ -271,6 +286,8 @@ class MessageGroupWidget extends ConsumerWidget {
       message,
       overlay: message.msgType != MessageType.text,
     );
+    void onMentionTap(String userId) =>
+        _showMemberProfile(context, userId, membersById[userId]);
     final coreBubble =
         message.msgType == MessageType.video &&
             (message.imageUrl != null || message.mediaSourceJson != null)
@@ -297,6 +314,9 @@ class MessageGroupWidget extends ConsumerWidget {
             imageHeight: message.imageHeight,
             caption: message.caption,
             captionFormattedBody: message.captionFormattedBody,
+            mentionDisplayNames: mentionDisplayNames,
+            mentionedUserIds: message.mentionedUserIds,
+            onMentionTap: onMentionTap,
             isMe: isMe,
             heroTag: 'image-preview:${message.id}',
             isSticker: message.msgType == MessageType.sticker,
@@ -315,6 +335,8 @@ class MessageGroupWidget extends ConsumerWidget {
             isMe,
             isFirst: isFirst,
             isLast: isLast,
+            mentionDisplayNames: mentionDisplayNames,
+            onMentionTap: onMentionTap,
           );
     final bubble = coreBubble;
     final flightId = _messageFlightId(message);
@@ -473,6 +495,68 @@ class MessageGroupWidget extends ConsumerWidget {
     );
   }
 
+  void _showMemberProfile(
+    BuildContext context,
+    String userId,
+    Contact? member,
+  ) {
+    final memberName = member?.name.trim();
+    final displayName = memberName == null || memberName.isEmpty
+        ? userId
+        : memberName;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        key: ValueKey('mention-profile:$userId'),
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.surface),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppAvatar(
+                fallback: displayName,
+                size: 64,
+                radius: 20,
+                url: member?.avatarUrl,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                displayName,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.onBackground,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 5),
+              SelectableText(
+                userId,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('关闭'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTextBubble(
     BuildContext context,
     WidgetRef ref,
@@ -480,6 +564,8 @@ class MessageGroupWidget extends ConsumerWidget {
     bool isMe, {
     bool isFirst = false,
     bool isLast = false,
+    required Map<String, String> mentionDisplayNames,
+    required MessageMentionTapHandler onMentionTap,
   }) {
     final maxBubbleWidth = MediaQuery.of(context).size.width * 0.70;
     final textStyle = TextStyle(
@@ -488,7 +574,13 @@ class MessageGroupWidget extends ConsumerWidget {
       height: 1.35,
     );
     final urlMatches = detectMessageUrls(message.content);
-    final previewUri = urlMatches.isEmpty ? null : urlMatches.first.uri;
+    Uri? previewUri;
+    for (final match in urlMatches) {
+      if (matrixUserIdFromUri(match.uri) == null) {
+        previewUri = match.uri;
+        break;
+      }
+    }
     const linkRouter = MatrixLinkRouter();
     final metadata = _buildMessageMetadata(context, ref, message);
     final metadataWidth = _messageMetadataWidth(context, message);
@@ -535,6 +627,8 @@ class MessageGroupWidget extends ConsumerWidget {
             html: message.formattedBody!,
             style: textStyle,
             accentColor: isMe ? Colors.white : AppColors.secondary,
+            mentionDisplayNames: mentionDisplayNames,
+            onMentionTap: onMentionTap,
             trailingMetadata: metadata,
             minWidth: replyPreviewWidth,
           )
@@ -549,6 +643,9 @@ class MessageGroupWidget extends ConsumerWidget {
             minWidth: replyPreviewWidth,
             linkColor: isMe ? Colors.white : AppColors.secondary,
             onUrlTap: linkRouter.open,
+            mentionDisplayNames: mentionDisplayNames,
+            mentionedUserIds: message.mentionedUserIds,
+            onMentionTap: onMentionTap,
           ),
         ?linkPreview,
       ],
@@ -1391,6 +1488,9 @@ class _AdaptiveTextMetadata extends StatelessWidget {
   final double minWidth;
   final Color linkColor;
   final MessageUrlTapHandler? onUrlTap;
+  final Map<String, String> mentionDisplayNames;
+  final List<String> mentionedUserIds;
+  final MessageMentionTapHandler? onMentionTap;
 
   const _AdaptiveTextMetadata({
     super.key,
@@ -1402,6 +1502,9 @@ class _AdaptiveTextMetadata extends StatelessWidget {
     this.minWidth = 0,
     required this.linkColor,
     this.onUrlTap,
+    this.mentionDisplayNames = const {},
+    this.mentionedUserIds = const [],
+    this.onMentionTap,
   });
 
   @override
@@ -1416,6 +1519,8 @@ class _AdaptiveTextMetadata extends StatelessWidget {
           text,
           style: textStyle,
           mentionColor: AppColors.secondary,
+          mentionDisplayNames: mentionDisplayNames,
+          mentionedUserIds: mentionedUserIds,
         );
         final textPainter = TextPainter(
           text: span,
@@ -1460,6 +1565,9 @@ class _AdaptiveTextMetadata extends StatelessWidget {
                   mentionColor: AppColors.secondary,
                   linkColor: linkColor,
                   onUrlTap: onUrlTap,
+                  mentionDisplayNames: mentionDisplayNames,
+                  mentionedUserIds: mentionedUserIds,
+                  onMentionTap: onMentionTap,
                 ),
               ),
               Positioned(
