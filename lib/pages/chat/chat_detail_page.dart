@@ -69,7 +69,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   bool _olderLoadArmed = true;
   String _derivedMessagesFingerprint = '';
   InputPanelMode _inputPanelMode = InputPanelMode.none;
-  double _inputChromeHeight = 68;
+  double? _inputChromeHeight;
   double _panelBaselineHeight = 0;
   double _expandedPickerHeight = 0;
   bool _isPickerResizing = false;
@@ -99,6 +99,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   static const double _olderLoadTriggerMinDistance = 1200.0;
   static const double _olderLoadTriggerViewportMultiplier = 2.0;
   static const double _olderLoadRearmDistance = 480.0;
+  static const double _baseInputChromeHeight = 60.0;
   static const int _maxMessagesPerRenderGroup = 12;
   static const Duration _sentNoticeDuration = Duration(milliseconds: 2800);
   static const Duration _insertionAnimationLifetime = Duration(
@@ -748,13 +749,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
         ? math.max(pickerBaseHeight, _expandedPickerHeight)
         : pickerBaseHeight;
     final mediaQuery = MediaQuery.of(context);
+    final inputChromeHeight =
+        _inputChromeHeight ??
+        _baseInputChromeHeight + mediaQuery.padding.bottom;
     final pickerMaxHeight = math.max(
       pickerBaseHeight,
       mediaQuery.size.height -
           mediaQuery.padding.top -
           mediaQuery.padding.bottom -
           kToolbarHeight -
-          _inputChromeHeight -
+          inputChromeHeight -
           8,
     );
     final pickerHeight = keepsStablePicker
@@ -767,7 +771,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     final panelReservedHeight = keepsStablePicker
         ? pickerFullHeight
         : (_inputPanelMode == InputPanelMode.keyboard ? keyboardHeight : 0.0);
-    final messageBottomPadding = _inputChromeHeight + panelReservedHeight;
+    final messageBottomPadding = inputChromeHeight + panelReservedHeight;
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
 
     if (_keepPickerDuringKeyboardOpen &&
@@ -867,12 +871,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                   final messages = messageCacheOwner == activeUserId
                       ? cachedMessages
                       : const <ChatMessage>[];
-                  // On a cold first entry (disk cache not primed yet) show a
-                  // loader for a single frame; once primed the snapshot renders
-                  // instantly and later updates flow in via the cache.
-                  if (!messageCachePrimed &&
-                      messages.isEmpty &&
-                      localOutgoingMessages.isEmpty) {
+                  // Do not expose the timeline until its initial insets and
+                  // member-dependent labels are stable enough for layout.
+                  if ((!messageCachePrimed &&
+                          messages.isEmpty &&
+                          localOutgoingMessages.isEmpty) ||
+                      _inputChromeHeight == null ||
+                      (membersAsync.isLoading && !membersAsync.hasValue)) {
                     return const Center(
                       child: CircularProgressIndicator(
                         color: AppColors.primary,
@@ -976,7 +981,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
                     0.0,
                     size.height - pickerHeight,
                   );
-                  if ((_inputChromeHeight - chromeHeight).abs() < 0.5) {
+                  if (_inputChromeHeight == null) {
+                    setState(() => _inputChromeHeight = chromeHeight);
+                    return;
+                  }
+                  if ((inputChromeHeight - chromeHeight).abs() < 0.5) {
                     return;
                   }
                   setState(() => _inputChromeHeight = chromeHeight);
