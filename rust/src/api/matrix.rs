@@ -4151,6 +4151,94 @@ pub async fn send_message(
     Ok(response.response.event_id.to_string())
 }
 
+/// Forward a message-like event into another room as a new event.
+///
+/// Text uses the already-aggregated content supplied by Flutter so edits are
+/// forwarded at their latest visible revision. Media keeps its original
+/// Matrix source, avoiding a lossy download and re-upload cycle; its caption
+/// reflects the original event (the app does not currently aggregate media
+/// caption edits — see `extract_edit_content`), so it matches what the user
+/// sees in the bubble.
+#[frb]
+pub async fn forward_message(
+    source_room_id: String,
+    target_room_id: String,
+    event_id: String,
+    text: FormattedMessageInput,
+) -> Result<String, String> {
+    let client = get_client().await.ok_or("No client created.")?;
+    let source_room = get_room_by_id(&client, &source_room_id)?;
+    let target_room = get_room_by_id(&client, &target_room_id)?;
+    let event_id =
+        matrix_sdk::ruma::EventId::parse(event_id).map_err(|e| format!("Invalid event id: {e}"))?;
+    let timeline_event = source_room
+        .event(&event_id, None)
+        .await
+        .map_err(|e| format!("Load message failed: {e}"))?;
+
+    if timeline_event.kind.is_utd() {
+        return Err("无法转发未解密的消息".to_string());
+    }
+
+    let event = timeline_event
+        .raw()
+        .deserialize()
+        .map_err(|e| format!("Read message failed: {e}"))?;
+
+    let event_id = match event {
+        matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+            matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(message),
+        ) => {
+            let Some(original) = message.as_original() else {
+                return Err("无法转发已撤回的消息".to_string());
+            };
+            let mut content = original.content.clone();
+            if matches!(
+                &content.msgtype,
+                matrix_sdk::ruma::events::room::message::MessageType::Text(_)
+            ) {
+                content = build_text_content(text)?;
+            } else {
+                content.relates_to = None;
+            }
+            target_room
+                .send(content)
+                .await
+                .map_err(|e| format!("Forward failed: {e}"))?
+                .response
+                .event_id
+                .to_string()
+        }
+        matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
+            matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Sticker(sticker),
+        ) => {
+            let Some(original) = sticker.as_original() else {
+                return Err("无法转发已撤回的贴纸".to_string());
+            };
+            let mut content = original.content.clone();
+            content.relates_to = None;
+            target_room
+                .send(content)
+                .await
+                .map_err(|e| format!("Forward failed: {e}"))?
+                .response
+                .event_id
+                .to_string()
+        }
+        _ => return Err("该消息类型暂不支持转发".to_string()),
+    };
+
+    app_log(
+        "info",
+        "rooms",
+        format!("Message forwarded to {}", target_room_id),
+    );
+    notify_sync_event(SyncEvent::MessageSent {
+        room_id: target_room_id,
+    });
+    Ok(event_id)
+}
+
 /// Send an image message to a room.
 /// `image_data` is the raw bytes of the image file.
 /// `filename` is the original file name (e.g. "photo.jpg").

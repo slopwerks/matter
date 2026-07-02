@@ -17,6 +17,7 @@ import 'chat_timestamp.dart';
 import 'composer_picker_panel.dart';
 import 'date_separator.dart';
 import 'floating_date_header.dart';
+import 'forward_message_sheet.dart';
 import 'latest_message_control.dart';
 import 'local_outgoing_matcher.dart';
 import 'message_group.dart';
@@ -75,8 +76,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   bool _isPickerResizing = false;
   Timer? _pickerResizeTimer;
   Timer? _sentNoticeTimer;
+  Timer? _forwardNoticeTimer;
   bool _showLatestMessageControl = false;
   bool _showSentNotice = false;
+  ChatRoom? _forwardNoticeRoom;
   final Set<String> _insertionAnimationIds = {};
 
   /// Remote event ids that have already been matched with a local outgoing
@@ -102,6 +105,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   static const double _baseInputChromeHeight = 60.0;
   static const int _maxMessagesPerRenderGroup = 12;
   static const Duration _sentNoticeDuration = Duration(milliseconds: 2800);
+  static const Duration _forwardNoticeDuration = Duration(seconds: 4);
   static const Duration _insertionAnimationLifetime = Duration(
     milliseconds: 500,
   );
@@ -167,6 +171,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     );
     _pickerResizeTimer?.cancel();
     _sentNoticeTimer?.cancel();
+    _forwardNoticeTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -302,6 +307,34 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     if (!insertedOptimistically) {
       _scrollToLatest();
     }
+  }
+
+  void _showForwardNotice(ChatRoom room) {
+    _forwardNoticeTimer?.cancel();
+    setState(() => _forwardNoticeRoom = room);
+    _forwardNoticeTimer = Timer(_forwardNoticeDuration, () {
+      if (!mounted) return;
+      setState(() => _forwardNoticeRoom = null);
+    });
+  }
+
+  void _openForwardNoticeRoom() {
+    final room = _forwardNoticeRoom;
+    if (room == null) return;
+    _forwardNoticeTimer?.cancel();
+    setState(() => _forwardNoticeRoom = null);
+    if (room.id == widget.roomId) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatDetailPage(
+          roomId: room.id,
+          roomName: room.name,
+          avatarUrl: room.avatarUrl,
+          isDm: room.roomType == 'dm',
+          subtitle: room.unreadCount > 0 ? '${room.unreadCount} 条未读消息' : '在线',
+        ),
+      ),
+    );
   }
 
   Future<void> _loadOlderMessages() async {
@@ -686,6 +719,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           stickyBottomInset: stickyBottomInset,
           onImageLoaded: null,
           onReplyRequested: () => _setInputPanelMode(InputPanelMode.keyboard),
+          onMessageForwarded: _showForwardNotice,
         );
       case _TimelineEntryType.date:
         return DateSeparator(
@@ -964,11 +998,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
               child: LatestMessageControl(
-                visible: _showLatestMessageControl,
+                visible:
+                    _showLatestMessageControl && _forwardNoticeRoom == null,
                 showSentNotice: _showSentNotice,
                 onPressed: _scrollToLatest,
               ),
             ),
+            if (_forwardNoticeRoom case final room?)
+              ForwardSuccessNoticeOverlay(
+                key: const ValueKey('forward-success-position'),
+                bottomInset: messageBottomPadding,
+                roomName: room.name,
+                onRoomTap: _openForwardNoticeRoom,
+              ),
             AnimatedPositioned(
               left: 0,
               right: 0,

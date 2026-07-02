@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../src/rust/api/matrix.dart' as rust;
@@ -156,58 +157,69 @@ Future<List<rust.StoredSession>> loadAllSessions() async {
     final sessions = <rust.StoredSession>[];
     var migratedPlaintextTokens = false;
     for (final item in list) {
-      final e = item as Map<String, dynamic>;
-      final userId = e['user_id'] as String;
-      var accessToken = await _secureStorage.read(key: _tokenKey(userId));
-      var refreshToken = await _secureStorage.read(
-        key: _refreshTokenKey(userId),
-      );
+      String? userId;
+      try {
+        final e = item as Map<String, dynamic>;
+        userId = e['user_id'] as String;
+        var accessToken = await _secureStorage.read(key: _tokenKey(userId));
+        var refreshToken = await _secureStorage.read(
+          key: _refreshTokenKey(userId),
+        );
 
-      // Migrate sessions written by older versions, then remove the token
-      // from SharedPreferences when the sanitized metadata is saved below.
-      final legacyToken = e['access_token'] as String?;
-      if (legacyToken != null) {
-        migratedPlaintextTokens = true;
-        if (accessToken == null && legacyToken.isNotEmpty) {
-          accessToken = legacyToken;
-          await _secureStorage.write(
-            key: _tokenKey(userId),
-            value: legacyToken,
-          );
+        // Migrate sessions written by older versions, then remove the token
+        // from SharedPreferences when the sanitized metadata is saved below.
+        final legacyToken = e['access_token'] as String?;
+        if (legacyToken != null) {
+          migratedPlaintextTokens = true;
+          if (accessToken == null && legacyToken.isNotEmpty) {
+            accessToken = legacyToken;
+            await _secureStorage.write(
+              key: _tokenKey(userId),
+              value: legacyToken,
+            );
+          }
         }
-      }
-      final legacyRefreshToken = e['refresh_token'] as String?;
-      if (legacyRefreshToken != null) {
-        migratedPlaintextTokens = true;
-        if ((refreshToken == null || refreshToken.isEmpty) &&
-            legacyRefreshToken.isNotEmpty) {
-          refreshToken = legacyRefreshToken;
-          await _secureStorage.write(
-            key: _refreshTokenKey(userId),
-            value: legacyRefreshToken,
-          );
+        final legacyRefreshToken = e['refresh_token'] as String?;
+        if (legacyRefreshToken != null) {
+          migratedPlaintextTokens = true;
+          if ((refreshToken == null || refreshToken.isEmpty) &&
+              legacyRefreshToken.isNotEmpty) {
+            refreshToken = legacyRefreshToken;
+            await _secureStorage.write(
+              key: _refreshTokenKey(userId),
+              value: legacyRefreshToken,
+            );
+          }
         }
-      }
-      if (accessToken == null || accessToken.isEmpty) continue;
+        if (accessToken == null || accessToken.isEmpty) {
+          debugPrint('Saved session has no secure token for $userId');
+          continue;
+        }
 
-      sessions.add(
-        rust.StoredSession(
-          homeserverUrl: e['homeserver_url'] as String,
-          accessToken: accessToken,
-          refreshToken: (refreshToken == null || refreshToken.isEmpty)
-              ? null
-              : refreshToken,
-          userId: userId,
-          deviceId: e['device_id'] as String,
-        ),
-      );
+        sessions.add(
+          rust.StoredSession(
+            homeserverUrl: e['homeserver_url'] as String,
+            accessToken: accessToken,
+            refreshToken: (refreshToken == null || refreshToken.isEmpty)
+                ? null
+                : refreshToken,
+            userId: userId,
+            deviceId: e['device_id'] as String,
+          ),
+        );
+      } catch (error) {
+        debugPrint(
+          'Failed to load saved session${userId == null ? '' : ' for $userId'}: $error',
+        );
+      }
     }
 
     if (migratedPlaintextTokens) {
       await _saveSessionMetadata(prefs, sessions);
     }
     return sessions;
-  } catch (_) {
+  } catch (error) {
+    debugPrint('Failed to decode saved sessions: $error');
     return [];
   }
 }

@@ -156,6 +156,34 @@ void main() {
       expect(sessions, isEmpty);
     });
 
+    test(
+      'loadAllSessions keeps valid sessions after a malformed entry',
+      () async {
+        await addSession(
+          homeserver: 'https://example.org',
+          accessToken: 'token-a',
+          userId: '@alice:example.org',
+          deviceId: 'DEVICE_A',
+          displayName: 'Alice',
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          'multi_sessions',
+          jsonEncode([
+            {'user_id': 42},
+            {
+              'homeserver_url': 'https://example.org',
+              'user_id': '@alice:example.org',
+              'device_id': 'DEVICE_A',
+            },
+          ]),
+        );
+
+        final sessions = await loadAllSessions();
+        expect(sessions.single.userId, '@alice:example.org');
+      },
+    );
+
     test('removeSession deletes metadata, token and display name', () async {
       await addSession(
         homeserver: 'https://example.org',

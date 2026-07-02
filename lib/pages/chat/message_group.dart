@@ -14,6 +14,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
 import 'chat_timestamp.dart';
 import 'emoji_picker_panel.dart';
+import 'forward_message_sheet.dart';
 import 'image_message_bubble.dart';
 import 'link_preview.dart';
 import 'message_insert_animation.dart';
@@ -55,6 +56,7 @@ class MessageGroupWidget extends ConsumerWidget {
   final double stickyBottomInset;
   final VoidCallback? onImageLoaded;
   final VoidCallback? onReplyRequested;
+  final ValueChanged<ChatRoom>? onMessageForwarded;
 
   const MessageGroupWidget({
     super.key,
@@ -72,6 +74,7 @@ class MessageGroupWidget extends ConsumerWidget {
     this.stickyBottomInset = 0,
     this.onImageLoaded,
     this.onReplyRequested,
+    this.onMessageForwarded,
   });
 
   static const double _avatarSize = 36.0;
@@ -1231,6 +1234,7 @@ class MessageGroupWidget extends ConsumerWidget {
     WidgetRef ref,
     ChatMessage message,
   ) {
+    final pageContext = context;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1270,11 +1274,22 @@ class MessageGroupWidget extends ConsumerWidget {
                   _startReply(ref, message);
                 },
               ),
-              _MenuItem(
-                icon: Icons.forward_rounded,
-                label: '转发',
-                onTap: () => Navigator.of(context).pop(),
-              ),
+              if (message.msgType != MessageType.event)
+                _MenuItem(
+                  icon: Icons.forward_rounded,
+                  label: '转发',
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    final targetRoom = await showForwardMessageSheet(
+                      context: pageContext,
+                      sourceRoomId: roomId,
+                      message: message,
+                    );
+                    if (targetRoom != null) {
+                      onMessageForwarded?.call(targetRoom);
+                    }
+                  },
+                ),
               if (message.isMe) ...[
                 const Divider(color: AppColors.surfaceVariant, height: 0.5),
                 if (message.msgType == MessageType.text)

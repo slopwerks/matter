@@ -140,7 +140,6 @@ class _AppRootState extends ConsumerState<_AppRoot> {
           }
         } catch (e) {
           debugPrint('Failed to restore session for ${session.userId}: $e');
-          await removeSession(session.userId);
         }
       }
 

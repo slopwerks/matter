@@ -84,9 +84,16 @@ flutter {
     source = "../.."
 }
 
+val rustSoFile = file("src/main/jniLibs/arm64-v8a/librust_lib_matter.so")
+
 tasks.register<Exec>("buildRust") {
     val isRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
     workingDir = file("../../rust")
+    doFirst {
+        if (rustSoFile.exists() && !rustSoFile.delete()) {
+            throw GradleException("Failed to remove stale Rust library: ${rustSoFile.absolutePath}")
+        }
+    }
     if (isRelease) {
         commandLine("cargo", "ndk", "-t", "arm64-v8a", "-o", "../android/app/src/main/jniLibs", "build", "--release")
     } else {
@@ -96,10 +103,9 @@ tasks.register<Exec>("buildRust") {
 
 tasks.register<Exec>("stripRustSo") {
     dependsOn("buildRust")
-    val soFile = file("src/main/jniLibs/arm64-v8a/librust_lib_matter.so")
     val llvmStrip = file("${android.ndkDirectory}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip")
-    commandLine(llvmStrip, "--strip-all", soFile.absolutePath)
-    onlyIf { soFile.exists() }
+    commandLine(llvmStrip, "--strip-all", rustSoFile.absolutePath)
+    onlyIf { rustSoFile.exists() }
 }
 
 tasks.named("preBuild").configure {
