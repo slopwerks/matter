@@ -27,6 +27,11 @@ Future<void> _sendForward({
   required String targetRoomId,
   required rust.ChatMessage message,
 }) async {
+  // Forwarding changes context: mentions from the source room are no longer
+  // valid in the target room (a mentioned user may not be a member there, or
+  // may receive an unexpected push). Pass empty mentions so build_text_content
+  // still emits an m.mentions object (avoiding legacy implicit-mention push
+  // rules) without carrying stale user IDs across rooms.
   await rust.forwardMessage(
     sourceRoomId: sourceRoomId,
     targetRoomId: targetRoomId,
@@ -34,8 +39,8 @@ Future<void> _sendForward({
     text: rust.FormattedMessageInput(
       body: message.content,
       formattedBody: message.formattedBody,
-      mentionedUserIds: message.mentionedUserIds,
-      mentionsRoom: message.mentionsRoom,
+      mentionedUserIds: const [],
+      mentionsRoom: false,
     ),
   );
 }

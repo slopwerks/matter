@@ -86,6 +86,41 @@ void main() {
     expect(find.text('转发到'), findsNothing);
   });
 
+  testWidgets(
+    'an empty room list shows the empty-state message and no tappable rooms',
+    (tester) async {
+      await _pumpLauncher(tester, rooms: const [], sender: _noopSender);
+
+      await tester.tap(find.text('打开转发'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('暂无可转发的会话'), findsOneWidget);
+      expect(find.byType(ListTile), findsNothing);
+    },
+  );
+
+  testWidgets('a search with no matches shows the no-match message', (
+    tester,
+  ) async {
+    await _pumpLauncher(
+      tester,
+      rooms: [_room('!target:example.org', '目标会话')],
+      sender: _noopSender,
+    );
+
+    await tester.tap(find.text('打开转发'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('forward-room-search')),
+      '不存在的会话',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('未找到会话'), findsOneWidget);
+    expect(find.byType(ListTile), findsNothing);
+  });
+
   testWidgets('a send failure leaves the sheet open and shows the error', (
     tester,
   ) async {
@@ -202,3 +237,9 @@ Future<void> _pumpLauncher(
     ),
   );
 }
+
+Future<void> _noopSender({
+  required String sourceRoomId,
+  required String targetRoomId,
+  required rust.ChatMessage message,
+}) async {}

@@ -4155,7 +4155,10 @@ pub async fn send_message(
 ///
 /// Text uses the already-aggregated content supplied by Flutter so edits are
 /// forwarded at their latest visible revision. Media keeps its original
-/// Matrix source, avoiding a lossy download and re-upload cycle.
+/// Matrix source, avoiding a lossy download and re-upload cycle; its caption
+/// reflects the original event (the app does not currently aggregate media
+/// caption edits — see `extract_edit_content`), so it matches what the user
+/// sees in the bubble.
 #[frb]
 pub async fn forward_message(
     source_room_id: String,
