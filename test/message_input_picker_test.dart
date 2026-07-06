@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/composer_picker_panel.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/theme/app_theme.dart';
+import 'package:matter/widgets/liquid_glass.dart';
 
 void main() {
   testWidgets('picker button reopens the previously selected sticker tab', (
@@ -28,6 +30,40 @@ void main() {
     await tester.pump();
 
     expect(find.byType(StickerPackPanel), findsOneWidget);
+  });
+
+  testWidgets('input floats above a dimmed and blurred safe area', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: _MessageInputHarness())),
+    );
+    await tester.pump();
+
+    final surface = tester.widget<LiquidGlassContainer>(
+      find.byKey(const ValueKey('message-input-surface')),
+    );
+    expect(surface.borderRadius, AppRadii.nav);
+    expect(surface.blurSigma, 18);
+    expect(
+      surface.margin,
+      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    );
+    expect(find.byType(ShaderMask), findsOneWidget);
+
+    final backdropFilters = find.descendant(
+      of: find.byType(MessageInput),
+      matching: find.byType(BackdropFilter),
+    );
+    expect(backdropFilters, findsNWidgets(2));
+    expect(tester.getBottomLeft(backdropFilters.first).dy, 800);
   });
 }
 
