@@ -1257,6 +1257,8 @@ class MessageGroupWidget extends ConsumerWidget {
             _showEmojiPicker(overlayContext, ref, message),
       ),
     );
+    // Confirm the menu appeared with a light haptic.
+    HapticFeedback.selectionClick();
     overlay.insert(entry);
   }
 
@@ -1658,6 +1660,12 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
     return (left: left, top: top);
   }
 
+  /// Closes the menu, then runs the selected action.
+  void _select(VoidCallback action) {
+    widget.onClose();
+    action();
+  }
+
   Widget _buildEmojiRow() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1671,10 +1679,7 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: InkWell(
                 borderRadius: BorderRadius.circular(AppRadii.tag),
-                onTap: () {
-                  widget.onClose();
-                  widget.onShowFullEmojiPicker();
-                },
+                onTap: () => _select(widget.onShowFullEmojiPicker),
                 child: const Padding(
                   padding: EdgeInsets.all(8),
                   child: Icon(
@@ -1696,10 +1701,7 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadii.tag),
-        onTap: () {
-          widget.onClose();
-          widget.onReact(emoji);
-        },
+        onTap: () => _select(() => widget.onReact(emoji)),
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Text(emoji, style: const TextStyle(fontSize: 22)),
@@ -1723,46 +1725,31 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
               _IconTextAction(
                 icon: Icons.copy_rounded,
                 label: '复制',
-                onTap: () {
-                  widget.onClose();
-                  widget.onCopy();
-                },
+                onTap: () => _select(widget.onCopy),
               ),
             _IconTextAction(
               icon: Icons.reply_rounded,
               label: '回复',
-              onTap: () {
-                widget.onClose();
-                widget.onReply();
-              },
+              onTap: () => _select(widget.onReply),
             ),
             if (!isEvent)
               _IconTextAction(
                 icon: Icons.forward_rounded,
                 label: '转发',
-                onTap: () {
-                  widget.onClose();
-                  widget.onForward();
-                },
+                onTap: () => _select(widget.onForward),
               ),
             if (widget.isMe && isText)
               _IconTextAction(
                 icon: Icons.edit_outlined,
                 label: '编辑',
-                onTap: () {
-                  widget.onClose();
-                  widget.onEdit();
-                },
+                onTap: () => _select(widget.onEdit),
               ),
             if (widget.isMe)
               _IconTextAction(
                 icon: Icons.delete_outline_rounded,
                 label: '撤回',
                 color: AppColors.error,
-                onTap: () {
-                  widget.onClose();
-                  widget.onRecall();
-                },
+                onTap: () => _select(widget.onRecall),
               ),
           ],
         ),
@@ -1773,27 +1760,30 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
   Widget _buildMenu() {
     final msg = widget.message;
     final isEvent = msg.msgType == MessageType.event;
-    return Container(
-      key: _menuKey,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!isEvent) _buildEmojiRow(),
-          if (!isEvent)
-            const Divider(color: AppColors.surfaceVariant, height: 0.5),
-          _buildActionRow(),
-        ],
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        key: _menuKey,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.surface),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isEvent) _buildEmojiRow(),
+            if (!isEvent)
+              const Divider(color: AppColors.surfaceVariant, height: 0.5),
+            _buildActionRow(),
+          ],
+        ),
       ),
     );
   }
@@ -1815,12 +1805,12 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
           top: _top ?? 0,
           child: TweenAnimationBuilder<double>(
             tween: Tween(begin: 0, end: _ready ? 1 : 0),
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOut,
+            duration: const Duration(milliseconds: 90),
+            curve: Curves.easeOutCubic,
             builder: (_, v, child) => Opacity(
               opacity: v,
               child: Transform.scale(
-                scale: 0.92 + 0.08 * v,
+                scale: 0.88 + 0.12 * v,
                 alignment: widget.isMe
                     ? Alignment.centerRight
                     : Alignment.centerLeft,
