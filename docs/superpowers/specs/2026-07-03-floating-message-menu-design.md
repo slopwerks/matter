@@ -32,8 +32,9 @@
 
 ### 触发与定位
 
-- 长按入口不变（`message_group.dart:269`、`354-357` 的 `onLongPress`），仍调用 `_showContextMenu(context, ref, message)`。
-- `_showContextMenu` 内通过 `context.findRenderObject() as RenderBox` 取气泡全局坐标与尺寸（bubbleRect）。
+- 长按入口不变（`message_group.dart` 中文本/媒体气泡与事件消息的 `onLongPress`），仍调用 `_showContextMenu(context, ref, message)`。
+- 由于 `_buildMessage` 复用父级（`MessageGroupWidget.build`）的 `context`，其 `findRenderObject()` 会解析到整组的外层渲染对象，而非被长按的气泡。因此在每个气泡（`coreBubble`）与事件消息外层包一层 `Builder`，捕获该 Builder 自身的 `BuildContext` 并传入 `_showContextMenu`。`BuildContext.findRenderObject()` 会沿 `renderObjectAttachingChild` 向下走到子树首个 `RenderObjectElement`，于是取得的是气泡本身的渲染对象（如文本气泡的 `DecoratedBox`）。
+- `_showContextMenu` 内通过该 context 的 `findRenderObject() as RenderBox` 取气泡全局坐标与尺寸（bubbleRect）。
 - 插入 `OverlayEntry`，渲染 `_FloatingMessageMenu`：
   - **垂直**：上方优先。若 `bubbleTop - 估算菜单高 - gap < 安全区顶部`，翻转到气泡下方。
   - **水平**：对方消息（左侧气泡）菜单左缘对齐气泡左缘；己方消息（右侧气泡）菜单右缘对齐气泡右缘；再用屏幕安全区钳制。

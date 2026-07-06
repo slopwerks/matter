@@ -268,14 +268,21 @@ class MessageGroupWidget extends ConsumerWidget {
     ValueNotifier<double>? linkedAvatarOffset,
   }) {
     if (message.msgType == MessageType.event) {
+      BuildContext? eventContext;
       return GestureDetector(
-        onLongPress: () => _showContextMenu(context, ref, message),
+        onLongPress: () =>
+            _showContextMenu(eventContext ?? context, ref, message),
         child: Padding(
           padding: EdgeInsets.only(
             top: isFirst ? 2 : 1,
             bottom: _messageBottomPadding,
           ),
-          child: _buildEventMessage(context, message),
+          child: Builder(
+            builder: (ctx) {
+              eventContext = ctx;
+              return _buildEventMessage(context, message);
+            },
+          ),
         ),
       );
     }
@@ -343,6 +350,16 @@ class MessageGroupWidget extends ConsumerWidget {
           );
     final bubble = coreBubble;
     final flightId = _messageFlightId(message);
+    // Capture the bubble's own build context so the floating menu can anchor
+    // to the bubble rect rather than the whole message-group rect. The outer
+    // `_buildMessage` context resolves to the group's outer render object.
+    BuildContext? bubbleContext;
+    final trackedBubble = Builder(
+      builder: (ctx) {
+        bubbleContext = ctx;
+        return bubble;
+      },
+    );
     final displayedBubble = flightId != null
         ? SendFlightTarget(
             key: ValueKey(flightId),
@@ -350,14 +367,14 @@ class MessageGroupWidget extends ConsumerWidget {
             flightId: flightId,
             latestScrollController: scrollController,
             lockEndAtLatest: true,
-            child: bubble,
+            child: trackedBubble,
           )
-        : bubble;
+        : trackedBubble;
 
     final messageRow = GestureDetector(
       onLongPress: isLocalOutgoing
           ? null
-          : () => _showContextMenu(context, ref, message),
+          : () => _showContextMenu(bubbleContext ?? context, ref, message),
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: EdgeInsets.only(
