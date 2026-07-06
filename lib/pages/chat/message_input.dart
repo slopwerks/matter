@@ -11,6 +11,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import '../../widgets/liquid_glass.dart';
 import 'chat_image_editor_page.dart';
 import 'composer_picker_panel.dart';
 import 'latest_message_control.dart';
@@ -649,17 +650,10 @@ class _MessageInputState extends ConsumerState<MessageInput> {
       _lastEditingId = null;
     }
 
-    return SafeArea(
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          border: Border(
-            top: BorderSide(
-              color: AppColors.surfaceVariant.withValues(alpha: 0.5),
-              width: 0.5,
-            ),
-          ),
-        ),
+    final input = SafeArea(
+      top: false,
+      child: ColoredBox(
+        color: Colors.transparent,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -668,8 +662,12 @@ class _MessageInputState extends ConsumerState<MessageInput> {
               _buildEditingBar(editing)
             else if (replyTo != null)
               _buildReplyBar(replyTo),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            LiquidGlassContainer(
+              key: const ValueKey('message-input-surface'),
+              margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              borderRadius: AppRadii.nav,
+              blurSigma: 18,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -704,8 +702,9 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                         maxHeight: 120,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceVariant,
+                        color: AppColors.surfaceVariant.withValues(alpha: 0.58),
                         borderRadius: BorderRadius.circular(AppRadii.surface),
+                        border: Border.all(color: AppColors.glassBorder),
                       ),
                       child: TextField(
                         controller: _controller,
@@ -871,6 +870,50 @@ class _MessageInputState extends ConsumerState<MessageInput> {
             ),
           ],
         ),
+      ),
+    );
+
+    return ClipRect(
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final fadeStop = constraints.maxHeight <= 32
+                    ? 1.0
+                    : 32 / constraints.maxHeight;
+                return ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (bounds) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: const [Colors.transparent, Colors.black],
+                    stops: [0, fadeStop],
+                  ).createShader(bounds),
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            AppColors.background.withValues(alpha: 0.52),
+                            AppColors.background.withValues(alpha: 0.88),
+                          ],
+                          stops: [0, fadeStop, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          input,
+        ],
       ),
     );
   }
