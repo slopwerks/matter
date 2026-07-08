@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `build_mentions`, `build_sdk_data_dir`, `build_text_content`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `encryption_settings`, `extract_edit_content`, `finalize_pending`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `install_live_update_event_handlers`, `install_room_key_event_handler`, `install_verification_event_handler`, `load_room_messages_with_key_recovery`, `load_room_sticker_packs`, `media_caption_parts`, `mentions_parts`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `pagination_boundary_key`, `pagination_token_before_event`, `reader_has_read`, `remove_dir_all_if_exists`, `remove_pagination_boundary_token`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_state_label`, `room_to_chat_room`, `sanitize_for_path`, `sanitized_formatted_body`, `sanitized_reply_formatted_body`, `set_connection_status`, `set_pagination_boundary_token`, `sticker_info_dimensions`, `stop_sync_task`, `strip_reply_fallback`, `text_message_parts`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `unable_to_decrypt_message`, `usage_allows_sticker`, `wait_for_e2ee_initialization`
+// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `app_log`, `apply_desired_room_subscription`, `build_mentions`, `build_sdk_data_dir`, `build_text_content`, `clear_receipt_cache`, `clear_sent_read_receipts_for_user`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `encryption_settings`, `extract_edit_content`, `finalize_pending`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `install_live_update_event_handlers`, `install_room_key_event_handler`, `install_verification_event_handler`, `load_room_messages_with_key_recovery`, `load_room_sticker_packs`, `media_caption_parts`, `mentions_parts`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `pagination_boundary_key`, `pagination_token_before_event`, `reader_has_read`, `remove_dir_all_if_exists`, `remove_pagination_boundary_token`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_state_label`, `room_to_chat_room`, `sanitize_for_path`, `sanitized_formatted_body`, `sanitized_reply_formatted_body`, `set_connection_status`, `set_pagination_boundary_token`, `sticker_info_dimensions`, `stop_sync_task`, `strip_reply_fallback`, `text_message_parts`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `unable_to_decrypt_message`, `usage_allows_sticker`, `wait_for_e2ee_initialization`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `EditedTextContent`, `PendingEntry`, `SyncNotification`, `SyncTask`, `VerificationSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -213,14 +213,17 @@ Future<void> unsubscribeTyping() =>
 /// included in every sync roundtrip, ensuring read-receipt deltas for it are
 /// always delivered. Call when entering a room screen.
 ///
-/// The `timeline_limit` is bumped for the subscribed room so recent events
-/// (and their receipts) are populated; the global list keeps its small limit.
+/// If Sliding Sync is not yet ready (startup race / account switch), the
+/// desire is recorded and applied automatically once the sync loop publishes
+/// an instance; this function never fails for that reason.
 Future<void> subscribeRoomForReceipts({required String roomId}) =>
     RustLib.instance.api.crateApiMatrixSubscribeRoomForReceipts(roomId: roomId);
 
 /// Unsubscribe the given room from Sliding Sync (e.g. when leaving the room
 /// screen). Receipts for it will still arrive when the room has timeline
-/// activity, but not on every roundtrip.
+/// activity, but not on every roundtrip. Uses `unsubscribe_to_rooms` (not a
+/// no-op re-subscribe) so the subscription is actually removed, keeping sync
+/// cost bounded as the user visits different rooms.
 Future<void> unsubscribeRoomForReceipts({required String roomId}) => RustLib
     .instance
     .api
