@@ -27,6 +27,8 @@ use std::time::SystemTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+mod sdk_timeline;
+
 // ── App-wide log system ─────────────────────────────────────────────
 
 /// A single log entry visible to the user.
@@ -135,16 +137,8 @@ fn notify_sync_event(event: SyncEvent) {
     let _ = SYNC_EVENT_TX.send(event);
 }
 
-async fn clear_receipt_cache() {
-    RECEIPT_CACHE.lock().await.clear();
-}
-
-async fn clear_sent_read_receipts_for_user(user_id: &str) {
-    let prefix = format!("{user_id}\n");
-    SENT_READ_RECEIPTS
-        .lock()
-        .await
-        .retain(|key, _| !key.starts_with(&prefix));
+async fn clear_timeline_cache() {
+    sdk_timeline::clear_all().await;
 }
 
 // ── Multi-account store ──────────────────────────────────────────────
@@ -175,13 +169,12 @@ struct SyncTask {
 /// Exactly one account owns the app-wide background sync task at a time.
 static SYNC_TASK: Lazy<Mutex<Option<SyncTask>>> = Lazy::new(|| Mutex::new(None));
 
-/// Runtime Sliding Sync subscription state for the active room screen.
+/// Runtime Sliding Sync subscription state for mounted room screens.
 ///
-/// Both the live `SlidingSync` handle and the room the Dart side wants
-/// subscribed live behind a single lock, so `subscribe`/`unsubscribe` FFI
-/// calls and the sync loop's (re)build/replay all observe a consistent pair —
-/// a late-finishing old call can't overwrite a newer room, and a cancel can't
-/// race a re-subscribe. Without an explicit subscription, a room with no
+/// Both the live `SlidingSync` handle and the rooms the Dart side wants
+/// subscribed live behind a single lock, so route lifetimes and the sync
+/// loop's (re)build/replay observe one consistent set. Without an explicit
+/// subscription, a room with no
 /// recent timeline activity may be absent from sync responses, so its
 /// read-receipt deltas get dropped by the receipts extension (which only
 /// processes rooms present in the response). Subscribing the active room keeps
@@ -189,9 +182,9 @@ static SYNC_TASK: Lazy<Mutex<Option<SyncTask>>> = Lazy::new(|| Mutex::new(None))
 /// Sliding Sync receipt extension only emits per-room receipts when the room
 /// is part of the response.
 struct RoomSubscriptionState {
-    /// The room the open chat screen wants subscribed, applied (re)applied
-    /// whenever a live instance is set, including after reconnect rebuilds.
-    desired: Option<String>,
+    /// Mounted chat screens by room. Counts distinguish overlapping routes for
+    /// the same room so disposing an older route cannot cancel a newer one.
+    desired: HashMap<String, usize>,
     /// The live Sliding Sync instance, present once the sync loop has built
     /// one (and reset to `None` when it's stopped).
     active: Option<matrix_sdk::sliding_sync::SlidingSync>,
@@ -199,45 +192,62 @@ struct RoomSubscriptionState {
 
 static ROOM_SUBSCRIPTION: Lazy<tokio::sync::Mutex<RoomSubscriptionState>> = Lazy::new(|| {
     tokio::sync::Mutex::new(RoomSubscriptionState {
-        desired: None,
+        desired: HashMap::new(),
         active: None,
     })
 });
 
-/// Server pagination token for the next older page in each room.
-static MESSAGE_PAGINATION_TOKENS: Lazy<Mutex<HashMap<String, String>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+impl RoomSubscriptionState {
+    fn add_desired(&mut self, room_id: &str) -> bool {
+        let count = self.desired.entry(room_id.to_owned()).or_default();
+        *count += 1;
+        *count == 1
+    }
 
-/// Server pagination token scoped to the visible oldest event boundary.
-static MESSAGE_PAGINATION_BOUNDARY_TOKENS: Lazy<Mutex<HashMap<String, String>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
-fn pagination_boundary_key(room_id: &str, event_id: &str) -> String {
-    format!("{room_id}\n{event_id}")
-}
-
-async fn set_pagination_boundary_token(
-    room_id: &str,
-    event_id: Option<&str>,
-    token: Option<String>,
-) {
-    let Some(event_id) = event_id else {
-        return;
-    };
-    let mut tokens = MESSAGE_PAGINATION_BOUNDARY_TOKENS.lock().await;
-    let key = pagination_boundary_key(room_id, event_id);
-    if let Some(token) = token {
-        tokens.insert(key, token);
-    } else {
-        tokens.remove(&key);
+    fn remove_desired(&mut self, room_id: &str) -> bool {
+        let Some(count) = self.desired.get_mut(room_id) else {
+            return false;
+        };
+        *count -= 1;
+        if *count > 0 {
+            return false;
+        }
+        self.desired.remove(room_id);
+        true
     }
 }
 
-async fn remove_pagination_boundary_token(room_id: &str, event_id: &str) {
-    MESSAGE_PAGINATION_BOUNDARY_TOKENS
-        .lock()
-        .await
-        .remove(&pagination_boundary_key(room_id, event_id));
+#[cfg(test)]
+mod room_subscription_tests {
+    use super::RoomSubscriptionState;
+    use std::collections::HashMap;
+
+    fn state() -> RoomSubscriptionState {
+        RoomSubscriptionState {
+            desired: HashMap::new(),
+            active: None,
+        }
+    }
+
+    #[test]
+    fn duplicate_routes_only_unsubscribe_after_the_last_owner() {
+        let mut state = state();
+        assert!(state.add_desired("!room:example.org"));
+        assert!(!state.add_desired("!room:example.org"));
+        assert!(!state.remove_desired("!room:example.org"));
+        assert!(state.desired.contains_key("!room:example.org"));
+        assert!(state.remove_desired("!room:example.org"));
+        assert!(!state.desired.contains_key("!room:example.org"));
+    }
+
+    #[test]
+    fn stacked_rooms_are_tracked_independently() {
+        let mut state = state();
+        assert!(state.add_desired("!first:example.org"));
+        assert!(state.add_desired("!second:example.org"));
+        assert!(state.remove_desired("!second:example.org"));
+        assert!(state.desired.contains_key("!first:example.org"));
+    }
 }
 
 async fn stop_sync_task(user_id: Option<&str>) {
@@ -259,7 +269,7 @@ async fn stop_sync_task(user_id: Option<&str>) {
         // instance, and a later session doesn't replay an old room.
         let mut sub = ROOM_SUBSCRIPTION.lock().await;
         sub.active = None;
-        sub.desired = None;
+        sub.desired.clear();
     }
 }
 
@@ -316,7 +326,6 @@ fn install_live_update_event_handlers(client: &Client) {
 
     client.add_event_handler(|_event: SyncReceiptEvent, room: Room| async move {
         let room_id = room.room_id().to_string();
-        RECEIPT_CACHE.lock().await.remove(&room_id);
         notify_sync_event(SyncEvent::MessageSent { room_id });
     });
 }
@@ -1747,7 +1756,7 @@ pub async fn switch_account(user_id: String) -> bool {
         drop(active);
         drop(sync_task);
         clear_verification_session().await;
-        clear_receipt_cache().await;
+        clear_timeline_cache().await;
         app_log("info", "auth", format!("Switched to account: {}", user_id));
         info!("Switched to account: {}", user_id);
         true
@@ -1772,8 +1781,7 @@ pub async fn logout() -> Result<(), String> {
     let user_id = active_user.ok_or("No active account to logout")?;
     clear_verification_session().await;
     stop_sync_task(Some(&user_id)).await;
-    clear_sent_read_receipts_for_user(&user_id).await;
-    clear_receipt_cache().await;
+    clear_timeline_cache().await;
 
     let (client, data_dir) = {
         let clients = CLIENTS.read().await;
@@ -1843,10 +1851,9 @@ pub async fn remove_account(user_id: String) -> Result<(), String> {
     let removing_active = ACTIVE_USER.read().await.as_ref() == Some(&user_id);
     if removing_active {
         clear_verification_session().await;
-        clear_receipt_cache().await;
+        clear_timeline_cache().await;
     }
     stop_sync_task(Some(&user_id)).await;
-    clear_sent_read_receipts_for_user(&user_id).await;
 
     let (client, data_dir) = {
         let clients = CLIENTS.read().await;
@@ -2598,15 +2605,15 @@ async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String
                     continue;
                 }
             };
-            // Atomically publish the live instance and replay the open
-            // room's subscription onto it. The old instance (and its sticky
+            // Atomically publish the live instance and replay mounted rooms'
+            // subscriptions onto it. The old instance (and its sticky
             // subscriptions) is gone after a reconnect, so without replay the
-            // current room would stop receiving receipt deltas until the user
-            // re-enters it. subscribe_to_rooms is synchronous, so we do it
+            // mounted rooms would stop receiving receipt deltas until re-entry.
+            // subscribe_to_rooms is synchronous, so we do it
             // under the same lock to keep desired/active consistent.
             let mut sub_state = ROOM_SUBSCRIPTION.lock().await;
             sub_state.active = Some(sliding_sync.clone());
-            if let Some(room_id) = sub_state.desired.clone() {
+            for room_id in sub_state.desired.keys() {
                 if let Ok(parsed) = matrix_sdk::ruma::RoomId::parse(room_id.as_str()) {
                     use matrix_sdk::ruma::api::client::sync::sync_events::v5::request::RoomSubscription;
                     use matrix_sdk::ruma::UInt;
@@ -2666,9 +2673,22 @@ async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String
 pub fn watch_sync_events(sink: crate::frb_generated::StreamSink<SyncEvent>) {
     let mut rx = SYNC_EVENT_TX.subscribe();
     std::thread::spawn(move || {
-        while let Ok(event) = rx.blocking_recv() {
-            if sink.add(event).is_err() {
-                break; // Dart side disconnected
+        loop {
+            match rx.blocking_recv() {
+                Ok(event) => {
+                    if sink.add(event).is_err() {
+                        break; // Dart side disconnected
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Dart can be paused while the app is backgrounded. A
+                    // synthetic full refresh catches it up without killing
+                    // the only Rust -> Dart update bridge.
+                    if sink.add(SyncEvent::SyncCompleted).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }
     });
@@ -2693,42 +2713,6 @@ static TYPING_TX: Lazy<tokio::sync::broadcast::Sender<TypingNotification>> = Laz
 /// so we can abort it when switching rooms or leaving.
 static TYPING_TASK: Lazy<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>> =
     Lazy::new(|| tokio::sync::Mutex::new(None));
-
-/// A member's read-receipt data, kept in the per-room receipt cache.
-///
-/// `unthreaded`/`main_thread` are the (target_event_id, receipt_ts) pairs for
-/// the two receipt threads, if present. The choice between them is deferred
-/// to attach time (where timeline position is known) rather than picked here
-/// by `ts`, because in federated rooms the two targets may come from
-/// different homeservers whose clocks aren't aligned.
-#[derive(Clone, Debug)]
-struct ReaderRecord {
-    user_id: String,
-    display_name: String,
-    avatar_url: Option<String>,
-    unthreaded: Option<(String, i64)>,
-    main_thread: Option<(String, i64)>,
-}
-
-/// Cache of per-room read-receipt records, keyed by room id.
-///
-/// `get_messages` recomputes receipts on every sync (≥500 ms), but receipts
-/// only change when someone reads — so a short TTL avoids re-querying the
-/// SDK store for every member on every sync. Value = (records, total_members,
-/// fetched_at).
-/// Snapshot of receipts for one room, stored in [`RECEIPT_CACHE`].
-type ReceiptCacheEntry = (Vec<ReaderRecord>, i32, std::time::Instant);
-
-static RECEIPT_CACHE: Lazy<tokio::sync::Mutex<HashMap<String, ReceiptCacheEntry>>> =
-    Lazy::new(|| tokio::sync::Mutex::new(HashMap::new()));
-
-/// Last event for which this client sent a read receipt, keyed by account and
-/// room. Message refreshes must not continuously re-send the same receipt.
-static SENT_READ_RECEIPTS: Lazy<tokio::sync::Mutex<HashMap<String, String>>> =
-    Lazy::new(|| tokio::sync::Mutex::new(HashMap::new()));
-
-/// Receipt cache freshness window. Receipts rarely change faster than this.
-const RECEIPT_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Stream typing-notification updates (room_id + typing user ids) to Dart.
 /// Mirrors `watch_sync_events`.
@@ -2809,13 +2793,15 @@ pub async fn subscribe_room_for_receipts(room_id: String) -> Result<(), String> 
     let parsed = matrix_sdk::ruma::RoomId::parse(room_id.clone())
         .map_err(|e| format!("Invalid room id: {e}"))?;
     let mut state = ROOM_SUBSCRIPTION.lock().await;
-    state.desired = Some(room_id);
-    if let Some(sliding_sync) = state.active.as_ref() {
-        use matrix_sdk::ruma::api::client::sync::sync_events::v5::request::RoomSubscription;
-        use matrix_sdk::ruma::UInt;
-        let mut sub = RoomSubscription::default();
-        sub.timeline_limit = UInt::from(50u32);
-        sliding_sync.subscribe_to_rooms(&[&parsed], Some(sub), false);
+    let first_subscriber = state.add_desired(&room_id);
+    if first_subscriber {
+        if let Some(sliding_sync) = state.active.as_ref() {
+            use matrix_sdk::ruma::api::client::sync::sync_events::v5::request::RoomSubscription;
+            use matrix_sdk::ruma::UInt;
+            let mut sub = RoomSubscription::default();
+            sub.timeline_limit = UInt::from(50u32);
+            sliding_sync.subscribe_to_rooms(&[&parsed], Some(sub), false);
+        }
     }
     Ok(())
 }
@@ -2826,19 +2812,19 @@ pub async fn subscribe_room_for_receipts(room_id: String) -> Result<(), String> 
 /// no-op re-subscribe) so the subscription is actually removed, keeping sync
 /// cost bounded as the user visits different rooms.
 ///
-/// The desire is only cleared when it matches `room_id`, and the unsubscribe
-/// runs under the same single lock as subscribe, so a cancel can't race a
-/// re-subscribe for the same or a newer room.
+/// The room is removed only after its last mounted owner unsubscribes. The
+/// update runs under the same lock as subscribe, so overlapping routes cannot
+/// cancel each other's subscription.
 #[frb]
 pub async fn unsubscribe_room_for_receipts(room_id: String) -> Result<(), String> {
     let parsed = matrix_sdk::ruma::RoomId::parse(room_id.clone())
         .map_err(|e| format!("Invalid room id: {e}"))?;
     let mut state = ROOM_SUBSCRIPTION.lock().await;
-    if state.desired.as_deref() == Some(room_id.as_str()) {
-        state.desired = None;
-    }
-    if let Some(sliding_sync) = state.active.as_ref() {
-        sliding_sync.unsubscribe_to_rooms(&[&parsed], false);
+    let last_subscriber = state.remove_desired(&room_id);
+    if last_subscriber {
+        if let Some(sliding_sync) = state.active.as_ref() {
+            sliding_sync.unsubscribe_to_rooms(&[&parsed], false);
+        }
     }
     Ok(())
 }
@@ -3308,30 +3294,17 @@ fn text_message_parts(
 #[derive(Clone, Debug)]
 struct EditedTextContent {
     body: String,
-    formatted_body: Option<String>,
-    mentioned_user_ids: Vec<String>,
-    mentions_room: bool,
 }
 
 fn extract_edit_content(
     new_content: &matrix_sdk::ruma::events::room::message::RoomMessageEventContentWithoutRelation,
 ) -> Option<EditedTextContent> {
-    let (body, formatted) = match &new_content.msgtype {
-        matrix_sdk::ruma::events::room::message::MessageType::Text(t) => {
-            Some((t.body.clone(), t.formatted.as_ref()))
-        }
-        matrix_sdk::ruma::events::room::message::MessageType::Notice(t) => {
-            Some((t.body.clone(), t.formatted.as_ref()))
-        }
+    let body = match &new_content.msgtype {
+        matrix_sdk::ruma::events::room::message::MessageType::Text(t) => Some(t.body.clone()),
+        matrix_sdk::ruma::events::room::message::MessageType::Notice(t) => Some(t.body.clone()),
         _ => None,
     }?;
-    let (mentioned_user_ids, mentions_room) = mentions_parts(new_content.mentions.as_ref());
-    Some(EditedTextContent {
-        body,
-        formatted_body: sanitized_formatted_body(formatted),
-        mentioned_user_ids,
-        mentions_room,
-    })
+    Some(EditedTextContent { body })
 }
 
 #[cfg(test)]
@@ -3436,1003 +3409,12 @@ fn unable_to_decrypt_message(
     }
 }
 
-async fn load_room_messages_with_key_recovery(
-    client: &Client,
-    room: &Room,
-    from: Option<String>,
-    limit: u32,
-) -> Result<matrix_sdk::room::Messages, matrix_sdk::Error> {
-    let make_options = || {
-        let mut options = matrix_sdk::room::MessagesOptions::backward();
-        options.limit = limit.into();
-        options.from = from.clone();
-        options
-    };
-
-    let response = room.messages(make_options()).await?;
-    let has_undecryptable_events = response.chunk.iter().any(|event| event.kind.is_utd());
-    if !has_undecryptable_events || !client.encryption().backups().are_enabled().await {
-        return Ok(response);
-    }
-
-    match client
-        .encryption()
-        .backups()
-        .download_room_keys_for_room(room.room_id())
-        .await
-    {
-        Ok(()) => {
-            app_log(
-                "info",
-                "encryption",
-                format!("Downloaded backup room keys for {}", room.room_id()),
-            );
-            room.messages(make_options()).await
-        }
-        Err(error) => {
-            app_log(
-                "warn",
-                "encryption",
-                format!(
-                    "Failed to download backup room keys for {}: {error}",
-                    room.room_id()
-                ),
-            );
-            Ok(response)
-        }
-    }
-}
-
 /// Get messages for a room (must sync first).
 #[frb]
 pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let my_user_id = client.user_id().map(|u| u.to_string());
     let room = get_room_by_id(&client, &room_id)?;
-
-    let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
-    let mut edits: HashMap<String, Vec<EditedTextContent>> = HashMap::new();
-    // event_id (of the annotated message) → (reaction key → (sender ids, my reaction event id))
-    let mut reactions: HashMap<String, HashMap<String, (Vec<String>, Option<String>)>> =
-        HashMap::new();
-    let msg_resp = load_room_messages_with_key_recovery(&client, &room, None, 100)
-        .await
-        .map_err(|e| {
-            let msg = format!("Failed to load messages for room {}: {e}", room_id);
-            app_log("error", "rooms", msg.clone());
-            msg
-        })?;
-
-    let newest_event_id = msg_resp.chunk.first().and_then(|event| {
-        event.kind.raw().deserialize().ok().map(
-            |event: matrix_sdk::ruma::events::AnySyncTimelineEvent| event.event_id().to_string(),
-        )
-    });
-    for timeline_event in msg_resp.chunk.iter().rev() {
-        let raw = timeline_event.kind.raw();
-        let Ok(any_ev) = raw.deserialize() else {
-            continue;
-        };
-
-        let event_id_str = any_ev.event_id().to_string();
-        let sender_id = any_ev.sender().to_string();
-        let is_me = my_user_id.as_ref() == Some(&sender_id);
-        let sender_name = if is_me {
-            "\u{6211}".to_string() // "我"
-        } else {
-            sender_id
-                .split(':')
-                .next()
-                .unwrap_or(&sender_id)
-                .trim_start_matches('@')
-                .to_string()
-        };
-
-        let ts_millis = u64::from(any_ev.origin_server_ts().0);
-        let timestamp = ts_millis.to_string();
-
-        if timeline_event.kind.is_utd() {
-            raw_messages.push((
-                event_id_str.clone(),
-                unable_to_decrypt_message(event_id_str, sender_id, sender_name, timestamp, is_me),
-            ));
-            continue;
-        }
-
-        match &any_ev {
-            // ── Message events ──
-            matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
-            ) => {
-                let Some(original) = msg.as_original() else {
-                    continue;
-                };
-
-                // Check if this is an edit (replacement) event
-                if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(
-                    replacement,
-                )) = &original.content.relates_to
-                {
-                    if let Some(edit_text) = extract_edit_content(&replacement.new_content) {
-                        edits
-                            .entry(replacement.event_id.to_string())
-                            .or_default()
-                            .push(edit_text);
-                    }
-                    continue; // Do not add the edit event itself to the message list
-                }
-
-                let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
-                    if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
-                        Some(reply.in_reply_to.event_id.to_string())
-                    } else {
-                        None
-                    }
-                });
-
-                let chat_msg = match &original.content.msgtype {
-                    matrix_sdk::ruma::events::room::message::MessageType::Text(t) => {
-                        let (content, formatted_body, mentioned_user_ids, mentions_room) =
-                            text_message_parts(
-                                &t.body,
-                                t.formatted.as_ref(),
-                                original.content.mentions.as_ref(),
-                                in_reply_to.is_some(),
-                            );
-                        ChatMessage {
-                            id: event_id_str.clone(),
-                            sender_id: sender_id.clone(),
-                            sender_name: sender_name.clone(),
-                            content,
-                            formatted_body,
-                            caption: None,
-                            caption_formatted_body: None,
-                            mentioned_user_ids,
-                            mentions_room,
-                            timestamp: timestamp.clone(),
-                            is_me,
-                            msg_type: MessageType::Text,
-                            image_url: None,
-                            media_source_json: None,
-                            image_width: None,
-                            image_height: None,
-                            in_reply_to,
-                            is_edited: false,
-                            edit_history: Vec::new(),
-                            reactions: Vec::new(),
-                            readers: Vec::new(),
-                            total_members: 0,
-                        }
-                    }
-                    matrix_sdk::ruma::events::room::message::MessageType::Emote(t) => {
-                        let name = sender_name.clone();
-                        let (body, _, mentioned_user_ids, mentions_room) = text_message_parts(
-                            &t.body,
-                            t.formatted.as_ref(),
-                            original.content.mentions.as_ref(),
-                            in_reply_to.is_some(),
-                        );
-                        let content = format!("* {} {}", name, body);
-                        ChatMessage {
-                            id: event_id_str.clone(),
-                            sender_id: sender_id.clone(),
-                            sender_name: sender_name.clone(),
-                            content,
-                            formatted_body: None,
-                            caption: None,
-                            caption_formatted_body: None,
-                            mentioned_user_ids,
-                            mentions_room,
-                            timestamp: timestamp.clone(),
-                            is_me,
-                            msg_type: MessageType::Text,
-                            image_url: None,
-                            media_source_json: None,
-                            image_width: None,
-                            image_height: None,
-                            in_reply_to,
-                            is_edited: false,
-                            edit_history: Vec::new(),
-                            reactions: Vec::new(),
-                            readers: Vec::new(),
-                            total_members: 0,
-                        }
-                    }
-                    matrix_sdk::ruma::events::room::message::MessageType::Notice(t) => {
-                        let (content, formatted_body, mentioned_user_ids, mentions_room) =
-                            text_message_parts(
-                                &t.body,
-                                t.formatted.as_ref(),
-                                original.content.mentions.as_ref(),
-                                in_reply_to.is_some(),
-                            );
-                        ChatMessage {
-                            id: event_id_str.clone(),
-                            sender_id: sender_id.clone(),
-                            sender_name: sender_name.clone(),
-                            content,
-                            formatted_body,
-                            caption: None,
-                            caption_formatted_body: None,
-                            mentioned_user_ids,
-                            mentions_room,
-                            timestamp: timestamp.clone(),
-                            is_me,
-                            msg_type: MessageType::Text,
-                            image_url: None,
-                            media_source_json: None,
-                            image_width: None,
-                            image_height: None,
-                            in_reply_to,
-                            is_edited: false,
-                            edit_history: Vec::new(),
-                            reactions: Vec::new(),
-                            readers: Vec::new(),
-                            total_members: 0,
-                        }
-                    }
-                    matrix_sdk::ruma::events::room::message::MessageType::Image(t) => {
-                        let url = match &t.source {
-                            matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => {
-                                Some(mxc.to_string())
-                            }
-                            _ => None,
-                        };
-                        let (image_width, image_height) = image_info_dimensions(t.info.as_ref());
-                        let (caption, caption_formatted_body) =
-                            media_caption_parts(t.formatted_caption(), t.caption());
-                        let (mentioned_user_ids, mentions_room) =
-                            mentions_parts(original.content.mentions.as_ref());
-                        ChatMessage {
-                            id: event_id_str.clone(),
-                            sender_id: sender_id.clone(),
-                            sender_name: sender_name.clone(),
-                            content: t.filename().to_string(),
-                            formatted_body: None,
-                            caption,
-                            caption_formatted_body,
-                            mentioned_user_ids,
-                            mentions_room,
-                            timestamp: timestamp.clone(),
-                            is_me,
-                            msg_type: MessageType::Image,
-                            image_url: url,
-                            media_source_json: serde_json::to_string(&t.source).ok(),
-                            image_width,
-                            image_height,
-                            in_reply_to,
-                            is_edited: false,
-                            edit_history: Vec::new(),
-                            reactions: Vec::new(),
-                            readers: Vec::new(),
-                            total_members: 0,
-                        }
-                    }
-                    matrix_sdk::ruma::events::room::message::MessageType::Video(t) => {
-                        let url = match &t.source {
-                            matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => {
-                                Some(mxc.to_string())
-                            }
-                            _ => None,
-                        };
-                        let (image_width, image_height) = t
-                            .info
-                            .as_ref()
-                            .map(|info| (uint_to_i32(info.width), uint_to_i32(info.height)))
-                            .unwrap_or((None, None));
-                        let (caption, caption_formatted_body) =
-                            media_caption_parts(t.formatted_caption(), t.caption());
-                        let (mentioned_user_ids, mentions_room) =
-                            mentions_parts(original.content.mentions.as_ref());
-                        ChatMessage {
-                            id: event_id_str.clone(),
-                            sender_id: sender_id.clone(),
-                            sender_name: sender_name.clone(),
-                            content: t.filename().to_string(),
-                            formatted_body: None,
-                            caption,
-                            caption_formatted_body,
-                            mentioned_user_ids,
-                            mentions_room,
-                            timestamp: timestamp.clone(),
-                            is_me,
-                            msg_type: MessageType::Video,
-                            image_url: url,
-                            media_source_json: serde_json::to_string(&t.source).ok(),
-                            image_width,
-                            image_height,
-                            in_reply_to,
-                            is_edited: false,
-                            edit_history: Vec::new(),
-                            reactions: Vec::new(),
-                            readers: Vec::new(),
-                            total_members: 0,
-                        }
-                    }
-                    matrix_sdk::ruma::events::room::message::MessageType::File(t) => {
-                        let (caption, caption_formatted_body) =
-                            media_caption_parts(t.formatted_caption(), t.caption());
-                        let (mentioned_user_ids, mentions_room) =
-                            mentions_parts(original.content.mentions.as_ref());
-                        ChatMessage {
-                            id: event_id_str.clone(),
-                            sender_id: sender_id.clone(),
-                            sender_name: sender_name.clone(),
-                            content: format!("\u{6587}\u{4EF6}: {}", t.filename()),
-                            formatted_body: None,
-                            caption,
-                            caption_formatted_body,
-                            mentioned_user_ids,
-                            mentions_room,
-                            timestamp: timestamp.clone(),
-                            is_me,
-                            msg_type: MessageType::Text,
-                            image_url: None,
-                            media_source_json: None,
-                            image_width: None,
-                            image_height: None,
-                            in_reply_to,
-                            is_edited: false,
-                            edit_history: Vec::new(),
-                            reactions: Vec::new(),
-                            readers: Vec::new(),
-                            total_members: 0,
-                        }
-                    }
-                    _ => {
-                        continue; // skip unknown message types
-                    }
-                };
-                raw_messages.push((event_id_str.clone(), chat_msg));
-            }
-            matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Sticker(sticker),
-            ) => {
-                let Some(original) = sticker.as_original() else {
-                    continue;
-                };
-
-                let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
-                    if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
-                        Some(reply.in_reply_to.event_id.to_string())
-                    } else {
-                        None
-                    }
-                });
-
-                let url = match &original.content.source {
-                    matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(mxc) => {
-                        Some(mxc.to_string())
-                    }
-                    _ => None,
-                };
-                let (image_width, image_height) = sticker_info_dimensions(&original.content.info);
-
-                raw_messages.push((
-                    event_id_str.clone(),
-                    ChatMessage {
-                        id: event_id_str.clone(),
-                        sender_id: sender_id.clone(),
-                        sender_name: sender_name.clone(),
-                        content: original.content.body.clone(),
-                        formatted_body: None,
-                        caption: None,
-                        caption_formatted_body: None,
-                        mentioned_user_ids: Vec::new(),
-                        mentions_room: false,
-                        timestamp: timestamp.clone(),
-                        is_me,
-                        msg_type: MessageType::Sticker,
-                        image_url: url,
-                        media_source_json: serde_json::to_string(&original.content.source).ok(),
-                        image_width,
-                        image_height,
-                        in_reply_to,
-                        is_edited: false,
-                        edit_history: Vec::new(),
-                        reactions: Vec::new(),
-                        readers: Vec::new(),
-                        total_members: 0,
-                    },
-                ));
-            }
-
-            // ── Reaction events (m.reaction / m.annotation) ──
-            matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(r),
-            ) => {
-                if let Some(orig) = r.as_original() {
-                    let ann = &orig.content.relates_to;
-                    let entry = reactions
-                        .entry(ann.event_id.to_string())
-                        .or_default()
-                        .entry(ann.key.clone())
-                        .or_insert_with(|| (Vec::new(), None));
-                    entry.0.push(sender_id.clone());
-                    // Record the current user's reaction event id for toggling.
-                    if is_me {
-                        entry.1 = Some(event_id_str.clone());
-                    }
-                }
-            }
-
-            // ── State/member events ──
-            matrix_sdk::ruma::events::AnySyncTimelineEvent::State(state_ev) => {
-                let content = match state_ev {
-                    matrix_sdk::ruma::events::AnySyncStateEvent::RoomMember(m) => {
-                        let target = m.state_key().to_string();
-                        let target_name = target
-                            .split(':')
-                            .next()
-                            .unwrap_or(&target)
-                            .trim_start_matches('@')
-                            .to_string();
-                        match m.as_original() {
-                            Some(orig) => {
-                                // A member event whose membership is Join but
-                                // whose prev_membership was also Join is a
-                                // profile update (avatar/displayname change),
-                                // not a real join — must not render as
-                                // "joined the room".
-                                let prev_membership =
-                                    orig.unsigned.prev_content.as_ref().map(|pc| &pc.membership);
-                                match &orig.content.membership {
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Join => {
-                                        // Real join: no prev, or prev was not Join.
-                                        let is_profile_update = matches!(
-                                            prev_membership,
-                                            Some(matrix_sdk::ruma::events::room::member::MembershipState::Join)
-                                        );
-                                        if is_profile_update {
-                                            None
-                                        } else {
-                                            Some(format!("{} 加入了房间", target_name))
-                                        }
-                                    }
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Leave => {
-                                        if is_me {
-                                            Some(format!("{} 离开了房间", target_name))
-                                        } else {
-                                            None // skip own leave
-                                        }
-                                    }
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Ban => Some(format!("{} 被封禁", target_name)),
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Invite => Some(format!("{} 收到了加入房间的邀请", target_name)),
-                                    matrix_sdk::ruma::events::room::member::MembershipState::Knock => Some(format!("{} 请求加入房间", target_name)),
-                                    _ => None,
-                                }
-                            }
-                            None => None,
-                        }
-                    }
-                    matrix_sdk::ruma::events::AnySyncStateEvent::RoomCreate(_) => {
-                        Some("房间已创建".to_string())
-                    }
-                    matrix_sdk::ruma::events::AnySyncStateEvent::RoomName(n) => n
-                        .as_original()
-                        .map(|o| format!("房间名称更改为: {}", o.content.name)),
-                    matrix_sdk::ruma::events::AnySyncStateEvent::RoomTopic(t) => t
-                        .as_original()
-                        .map(|o| format!("主题更改为: {}", o.content.topic)),
-                    matrix_sdk::ruma::events::AnySyncStateEvent::RoomAvatar(_) => {
-                        Some("房间头像已更改".to_string())
-                    }
-                    _ => None,
-                };
-                if let Some(content) = content {
-                    raw_messages.push((
-                        event_id_str.clone(),
-                        ChatMessage {
-                            id: event_id_str.clone(),
-                            sender_id: sender_id.clone(),
-                            sender_name: sender_name.clone(),
-                            content,
-                            formatted_body: None,
-                            caption: None,
-                            caption_formatted_body: None,
-                            mentioned_user_ids: Vec::new(),
-                            mentions_room: false,
-                            timestamp: timestamp.clone(),
-                            is_me: false,
-                            msg_type: MessageType::Event,
-                            image_url: None,
-                            media_source_json: None,
-                            image_width: None,
-                            image_height: None,
-                            in_reply_to: None,
-                            is_edited: false,
-                            edit_history: Vec::new(),
-                            reactions: Vec::new(),
-                            readers: Vec::new(),
-                            total_members: 0,
-                        },
-                    ));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let next_from = msg_resp.end.clone();
-    {
-        let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
-        if let Some(next_from) = next_from.clone() {
-            tokens.insert(room_id.clone(), next_from);
-        } else {
-            tokens.remove(&room_id);
-        }
-    }
-
-    // Apply edits to the corresponding messages
-    let mut messages = Vec::new();
-    for (event_id, mut msg) in raw_messages {
-        if let Some(history) = edits.remove(&event_id) {
-            msg.is_edited = true;
-            // Prepend original content so edit_history = [original, edit1, edit2, ...]
-            let original = msg.content.clone();
-            let mut full_history = vec![original];
-            full_history.extend(history.iter().map(|edit| edit.body.clone()));
-            if let Some(latest) = history.last() {
-                msg.content = latest.body.clone();
-                msg.formatted_body = latest.formatted_body.clone();
-                msg.mentioned_user_ids = latest.mentioned_user_ids.clone();
-                msg.mentions_room = latest.mentions_room;
-            }
-            msg.edit_history = full_history;
-        }
-        // Apply aggregated reactions (dedupe senders per key defensively).
-        if let Some(by_key) = reactions.remove(&event_id) {
-            msg.reactions = by_key
-                .into_iter()
-                .map(|(key, (mut senders, my_event_id))| {
-                    senders.sort();
-                    senders.dedup();
-                    Reaction {
-                        key,
-                        senders,
-                        my_event_id,
-                    }
-                })
-                .collect();
-        }
-        messages.push(msg);
-    }
-
-    set_pagination_boundary_token(
-        &room_id,
-        messages.first().map(|message| message.id.as_str()),
-        next_from,
-    )
-    .await;
-
-    // Send a read receipt only when the newest event changes. Re-sending the
-    // same receipt on every UI refresh creates avoidable sync traffic.
-    if let Some(ref last_id) = newest_event_id {
-        let receipt_key = format!("{}\n{}", my_user_id.as_deref().unwrap_or_default(), room_id);
-        let already_sent = SENT_READ_RECEIPTS
-            .lock()
-            .await
-            .get(&receipt_key)
-            .is_some_and(|event_id| event_id == last_id);
-        if !already_sent {
-            if let Ok(event_id) = matrix_sdk::ruma::EventId::parse(last_id) {
-                let receipts = matrix_sdk::room::Receipts::new()
-                    .fully_read_marker(event_id.clone())
-                    .public_read_receipt(event_id);
-                if room.send_multiple_receipts(receipts).await.is_ok() {
-                    SENT_READ_RECEIPTS
-                        .lock()
-                        .await
-                        .insert(receipt_key, last_id.clone());
-                }
-            }
-        }
-    }
-
-    // ── Compute per-message read receipts (only meaningful for own messages) ──
-    //
-    // For each joined member (excluding us) we get their last read-receipt
-    // timestamp; a member counts as having read message i when their receipt
-    // time >= the message's origin_server_ts. Comparing by *timestamp* (rather
-    // than matching the receipt event id against the window) ensures members
-    // are counted even when their last-read event falls outside the current
-    // 100-message window or onto someone else's message.
-    //
-    // The Matrix protocol stores only one receipt position per user and no
-    // per-message read time, so we surface *who* read but not *when*.
-    use matrix_sdk::ruma::events::receipt::{ReceiptThread, ReceiptType};
-
-    let mut total_members: i32 = 0;
-
-    // Try the receipt cache first; receipts change rarely so a short TTL avoids
-    // re-querying the store for every member on every sync.
-    let now = std::time::Instant::now();
-    let cached_receipts = RECEIPT_CACHE.lock().await.get(&room_id).cloned();
-    let reader_records: Vec<ReaderRecord> = if let Some((records, members, _)) = cached_receipts
-        .filter(|(_, _, fetched_at)| now.duration_since(*fetched_at) < RECEIPT_CACHE_TTL)
-    {
-        total_members = members;
-        records
-    } else {
-        // Do not hold the global cache lock during SDK/store awaits. A
-        // slow room must not block receipt refreshes in every other room.
-        let mut records: Vec<ReaderRecord> = Vec::new();
-        if let Ok(joined) = room.members(matrix_sdk::RoomMemberships::JOIN).await {
-            total_members = joined.len() as i32;
-            let my_user_id = client.user_id();
-            for member in joined {
-                let uid = member.user_id();
-                if my_user_id == Some(uid) {
-                    continue;
-                }
-                let unthreaded = room
-                    .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, uid)
-                    .await
-                    .ok()
-                    .flatten();
-                let main = room
-                    .load_user_receipt(ReceiptType::Read, ReceiptThread::Main, uid)
-                    .await
-                    .ok()
-                    .flatten();
-                // Keep both unthreaded and main-thread candidates as
-                // (event_id, ts) pairs. We don't pick a "best" here:
-                // the right tiebreak is *timeline position* (which event
-                // is later in the room), not `ts` — in federated rooms the
-                // two receipts may target events from different
-                // homeservers whose clocks aren't aligned, so a later event
-                // can carry a smaller `ts`. Position is only known later,
-                // at attach time, so we defer the choice there. `ts` is
-                // kept as a fallback for targets outside the loaded window.
-                let unthreaded_cand = unthreaded
-                    .map(|(eid, r)| (eid.to_string(), r.ts.map(|ts| i64::from(ts.0)).unwrap_or(0)));
-                let main_cand = main
-                    .map(|(eid, r)| (eid.to_string(), r.ts.map(|ts| i64::from(ts.0)).unwrap_or(0)));
-                if unthreaded_cand.is_none() && main_cand.is_none() {
-                    continue;
-                }
-                let name = member.name().to_string();
-                let display_name = if name == uid.as_str() {
-                    uid.localpart().to_string()
-                } else {
-                    name
-                };
-                let avatar = member.avatar_url().map(|u| u.to_string());
-                records.push(ReaderRecord {
-                    user_id: uid.to_string(),
-                    display_name,
-                    avatar_url: avatar,
-                    unthreaded: unthreaded_cand,
-                    main_thread: main_cand,
-                });
-            }
-        }
-        RECEIPT_CACHE
-            .lock()
-            .await
-            .insert(room_id.clone(), (records.clone(), total_members, now));
-        records
-    };
-
-    // Build a timeline-position table over the *full* loaded chunk — not
-    // just the rendered `messages`. Receipts can target events that we filter
-    // out of the message list (edits, reactions, state events); those event
-    // ids are still valid read positions and must resolve to a position, or
-    // they'd fall back to the cross-clock `ts` comparison. Position is
-    // oldest-to-newest (0 = oldest).
-    let event_position: std::collections::HashMap<String, usize> =
-        msg_resp
-            .chunk
-            .iter()
-            .rev()
-            .filter_map(|te| {
-                te.kind.raw().deserialize().ok().map(
-                    |ev: matrix_sdk::ruma::events::AnySyncTimelineEvent| ev.event_id().to_string(),
-                )
-            })
-            .enumerate()
-            .map(|(idx, eid)| (eid, idx))
-            .collect();
-
-    // Attach readers to each of our own messages. The message's own timeline
-    // position is looked up in `event_position` (the full-chunk table) — not
-    // its index in the filtered `messages` list — so that receipt positions
-    // and the message position share one coordinate system even when events
-    // (edits, reactions, state) between messages have been filtered out.
-    for msg in messages.iter_mut() {
-        msg.total_members = total_members;
-        if msg.is_me {
-            let msg_pos = event_position.get(&msg.id).copied();
-            let msg_ts = msg.timestamp.parse::<i64>().unwrap_or(0);
-            msg.readers = reader_records
-                .iter()
-                .filter(|rec| {
-                    reader_has_read(
-                        rec.unthreaded.as_ref(),
-                        rec.main_thread.as_ref(),
-                        &event_position,
-                        msg_pos,
-                        msg_ts,
-                    )
-                })
-                .map(|rec| MessageReader {
-                    user_id: rec.user_id.clone(),
-                    display_name: rec.display_name.clone(),
-                    avatar_url: rec.avatar_url.clone(),
-                })
-                .collect();
-        }
-    }
-
-    Ok(messages)
-}
-
-/// Whether a reader has seen a given message.
-///
-/// The reader may have an unthreaded and/or a main-thread receipt, each
-/// pointing at an event with its own `ts`. We resolve which receipt to use as
-/// follows:
-///
-/// - If either target event is in the loaded window, pick the one with the
-///   *later timeline position* (not `ts`): in federated rooms the two targets
-///   may come from different homeservers whose clocks aren't aligned, so a
-///   later event can carry a smaller `origin_server_ts`. Position is the true
-///   read order and matches what other clients (Element) display.
-/// - If neither target is in the window, fall back to the larger `ts` and
-///   compare it against the message's `origin_server_ts`. This crosses clocks
-///   (reader client vs sender server) and is best-effort.
-fn reader_has_read(
-    unthreaded: Option<&(String, i64)>,
-    main: Option<&(String, i64)>,
-    event_position: &std::collections::HashMap<String, usize>,
-    msg_pos: Option<usize>,
-    msg_ts: i64,
-) -> bool {
-    let resolve = |cand: Option<&(String, i64)>| -> (Option<usize>, i64) {
-        match cand {
-            Some((eid, ts)) => (event_position.get(eid).copied(), *ts),
-            None => (None, 0),
-        }
-    };
-    let (u_pos, u_ts) = resolve(unthreaded);
-    let (m_pos, m_ts) = resolve(main);
-
-    // No receipt at all (no unthreaded, no main) => definitely not read.
-    // (The caller filters these out, but keep the function self-consistent.)
-    if unthreaded.is_none() && main.is_none() {
-        return false;
-    }
-
-    // Without the message's own position we can't do a positional compare;
-    // fall back to ts (best-effort). This only happens if the message id
-    // itself is absent from the chunk (shouldn't occur in practice).
-    let Some(msg_pos) = msg_pos else {
-        return u_ts.max(m_ts) >= msg_ts;
-    };
-
-    match (u_pos, m_pos) {
-        // Both targets in-window: the later position wins.
-        (Some(up), Some(mp)) => up.max(mp) >= msg_pos,
-        // Only one in-window: use it.
-        (Some(up), None) => up >= msg_pos,
-        (None, Some(mp)) => mp >= msg_pos,
-        // Neither in-window: fall back to the larger ts.
-        (None, None) => u_ts.max(m_ts) >= msg_ts,
-    }
-}
-
-#[cfg(test)]
-mod read_receipt_tests {
-    use super::reader_has_read;
-    use std::collections::HashMap;
-
-    // Helper: build a position table mapping event ids to timeline indices.
-    fn positions(pairs: &[(&str, usize)]) -> HashMap<String, usize> {
-        pairs.iter().map(|(e, i)| (e.to_string(), *i)).collect()
-    }
-
-    // A receipt candidate: (event_id, ts).
-    fn cand(eid: &str, ts: i64) -> (String, i64) {
-        (eid.to_string(), ts)
-    }
-
-    #[test]
-    fn target_at_or_after_message_counts_as_read() {
-        let pos = positions(&[("$a", 2), ("$b", 3)]);
-        assert!(reader_has_read(
-            Some(&cand("$a", 0)),
-            None,
-            &pos,
-            Some(2),
-            0
-        ));
-        assert!(reader_has_read(
-            Some(&cand("$b", 0)),
-            None,
-            &pos,
-            Some(2),
-            0
-        ));
-    }
-
-    #[test]
-    fn target_before_message_is_not_read() {
-        let pos = positions(&[("$a", 1), ("$msg", 2)]);
-        assert!(!reader_has_read(
-            Some(&cand("$a", 0)),
-            None,
-            &pos,
-            Some(2),
-            0
-        ));
-    }
-
-    #[test]
-    fn timeline_position_wins_over_timestamps() {
-        // Federated clock-skew: the target event is later in the timeline
-        // (pos 3 > msg pos 2) but carries an *older* timestamp (90 < 100).
-        // By position the reader HAS read it; a timestamp comparison would
-        // wrongly say they haven't.
-        let pos = positions(&[("$late", 3), ("$early", 1)]);
-        assert!(reader_has_read(
-            Some(&cand("$late", 90)),
-            None,
-            &pos,
-            Some(2),
-            100
-        ));
-        // Target earlier in the timeline => not read, regardless of ts.
-        assert!(!reader_has_read(
-            Some(&cand("$early", 200)),
-            None,
-            &pos,
-            Some(2),
-            100
-        ));
-    }
-
-    #[test]
-    fn later_position_wins_between_unthreaded_and_main() {
-        // unthreaded targets pos 1, main targets pos 4; main is later so the
-        // reader is considered to have read up to pos 4.
-        let pos = positions(&[("$u", 1), ("$m", 4)]);
-        assert!(reader_has_read(
-            Some(&cand("$u", 500)),
-            Some(&cand("$m", 50)),
-            &pos,
-            Some(3),
-            100,
-        ));
-        // Both before the message => not read.
-        assert!(!reader_has_read(
-            Some(&cand("$u", 500)),
-            Some(&cand("$m", 50)),
-            &pos,
-            Some(5),
-            100,
-        ));
-    }
-
-    #[test]
-    fn falls_back_to_ts_when_targets_are_out_of_window() {
-        let pos = positions(&[]);
-        assert!(reader_has_read(
-            Some(&cand("$x", 100)),
-            None,
-            &pos,
-            Some(2),
-            100
-        ));
-        assert!(reader_has_read(
-            Some(&cand("$x", 101)),
-            None,
-            &pos,
-            Some(2),
-            100
-        ));
-        assert!(!reader_has_read(
-            Some(&cand("$x", 99)),
-            None,
-            &pos,
-            Some(2),
-            100
-        ));
-    }
-
-    #[test]
-    fn target_filtered_from_messages_still_resolves_by_position() {
-        // The receipt targets an edit/reaction event that is in the chunk
-        // but filtered out of `messages`; it must still resolve to a position
-        // instead of falling back to cross-clock ts.
-        let pos = positions(&[("$edit", 4), ("$msg", 2)]);
-        assert!(reader_has_read(
-            Some(&cand("$edit", 90)),
-            None,
-            &pos,
-            Some(2),
-            100
-        ));
-    }
-
-    #[test]
-    fn filtered_events_between_messages_do_not_shift_coordinate_system() {
-        // Regression: two messages with a filtered event (an edit) between
-        // them. In the full chunk the edit is pos 1 and the later message is
-        // pos 2. If the code had used the *filtered* `messages` index, the
-        // later message would be index 1 instead of 2 — and a receipt at the
-        // edit (pos 1) would wrongly count as having read it. Using the
-        // message's own chunk position (2), the receipt at pos 1 has NOT read
-        // it, which is correct.
-        let pos = positions(&[("$msg0", 0), ("$edit", 1), ("$msg1", 2)]);
-        // Receipt targets the edit (pos 1); later message $msg1 is at pos 2.
-        // 1 < 2 => not read.
-        assert!(!reader_has_read(
-            Some(&cand("$edit", 0)),
-            None,
-            &pos,
-            Some(2),
-            0,
-        ));
-        // Receipt at the later message itself => read.
-        assert!(reader_has_read(
-            Some(&cand("$msg1", 0)),
-            None,
-            &pos,
-            Some(2),
-            0,
-        ));
-    }
-
-    #[test]
-    fn both_receipts_none_is_not_read() {
-        let pos = positions(&[("$msg", 0)]);
-        assert!(!reader_has_read(None, None, &pos, Some(0), 0));
-    }
-
-    #[test]
-    fn missing_msg_pos_falls_back_to_ts() {
-        // Message id absent from the chunk table (shouldn't happen in
-        // practice) — must fall back to the larger ts, not panic.
-        let pos = positions(&[]);
-        assert!(reader_has_read(
-            Some(&cand("$u", 100)),
-            None,
-            &pos,
-            None,
-            100
-        ));
-        assert!(!reader_has_read(
-            Some(&cand("$u", 99)),
-            None,
-            &pos,
-            None,
-            100
-        ));
-    }
-
-    #[test]
-    fn one_receipt_in_window_one_out_uses_in_window() {
-        // unthreaded in-window at pos 1, main out-of-window; msg at pos 2.
-        // The in-window target decides: 1 < 2 => not read.
-        let pos = positions(&[("$in", 1)]);
-        assert!(!reader_has_read(
-            Some(&cand("$in", 0)),
-            Some(&cand("$out", 999)),
-            &pos,
-            Some(2),
-            0,
-        ));
-        // unthreaded in-window at pos 5 => read.
-        let pos2 = positions(&[("$in", 5)]);
-        assert!(reader_has_read(
-            Some(&cand("$in", 0)),
-            Some(&cand("$out", 0)),
-            &pos2,
-            Some(2),
-            0,
-        ));
-    }
+    sdk_timeline::get_messages(&client, &room).await
 }
 
 #[frb]
@@ -5609,35 +4591,6 @@ pub async fn search_rooms(query: String) -> Result<Vec<ChatRoom>, String> {
     Ok(filtered)
 }
 
-async fn pagination_token_before_event(room: &Room, event_id: &str) -> Option<String> {
-    let event_id = match matrix_sdk::ruma::EventId::parse(event_id) {
-        Ok(event_id) => event_id,
-        Err(error) => {
-            app_log(
-                "warn",
-                "rooms",
-                format!("Cannot restore pagination token for invalid event id {event_id}: {error}"),
-            );
-            return None;
-        }
-    };
-
-    match room
-        .event_with_context(&event_id, false, 0u32.into(), None)
-        .await
-    {
-        Ok(context) => context.prev_batch_token,
-        Err(error) => {
-            app_log(
-                "warn",
-                "rooms",
-                format!("Failed to restore pagination token before {event_id}: {error}"),
-            );
-            None
-        }
-    }
-}
-
 /// Load more messages (paginated) from before a given event.
 #[frb]
 pub async fn get_messages_before(
@@ -5646,384 +4599,6 @@ pub async fn get_messages_before(
     limit: u32,
 ) -> Result<Vec<ChatMessage>, String> {
     let client = get_client().await.ok_or("No client created.")?;
-
-    let my_user_id = client.user_id().map(|u| u.to_string());
     let room = get_room_by_id(&client, &room_id)?;
-
-    let mut raw_messages: Vec<(String, ChatMessage)> = Vec::new();
-    let mut edits: HashMap<String, Vec<EditedTextContent>> = HashMap::new();
-    let mut reactions: HashMap<String, HashMap<String, (Vec<String>, Option<String>)>> =
-        HashMap::new();
-
-    let from = {
-        let tokens = MESSAGE_PAGINATION_BOUNDARY_TOKENS.lock().await;
-        tokens
-            .get(&pagination_boundary_key(&room_id, &from_event_id))
-            .cloned()
-    };
-    let mut from = match from {
-        Some(from) => from,
-        None => match pagination_token_before_event(&room, &from_event_id).await {
-            Some(from) => from,
-            None => return Ok(Vec::new()),
-        },
-    };
-
-    let next_from = loop {
-        let msg_resp =
-            load_room_messages_with_key_recovery(&client, &room, Some(from.clone()), limit)
-                .await
-                .map_err(|e| format!("Failed to load older messages: {e}"))?;
-
-        for timeline_event in msg_resp.chunk.iter().rev() {
-            let raw = timeline_event.kind.raw();
-            let Ok(any_ev) = raw.deserialize() else {
-                continue;
-            };
-
-            if timeline_event.kind.is_utd() {
-                let event_id = any_ev.event_id().to_string();
-                let sender_id = any_ev.sender().to_string();
-                let is_me = my_user_id.as_ref() == Some(&sender_id);
-                let sender_name = if is_me {
-                    "我".to_string()
-                } else {
-                    sender_id
-                        .split(':')
-                        .next()
-                        .unwrap_or(&sender_id)
-                        .trim_start_matches('@')
-                        .to_string()
-                };
-                let timestamp = u64::from(any_ev.origin_server_ts().0).to_string();
-                raw_messages.push((
-                    event_id.clone(),
-                    unable_to_decrypt_message(event_id, sender_id, sender_name, timestamp, is_me),
-                ));
-                continue;
-            }
-
-            // Collect reaction events; they don't appear as messages themselves.
-            if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Reaction(r),
-            ) = &any_ev
-            {
-                if let Some(orig) = r.as_original() {
-                    let ann = &orig.content.relates_to;
-                    let sender = r.sender().to_string();
-                    let reaction_event_id = r.event_id().to_string();
-                    let is_me = my_user_id.as_deref() == Some(sender.as_str());
-                    let entry = reactions
-                        .entry(ann.event_id.to_string())
-                        .or_default()
-                        .entry(ann.key.clone())
-                        .or_insert_with(|| (Vec::new(), None));
-                    entry.0.push(sender);
-                    if is_me {
-                        entry.1 = Some(reaction_event_id);
-                    }
-                }
-                continue;
-            }
-
-            if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::Sticker(sticker),
-            ) = &any_ev
-            {
-                let Some(original) = sticker.as_original() else {
-                    continue;
-                };
-
-                let event_id = sticker.event_id().to_string();
-                let sender_id = sticker.sender().to_string();
-                let is_me = my_user_id.as_ref() == Some(&sender_id);
-                let sender_name = if is_me {
-                    "\u{6211}".to_string()
-                } else {
-                    sender_id
-                        .split(':')
-                        .next()
-                        .unwrap_or(&sender_id)
-                        .trim_start_matches('@')
-                        .to_string()
-                };
-
-                let ts_millis = u64::from(sticker.origin_server_ts().0);
-                let timestamp = ts_millis.to_string();
-
-                let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
-                    if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
-                        Some(reply.in_reply_to.event_id.to_string())
-                    } else {
-                        None
-                    }
-                });
-
-                let url = match &original.content.source {
-                    matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(mxc) => {
-                        Some(mxc.to_string())
-                    }
-                    _ => None,
-                };
-                let (image_width, image_height) = sticker_info_dimensions(&original.content.info);
-
-                raw_messages.push((
-                    event_id.clone(),
-                    ChatMessage {
-                        id: event_id,
-                        sender_id,
-                        sender_name,
-                        content: original.content.body.clone(),
-                        formatted_body: None,
-                        caption: None,
-                        caption_formatted_body: None,
-                        mentioned_user_ids: Vec::new(),
-                        mentions_room: false,
-                        timestamp,
-                        is_me,
-                        msg_type: MessageType::Sticker,
-                        image_url: url,
-                        media_source_json: serde_json::to_string(&original.content.source).ok(),
-                        image_width,
-                        image_height,
-                        in_reply_to,
-                        is_edited: false,
-                        edit_history: Vec::new(),
-                        reactions: Vec::new(),
-                        readers: Vec::new(),
-                        total_members: 0,
-                    },
-                ));
-                continue;
-            }
-
-            let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(
-                matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(msg),
-            ) = any_ev
-            else {
-                continue;
-            };
-
-            let Some(original) = msg.as_original() else {
-                continue;
-            };
-
-            let event_id = msg.event_id().to_string();
-            let sender_id = msg.sender().to_string();
-            let is_me = my_user_id.as_ref() == Some(&sender_id);
-            let sender_name = if is_me {
-                "\u{6211}".to_string()
-            } else {
-                sender_id
-                    .split(':')
-                    .next()
-                    .unwrap_or(&sender_id)
-                    .trim_start_matches('@')
-                    .to_string()
-            };
-
-            let ts_millis = u64::from(msg.origin_server_ts().0);
-            let timestamp = ts_millis.to_string();
-
-            // Check if this is an edit (replacement) event
-            if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(
-                replacement,
-            )) = &original.content.relates_to
-            {
-                if let Some(edit_text) = extract_edit_content(&replacement.new_content) {
-                    edits
-                        .entry(replacement.event_id.to_string())
-                        .or_default()
-                        .push(edit_text);
-                }
-                continue;
-            }
-
-            let in_reply_to = original.content.relates_to.as_ref().and_then(|rel| {
-                if let matrix_sdk::ruma::events::room::message::Relation::Reply(reply) = rel {
-                    Some(reply.in_reply_to.event_id.to_string())
-                } else {
-                    None
-                }
-            });
-
-            let chat_msg = match &original.content.msgtype {
-                matrix_sdk::ruma::events::room::message::MessageType::Text(t) => {
-                    let (content, formatted_body, mentioned_user_ids, mentions_room) =
-                        text_message_parts(
-                            &t.body,
-                            t.formatted.as_ref(),
-                            original.content.mentions.as_ref(),
-                            in_reply_to.is_some(),
-                        );
-                    ChatMessage {
-                        id: event_id.clone(),
-                        sender_id,
-                        sender_name,
-                        content,
-                        formatted_body,
-                        caption: None,
-                        caption_formatted_body: None,
-                        mentioned_user_ids,
-                        mentions_room,
-                        timestamp,
-                        is_me,
-                        msg_type: MessageType::Text,
-                        image_url: None,
-                        media_source_json: None,
-                        image_width: None,
-                        image_height: None,
-                        in_reply_to,
-                        is_edited: false,
-                        edit_history: Vec::new(),
-                        reactions: Vec::new(),
-                        readers: Vec::new(),
-                        total_members: 0,
-                    }
-                }
-                matrix_sdk::ruma::events::room::message::MessageType::Image(t) => {
-                    let url = match &t.source {
-                        matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => {
-                            Some(mxc.to_string())
-                        }
-                        _ => None,
-                    };
-                    let (image_width, image_height) = image_info_dimensions(t.info.as_ref());
-                    let (caption, caption_formatted_body) =
-                        media_caption_parts(t.formatted_caption(), t.caption());
-                    let (mentioned_user_ids, mentions_room) =
-                        mentions_parts(original.content.mentions.as_ref());
-                    ChatMessage {
-                        id: event_id.clone(),
-                        sender_id,
-                        sender_name,
-                        content: t.filename().to_string(),
-                        formatted_body: None,
-                        caption,
-                        caption_formatted_body,
-                        mentioned_user_ids,
-                        mentions_room,
-                        timestamp,
-                        is_me,
-                        msg_type: MessageType::Image,
-                        image_url: url,
-                        media_source_json: serde_json::to_string(&t.source).ok(),
-                        image_width,
-                        image_height,
-                        in_reply_to,
-                        is_edited: false,
-                        edit_history: Vec::new(),
-                        reactions: Vec::new(),
-                        readers: Vec::new(),
-                        total_members: 0,
-                    }
-                }
-                matrix_sdk::ruma::events::room::message::MessageType::Video(t) => {
-                    let url = match &t.source {
-                        matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => {
-                            Some(mxc.to_string())
-                        }
-                        _ => None,
-                    };
-                    let (image_width, image_height) = t
-                        .info
-                        .as_ref()
-                        .map(|info| (uint_to_i32(info.width), uint_to_i32(info.height)))
-                        .unwrap_or((None, None));
-                    let (caption, caption_formatted_body) =
-                        media_caption_parts(t.formatted_caption(), t.caption());
-                    let (mentioned_user_ids, mentions_room) =
-                        mentions_parts(original.content.mentions.as_ref());
-                    ChatMessage {
-                        id: event_id.clone(),
-                        sender_id,
-                        sender_name,
-                        content: t.filename().to_string(),
-                        formatted_body: None,
-                        caption,
-                        caption_formatted_body,
-                        mentioned_user_ids,
-                        mentions_room,
-                        timestamp,
-                        is_me,
-                        msg_type: MessageType::Video,
-                        image_url: url,
-                        media_source_json: serde_json::to_string(&t.source).ok(),
-                        image_width,
-                        image_height,
-                        in_reply_to,
-                        is_edited: false,
-                        edit_history: Vec::new(),
-                        reactions: Vec::new(),
-                        readers: Vec::new(),
-                        total_members: 0,
-                    }
-                }
-                _ => continue,
-            };
-            raw_messages.push((event_id, chat_msg));
-        }
-
-        let page_next = msg_resp.end.clone().filter(|token| token != &from);
-        {
-            let mut tokens = MESSAGE_PAGINATION_TOKENS.lock().await;
-            if let Some(next_from) = page_next.clone() {
-                tokens.insert(room_id.clone(), next_from);
-            } else {
-                tokens.remove(&room_id);
-            }
-        }
-
-        if !raw_messages.is_empty() {
-            break page_next;
-        }
-        let Some(next_token) = page_next.clone() else {
-            break page_next;
-        };
-        from = next_token;
-    };
-
-    remove_pagination_boundary_token(&room_id, &from_event_id).await;
-
-    // Apply edits
-    let mut messages = Vec::new();
-    for (event_id, mut msg) in raw_messages {
-        if let Some(history) = edits.remove(&event_id) {
-            msg.is_edited = true;
-            let original = msg.content.clone();
-            let mut full_history = vec![original];
-            full_history.extend(history.iter().map(|edit| edit.body.clone()));
-            if let Some(latest) = history.last() {
-                msg.content = latest.body.clone();
-                msg.formatted_body = latest.formatted_body.clone();
-                msg.mentioned_user_ids = latest.mentioned_user_ids.clone();
-                msg.mentions_room = latest.mentions_room;
-            }
-            msg.edit_history = full_history;
-        }
-        if let Some(by_key) = reactions.remove(&event_id) {
-            msg.reactions = by_key
-                .into_iter()
-                .map(|(key, (mut senders, my_event_id))| {
-                    senders.sort();
-                    senders.dedup();
-                    Reaction {
-                        key,
-                        senders,
-                        my_event_id,
-                    }
-                })
-                .collect();
-        }
-        messages.push(msg);
-    }
-
-    set_pagination_boundary_token(
-        &room_id,
-        messages.first().map(|message| message.id.as_str()),
-        next_from,
-    )
-    .await;
-
-    Ok(messages)
+    sdk_timeline::get_messages_before(&client, &room, &from_event_id, limit).await
 }
