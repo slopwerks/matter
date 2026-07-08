@@ -4,7 +4,9 @@ use matrix_sdk::{
     ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType,
         events::{
-            room::message::MessageType as RumaMessageType, AnySyncStateEvent, AnySyncTimelineEvent,
+            receipt::{ReceiptThread, ReceiptType as EventReceiptType},
+            room::message::MessageType as RumaMessageType,
+            AnySyncStateEvent, AnySyncTimelineEvent,
         },
     },
     Client, Room,
@@ -166,6 +168,36 @@ async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatM
         .members(matrix_sdk::RoomMemberships::JOIN)
         .await
         .unwrap_or_default();
+    // Fallback: the SDK timeline only attaches read receipts whose target event
+    // is in the loaded window (~100 events). Members whose latest receipt
+    // points outside the window are invisible to event.read_receipts(). Query
+    // the store per-member and clamp them to position 0 (oldest) so the existing
+    // >= accumulation counts them as having read all visible messages.
+    for member in &members {
+        let user_id = member.user_id();
+        if my_user_id.as_deref() == Some(user_id.as_str())
+            || receipt_positions.contains_key(user_id.as_str())
+        {
+            continue;
+        }
+        let has_receipt = room
+            .load_user_receipt(EventReceiptType::Read, ReceiptThread::Unthreaded, user_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        let has_receipt = has_receipt
+            || room
+                .load_user_receipt(EventReceiptType::Read, ReceiptThread::Main, user_id)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+        if has_receipt {
+            receipt_positions.insert(user_id.to_string(), 0);
+        }
+    }
+
     let mut profiles: HashMap<String, (String, Option<String>)> = members
         .iter()
         .map(|member| {
