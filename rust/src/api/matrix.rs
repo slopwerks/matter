@@ -2633,6 +2633,10 @@ async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String
                     Err(e) => {
                         app_log("error", "sync", format!("Sliding Sync error: {e}"));
                         set_connection_status(ConnectionStatus::Disconnected);
+                        // The instance has failed; drop the published handle
+                        // so subscribe/unsubscribe calls during the retry
+                        // delay don't mutate a stale, soon-discarded instance.
+                        ROOM_SUBSCRIPTION.lock().await.active = None;
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     }
                 }
@@ -2643,6 +2647,10 @@ async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String
                 "Sliding Sync stream ended; restarting".to_string(),
             );
             set_connection_status(ConnectionStatus::Disconnected);
+            // The stream ended (e.g. server closed the connection); the
+            // instance is no longer live, so clear the handle before the
+            // retry delay to avoid routing room subscriptions to it.
+            ROOM_SUBSCRIPTION.lock().await.active = None;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
@@ -2686,30 +2694,33 @@ static TYPING_TX: Lazy<tokio::sync::broadcast::Sender<TypingNotification>> = Laz
 static TYPING_TASK: Lazy<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>> =
     Lazy::new(|| tokio::sync::Mutex::new(None));
 
+/// A member's read-receipt data, kept in the per-room receipt cache.
+///
+/// `unthreaded`/`main_thread` are the (target_event_id, receipt_ts) pairs for
+/// the two receipt threads, if present. The choice between them is deferred
+/// to attach time (where timeline position is known) rather than picked here
+/// by `ts`, because in federated rooms the two targets may come from
+/// different homeservers whose clocks aren't aligned.
+#[derive(Clone, Debug)]
+struct ReaderRecord {
+    user_id: String,
+    display_name: String,
+    avatar_url: Option<String>,
+    unthreaded: Option<(String, i64)>,
+    main_thread: Option<(String, i64)>,
+}
+
 /// Cache of per-room read-receipt records, keyed by room id.
 ///
 /// `get_messages` recomputes receipts on every sync (≥500 ms), but receipts
 /// only change when someone reads — so a short TTL avoids re-querying the
 /// SDK store for every member on every sync. Value = (records, total_members,
 /// fetched_at).
-static RECEIPT_CACHE: Lazy<
-    tokio::sync::Mutex<
-        HashMap<
-            String,
-            (
-                Vec<(
-                    String,
-                    String,
-                    Option<String>,
-                    Option<(String, i64)>,
-                    Option<(String, i64)>,
-                )>,
-                i32,
-                std::time::Instant,
-            ),
-        >,
-    >,
-> = Lazy::new(|| tokio::sync::Mutex::new(HashMap::new()));
+/// Snapshot of receipts for one room, stored in [`RECEIPT_CACHE`].
+type ReceiptCacheEntry = (Vec<ReaderRecord>, i32, std::time::Instant);
+
+static RECEIPT_CACHE: Lazy<tokio::sync::Mutex<HashMap<String, ReceiptCacheEntry>>> =
+    Lazy::new(|| tokio::sync::Mutex::new(HashMap::new()));
 
 /// Last event for which this client sent a read receipt, keyed by account and
 /// room. Message refreshes must not continuously re-send the same receipt.
@@ -4038,13 +4049,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     // re-querying the store for every member on every sync.
     let now = std::time::Instant::now();
     let cached_receipts = RECEIPT_CACHE.lock().await.get(&room_id).cloned();
-    let reader_records: Vec<(
-        String,
-        String,
-        Option<String>,
-        Option<(String, i64)>,
-        Option<(String, i64)>,
-    )> = if let Some((records, members, _)) = cached_receipts
+    let reader_records: Vec<ReaderRecord> = if let Some((records, members, _)) = cached_receipts
         .filter(|(_, _, fetched_at)| now.duration_since(*fetched_at) < RECEIPT_CACHE_TTL)
     {
         total_members = members;
@@ -4052,13 +4057,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     } else {
         // Do not hold the global cache lock during SDK/store awaits. A
         // slow room must not block receipt refreshes in every other room.
-        let mut records: Vec<(
-            String,
-            String,
-            Option<String>,
-            Option<(String, i64)>,
-            Option<(String, i64)>,
-        )> = Vec::new();
+        let mut records: Vec<ReaderRecord> = Vec::new();
         if let Ok(joined) = room.members(matrix_sdk::RoomMemberships::JOIN).await {
             total_members = joined.len() as i32;
             let my_user_id = client.user_id();
@@ -4100,13 +4099,13 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                     name
                 };
                 let avatar = member.avatar_url().map(|u| u.to_string());
-                records.push((
-                    uid.to_string(),
+                records.push(ReaderRecord {
+                    user_id: uid.to_string(),
                     display_name,
-                    avatar,
-                    unthreaded_cand,
-                    main_cand,
-                ));
+                    avatar_url: avatar,
+                    unthreaded: unthreaded_cand,
+                    main_thread: main_cand,
+                });
             }
         }
         RECEIPT_CACHE
@@ -4148,19 +4147,19 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
             let msg_ts = msg.timestamp.parse::<i64>().unwrap_or(0);
             msg.readers = reader_records
                 .iter()
-                .filter(|(_, _, _, unthreaded, main)| {
+                .filter(|rec| {
                     reader_has_read(
-                        unthreaded.as_ref(),
-                        main.as_ref(),
+                        rec.unthreaded.as_ref(),
+                        rec.main_thread.as_ref(),
                         &event_position,
                         msg_pos,
                         msg_ts,
                     )
                 })
-                .map(|(uid, name, avatar, _, _)| MessageReader {
-                    user_id: uid.clone(),
-                    display_name: name.clone(),
-                    avatar_url: avatar.clone(),
+                .map(|rec| MessageReader {
+                    user_id: rec.user_id.clone(),
+                    display_name: rec.display_name.clone(),
+                    avatar_url: rec.avatar_url.clone(),
                 })
                 .collect();
         }
@@ -4198,6 +4197,12 @@ fn reader_has_read(
     };
     let (u_pos, u_ts) = resolve(unthreaded);
     let (m_pos, m_ts) = resolve(main);
+
+    // No receipt at all (no unthreaded, no main) => definitely not read.
+    // (The caller filters these out, but keep the function self-consistent.)
+    if unthreaded.is_none() && main.is_none() {
+        return false;
+    }
 
     // Without the message's own position we can't do a positional compare;
     // fall back to ts (best-effort). This only happens if the message id
@@ -4374,6 +4379,56 @@ mod read_receipt_tests {
             Some(&cand("$msg1", 0)),
             None,
             &pos,
+            Some(2),
+            0,
+        ));
+    }
+
+    #[test]
+    fn both_receipts_none_is_not_read() {
+        let pos = positions(&[("$msg", 0)]);
+        assert!(!reader_has_read(None, None, &pos, Some(0), 0));
+    }
+
+    #[test]
+    fn missing_msg_pos_falls_back_to_ts() {
+        // Message id absent from the chunk table (shouldn't happen in
+        // practice) — must fall back to the larger ts, not panic.
+        let pos = positions(&[]);
+        assert!(reader_has_read(
+            Some(&cand("$u", 100)),
+            None,
+            &pos,
+            None,
+            100
+        ));
+        assert!(!reader_has_read(
+            Some(&cand("$u", 99)),
+            None,
+            &pos,
+            None,
+            100
+        ));
+    }
+
+    #[test]
+    fn one_receipt_in_window_one_out_uses_in_window() {
+        // unthreaded in-window at pos 1, main out-of-window; msg at pos 2.
+        // The in-window target decides: 1 < 2 => not read.
+        let pos = positions(&[("$in", 1)]);
+        assert!(!reader_has_read(
+            Some(&cand("$in", 0)),
+            Some(&cand("$out", 999)),
+            &pos,
+            Some(2),
+            0,
+        ));
+        // unthreaded in-window at pos 5 => read.
+        let pos2 = positions(&[("$in", 5)]);
+        assert!(reader_has_read(
+            Some(&cand("$in", 0)),
+            Some(&cand("$out", 0)),
+            &pos2,
             Some(2),
             0,
         ));

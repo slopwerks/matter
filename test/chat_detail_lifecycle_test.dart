@@ -139,12 +139,16 @@ void main() {
 
     await tester.pumpWidget(buildChat('!old:example.org'));
     await tester.pump();
+    expect(rustApi.subscribeRoomCalls, 1, reason: 'entering old room subscribes');
 
     await tester.pumpWidget(buildChat('!new:example.org'));
     await tester.pump();
 
     expect(tester.takeException(), isNull);
     expect(container.read(currentRoomIdProvider), '!new:example.org');
+    // old room disposed (unsubscribes), new room initialized (subscribes).
+    expect(rustApi.subscribeRoomCalls, 2, reason: 'entering new room subscribes');
+    expect(rustApi.unsubscribeRoomCalls, 1, reason: 'old room unsubscribe on dispose');
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -153,6 +157,7 @@ void main() {
       ),
     );
     await tester.pump();
+    expect(rustApi.unsubscribeRoomCalls, 2, reason: 'new room unsubscribe on dispose');
   });
 
   testWidgets('waits for initial members before rendering cached messages', (
