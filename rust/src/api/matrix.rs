@@ -4136,12 +4136,15 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
             .map(|(idx, eid)| (eid, idx))
             .collect();
 
-    // Attach readers to each of our own messages. `messages` preserves the
-    // same oldest-to-newest order, so its indices are comparable with the
-    // chunk positions above.
-    for (msg_idx, msg) in messages.iter_mut().enumerate() {
+    // Attach readers to each of our own messages. The message's own timeline
+    // position is looked up in `event_position` (the full-chunk table) — not
+    // its index in the filtered `messages` list — so that receipt positions
+    // and the message position share one coordinate system even when events
+    // (edits, reactions, state) between messages have been filtered out.
+    for msg in messages.iter_mut() {
         msg.total_members = total_members;
         if msg.is_me {
+            let msg_pos = event_position.get(&msg.id).copied();
             let msg_ts = msg.timestamp.parse::<i64>().unwrap_or(0);
             msg.readers = reader_records
                 .iter()
@@ -4150,7 +4153,7 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
                         unthreaded.as_ref(),
                         main.as_ref(),
                         &event_position,
-                        msg_idx,
+                        msg_pos,
                         msg_ts,
                     )
                 })
@@ -4184,7 +4187,7 @@ fn reader_has_read(
     unthreaded: Option<&(String, i64)>,
     main: Option<&(String, i64)>,
     event_position: &std::collections::HashMap<String, usize>,
-    msg_pos: usize,
+    msg_pos: Option<usize>,
     msg_ts: i64,
 ) -> bool {
     let resolve = |cand: Option<&(String, i64)>| -> (Option<usize>, i64) {
@@ -4195,6 +4198,13 @@ fn reader_has_read(
     };
     let (u_pos, u_ts) = resolve(unthreaded);
     let (m_pos, m_ts) = resolve(main);
+
+    // Without the message's own position we can't do a positional compare;
+    // fall back to ts (best-effort). This only happens if the message id
+    // itself is absent from the chunk (shouldn't occur in practice).
+    let Some(msg_pos) = msg_pos else {
+        return u_ts.max(m_ts) >= msg_ts;
+    };
 
     match (u_pos, m_pos) {
         // Both targets in-window: the later position wins.
@@ -4225,14 +4235,32 @@ mod read_receipt_tests {
     #[test]
     fn target_at_or_after_message_counts_as_read() {
         let pos = positions(&[("$a", 2), ("$b", 3)]);
-        assert!(reader_has_read(Some(&cand("$a", 0)), None, &pos, 2, 0));
-        assert!(reader_has_read(Some(&cand("$b", 0)), None, &pos, 2, 0));
+        assert!(reader_has_read(
+            Some(&cand("$a", 0)),
+            None,
+            &pos,
+            Some(2),
+            0
+        ));
+        assert!(reader_has_read(
+            Some(&cand("$b", 0)),
+            None,
+            &pos,
+            Some(2),
+            0
+        ));
     }
 
     #[test]
     fn target_before_message_is_not_read() {
         let pos = positions(&[("$a", 1), ("$msg", 2)]);
-        assert!(!reader_has_read(Some(&cand("$a", 0)), None, &pos, 2, 0));
+        assert!(!reader_has_read(
+            Some(&cand("$a", 0)),
+            None,
+            &pos,
+            Some(2),
+            0
+        ));
     }
 
     #[test]
@@ -4246,7 +4274,7 @@ mod read_receipt_tests {
             Some(&cand("$late", 90)),
             None,
             &pos,
-            2,
+            Some(2),
             100
         ));
         // Target earlier in the timeline => not read, regardless of ts.
@@ -4254,7 +4282,7 @@ mod read_receipt_tests {
             Some(&cand("$early", 200)),
             None,
             &pos,
-            2,
+            Some(2),
             100
         ));
     }
@@ -4268,7 +4296,7 @@ mod read_receipt_tests {
             Some(&cand("$u", 500)),
             Some(&cand("$m", 50)),
             &pos,
-            3,
+            Some(3),
             100,
         ));
         // Both before the message => not read.
@@ -4276,7 +4304,7 @@ mod read_receipt_tests {
             Some(&cand("$u", 500)),
             Some(&cand("$m", 50)),
             &pos,
-            5,
+            Some(5),
             100,
         ));
     }
@@ -4284,9 +4312,27 @@ mod read_receipt_tests {
     #[test]
     fn falls_back_to_ts_when_targets_are_out_of_window() {
         let pos = positions(&[]);
-        assert!(reader_has_read(Some(&cand("$x", 100)), None, &pos, 2, 100));
-        assert!(reader_has_read(Some(&cand("$x", 101)), None, &pos, 2, 100));
-        assert!(!reader_has_read(Some(&cand("$x", 99)), None, &pos, 2, 100));
+        assert!(reader_has_read(
+            Some(&cand("$x", 100)),
+            None,
+            &pos,
+            Some(2),
+            100
+        ));
+        assert!(reader_has_read(
+            Some(&cand("$x", 101)),
+            None,
+            &pos,
+            Some(2),
+            100
+        ));
+        assert!(!reader_has_read(
+            Some(&cand("$x", 99)),
+            None,
+            &pos,
+            Some(2),
+            100
+        ));
     }
 
     #[test]
@@ -4299,8 +4345,37 @@ mod read_receipt_tests {
             Some(&cand("$edit", 90)),
             None,
             &pos,
-            2,
+            Some(2),
             100
+        ));
+    }
+
+    #[test]
+    fn filtered_events_between_messages_do_not_shift_coordinate_system() {
+        // Regression: two messages with a filtered event (an edit) between
+        // them. In the full chunk the edit is pos 1 and the later message is
+        // pos 2. If the code had used the *filtered* `messages` index, the
+        // later message would be index 1 instead of 2 — and a receipt at the
+        // edit (pos 1) would wrongly count as having read it. Using the
+        // message's own chunk position (2), the receipt at pos 1 has NOT read
+        // it, which is correct.
+        let pos = positions(&[("$msg0", 0), ("$edit", 1), ("$msg1", 2)]);
+        // Receipt targets the edit (pos 1); later message $msg1 is at pos 2.
+        // 1 < 2 => not read.
+        assert!(!reader_has_read(
+            Some(&cand("$edit", 0)),
+            None,
+            &pos,
+            Some(2),
+            0,
+        ));
+        // Receipt at the later message itself => read.
+        assert!(reader_has_read(
+            Some(&cand("$msg1", 0)),
+            None,
+            &pos,
+            Some(2),
+            0,
         ));
     }
 }
