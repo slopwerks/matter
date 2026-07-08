@@ -175,28 +175,34 @@ struct SyncTask {
 /// Exactly one account owns the app-wide background sync task at a time.
 static SYNC_TASK: Lazy<Mutex<Option<SyncTask>>> = Lazy::new(|| Mutex::new(None));
 
-/// Handle to the live Sliding Sync instance, so the currently-open room can
-/// be subscribed/unsubscribed at runtime (see `subscribe_room_for_receipts`).
-/// Without an explicit subscription, a room with no recent timeline activity
-/// may be absent from sync responses, and its read-receipt deltas get dropped
-/// by the receipts extension (which only processes rooms present in the
-/// response). Subscribing the active room keeps it in every sync roundtrip,
-/// so receipt updates for it are always delivered — critical on homeservers
-/// (e.g. Tuwunel) whose Sliding Sync receipt extension only emits per-room
-/// receipts when the room is part of the response.
-static ACTIVE_SLIDING_SYNC: Lazy<
-    tokio::sync::Mutex<Option<matrix_sdk::sliding_sync::SlidingSync>>,
-> = Lazy::new(|| tokio::sync::Mutex::new(None));
+/// Runtime Sliding Sync subscription state for the active room screen.
+///
+/// Both the live `SlidingSync` handle and the room the Dart side wants
+/// subscribed live behind a single lock, so `subscribe`/`unsubscribe` FFI
+/// calls and the sync loop's (re)build/replay all observe a consistent pair —
+/// a late-finishing old call can't overwrite a newer room, and a cancel can't
+/// race a re-subscribe. Without an explicit subscription, a room with no
+/// recent timeline activity may be absent from sync responses, so its
+/// read-receipt deltas get dropped by the receipts extension (which only
+/// processes rooms present in the response). Subscribing the active room keeps
+/// it in every sync roundtrip — critical on homeservers (e.g. Tuwunel) whose
+/// Sliding Sync receipt extension only emits per-room receipts when the room
+/// is part of the response.
+struct RoomSubscriptionState {
+    /// The room the open chat screen wants subscribed, applied (re)applied
+    /// whenever a live instance is set, including after reconnect rebuilds.
+    desired: Option<String>,
+    /// The live Sliding Sync instance, present once the sync loop has built
+    /// one (and reset to `None` when it's stopped).
+    active: Option<matrix_sdk::sliding_sync::SlidingSync>,
+}
 
-/// The room the Dart side currently wants subscribed (the open chat screen).
-/// Stored separately from the live instance so a subscription requested
-/// *before* Sliding Sync is ready is not lost: the sync loop applies it every
-/// time it (re)builds an instance. This closes both the startup race and the
-/// reconnect-replay gap — after a stream error the old instance (and its
-/// sticky subscriptions) are gone, so we re-apply the desired room onto the
-/// fresh instance.
-static DESIRED_SUBSCRIBED_ROOM: Lazy<tokio::sync::Mutex<Option<String>>> =
-    Lazy::new(|| tokio::sync::Mutex::new(None));
+static ROOM_SUBSCRIPTION: Lazy<tokio::sync::Mutex<RoomSubscriptionState>> = Lazy::new(|| {
+    tokio::sync::Mutex::new(RoomSubscriptionState {
+        desired: None,
+        active: None,
+    })
+});
 
 /// Server pagination token for the next older page in each room.
 static MESSAGE_PAGINATION_TOKENS: Lazy<Mutex<HashMap<String, String>>> =
@@ -248,27 +254,13 @@ async fn stop_sync_task(user_id: Option<&str>) {
                 format!("Stopped sync loop for user {}", running.user_id),
             );
         }
-        // Drop the published Sliding Sync handle so stale subscribers can't
-        // route room subscriptions to a dead instance.
-        *ACTIVE_SLIDING_SYNC.lock().await = None;
-        *DESIRED_SUBSCRIBED_ROOM.lock().await = None;
+        // Drop the published Sliding Sync handle and the desired room so
+        // stale subscribers can't route room subscriptions to a dead
+        // instance, and a later session doesn't replay an old room.
+        let mut sub = ROOM_SUBSCRIPTION.lock().await;
+        sub.active = None;
+        sub.desired = None;
     }
-}
-
-/// Apply the desired room subscription (if any) onto a freshly built Sliding
-/// Sync instance. Called after every (re)build in the sync loop so that the
-/// open chat screen keeps receiving receipt deltas across reconnects.
-async fn apply_desired_room_subscription(sliding_sync: &matrix_sdk::sliding_sync::SlidingSync) {
-    let desired = DESIRED_SUBSCRIBED_ROOM.lock().await.clone();
-    let Some(room_id) = desired else { return };
-    let Ok(parsed) = matrix_sdk::ruma::RoomId::parse(room_id.as_str()) else {
-        return;
-    };
-    use matrix_sdk::ruma::api::client::sync::sync_events::v5::request::RoomSubscription;
-    use matrix_sdk::ruma::UInt;
-    let mut sub = RoomSubscription::default();
-    sub.timeline_limit = UInt::from(50u32);
-    sliding_sync.subscribe_to_rooms(&[&parsed], Some(sub), false);
 }
 
 /// Temporary client during login (before we know the user_id for a per-user dir).
@@ -2606,14 +2598,24 @@ async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String
                     continue;
                 }
             };
-            // Publish the live instance so the active room can be subscribed
-            // for receipt delivery. Updated on every rebuild (reconnect).
-            *ACTIVE_SLIDING_SYNC.lock().await = Some(sliding_sync.clone());
-            // Replay the open room's subscription onto the fresh instance —
-            // the old instance (and its sticky subscriptions) is gone after a
-            // reconnect, so without this the current room would stop receiving
-            // receipt deltas until the user re-enters it.
-            apply_desired_room_subscription(&sliding_sync).await;
+            // Atomically publish the live instance and replay the open
+            // room's subscription onto it. The old instance (and its sticky
+            // subscriptions) is gone after a reconnect, so without replay the
+            // current room would stop receiving receipt deltas until the user
+            // re-enters it. subscribe_to_rooms is synchronous, so we do it
+            // under the same lock to keep desired/active consistent.
+            let mut sub_state = ROOM_SUBSCRIPTION.lock().await;
+            sub_state.active = Some(sliding_sync.clone());
+            if let Some(room_id) = sub_state.desired.clone() {
+                if let Ok(parsed) = matrix_sdk::ruma::RoomId::parse(room_id.as_str()) {
+                    use matrix_sdk::ruma::api::client::sync::sync_events::v5::request::RoomSubscription;
+                    use matrix_sdk::ruma::UInt;
+                    let mut sub = RoomSubscription::default();
+                    sub.timeline_limit = UInt::from(50u32);
+                    sliding_sync.subscribe_to_rooms(&[&parsed], Some(sub), false);
+                }
+            }
+            drop(sub_state);
 
             let stream = sliding_sync.sync();
             futures_util::pin_mut!(stream);
@@ -2695,7 +2697,13 @@ static RECEIPT_CACHE: Lazy<
         HashMap<
             String,
             (
-                Vec<(String, String, Option<String>, i64, Option<String>)>,
+                Vec<(
+                    String,
+                    String,
+                    Option<String>,
+                    Option<(String, i64)>,
+                    Option<(String, i64)>,
+                )>,
                 i32,
                 std::time::Instant,
             ),
@@ -2781,14 +2789,17 @@ pub async fn unsubscribe_typing() {
 /// If Sliding Sync is not yet ready (startup race / account switch), the
 /// desire is recorded and applied automatically once the sync loop publishes
 /// an instance; this function never fails for that reason.
+///
+/// `desired`/`active` are updated under a single lock so concurrent calls
+/// can't interleave (a late-finishing old subscribe can't overwrite a newer
+/// room).
 #[frb]
 pub async fn subscribe_room_for_receipts(room_id: String) -> Result<(), String> {
     let parsed = matrix_sdk::ruma::RoomId::parse(room_id.clone())
         .map_err(|e| format!("Invalid room id: {e}"))?;
-    // Record the desire first so the sync loop replays it on every (re)build.
-    *DESIRED_SUBSCRIBED_ROOM.lock().await = Some(room_id);
-    let guard = ACTIVE_SLIDING_SYNC.lock().await;
-    if let Some(sliding_sync) = guard.as_ref() {
+    let mut state = ROOM_SUBSCRIPTION.lock().await;
+    state.desired = Some(room_id);
+    if let Some(sliding_sync) = state.active.as_ref() {
         use matrix_sdk::ruma::api::client::sync::sync_events::v5::request::RoomSubscription;
         use matrix_sdk::ruma::UInt;
         let mut sub = RoomSubscription::default();
@@ -2803,19 +2814,19 @@ pub async fn subscribe_room_for_receipts(room_id: String) -> Result<(), String> 
 /// activity, but not on every roundtrip. Uses `unsubscribe_to_rooms` (not a
 /// no-op re-subscribe) so the subscription is actually removed, keeping sync
 /// cost bounded as the user visits different rooms.
+///
+/// The desire is only cleared when it matches `room_id`, and the unsubscribe
+/// runs under the same single lock as subscribe, so a cancel can't race a
+/// re-subscribe for the same or a newer room.
 #[frb]
 pub async fn unsubscribe_room_for_receipts(room_id: String) -> Result<(), String> {
     let parsed = matrix_sdk::ruma::RoomId::parse(room_id.clone())
         .map_err(|e| format!("Invalid room id: {e}"))?;
-    // Only clear the desire if it matches — protects against a stale unsubscribe
-    // for room A racing with a newer subscribe for room B.
-    let mut desired = DESIRED_SUBSCRIBED_ROOM.lock().await;
-    if desired.as_deref() == Some(room_id.as_str()) {
-        *desired = None;
+    let mut state = ROOM_SUBSCRIPTION.lock().await;
+    if state.desired.as_deref() == Some(room_id.as_str()) {
+        state.desired = None;
     }
-    drop(desired);
-    let guard = ACTIVE_SLIDING_SYNC.lock().await;
-    if let Some(sliding_sync) = guard.as_ref() {
+    if let Some(sliding_sync) = state.active.as_ref() {
         sliding_sync.unsubscribe_to_rooms(&[&parsed], false);
     }
     Ok(())
@@ -4027,111 +4038,119 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
     // re-querying the store for every member on every sync.
     let now = std::time::Instant::now();
     let cached_receipts = RECEIPT_CACHE.lock().await.get(&room_id).cloned();
-    let reader_records: Vec<(String, String, Option<String>, i64, Option<String>)> =
-        if let Some((records, members, _)) = cached_receipts
-            .filter(|(_, _, fetched_at)| now.duration_since(*fetched_at) < RECEIPT_CACHE_TTL)
-        {
-            total_members = members;
-            records
-        } else {
-            // Do not hold the global cache lock during SDK/store awaits. A
-            // slow room must not block receipt refreshes in every other room.
-            let mut records: Vec<(String, String, Option<String>, i64, Option<String>)> =
-                Vec::new();
-            if let Ok(joined) = room.members(matrix_sdk::RoomMemberships::JOIN).await {
-                total_members = joined.len() as i32;
-                let my_user_id = client.user_id();
-                for member in joined {
-                    let uid = member.user_id();
-                    if my_user_id == Some(uid) {
-                        continue;
-                    }
-                    let unthreaded = room
-                        .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, uid)
-                        .await
-                        .ok()
-                        .flatten();
-                    let main = room
-                        .load_user_receipt(ReceiptType::Read, ReceiptThread::Main, uid)
-                        .await
-                        .ok()
-                        .flatten();
-                    // Pick the receipt (unthreaded or main thread) with the
-                    // newer `ts`, and keep its target event id. Judging read
-                    // position by the *target event's* origin_server_ts (when
-                    // it's in our loaded window) stays within the homeserver
-                    // clock domain and matches what other clients (Element)
-                    // show. Using the receipt's own `ts` alone crosses clocks
-                    // (reader client vs sender server) and undercounts
-                    // readers whenever the reader's clock lags; it remains a
-                    // fallback for targets outside the window.
-                    let mut best_ts: Option<i64> = None;
-                    let mut best_target: Option<String> = None;
-                    for (eid, receipt) in [unthreaded, main].into_iter().flatten() {
-                        let Some(ts) = receipt.ts.map(|ts| i64::from(ts.0)) else {
-                            if best_target.is_none() {
-                                best_target = Some(eid.to_string());
-                            }
-                            continue;
-                        };
-                        if best_ts.map_or(true, |best| ts > best) {
-                            best_ts = Some(ts);
-                            best_target = Some(eid.to_string());
-                        }
-                    }
-                    let Some(best_target) = best_target else {
-                        continue;
-                    };
-                    let name = member.name().to_string();
-                    let display_name = if name == uid.as_str() {
-                        uid.localpart().to_string()
-                    } else {
-                        name
-                    };
-                    let avatar = member.avatar_url().map(|u| u.to_string());
-                    records.push((
-                        uid.to_string(),
-                        display_name,
-                        avatar,
-                        best_ts.unwrap_or(0),
-                        Some(best_target),
-                    ));
+    let reader_records: Vec<(
+        String,
+        String,
+        Option<String>,
+        Option<(String, i64)>,
+        Option<(String, i64)>,
+    )> = if let Some((records, members, _)) = cached_receipts
+        .filter(|(_, _, fetched_at)| now.duration_since(*fetched_at) < RECEIPT_CACHE_TTL)
+    {
+        total_members = members;
+        records
+    } else {
+        // Do not hold the global cache lock during SDK/store awaits. A
+        // slow room must not block receipt refreshes in every other room.
+        let mut records: Vec<(
+            String,
+            String,
+            Option<String>,
+            Option<(String, i64)>,
+            Option<(String, i64)>,
+        )> = Vec::new();
+        if let Ok(joined) = room.members(matrix_sdk::RoomMemberships::JOIN).await {
+            total_members = joined.len() as i32;
+            let my_user_id = client.user_id();
+            for member in joined {
+                let uid = member.user_id();
+                if my_user_id == Some(uid) {
+                    continue;
                 }
+                let unthreaded = room
+                    .load_user_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, uid)
+                    .await
+                    .ok()
+                    .flatten();
+                let main = room
+                    .load_user_receipt(ReceiptType::Read, ReceiptThread::Main, uid)
+                    .await
+                    .ok()
+                    .flatten();
+                // Keep both unthreaded and main-thread candidates as
+                // (event_id, ts) pairs. We don't pick a "best" here:
+                // the right tiebreak is *timeline position* (which event
+                // is later in the room), not `ts` — in federated rooms the
+                // two receipts may target events from different
+                // homeservers whose clocks aren't aligned, so a later event
+                // can carry a smaller `ts`. Position is only known later,
+                // at attach time, so we defer the choice there. `ts` is
+                // kept as a fallback for targets outside the loaded window.
+                let unthreaded_cand = unthreaded
+                    .map(|(eid, r)| (eid.to_string(), r.ts.map(|ts| i64::from(ts.0)).unwrap_or(0)));
+                let main_cand = main
+                    .map(|(eid, r)| (eid.to_string(), r.ts.map(|ts| i64::from(ts.0)).unwrap_or(0)));
+                if unthreaded_cand.is_none() && main_cand.is_none() {
+                    continue;
+                }
+                let name = member.name().to_string();
+                let display_name = if name == uid.as_str() {
+                    uid.localpart().to_string()
+                } else {
+                    name
+                };
+                let avatar = member.avatar_url().map(|u| u.to_string());
+                records.push((
+                    uid.to_string(),
+                    display_name,
+                    avatar,
+                    unthreaded_cand,
+                    main_cand,
+                ));
             }
-            RECEIPT_CACHE
-                .lock()
-                .await
-                .insert(room_id.clone(), (records.clone(), total_members, now));
-            records
-        };
+        }
+        RECEIPT_CACHE
+            .lock()
+            .await
+            .insert(room_id.clone(), (records.clone(), total_members, now));
+        records
+    };
 
-    // Map each loaded message's event id to its timeline position (index
-    // in `messages`, oldest-to-newest). When a receipt's target event is in
-    // this window, we compare *timeline position*, not origin_server_ts:
-    // in federated rooms the target and the message may originate from
-    // different homeservers whose clocks aren't aligned, so a later event can
-    // carry a smaller timestamp. Position is the true read-order. The
-    // receipt's own `ts` remains a fallback for targets outside the window.
-    let event_index: std::collections::HashMap<String, usize> = messages
-        .iter()
-        .enumerate()
-        .map(|(idx, m)| (m.id.clone(), idx))
-        .collect();
+    // Build a timeline-position table over the *full* loaded chunk — not
+    // just the rendered `messages`. Receipts can target events that we filter
+    // out of the message list (edits, reactions, state events); those event
+    // ids are still valid read positions and must resolve to a position, or
+    // they'd fall back to the cross-clock `ts` comparison. Position is
+    // oldest-to-newest (0 = oldest).
+    let event_position: std::collections::HashMap<String, usize> =
+        msg_resp
+            .chunk
+            .iter()
+            .rev()
+            .filter_map(|te| {
+                te.kind.raw().deserialize().ok().map(
+                    |ev: matrix_sdk::ruma::events::AnySyncTimelineEvent| ev.event_id().to_string(),
+                )
+            })
+            .enumerate()
+            .map(|(idx, eid)| (eid, idx))
+            .collect();
 
-    // Attach readers to each of our own messages.
+    // Attach readers to each of our own messages. `messages` preserves the
+    // same oldest-to-newest order, so its indices are comparable with the
+    // chunk positions above.
     for (msg_idx, msg) in messages.iter_mut().enumerate() {
         msg.total_members = total_members;
         if msg.is_me {
             let msg_ts = msg.timestamp.parse::<i64>().unwrap_or(0);
             msg.readers = reader_records
                 .iter()
-                .filter(|(_, _, _, read_ts, target_eid)| {
+                .filter(|(_, _, _, unthreaded, main)| {
                     reader_has_read(
-                        target_eid
-                            .as_ref()
-                            .and_then(|eid| event_index.get(eid).copied()),
+                        unthreaded.as_ref(),
+                        main.as_ref(),
+                        &event_position,
                         msg_idx,
-                        *read_ts,
                         msg_ts,
                     )
                 })
@@ -4149,43 +4168,71 @@ pub async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, String> {
 
 /// Whether a reader has seen a given message.
 ///
-/// `target_event_pos` is the timeline index (0-based, oldest-to-newest) of the
-/// event the reader's receipt points at — available only when that event is
-/// inside our loaded window. `msg_pos` is the message's own timeline index.
-/// `receipt_ts`/`msg_ts` are the fallback timestamps used when the target
-/// event is outside the window.
+/// The reader may have an unthreaded and/or a main-thread receipt, each
+/// pointing at an event with its own `ts`. We resolve which receipt to use as
+/// follows:
 ///
-/// When the target is in-window we compare *timeline position* rather than
-/// timestamps: in federated rooms the target and the message may come from
-/// different homeservers whose clocks aren't aligned, so a later event can
-/// carry a smaller `origin_server_ts`. Position is the true read order and
-/// matches what other clients (Element) display. The receipt's own `ts`
-/// crosses clocks (reader client vs sender server) and is only a fallback.
+/// - If either target event is in the loaded window, pick the one with the
+///   *later timeline position* (not `ts`): in federated rooms the two targets
+///   may come from different homeservers whose clocks aren't aligned, so a
+///   later event can carry a smaller `origin_server_ts`. Position is the true
+///   read order and matches what other clients (Element) display.
+/// - If neither target is in the window, fall back to the larger `ts` and
+///   compare it against the message's `origin_server_ts`. This crosses clocks
+///   (reader client vs sender server) and is best-effort.
 fn reader_has_read(
-    target_event_pos: Option<usize>,
+    unthreaded: Option<&(String, i64)>,
+    main: Option<&(String, i64)>,
+    event_position: &std::collections::HashMap<String, usize>,
     msg_pos: usize,
-    receipt_ts: i64,
     msg_ts: i64,
 ) -> bool {
-    match target_event_pos {
-        Some(target_pos) => target_pos >= msg_pos,
-        None => receipt_ts >= msg_ts,
+    let resolve = |cand: Option<&(String, i64)>| -> (Option<usize>, i64) {
+        match cand {
+            Some((eid, ts)) => (event_position.get(eid).copied(), *ts),
+            None => (None, 0),
+        }
+    };
+    let (u_pos, u_ts) = resolve(unthreaded);
+    let (m_pos, m_ts) = resolve(main);
+
+    match (u_pos, m_pos) {
+        // Both targets in-window: the later position wins.
+        (Some(up), Some(mp)) => up.max(mp) >= msg_pos,
+        // Only one in-window: use it.
+        (Some(up), None) => up >= msg_pos,
+        (None, Some(mp)) => mp >= msg_pos,
+        // Neither in-window: fall back to the larger ts.
+        (None, None) => u_ts.max(m_ts) >= msg_ts,
     }
 }
 
 #[cfg(test)]
 mod read_receipt_tests {
     use super::reader_has_read;
+    use std::collections::HashMap;
+
+    // Helper: build a position table mapping event ids to timeline indices.
+    fn positions(pairs: &[(&str, usize)]) -> HashMap<String, usize> {
+        pairs.iter().map(|(e, i)| (e.to_string(), *i)).collect()
+    }
+
+    // A receipt candidate: (event_id, ts).
+    fn cand(eid: &str, ts: i64) -> (String, i64) {
+        (eid.to_string(), ts)
+    }
 
     #[test]
     fn target_at_or_after_message_counts_as_read() {
-        assert!(reader_has_read(Some(2), 2, 0, 0));
-        assert!(reader_has_read(Some(3), 2, 0, 0));
+        let pos = positions(&[("$a", 2), ("$b", 3)]);
+        assert!(reader_has_read(Some(&cand("$a", 0)), None, &pos, 2, 0));
+        assert!(reader_has_read(Some(&cand("$b", 0)), None, &pos, 2, 0));
     }
 
     #[test]
     fn target_before_message_is_not_read() {
-        assert!(!reader_has_read(Some(1), 2, 0, 0));
+        let pos = positions(&[("$a", 1), ("$msg", 2)]);
+        assert!(!reader_has_read(Some(&cand("$a", 0)), None, &pos, 2, 0));
     }
 
     #[test]
@@ -4194,16 +4241,67 @@ mod read_receipt_tests {
         // (pos 3 > msg pos 2) but carries an *older* timestamp (90 < 100).
         // By position the reader HAS read it; a timestamp comparison would
         // wrongly say they haven't.
-        assert!(reader_has_read(Some(3), 2, 50, 100));
+        let pos = positions(&[("$late", 3), ("$early", 1)]);
+        assert!(reader_has_read(
+            Some(&cand("$late", 90)),
+            None,
+            &pos,
+            2,
+            100
+        ));
         // Target earlier in the timeline => not read, regardless of ts.
-        assert!(!reader_has_read(Some(1), 2, 200, 100));
+        assert!(!reader_has_read(
+            Some(&cand("$early", 200)),
+            None,
+            &pos,
+            2,
+            100
+        ));
     }
 
     #[test]
-    fn falls_back_to_receipt_ts_when_target_is_out_of_window() {
-        assert!(reader_has_read(None, 2, 100, 100));
-        assert!(reader_has_read(None, 2, 101, 100));
-        assert!(!reader_has_read(None, 2, 99, 100));
+    fn later_position_wins_between_unthreaded_and_main() {
+        // unthreaded targets pos 1, main targets pos 4; main is later so the
+        // reader is considered to have read up to pos 4.
+        let pos = positions(&[("$u", 1), ("$m", 4)]);
+        assert!(reader_has_read(
+            Some(&cand("$u", 500)),
+            Some(&cand("$m", 50)),
+            &pos,
+            3,
+            100,
+        ));
+        // Both before the message => not read.
+        assert!(!reader_has_read(
+            Some(&cand("$u", 500)),
+            Some(&cand("$m", 50)),
+            &pos,
+            5,
+            100,
+        ));
+    }
+
+    #[test]
+    fn falls_back_to_ts_when_targets_are_out_of_window() {
+        let pos = positions(&[]);
+        assert!(reader_has_read(Some(&cand("$x", 100)), None, &pos, 2, 100));
+        assert!(reader_has_read(Some(&cand("$x", 101)), None, &pos, 2, 100));
+        assert!(!reader_has_read(Some(&cand("$x", 99)), None, &pos, 2, 100));
+    }
+
+    #[test]
+    fn target_filtered_from_messages_still_resolves_by_position() {
+        // The receipt targets an edit/reaction event that is in the chunk
+        // but filtered out of `messages`; it must still resolve to a position
+        // instead of falling back to cross-clock ts.
+        let pos = positions(&[("$edit", 4), ("$msg", 2)]);
+        assert!(reader_has_read(
+            Some(&cand("$edit", 90)),
+            None,
+            &pos,
+            2,
+            100
+        ));
     }
 }
 
