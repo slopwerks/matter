@@ -138,6 +138,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
       subscribeTypingForRoom(roomId: widget.roomId).catchError((e) {
         debugPrint('subscribeTypingForRoom failed: $e');
       });
+      // Keep this room in every Sliding Sync roundtrip so read-receipt deltas
+      // for it are always delivered (homeservers only emit per-room receipts
+      // for rooms present in the sync response).
+      subscribeRoomForReceipts(roomId: widget.roomId).catchError((e) {
+        debugPrint('subscribeRoomForReceipts failed: $e');
+      });
       // Prime the message cache from disk so the previous snapshot renders
       // instantly, then refresh from the network in the background.
       primeMessageCache(ref, widget.roomId).then((_) {
@@ -167,6 +173,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     unawaited(
       unsubscribeTyping().catchError((e) {
         debugPrint('unsubscribeTyping failed: $e');
+      }),
+    );
+    unawaited(
+      unsubscribeRoomForReceipts(roomId: roomId).catchError((e) {
+        debugPrint('unsubscribeRoomForReceipts failed: $e');
       }),
     );
     _pickerResizeTimer?.cancel();
