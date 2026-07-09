@@ -65,7 +65,7 @@
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
-		33CC10ED2044A3C60003C045 /* matter_temp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "matter_temp.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		33CC10ED2044A3C60003C045 /* matter_temp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = matter_temp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		33CC10F22044A3C60003C045 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Runner/Assets.xcassets; sourceTree = "<group>"; };
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
@@ -211,6 +211,7 @@
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
+				4EA2AEE72FFF5586007F619E /* Build Rust Library */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 			);
@@ -338,6 +339,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
+		};
+		4EA2AEE72FFF5586007F619E /* Build Rust Library */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Library";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Determine architecture and target\nARCH_NAME=\"$(uname -m)\"\nif [ \"$ARCH_NAME\" = \"arm64\" ]; then\n  RUST_TARGET=\"aarch64-apple-darwin\"\nelse\n  RUST_TARGET=\"x86_64-apple-darwin\"\nfi\n\n# Build the Rust library\ncd \"$SRCROOT/../rust\"\ncargo build --target \"$RUST_TARGET\"\n\n# Determine build profile directory\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  PROFILE=\"debug\"\nelse\n  PROFILE=\"release\"\nfi\n\nDYLIB_SRC=\"$SRCROOT/../rust/target/$RUST_TARGET/$PROFILE/librust_lib_matter.dylib\"\nFRAMEWORK_DIR=\"$BUILT_PRODUCTS_DIR/$FRAMEWORKS_FOLDER_PATH/rust_lib_matter.framework\"\nVERSION_DIR=\"$FRAMEWORK_DIR/Versions/A\"\n\n# Create versioned framework bundle structure (macOS requirement)\nmkdir -p \"$VERSION_DIR/Resources\"\ncp -f \"$DYLIB_SRC\" \"$VERSION_DIR/rust_lib_matter\"\ninstall_name_tool -id \"@rpath/rust_lib_matter.framework/rust_lib_matter\" \"$VERSION_DIR/rust_lib_matter\"\n\n# Create Info.plist in the versioned Resources directory\ncat > \"$VERSION_DIR/Resources/Info.plist\" << PLISTEOF\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n    <key>CFBundleDevelopmentRegion</key>\n    <string>en</string>\n    <key>CFBundleExecutable</key>\n    <string>rust_lib_matter</string>\n    <key>CFBundleIdentifier</key>\n    <string>moe.aks.matter.rust-lib-matter</string>\n    <key>CFBundleInfoDictionaryVersion</key>\n    <string>6.0</string>\n    <key>CFBundleName</key>\n    <string>rust_lib_matter</string>\n    <key>CFBundlePackageType</key>\n    <string>FMWK</string>\n    <key>CFBundleShortVersionString</key>\n    <string>1.0</string>\n    <key>CFBundleVersion</key>\n    <string>1</string>\n</dict>\n</plist>\nPLISTEOF\n\n# Create Current → A symlink\nln -sfh A \"$FRAMEWORK_DIR/Versions/Current\"\n\n# Create top-level symlinks for compatibility\nln -sfh \"Versions/Current/rust_lib_matter\" \"$FRAMEWORK_DIR/rust_lib_matter\"\nln -sfh \"Versions/Current/Resources\" \"$FRAMEWORK_DIR/Resources\"\n\n# Code sign the framework\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n    /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --timestamp=none --preserve-metadata=identifier,entitlements \"$FRAMEWORK_DIR\"\nfi\n";
+
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -471,7 +491,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -553,7 +573,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -603,7 +623,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				MACOSX_DEPLOYMENT_TARGET = "$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)";
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
