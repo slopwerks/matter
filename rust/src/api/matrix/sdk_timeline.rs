@@ -155,47 +155,69 @@ async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatM
                 .map(|event_id| (event_id.to_string(), position))
         })
         .collect();
-    let mut receipt_positions = HashMap::new();
-    for (position, event) in event_items.iter().enumerate() {
-        for user_id in event.read_receipts().keys() {
-            if my_user_id.as_deref() != Some(user_id.as_str()) {
-                receipt_positions.insert(user_id.to_string(), position);
-            }
-        }
-    }
-
     let members = room
         .members(matrix_sdk::RoomMemberships::JOIN)
         .await
         .unwrap_or_default();
-    // Fallback: the SDK timeline only attaches read receipts whose target event
-    // is in the loaded window (~100 events). Members whose latest receipt
-    // points outside the window are invisible to event.read_receipts(). Query
-    // the store per-member and clamp them to position 0 (oldest) so the existing
-    // >= accumulation counts them as having read all visible messages.
-    for member in &members {
-        let user_id = member.user_id();
-        if my_user_id.as_deref() == Some(user_id.as_str())
-            || receipt_positions.contains_key(user_id.as_str())
-        {
-            continue;
-        }
-        let has_receipt = room
-            .load_user_receipt(EventReceiptType::Read, ReceiptThread::Unthreaded, user_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some();
-        let has_receipt = has_receipt
-            || room
-                .load_user_receipt(EventReceiptType::Read, ReceiptThread::Main, user_id)
-                .await
-                .ok()
-                .flatten()
-                .is_some();
-        if has_receipt {
-            receipt_positions.insert(user_id.to_string(), 0);
-        }
+
+    // Reader positions come entirely from the state store, not from
+    // `EventTimelineItem::read_receipts()`. The store is written synchronously
+    // while the sync response is processed (before the sync stream yields), but
+    // the timeline only attaches receipts to items via background tasks that may
+    // not have drained by the time we snapshot — yielding stale positions and
+    // missed read receipts. By the Matrix spec only our own private receipts are
+    // withheld from sync, so every other member's public `Read` receipt is in
+    // the store.
+    //
+    // A receipt whose target is inside the loaded window resolves to that
+    // event's position; one outside the window clamps to 0 (oldest), so the
+    // existing `>=` accumulation treats the member as having read every visible
+    // message.
+    let member_receipts = futures_util::future::join_all(
+        members
+            .iter()
+            .filter_map(|member| {
+                let user_id = member.user_id();
+                if my_user_id.as_deref() == Some(user_id.as_str()) {
+                    return None;
+                }
+                let user_id = user_id.to_owned();
+                let room = room.clone();
+                let event_positions = &event_positions;
+                Some(async move {
+                    let receipt = room
+                        .load_user_receipt(
+                            EventReceiptType::Read,
+                            ReceiptThread::Unthreaded,
+                            &user_id,
+                        )
+                        .await
+                        .ok()
+                        .flatten();
+                    let receipt = match receipt {
+                        Some(r) => r,
+                        None => room
+                            .load_user_receipt(
+                                EventReceiptType::Read,
+                                ReceiptThread::Main,
+                                &user_id,
+                            )
+                            .await
+                            .ok()
+                            .flatten()?,
+                    };
+                    Some((
+                        user_id.to_string(),
+                        resolve_receipt_position(&receipt.0, event_positions),
+                    ))
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .await;
+    let mut receipt_positions = HashMap::new();
+    for (user_id, position) in member_receipts.into_iter().flatten() {
+        receipt_positions.insert(user_id, position);
     }
 
     let mut profiles: HashMap<String, (String, Option<String>)> = members
@@ -270,6 +292,16 @@ async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatM
         message.readers = readers;
     }
     messages
+}
+
+fn resolve_receipt_position(
+    receipt_event_id: &matrix_sdk::ruma::EventId,
+    event_positions: &HashMap<String, usize>,
+) -> usize {
+    event_positions
+        .get(receipt_event_id.as_str())
+        .copied()
+        .unwrap_or(0)
 }
 
 fn reader_ids_for_position(
@@ -698,7 +730,7 @@ fn state_event_label(item: &EventTimelineItem) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{messages_before, reader_ids_for_position};
+    use super::{messages_before, reader_ids_for_position, resolve_receipt_position};
     use crate::api::matrix::{ChatMessage, MessageType};
     use std::collections::HashMap;
 
@@ -752,6 +784,34 @@ mod tests {
         assert_eq!(
             reader_ids_for_position(&receipts, 2),
             ["@bob:example.org", "@carol:example.org"]
+        );
+    }
+
+    #[test]
+    fn resolve_receipt_position_clamps_outside_window_to_oldest() {
+        use matrix_sdk::ruma::EventId;
+
+        let positions = HashMap::from([
+            ("$a:example.org".to_owned(), 0),
+            ("$b:example.org".to_owned(), 1),
+        ]);
+
+        // Inside the window resolves to the event's real position.
+        assert_eq!(
+            resolve_receipt_position(
+                EventId::parse("$b:example.org").unwrap().as_ref(),
+                &positions
+            ),
+            1
+        );
+        // Outside the window clamps to 0 (oldest) — the member is treated as
+        // having read every visible message.
+        assert_eq!(
+            resolve_receipt_position(
+                EventId::parse("$outside:example.org").unwrap().as_ref(),
+                &positions
+            ),
+            0
         );
     }
 }
