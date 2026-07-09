@@ -1,0 +1,5 @@
+[
+  { "domain": "matrix.org", "label": "Matrix.org" },
+  { "domain": "mozilla.org", "label": "Mozilla" },
+  { "domain": "kde.org", "label": "KDE" }
+]

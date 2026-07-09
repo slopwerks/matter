@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import 'homeserver_list.dart';
 import 'homeserver_resolver.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -16,7 +17,15 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final _homeserverController = TextEditingController(text: '10.0.2.2:8008');
+  final _homeserverController = TextEditingController();
+  final _homeserverFieldKey = GlobalKey();
+  List<HomeserverEntry> _homeservers = const [];
+
+  /// The resolved homeserver URL actually used to connect and to persist the
+  /// session. Kept separate from the input field so the field can keep showing
+  /// the user's original input (e.g. `example.com`) while we connect via a
+  /// well-known-delegated URL (e.g. `https://matrix.example.com`).
+  String _effectiveHomeserver = '';
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _tokenController = TextEditingController(); // registration token
@@ -37,6 +46,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   // Tab state: 0 = login, 1 = register, 2 = token login
   int _tabIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHomeservers();
+  }
+
+  Future<void> _loadHomeservers() async {
+    final list = await loadHomeservers();
+    if (mounted) setState(() => _homeservers = list);
+  }
 
   @override
   void dispose() {
@@ -112,7 +132,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ref,
       userId: userId,
       displayName: displayName,
-      homeserver: _homeserverController.text,
+      homeserver: _effectiveHomeserver,
       markLoggedIn: false,
     );
 
@@ -131,7 +151,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final session = await rust.getSession();
     if (session != null) {
       await persistSession(
-        homeserver: _homeserverController.text,
+        homeserver: _effectiveHomeserver,
         accessToken: session.accessToken,
         refreshToken: session.refreshToken,
         userId: session.userId,
@@ -142,7 +162,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ref,
         userId: session.userId,
         displayName: displayName,
-        homeserver: _homeserverController.text,
+        homeserver: _effectiveHomeserver,
         refreshStoredSessions: true,
         markLoggedIn: false,
       );
@@ -178,9 +198,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         if (!confirmed) return null;
         _httpConfirmedHosts.add(resolved.url);
       }
-      if (_homeserverController.text != resolved.url) {
-        _homeserverController.text = resolved.url;
-      }
+      _effectiveHomeserver = resolved.url;
       return resolved.url;
     } catch (e) {
       _setFriendlyError('无法连接到 Homeserver，请检查地址', e);
@@ -481,14 +499,109 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       children: [
         _buildLabel('Homeserver'),
         const SizedBox(height: 8),
-        _buildTextField(
-          controller: _homeserverController,
-          hintText: 'matrix.org 或 10.0.2.2:8008（无需输入 http(s)://）',
-          prefixIcon: Icons.dns_rounded,
-          textInputAction: TextInputAction.next,
+        Builder(
+          key: _homeserverFieldKey,
+          builder: (_) => _buildTextField(
+            controller: _homeserverController,
+            hintText: 'matrix.org',
+            prefixIcon: Icons.dns_rounded,
+            suffixIcon: IconButton(
+              icon: const Icon(
+                Icons.arrow_drop_down_rounded,
+                color: AppColors.onSurfaceVariant,
+              ),
+              tooltip: '选择预设服务器',
+              onPressed: _homeservers.isEmpty ? null : _showHomeserverDropdown,
+            ),
+            textInputAction: TextInputAction.next,
+          ),
         ),
       ],
     );
+  }
+
+  /// Open the preset-server dropdown below the homeserver field. Triggered by
+  /// the trailing arrow button only — focusing the field stays a pure typing
+  /// gesture and never opens this menu.
+  Future<void> _showHomeserverDropdown() async {
+    final fieldContext = _homeserverFieldKey.currentContext;
+    if (fieldContext == null) return;
+    final renderBox = fieldContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final overlay =
+        Overlay.of(fieldContext).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+
+    final size = renderBox.size;
+    final topLeft = renderBox.localToGlobal(Offset.zero, ancestor: overlay);
+    final bottomLeft = renderBox.localToGlobal(
+      Offset(0, size.height),
+      ancestor: overlay,
+    );
+    final position = RelativeRect.fromLTRB(
+      topLeft.dx,
+      bottomLeft.dy,
+      overlay.size.width - topLeft.dx - size.width,
+      0,
+    );
+
+    final selected = await showMenu<HomeserverEntry>(
+      context: fieldContext,
+      position: position,
+      constraints: BoxConstraints(minWidth: size.width, maxWidth: size.width),
+      items: [
+        for (final entry in _homeservers)
+          PopupMenuItem<HomeserverEntry>(
+            value: entry,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.dns_rounded,
+                  size: 18,
+                  color: AppColors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        entry.label,
+                        style: const TextStyle(
+                          color: AppColors.onSurface,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (entry.domain != entry.label)
+                        Text(
+                          entry.domain,
+                          style: const TextStyle(
+                            color: AppColors.onSurfaceVariant,
+                            fontSize: 13,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (entry.domain.toLowerCase() ==
+                    _homeserverController.text.trim().toLowerCase())
+                  const Icon(
+                    Icons.check_rounded,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+
+    if (selected != null && mounted) {
+      _homeserverController.text = selected.domain;
+      _clearError();
+    }
   }
 
   List<Widget> _buildLoginFields() {
@@ -581,7 +694,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       const SizedBox(height: 8),
       _buildTextField(
         controller: _userIdController,
-        hintText: '@user:tuwunel.local',
+        hintText: '@user:matrix.local',
         prefixIcon: Icons.person_outline_rounded,
         textInputAction: TextInputAction.next,
       ),
@@ -713,7 +826,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Text(
-          'Powered by Matrix · Tuwunel',
+          'Made with AI by Matter Team',
           style: TextStyle(
             color: AppColors.onSurfaceVariant.withValues(alpha: 0.5),
             fontSize: 12,

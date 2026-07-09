@@ -50,7 +50,7 @@ final currentAccessTokenProvider =
 
 /// Provider for the homeserver URL
 final homeserverProvider = NotifierProvider<MutableState<String>, String>(
-  () => MutableState('http://10.0.2.2:8008'),
+  () => MutableState(''),
 );
 
 /// Auth error message provider
