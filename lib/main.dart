@@ -55,13 +55,17 @@ class _AppRoot extends ConsumerStatefulWidget {
 
 class _AppRootState extends ConsumerState<_AppRoot> {
   final _navigatorKey = GlobalKey<NavigatorState>();
-  late bool _hasSessions;
+
+  /// True only while the startup session-restore is in flight. Keeps the main
+  /// app on screen during restore so the login page doesn't flash, then drops
+  /// back to false so a later login can never be mistaken for a restore.
+  bool _restoring = false;
 
   @override
   void initState() {
     super.initState();
-    _hasSessions = widget.hasSessions;
-    if (_hasSessions) {
+    if (widget.hasSessions) {
+      _restoring = true;
       _restoreSessionsInBackground();
     } else {
       ref.read(sessionReadyProvider.notifier).value = true;
@@ -106,9 +110,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       if (sessions.isEmpty) {
         ref.read(sessionReadyProvider.notifier).value = true;
         if (mounted) {
-          setState(() {
-            _hasSessions = false;
-          });
+          setState(() => _restoring = false);
         }
         return;
       }
@@ -164,9 +166,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     if (restoredActiveId == null) {
       clearActiveSessionState(ref, markSessionReady: true);
       if (mounted) {
-        setState(() {
-          _hasSessions = false;
-        });
+        setState(() => _restoring = false);
       }
       return;
     }
@@ -179,13 +179,15 @@ class _AppRootState extends ConsumerState<_AppRoot> {
 
     // Signal that Rust APIs are safe to call.
     ref.read(sessionReadyProvider.notifier).value = true;
+    if (mounted) {
+      setState(() => _restoring = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isLoggedIn = ref.watch(isLoggedInProvider);
-    final sessionReady = ref.watch(sessionReadyProvider);
-    final showMainApp = isLoggedIn || (_hasSessions && !sessionReady);
+    final showMainApp = isLoggedIn || _restoring;
 
     return MaterialApp(
       navigatorKey: _navigatorKey,
