@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import 'homeserver_resolver.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -15,9 +16,7 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final _homeserverController = TextEditingController(
-    text: 'http://10.0.2.2:8008',
-  );
+  final _homeserverController = TextEditingController(text: '10.0.2.2:8008');
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _tokenController = TextEditingController(); // registration token
@@ -28,6 +27,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   bool _isPasswordVisible = false;
   bool _isLoading = false;
   String? _error;
+
+  // Homeserver inputs that the user has already accepted as insecure (HTTP)
+  // this session, so we don't nag on every attempt (e.g. local dev servers).
+  final Set<String> _httpConfirmedHosts = {};
 
   // UIAA state for registration
   String? _uiaaSession;
@@ -162,6 +165,53 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return dir.path;
   }
 
+  /// Resolve the homeserver input to a full URL, preferring HTTPS and
+  /// falling back to HTTP only after the user acknowledges the risk. Returns
+  /// null (and surfaces an error) if resolution fails or is cancelled.
+  Future<String?> _resolveHomeserverUrl() async {
+    final raw = _homeserverController.text;
+    try {
+      final resolved = await resolveHomeserver(raw);
+      if (resolved.isHttp && !_httpConfirmedHosts.contains(resolved.url)) {
+        if (!mounted) return null;
+        final confirmed = await _confirmInsecure(resolved);
+        if (!confirmed) return null;
+        _httpConfirmedHosts.add(resolved.url);
+      }
+      if (_homeserverController.text != resolved.url) {
+        _homeserverController.text = resolved.url;
+      }
+      return resolved.url;
+    } catch (e) {
+      _setFriendlyError('无法连接到 Homeserver，请检查地址', e);
+      return null;
+    }
+  }
+
+  Future<bool> _confirmInsecure(ResolvedHomeserver resolved) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('不安全的连接'),
+        content: Text(
+          '该服务器（${resolved.url}）仅支持未加密的 HTTP 连接。\n\n'
+          '你的密码和登录凭证将以明文传输，可能被同一网络中的第三方截获。\n\n'
+          '确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('继续登录'),
+          ),
+        ],
+      ),
+    ).then((v) => v ?? false);
+  }
+
   Future<void> _login() async {
     _clearError();
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -171,8 +221,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
+      final homeserverUrl = await _resolveHomeserverUrl();
+      if (homeserverUrl == null) return;
       await rust.createClient(
-        homeserverUrl: _homeserverController.text,
+        homeserverUrl: homeserverUrl,
         dataDir: await _getDataDir(),
       );
       final result = await rust.loginWithPassword(
@@ -207,8 +259,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
+      final homeserverUrl = await _resolveHomeserverUrl();
+      if (homeserverUrl == null) return;
       await rust.createClient(
-        homeserverUrl: _homeserverController.text,
+        homeserverUrl: homeserverUrl,
         dataDir: await _getDataDir(),
       );
 
@@ -260,8 +314,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     setState(() => _isLoading = true);
     try {
+      final homeserverUrl = await _resolveHomeserverUrl();
+      if (homeserverUrl == null) return;
       await rust.createClient(
-        homeserverUrl: _homeserverController.text,
+        homeserverUrl: homeserverUrl,
         dataDir: await _getDataDir(),
       );
       final result = await rust.loginWithToken(
@@ -427,7 +483,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         const SizedBox(height: 8),
         _buildTextField(
           controller: _homeserverController,
-          hintText: 'http://10.0.2.2:8008',
+          hintText: 'matrix.org 或 10.0.2.2:8008（无需输入 http(s)://）',
           prefixIcon: Icons.dns_rounded,
           textInputAction: TextInputAction.next,
         ),
