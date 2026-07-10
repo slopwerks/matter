@@ -22,7 +22,7 @@ use tokio::sync::Mutex;
 use super::{
     image_info_dimensions, media_caption_parts, mentions_parts, sticker_info_dimensions,
     text_message_parts, uint_to_i32, unable_to_decrypt_message, ChatMessage, MessageReader,
-    MessageType, Reaction,
+    MessageType, PollAnswerInfo, PollAnswerResult, PollInfo, Reaction,
 };
 
 static TIMELINES: Lazy<Mutex<HashMap<String, Arc<Timeline>>>> =
@@ -380,6 +380,9 @@ fn timeline_item_to_message(
                         media_source_json: serde_json::to_string(source).ok(),
                         image_width,
                         image_height,
+                        filename: None,
+                        geo_uri: None,
+                        poll: None,
                         in_reply_to,
                         is_edited: false,
                         edit_history: Vec::new(),
@@ -391,6 +394,16 @@ fn timeline_item_to_message(
                 MsgLikeKind::UnableToDecrypt(_) => {
                     unable_to_decrypt_message(event_id, sender_id, sender_name, timestamp, is_me)
                 }
+                MsgLikeKind::Poll(state) => poll_message(
+                    event_id,
+                    sender_id,
+                    sender_name,
+                    timestamp,
+                    is_me,
+                    in_reply_to,
+                    state,
+                    my_user_id,
+                )?,
                 _ => return None,
             }
         }
@@ -411,6 +424,9 @@ fn timeline_item_to_message(
             media_source_json: None,
             image_width: None,
             image_height: None,
+            filename: None,
+            geo_uri: None,
+            poll: None,
             in_reply_to: None,
             is_edited: false,
             edit_history: Vec::new(),
@@ -435,6 +451,9 @@ fn timeline_item_to_message(
             media_source_json: None,
             image_width: None,
             image_height: None,
+            filename: None,
+            geo_uri: None,
+            poll: None,
             in_reply_to: None,
             is_edited: false,
             edit_history: Vec::new(),
@@ -589,6 +608,11 @@ fn message_to_chat_message(
             result
         }
         RumaMessageType::File(file) => {
+            let filename = file.filename().to_string();
+            let image_url = match &file.source {
+                matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => Some(mxc.to_string()),
+                _ => None,
+            };
             let (caption, caption_formatted_body) =
                 media_caption_parts(file.formatted_caption(), file.caption());
             let (mentioned_user_ids, mentions_room) = mentions_parts(mentions);
@@ -598,15 +622,71 @@ fn message_to_chat_message(
                 sender_name,
                 timestamp,
                 is_me,
-                format!("文件: {}", file.filename()),
+                filename.clone(),
                 None,
                 mentioned_user_ids,
                 mentions_room,
-                MessageType::Text,
+                MessageType::File,
                 in_reply_to,
             );
             result.caption = caption;
             result.caption_formatted_body = caption_formatted_body;
+            result.filename = Some(filename);
+            result.image_url = image_url;
+            result.media_source_json = serde_json::to_string(&file.source).ok();
+            result
+        }
+        RumaMessageType::Audio(audio) => {
+            let filename = audio.filename().to_string();
+            let image_url = match &audio.source {
+                matrix_sdk::ruma::events::room::MediaSource::Plain(mxc) => Some(mxc.to_string()),
+                _ => None,
+            };
+            let (caption, caption_formatted_body) =
+                media_caption_parts(audio.formatted_caption(), audio.caption());
+            let (mentioned_user_ids, mentions_room) = mentions_parts(mentions);
+            let mut result = base_message(
+                event_id,
+                sender_id,
+                sender_name,
+                timestamp,
+                is_me,
+                filename.clone(),
+                None,
+                mentioned_user_ids,
+                mentions_room,
+                MessageType::File,
+                in_reply_to,
+            );
+            result.caption = caption;
+            result.caption_formatted_body = caption_formatted_body;
+            result.filename = Some(filename);
+            result.image_url = image_url;
+            result.media_source_json = serde_json::to_string(&audio.source).ok();
+            result
+        }
+        RumaMessageType::Location(location) => {
+            let geo_uri = location.geo_uri.clone();
+            let body = location.body.clone();
+            let (mentioned_user_ids, mentions_room) = mentions_parts(mentions);
+            let mut result = base_message(
+                event_id,
+                sender_id,
+                sender_name,
+                timestamp,
+                is_me,
+                if body.trim().is_empty() {
+                    geo_uri.clone()
+                } else {
+                    body
+                },
+                None,
+                mentioned_user_ids,
+                mentions_room,
+                MessageType::Location,
+                in_reply_to,
+            );
+            result.geo_uri = Some(geo_uri);
             result
         }
         _ => return None,
@@ -651,6 +731,9 @@ fn base_message(
         media_source_json: None,
         image_width: None,
         image_height: None,
+        filename: None,
+        geo_uri: None,
+        poll: None,
         in_reply_to,
         is_edited: false,
         edit_history: Vec::new(),
@@ -658,6 +741,91 @@ fn base_message(
         readers: Vec::new(),
         total_members: 0,
     }
+}
+
+/// Build a [ChatMessage] from a poll timeline item. Polls use the unstable
+/// `org.matrix.msc3381.*` event type, surfaced as [MsgLikeKind::Poll].
+#[allow(clippy::too_many_arguments)]
+fn poll_message(
+    event_id: String,
+    sender_id: String,
+    sender_name: String,
+    timestamp: String,
+    is_me: bool,
+    in_reply_to: Option<String>,
+    state: &matrix_sdk_ui::timeline::PollState,
+    my_user_id: Option<&str>,
+) -> Option<ChatMessage> {
+    let result = state.results();
+
+    let answers = result
+        .answers
+        .into_iter()
+        .map(|answer| PollAnswerInfo {
+            id: answer.id,
+            text: answer.text,
+        })
+        .collect::<Vec<_>>();
+    if answers.is_empty() {
+        return None;
+    }
+
+    let disclosed = result.kind == matrix_sdk::ruma::events::poll::start::PollKind::Disclosed;
+    let ended = result.end_time.is_some();
+    let reveal = disclosed || ended;
+
+    // Aggregate per-answer tallies and detect the current user's selections.
+    let mut my_answer_ids = Vec::new();
+    let mut tally: HashMap<&str, i32> = HashMap::new();
+    let mut voters: HashMap<&str, ()> = HashMap::new();
+    for (answer_id, voters_for_answer) in &result.votes {
+        let count = voters_for_answer.len() as i32;
+        tally.insert(answer_id.as_str(), count);
+        for voter in voters_for_answer {
+            voters.insert(voter.as_str(), ());
+            if Some(voter.as_str()) == my_user_id {
+                my_answer_ids.push(answer_id.clone());
+            }
+        }
+    }
+
+    let results = answers
+        .iter()
+        .map(|answer| PollAnswerResult {
+            answer_id: answer.id.clone(),
+            count: *tally.get(answer.id.as_str()).unwrap_or(&0),
+            is_mine: my_answer_ids.iter().any(|id| id == &answer.id),
+        })
+        .collect::<Vec<_>>();
+
+    let mut message = base_message(
+        &event_id,
+        &sender_id,
+        &sender_name,
+        &timestamp,
+        is_me,
+        result.question.clone(),
+        None,
+        Vec::new(),
+        false,
+        MessageType::Poll,
+        in_reply_to,
+    );
+    message.poll = Some(PollInfo {
+        question: result.question,
+        answers,
+        disclosed,
+        max_selections: result.max_selections as i32,
+        my_answer_ids,
+        results,
+        total_voters: voters.len() as i32,
+        ended,
+    });
+    // Hide tallies until revealed (disclosed poll while open, or any poll
+    // once ended). The Dart side reads `reveal` via ended/disclosed to decide
+    // whether to draw bars.
+    let _ = reveal;
+    Some(message)
 }
 
 fn original_message_body(item: &EventTimelineItem) -> Option<String> {
@@ -752,6 +920,9 @@ mod tests {
             media_source_json: None,
             image_width: None,
             image_height: None,
+            filename: None,
+            geo_uri: None,
+            poll: None,
             in_reply_to: None,
             is_edited: false,
             edit_history: Vec::new(),

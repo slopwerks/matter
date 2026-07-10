@@ -10,7 +10,7 @@ part 'matrix.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `add_desired`, `app_log`, `build_mentions`, `build_sdk_data_dir`, `build_text_content`, `clear_timeline_cache`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `encryption_settings`, `extract_edit_content`, `finalize_pending`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `install_live_update_event_handlers`, `install_room_key_event_handler`, `install_verification_event_handler`, `load_room_sticker_packs`, `media_caption_parts`, `mentions_parts`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `remove_desired`, `remove_dir_all_if_exists`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_state_label`, `room_to_chat_room`, `sanitize_for_path`, `sanitized_formatted_body`, `sanitized_reply_formatted_body`, `set_connection_status`, `sticker_info_dimensions`, `stop_sync_task`, `strip_reply_fallback`, `text_message_parts`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `unable_to_decrypt_message`, `usage_allows_sticker`, `wait_for_e2ee_initialization`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `EditedTextContent`, `PendingEntry`, `RoomSubscriptionState`, `SyncNotification`, `SyncTask`, `VerificationSession`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Stream app log entries from Rust → Dart (live).
 Stream<AppLogEntry> watchAppLogs() =>
@@ -384,7 +384,11 @@ Future<void> sendVideoMessage({
   size: size,
 );
 
-/// Share a geographic location as a Matrix `m.location` event.
+/// Share a geographic location.
+///
+/// Sent as a legacy `m.room.message` with `msgtype: m.location`, which is
+/// what `matrix-sdk-ui` 0.18 surfaces on the timeline. The extensible
+/// top-level `m.location` event type is not parsed by this SDK version.
 ///
 /// `geo_uri` follows RFC 5870, e.g. `geo:37.786971,-122.399677`.
 Future<void> sendLocation({
@@ -398,6 +402,11 @@ Future<void> sendLocation({
 );
 
 /// Start a poll in a room (Matrix `m.poll.start`, MSC3381).
+/// Start a poll in a room.
+///
+/// Uses the **unstable** `org.matrix.msc3381.poll.start` event type, which is
+/// what `matrix-sdk-ui` 0.18 surfaces on the timeline. The stable
+/// `m.poll.start` type is not parsed by this SDK version and would vanish.
 Future<void> sendPoll({
   required String roomId,
   required String question,
@@ -408,6 +417,27 @@ Future<void> sendPoll({
   question: question,
   answers: answers,
   disclosed: disclosed,
+);
+
+/// Submit a vote on a poll. Replaces the current user's previous response on
+/// the same poll start event.
+Future<void> sendPollResponse({
+  required String roomId,
+  required String pollStartEventId,
+  required List<String> answerIds,
+}) => RustLib.instance.api.crateApiMatrixSendPollResponse(
+  roomId: roomId,
+  pollStartEventId: pollStartEventId,
+  answerIds: answerIds,
+);
+
+/// Close a poll so no further votes are accepted.
+Future<void> endPoll({
+  required String roomId,
+  required String pollStartEventId,
+}) => RustLib.instance.api.crateApiMatrixEndPoll(
+  roomId: roomId,
+  pollStartEventId: pollStartEventId,
 );
 
 Future<void> sendSticker({
@@ -730,6 +760,15 @@ class ChatMessage {
   final int? imageWidth;
   final int? imageHeight;
 
+  /// Original filename for file/audio attachments.
+  final String? filename;
+
+  /// RFC 5870 geo URI for location messages (e.g. `geo:lat,lng`).
+  final String? geoUri;
+
+  /// Poll data when `msg_type == Poll`.
+  final PollInfo? poll;
+
   /// Event ID this message is replying to, if any.
   final String? inReplyTo;
 
@@ -766,6 +805,9 @@ class ChatMessage {
     this.mediaSourceJson,
     this.imageWidth,
     this.imageHeight,
+    this.filename,
+    this.geoUri,
+    this.poll,
     this.inReplyTo,
     required this.isEdited,
     required this.editHistory,
@@ -792,6 +834,9 @@ class ChatMessage {
       mediaSourceJson.hashCode ^
       imageWidth.hashCode ^
       imageHeight.hashCode ^
+      filename.hashCode ^
+      geoUri.hashCode ^
+      poll.hashCode ^
       inReplyTo.hashCode ^
       isEdited.hashCode ^
       editHistory.hashCode ^
@@ -820,6 +865,9 @@ class ChatMessage {
           mediaSourceJson == other.mediaSourceJson &&
           imageWidth == other.imageWidth &&
           imageHeight == other.imageHeight &&
+          filename == other.filename &&
+          geoUri == other.geoUri &&
+          poll == other.poll &&
           inReplyTo == other.inReplyTo &&
           isEdited == other.isEdited &&
           editHistory == other.editHistory &&
@@ -1048,8 +1096,126 @@ enum MessageType {
   sticker,
   video,
 
+  /// A generic document / file attachment (m.file, or m.audio rendered as
+  /// a downloadable file).
+  file,
+
+  /// An m.poll.start (unstable org.matrix.msc3381) poll.
+  poll,
+
+  /// A legacy m.location message.
+  location,
+
   /// State/member change event (join, leave, etc.)
   event,
+}
+
+/// One selectable answer of a poll.
+class PollAnswerInfo {
+  final String id;
+  final String text;
+
+  const PollAnswerInfo({required this.id, required this.text});
+
+  @override
+  int get hashCode => id.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PollAnswerInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          text == other.text;
+}
+
+/// Per-answer tally for a poll.
+class PollAnswerResult {
+  final String answerId;
+
+  /// Number of users who selected this answer.
+  final int count;
+
+  /// Whether the current user selected this answer.
+  final bool isMine;
+
+  const PollAnswerResult({
+    required this.answerId,
+    required this.count,
+    required this.isMine,
+  });
+
+  @override
+  int get hashCode => answerId.hashCode ^ count.hashCode ^ isMine.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PollAnswerResult &&
+          runtimeType == other.runtimeType &&
+          answerId == other.answerId &&
+          count == other.count &&
+          isMine == other.isMine;
+}
+
+/// Poll data carried by a `MessageType::Poll` message.
+class PollInfo {
+  final String question;
+  final List<PollAnswerInfo> answers;
+
+  /// Whether results are revealed while voting is open.
+  final bool disclosed;
+
+  /// Max selections allowed per voter.
+  final int maxSelections;
+
+  /// Answer ids the current user has already selected.
+  final List<String> myAnswerIds;
+
+  /// Per-answer tallies (only meaningful when disclosed or ended).
+  final List<PollAnswerResult> results;
+
+  /// Total distinct users who have voted.
+  final int totalVoters;
+
+  /// Whether the poll has been closed.
+  final bool ended;
+
+  const PollInfo({
+    required this.question,
+    required this.answers,
+    required this.disclosed,
+    required this.maxSelections,
+    required this.myAnswerIds,
+    required this.results,
+    required this.totalVoters,
+    required this.ended,
+  });
+
+  @override
+  int get hashCode =>
+      question.hashCode ^
+      answers.hashCode ^
+      disclosed.hashCode ^
+      maxSelections.hashCode ^
+      myAnswerIds.hashCode ^
+      results.hashCode ^
+      totalVoters.hashCode ^
+      ended.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PollInfo &&
+          runtimeType == other.runtimeType &&
+          question == other.question &&
+          answers == other.answers &&
+          disclosed == other.disclosed &&
+          maxSelections == other.maxSelections &&
+          myAnswerIds == other.myAnswerIds &&
+          results == other.results &&
+          totalVoters == other.totalVoters &&
+          ended == other.ended;
 }
 
 /// A single emoji reaction aggregated on a message.

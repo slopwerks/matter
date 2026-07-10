@@ -1012,8 +1012,54 @@ pub enum MessageType {
     Image,
     Sticker,
     Video,
+    /// A generic document / file attachment (m.file, or m.audio rendered as
+    /// a downloadable file).
+    File,
+    /// An m.poll.start (unstable org.matrix.msc3381) poll.
+    Poll,
+    /// A legacy m.location message.
+    Location,
     /// State/member change event (join, leave, etc.)
     Event,
+}
+
+/// One selectable answer of a poll.
+#[frb]
+#[derive(Clone, Debug)]
+pub struct PollAnswerInfo {
+    pub id: String,
+    pub text: String,
+}
+
+/// Per-answer tally for a poll.
+#[frb]
+#[derive(Clone, Debug)]
+pub struct PollAnswerResult {
+    pub answer_id: String,
+    /// Number of users who selected this answer.
+    pub count: i32,
+    /// Whether the current user selected this answer.
+    pub is_mine: bool,
+}
+
+/// Poll data carried by a `MessageType::Poll` message.
+#[frb]
+#[derive(Clone, Debug)]
+pub struct PollInfo {
+    pub question: String,
+    pub answers: Vec<PollAnswerInfo>,
+    /// Whether results are revealed while voting is open.
+    pub disclosed: bool,
+    /// Max selections allowed per voter.
+    pub max_selections: i32,
+    /// Answer ids the current user has already selected.
+    pub my_answer_ids: Vec<String>,
+    /// Per-answer tallies (only meaningful when disclosed or ended).
+    pub results: Vec<PollAnswerResult>,
+    /// Total distinct users who have voted.
+    pub total_voters: i32,
+    /// Whether the poll has been closed.
+    pub ended: bool,
 }
 
 /// A single emoji reaction aggregated on a message.
@@ -1076,6 +1122,12 @@ pub struct ChatMessage {
     pub media_source_json: Option<String>,
     pub image_width: Option<i32>,
     pub image_height: Option<i32>,
+    /// Original filename for file/audio attachments.
+    pub filename: Option<String>,
+    /// RFC 5870 geo URI for location messages (e.g. `geo:lat,lng`).
+    pub geo_uri: Option<String>,
+    /// Poll data when `msg_type == Poll`.
+    pub poll: Option<PollInfo>,
     /// Event ID this message is replying to, if any.
     pub in_reply_to: Option<String>,
     /// Whether this message has been edited.
@@ -3400,6 +3452,9 @@ fn unable_to_decrypt_message(
         media_source_json: None,
         image_width: None,
         image_height: None,
+        filename: None,
+        geo_uri: None,
+        poll: None,
         in_reply_to: None,
         is_edited: false,
         edit_history: Vec::new(),
@@ -3841,26 +3896,30 @@ pub async fn send_video_message(
     Ok(())
 }
 
-/// Share a geographic location as a Matrix `m.location` event.
+/// Share a geographic location.
+///
+/// Sent as a legacy `m.room.message` with `msgtype: m.location`, which is
+/// what `matrix-sdk-ui` 0.18 surfaces on the timeline. The extensible
+/// top-level `m.location` event type is not parsed by this SDK version.
 ///
 /// `geo_uri` follows RFC 5870, e.g. `geo:37.786971,-122.399677`.
 #[frb]
 pub async fn send_location(room_id: String, body: String, geo_uri: String) -> Result<(), String> {
+    use matrix_sdk::ruma::events::room::message::{
+        LocationMessageEventContent, MessageType, RoomMessageEventContent,
+    };
+
+    let label = if body.trim().is_empty() {
+        geo_uri.clone()
+    } else {
+        body
+    };
+    let content = RoomMessageEventContent::new(MessageType::Location(
+        LocationMessageEventContent::new(label, geo_uri),
+    ));
+
     let client = get_client().await.ok_or("No client created.")?;
     let room = get_room_by_id(&client, &room_id)?;
-
-    use matrix_sdk::ruma::events::location::{LocationContent, LocationEventContent};
-
-    let location = LocationContent::new(geo_uri.clone());
-    let content = LocationEventContent::with_plain_text(
-        if body.trim().is_empty() {
-            geo_uri
-        } else {
-            body
-        },
-        location,
-    );
-
     room.send(content)
         .await
         .map_err(|e| format!("Send location failed: {e}"))?;
@@ -3880,15 +3939,24 @@ pub async fn send_location(room_id: String, body: String, geo_uri: String) -> Re
 
 /// Start a poll in a room (Matrix `m.poll.start`, MSC3381).
 #[frb]
+/// Start a poll in a room.
+///
+/// Uses the **unstable** `org.matrix.msc3381.poll.start` event type, which is
+/// what `matrix-sdk-ui` 0.18 surfaces on the timeline. The stable
+/// `m.poll.start` type is not parsed by this SDK version and would vanish.
+#[frb]
 pub async fn send_poll(
     room_id: String,
     question: String,
     answers: Vec<String>,
     disclosed: bool,
 ) -> Result<(), String> {
-    use matrix_sdk::ruma::events::{
-        message::TextContentBlock,
-        poll::start::{PollAnswer, PollAnswers, PollContentBlock, PollKind, PollStartEventContent},
+    use matrix_sdk::ruma::events::poll::{
+        start::PollKind,
+        unstable_start::{
+            NewUnstablePollStartEventContent, UnstablePollAnswer, UnstablePollAnswers,
+            UnstablePollStartContentBlock,
+        },
     };
 
     let mut answer_list = Vec::with_capacity(answers.len());
@@ -3897,22 +3965,19 @@ pub async fn send_poll(
         if trimmed.is_empty() {
             continue;
         }
-        answer_list.push(PollAnswer::new(
-            index.to_string(),
-            TextContentBlock::plain(trimmed),
-        ));
+        answer_list.push(UnstablePollAnswer::new(index.to_string(), trimmed));
     }
-    let poll_answers = PollAnswers::try_from(answer_list)
+    let poll_answers = UnstablePollAnswers::try_from(answer_list)
         .map_err(|_| "A poll needs between 1 and 20 answers.".to_string())?;
 
-    let mut poll = PollContentBlock::new(TextContentBlock::plain(question.trim()), poll_answers);
-    poll.kind = if disclosed {
+    let mut poll_start = UnstablePollStartContentBlock::new(question.trim(), poll_answers);
+    poll_start.kind = if disclosed {
         PollKind::Disclosed
     } else {
         PollKind::Undisclosed
     };
-
-    let content = PollStartEventContent::with_plain_text("poll", poll);
+    let content: matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent =
+        NewUnstablePollStartEventContent::new(poll_start).into();
 
     let client = get_client().await.ok_or("No client created.")?;
     let room = get_room_by_id(&client, &room_id)?;
@@ -3922,6 +3987,55 @@ pub async fn send_poll(
 
     app_log("info", "rooms", format!("Poll message sent to {}", room_id));
     info!("Poll message sent to {}", room_id);
+
+    notify_sync_event(SyncEvent::MessageSent {
+        room_id: room_id.clone(),
+    });
+    Ok(())
+}
+
+/// Submit a vote on a poll. Replaces the current user's previous response on
+/// the same poll start event.
+#[frb]
+pub async fn send_poll_response(
+    room_id: String,
+    poll_start_event_id: String,
+    answer_ids: Vec<String>,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::events::poll::unstable_response::UnstablePollResponseEventContent;
+
+    let event_id = matrix_sdk::ruma::EventId::parse(poll_start_event_id.as_str())
+        .map_err(|e| format!("Invalid poll event id: {e}"))?;
+
+    let content = UnstablePollResponseEventContent::new(answer_ids, event_id);
+
+    let client = get_client().await.ok_or("No client created.")?;
+    let room = get_room_by_id(&client, &room_id)?;
+    room.send(content)
+        .await
+        .map_err(|e| format!("Send poll response failed: {e}"))?;
+
+    notify_sync_event(SyncEvent::MessageSent {
+        room_id: room_id.clone(),
+    });
+    Ok(())
+}
+
+/// Close a poll so no further votes are accepted.
+#[frb]
+pub async fn end_poll(room_id: String, poll_start_event_id: String) -> Result<(), String> {
+    use matrix_sdk::ruma::events::poll::unstable_end::UnstablePollEndEventContent;
+
+    let event_id = matrix_sdk::ruma::EventId::parse(poll_start_event_id.as_str())
+        .map_err(|e| format!("Invalid poll event id: {e}"))?;
+
+    let content = UnstablePollEndEventContent::new("结束投票", event_id);
+
+    let client = get_client().await.ok_or("No client created.")?;
+    let room = get_room_by_id(&client, &room_id)?;
+    room.send(content)
+        .await
+        .map_err(|e| format!("End poll failed: {e}"))?;
 
     notify_sync_event(SyncEvent::MessageSent {
         room_id: room_id.clone(),
