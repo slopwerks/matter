@@ -1,12 +1,18 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:photo_manager/photo_manager.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
@@ -22,13 +28,16 @@ enum AttachmentTab { media, file, poll, location }
 bool get photoManagerSupported =>
     !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
 
-/// A full-screen attachment picker with a floating frosted-glass mode bar at
-/// the bottom, mirroring the Telegram/Discord "plus" composer flow.
-///
-/// Replaces the old mandatory image-editor step: images are *confirmed* in a
-/// multi-select grid and editing is an opt-in action (tap a thumbnail to open
-/// the editor for a single image).
+@visibleForTesting
+const attachmentMediaOrder = <OrderOption>[
+  OrderOption(type: OrderOptionType.createDate, asc: false),
+];
+
+/// An inline attachment panel that starts at the keyboard height and expands
+/// as the active content is dragged upward.
 class AttachmentPicker extends StatefulWidget {
+  final double height;
+  final double maxHeight;
   final String roomId;
   final Future<void> Function(String roomId) onRefresh;
   final MessageSendPresentation Function() resolveSendPresentation;
@@ -37,13 +46,19 @@ class AttachmentPicker extends StatefulWidget {
     bool insertedOptimistically,
   )
   onMessageSent;
+  final ValueChanged<double> onHeightChanged;
+  final VoidCallback onClose;
 
   const AttachmentPicker({
     super.key,
+    required this.height,
+    required this.maxHeight,
     required this.roomId,
     required this.onRefresh,
     required this.resolveSendPresentation,
     required this.onMessageSent,
+    required this.onHeightChanged,
+    required this.onClose,
   });
 
   @override
@@ -51,14 +66,32 @@ class AttachmentPicker extends StatefulWidget {
 }
 
 class _AttachmentPickerState extends State<AttachmentPicker> {
+  late final DraggableScrollableController _sheetController;
+  late final ValueNotifier<double> _sheetExtent;
   AttachmentTab _tab = AttachmentTab.media;
+  final Set<AttachmentTab> _visitedTabs = {AttachmentTab.media};
   bool _isSending = false;
+  bool _isPickingFiles = false;
 
   /// Every Dart/FRB upload buffer is capped to avoid multiplying a very large
   /// allocation while it crosses the bridge into Rust.
   static const int _maxBufferedBytes = 64 * 1024 * 1024;
   static const int _maxImageEdge = 4096;
   static const int _maxImageQuality = 92;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheetController = DraggableScrollableController();
+    _sheetExtent = ValueNotifier<double>(0);
+  }
+
+  @override
+  void dispose() {
+    _sheetController.dispose();
+    _sheetExtent.dispose();
+    super.dispose();
+  }
 
   Future<void> _sendMediaAssets(List<AssetEntity> assets) => _runBatch(
     assets
@@ -145,6 +178,24 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         .toList(),
     files,
   );
+
+  Future<void> _pickFiles() async {
+    if (_isSending || _isPickingFiles) return;
+    setState(() => _isPickingFiles = true);
+    try {
+      final files = List<XFile>.of(await openFiles());
+      if (!mounted || files.isEmpty) return;
+      await _sendFiles(files);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('选择文件失败: $error')));
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingFiles = false);
+    }
+  }
 
   Future<void> _sendSingleMediaXFile(XFile file) async {
     final mime = resolveAttachmentMime(file.name, file.mimeType);
@@ -457,87 +508,264 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     if (closePicker) {
       setState(() => _isSending = false);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).maybePop();
+        if (mounted) widget.onClose();
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final maxHeight = math.max(widget.height, widget.maxHeight);
+    final minSize = (widget.height / maxHeight).clamp(0.01, 1.0);
+    if (_sheetExtent.value == 0) _sheetExtent.value = minSize;
+
+    return ValueListenableBuilder<double>(
+      valueListenable: _sheetExtent,
+      builder: (context, extent, _) {
+        final visibleHeight = (extent * maxHeight).clamp(
+          widget.height,
+          maxHeight,
+        );
+        return SizedBox(
+          height: visibleHeight,
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.bottomCenter,
+              minHeight: maxHeight,
+              maxHeight: maxHeight,
+              child: SizedBox(
+                height: maxHeight,
+                child: NotificationListener<DraggableScrollableNotification>(
+                  onNotification: (notification) {
+                    if ((_sheetExtent.value - notification.extent).abs() >
+                        0.0005) {
+                      _sheetExtent.value = notification.extent;
+                      widget.onHeightChanged(notification.extent * maxHeight);
+                    }
+                    return false;
+                  },
+                  child: DraggableScrollableSheet(
+                    controller: _sheetController,
+                    expand: false,
+                    initialChildSize: minSize,
+                    minChildSize: minSize,
+                    maxChildSize: 1,
+                    builder: (context, scrollController) => _buildSheet(
+                      context,
+                      scrollController,
+                      maxHeight: maxHeight,
+                      minSize: minSize,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSheet(
+    BuildContext context,
+    ScrollController scrollController, {
+    required double maxHeight,
+    required double minSize,
+  }) {
     final titles = const {
       AttachmentTab.media: '图片 / 视频',
       AttachmentTab.file: '文件',
       AttachmentTab.poll: '投票',
       AttachmentTab.location: '位置',
     };
-    final tabs = <Widget>[
-      photoManagerSupported
-          ? _MediaTabBody(
-              isSending: _isSending,
-              onSendAssets: _sendMediaAssets,
-              onOpenEditor: (source) async {
-                final edited = await Navigator.of(context).push<Uint8List>(
-                  MaterialPageRoute(
-                    fullscreenDialog: true,
-                    builder: (_) => ChatImageEditorPage(
-                      imagePath: source.path,
-                      mimeType: source.mimeType,
-                    ),
-                  ),
-                );
-                if (edited != null && mounted) {
-                  await _sendEditedImage(
-                    edited,
-                    originalFilename: source.filename,
-                    originalMimeType: source.mimeType,
-                  );
-                }
-              },
-            )
-          : _MediaFallback(
-              isSending: _isSending,
-              onSendFiles: _sendMediaXFiles,
-            ),
-      _FileTabBody(isSending: _isSending, onSendFiles: _sendFiles),
-      _PollTabBody(isSending: _isSending, onSendPoll: _sendPoll),
-      _LocationTabBody(isSending: _isSending, onSendLocation: _sendLocation),
-    ];
-    return PopScope(
-      canPop: !_isSending,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          backgroundColor: AppColors.background,
-          foregroundColor: AppColors.onBackground,
-          elevation: 0,
-          title: Text(titles[_tab]!),
-          leading: IconButton(
-            icon: const Icon(Icons.close_rounded),
-            onPressed: _isSending
-                ? null
-                : () => Navigator.of(context).maybePop(),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Material(
+        color: AppColors.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.surface),
+          side: BorderSide(
+            color: AppColors.surfaceVariant.withValues(alpha: 0.65),
           ),
         ),
-        body: Stack(
+        child: Column(
           children: [
-            IndexedStack(index: _tab.index, children: tabs),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: _FrostedTabBar(
-                  tab: _tab,
-                  onTabChanged: _isSending
-                      ? null
-                      : (tab) => setState(() => _tab = tab),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragUpdate: (details) => _dragSheet(
+                details.primaryDelta ?? 0,
+                maxHeight: maxHeight,
+                minSize: minSize,
+              ),
+              onVerticalDragEnd: (details) =>
+                  _settleSheet(details.primaryVelocity ?? 0, minSize: minSize),
+              child: SizedBox(
+                height: 52,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned(
+                      top: 7,
+                      child: Container(
+                        width: 34,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.muted,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 16,
+                      right: 48,
+                      bottom: 9,
+                      child: Text(
+                        titles[_tab]!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.onBackground,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 4,
+                      bottom: 0,
+                      child: IconButton(
+                        tooltip: '关闭',
+                        onPressed: _isSending ? null : widget.onClose,
+                        icon: const Icon(Icons.close_rounded, size: 21),
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+            ),
+            const Divider(height: 1, color: AppColors.surfaceVariant),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: IndexedStack(
+                      index: _tab.index,
+                      children: [
+                        _buildTabBody(AttachmentTab.media, scrollController),
+                        const SizedBox.shrink(),
+                        _buildTabBody(AttachmentTab.poll, scrollController),
+                        _buildTabBody(AttachmentTab.location, scrollController),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: _FrostedTabBar(
+                      tab: _tab,
+                      isFileBusy: _isPickingFiles,
+                      onTabChanged: _isSending || _isPickingFiles
+                          ? null
+                          : _selectTab,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTabBody(
+    AttachmentTab tab,
+    ScrollController sheetScrollController,
+  ) {
+    if (!_visitedTabs.contains(tab)) return const SizedBox.shrink();
+    final scrollController = _tab == tab ? sheetScrollController : null;
+    return switch (tab) {
+      AttachmentTab.media =>
+        photoManagerSupported
+            ? _MediaTabBody(
+                isSending: _isSending,
+                scrollController: scrollController,
+                onSendAssets: _sendMediaAssets,
+                onOpenEditor: (source) async {
+                  final edited = await Navigator.of(context).push<Uint8List>(
+                    MaterialPageRoute(
+                      fullscreenDialog: true,
+                      builder: (_) => ChatImageEditorPage(
+                        imagePath: source.path,
+                        mimeType: source.mimeType,
+                      ),
+                    ),
+                  );
+                  if (edited != null && mounted) {
+                    await _sendEditedImage(
+                      edited,
+                      originalFilename: source.filename,
+                      originalMimeType: source.mimeType,
+                    );
+                  }
+                },
+              )
+            : _MediaFallback(
+                isSending: _isSending,
+                scrollController: scrollController,
+                onSendFiles: _sendMediaXFiles,
+              ),
+      AttachmentTab.poll => _PollTabBody(
+        isSending: _isSending,
+        scrollController: scrollController,
+        onSendPoll: _sendPoll,
+      ),
+      AttachmentTab.location => _LocationTabBody(
+        isSending: _isSending,
+        onSendLocation: _sendLocation,
+      ),
+      AttachmentTab.file => const SizedBox.shrink(),
+    };
+  }
+
+  void _selectTab(AttachmentTab tab) {
+    if (tab == AttachmentTab.file) {
+      unawaited(_pickFiles());
+      return;
+    }
+    setState(() {
+      _visitedTabs.add(tab);
+      _tab = tab;
+    });
+  }
+
+  void _dragSheet(
+    double delta, {
+    required double maxHeight,
+    required double minSize,
+  }) {
+    if (!_sheetController.isAttached) return;
+    final target = (_sheetController.size - delta / maxHeight).clamp(
+      minSize,
+      1.0,
+    );
+    _sheetController.jumpTo(target);
+  }
+
+  Future<void> _settleSheet(double velocity, {required double minSize}) async {
+    if (!_sheetController.isAttached) return;
+    final target =
+        velocity < -300 ||
+            (velocity <= 300 &&
+                _sheetController.size > minSize + (1 - minSize) / 2)
+        ? 1.0
+        : minSize;
+    await _sheetController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
     );
   }
 }
@@ -546,9 +774,14 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
 
 class _FrostedTabBar extends StatelessWidget {
   final AttachmentTab tab;
+  final bool isFileBusy;
   final ValueChanged<AttachmentTab>? onTabChanged;
 
-  const _FrostedTabBar({required this.tab, required this.onTabChanged});
+  const _FrostedTabBar({
+    required this.tab,
+    required this.isFileBusy,
+    required this.onTabChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -558,29 +791,33 @@ class _FrostedTabBar extends StatelessWidget {
       _TabItem(AttachmentTab.poll, Icons.poll_rounded, '投票'),
       _TabItem(AttachmentTab.location, Icons.location_on_rounded, '地址'),
     ];
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.glassBackground,
-            borderRadius: BorderRadius.circular(AppRadii.nav),
-            border: Border.all(color: AppColors.glassBorder, width: 0.8),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              for (final item in items)
-                _TabButton(
-                  item: item,
-                  selected: tab == item.tab,
-                  onTap: onTabChanged == null
-                      ? null
-                      : () => onTabChanged!(item.tab),
-                ),
-            ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.nav),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceElevated.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(AppRadii.nav),
+              border: Border.all(color: AppColors.glassBorder, width: 0.8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                for (final item in items)
+                  _TabButton(
+                    item: item,
+                    selected: tab == item.tab,
+                    busy: item.tab == AttachmentTab.file && isFileBusy,
+                    onTap: onTabChanged == null
+                        ? null
+                        : () => onTabChanged!(item.tab),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -598,11 +835,13 @@ class _TabItem {
 class _TabButton extends StatelessWidget {
   final _TabItem item;
   final bool selected;
+  final bool busy;
   final VoidCallback? onTap;
 
   const _TabButton({
     required this.item,
     required this.selected,
+    required this.busy,
     required this.onTap,
   });
 
@@ -617,7 +856,13 @@ class _TabButton extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(item.icon, color: color, size: 24),
+            if (busy)
+              const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(item.icon, color: color, size: 24),
             const SizedBox(height: 2),
             Text(item.label, style: TextStyle(color: color, fontSize: 11)),
           ],
@@ -633,11 +878,13 @@ typedef _ImageEditorSource = ({String path, String filename, String? mimeType});
 
 class _MediaTabBody extends StatefulWidget {
   final bool isSending;
+  final ScrollController? scrollController;
   final Future<void> Function(List<AssetEntity> assets) onSendAssets;
   final Future<void> Function(_ImageEditorSource source) onOpenEditor;
 
   const _MediaTabBody({
     required this.isSending,
+    required this.scrollController,
     required this.onSendAssets,
     required this.onOpenEditor,
   });
@@ -674,6 +921,7 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
       final albums = await PhotoManager.getAssetPathList(
         type: RequestType.common,
         hasAll: true,
+        filterOption: FilterOptionGroup(orders: attachmentMediaOrder),
       );
       if (!mounted) return;
       if (albums.isEmpty) {
@@ -800,9 +1048,9 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
         ),
       );
     }
-    return Column(
+    return Stack(
       children: [
-        Expanded(
+        Positioned.fill(
           child: NotificationListener<ScrollNotification>(
             onNotification: _onScroll,
             child: _assets.isEmpty
@@ -813,7 +1061,13 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
                     ),
                   )
                 : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(2, 2, 2, 96),
+                    controller: widget.scrollController,
+                    padding: EdgeInsets.fromLTRB(
+                      2,
+                      2,
+                      2,
+                      _selected.isEmpty ? 96 : 158,
+                    ),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 4,
@@ -841,6 +1095,7 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
                       final selected = order > 0;
                       final isVideo = asset.type == AssetType.video;
                       return GestureDetector(
+                        key: ValueKey(asset.id),
                         // Tapping a video must not open the image editor: it would
                         // feed video bytes to the image decoder. Videos toggle
                         // selection instead; only images open the editor.
@@ -864,7 +1119,10 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
                                 borderRadius: BorderRadius.circular(
                                   selected ? 8 : 0,
                                 ),
-                                child: _AssetThumbnail(asset: asset),
+                                child: _AssetThumbnail(
+                                  key: ValueKey('thumbnail_${asset.id}'),
+                                  asset: asset,
+                                ),
                               ),
                             ),
                             Positioned(
@@ -898,26 +1156,55 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
           ),
         ),
         if (_selected.isNotEmpty)
-          _SendBar(
-            count: _selected.length,
-            isSending: widget.isSending,
-            // Pass by reference so partial-success items are pruned by the
-            // send loop and a retry never re-sends delivered items.
-            onSend: () => widget.onSendAssets(_selected),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _SendBar(
+              count: _selected.length,
+              isSending: widget.isSending,
+              // Pass by reference so partial-success items are pruned by the
+              // send loop and a retry never re-sends delivered items.
+              onSend: () => widget.onSendAssets(_selected),
+            ),
           ),
       ],
     );
   }
 }
 
-class _AssetThumbnail extends StatelessWidget {
+class _AssetThumbnail extends StatefulWidget {
   final AssetEntity asset;
-  const _AssetThumbnail({required this.asset});
+  const _AssetThumbnail({super.key, required this.asset});
+
+  @override
+  State<_AssetThumbnail> createState() => _AssetThumbnailState();
+}
+
+class _AssetThumbnailState extends State<_AssetThumbnail> {
+  late Future<Uint8List?> _thumbnail;
+
+  @override
+  void initState() {
+    super.initState();
+    _thumbnail = _loadThumbnail();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AssetThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.asset.id != widget.asset.id) {
+      _thumbnail = _loadThumbnail();
+    }
+  }
+
+  Future<Uint8List?> _loadThumbnail() =>
+      widget.asset.thumbnailDataWithSize(const ThumbnailSize.square(256));
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Uint8List?>(
-      future: asset.thumbnailDataWithSize(const ThumbnailSize.square(256)),
+      future: _thumbnail,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return Container(color: AppColors.surfaceVariant);
@@ -1032,9 +1319,14 @@ class _SendBar extends StatelessWidget {
 
 class _MediaFallback extends StatefulWidget {
   final bool isSending;
+  final ScrollController? scrollController;
   final Future<void> Function(List<XFile> files) onSendFiles;
 
-  const _MediaFallback({required this.isSending, required this.onSendFiles});
+  const _MediaFallback({
+    required this.isSending,
+    required this.scrollController,
+    required this.onSendFiles,
+  });
 
   @override
   State<_MediaFallback> createState() => _MediaFallbackState();
@@ -1085,11 +1377,17 @@ class _MediaFallbackState extends State<_MediaFallback> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        Expanded(
+        Positioned.fill(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 120),
+            controller: widget.scrollController,
+            padding: EdgeInsets.fromLTRB(
+              24,
+              32,
+              24,
+              _picked.isEmpty ? 120 : 182,
+            ),
             children: [
               const Icon(
                 Icons.photo_library_outlined,
@@ -1139,109 +1437,15 @@ class _MediaFallbackState extends State<_MediaFallback> {
           ),
         ),
         if (_picked.isNotEmpty)
-          _SendBar(
-            count: _picked.length,
-            isSending: widget.isSending,
-            onSend: () => widget.onSendFiles(_picked),
-          ),
-      ],
-    );
-  }
-}
-
-// ── File tab ─────────────────────────────────────────────────────────
-
-class _FileTabBody extends StatefulWidget {
-  final bool isSending;
-  final Future<void> Function(List<XFile> files) onSendFiles;
-
-  const _FileTabBody({required this.isSending, required this.onSendFiles});
-
-  @override
-  State<_FileTabBody> createState() => _FileTabBodyState();
-}
-
-class _FileTabBodyState extends State<_FileTabBody> {
-  List<XFile> _picked = const [];
-
-  Future<void> _pick() async {
-    if (widget.isSending) return;
-    try {
-      final files = await openFiles();
-      if (!mounted || widget.isSending || files.isEmpty) return;
-      setState(() => _picked = List.of(files));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('选择文件失败: $e')));
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: _picked.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.folder_open_rounded,
-                          size: 48,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          '选择要发送的文件',
-                          style: TextStyle(color: AppColors.onSurfaceVariant),
-                        ),
-                        const SizedBox(height: 16),
-                        OutlinedButton(
-                          onPressed: widget.isSending ? null : _pick,
-                          child: const Text('选择文件'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 120),
-                  itemCount: _picked.length,
-                  itemBuilder: (context, index) {
-                    final f = _picked[index];
-                    return ListTile(
-                      leading: const Icon(
-                        Icons.insert_drive_file_rounded,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                      title: Text(
-                        f.name,
-                        style: const TextStyle(color: AppColors.onBackground),
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                        onPressed: widget.isSending
-                            ? null
-                            : () => setState(() => _picked.removeAt(index)),
-                      ),
-                    );
-                  },
-                ),
-        ),
-        if (_picked.isNotEmpty)
-          _SendBar(
-            count: _picked.length,
-            isSending: widget.isSending,
-            onSend: () => widget.onSendFiles(_picked),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _SendBar(
+              count: _picked.length,
+              isSending: widget.isSending,
+              onSend: () => widget.onSendFiles(_picked),
+            ),
           ),
       ],
     );
@@ -1252,6 +1456,7 @@ class _FileTabBodyState extends State<_FileTabBody> {
 
 class _PollTabBody extends StatefulWidget {
   final bool isSending;
+  final ScrollController? scrollController;
   final Future<void> Function(
     String question,
     List<String> answers,
@@ -1259,7 +1464,11 @@ class _PollTabBody extends StatefulWidget {
   )
   onSendPoll;
 
-  const _PollTabBody({required this.isSending, required this.onSendPoll});
+  const _PollTabBody({
+    required this.isSending,
+    required this.scrollController,
+    required this.onSendPoll,
+  });
 
   @override
   State<_PollTabBody> createState() => _PollTabBodyState();
@@ -1293,26 +1502,18 @@ class _PollTabBodyState extends State<_PollTabBody> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        Expanded(
+        Positioned.fill(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+            controller: widget.scrollController,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 182),
             children: [
               TextField(
                 controller: _question,
                 enabled: !widget.isSending,
                 style: const TextStyle(color: AppColors.onBackground),
-                decoration: const InputDecoration(
-                  labelText: '问题',
-                  labelStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.surfaceVariant),
-                  ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.primary),
-                  ),
-                ),
+                decoration: const InputDecoration(labelText: '问题'),
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 16),
@@ -1326,20 +1527,7 @@ class _PollTabBodyState extends State<_PollTabBody> {
                           controller: _answers[i],
                           enabled: !widget.isSending,
                           style: const TextStyle(color: AppColors.onBackground),
-                          decoration: InputDecoration(
-                            hintText: '选项 ${i + 1}',
-                            hintStyle: const TextStyle(
-                              color: AppColors.onSurfaceVariant,
-                            ),
-                            enabledBorder: const UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                color: AppColors.surfaceVariant,
-                              ),
-                            ),
-                            focusedBorder: const UnderlineInputBorder(
-                              borderSide: BorderSide(color: AppColors.primary),
-                            ),
-                          ),
+                          decoration: InputDecoration(hintText: '选项 ${i + 1}'),
                           onChanged: (_) => setState(() {}),
                         ),
                       ),
@@ -1386,14 +1574,19 @@ class _PollTabBodyState extends State<_PollTabBody> {
             ],
           ),
         ),
-        _SendBar(
-          count: 1,
-          isSending: widget.isSending,
-          enabled: _canSend,
-          onSend: () => widget.onSendPoll(
-            _question.text.trim(),
-            _validAnswers,
-            _disclosed,
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _SendBar(
+            count: 1,
+            isSending: widget.isSending,
+            enabled: _canSend,
+            onSend: () => widget.onSendPoll(
+              _question.text.trim(),
+              _validAnswers,
+              _disclosed,
+            ),
           ),
         ),
       ],
@@ -1417,111 +1610,175 @@ class _LocationTabBody extends StatefulWidget {
 }
 
 class _LocationTabBodyState extends State<_LocationTabBody> {
-  final _lat = TextEditingController();
-  final _lng = TextEditingController();
-  final _body = TextEditingController();
+  final MapController _mapController = MapController();
+  ll.LatLng? _selected;
+  bool _locating = true;
+  String? _error;
 
-  String get _geoUri => canonicalGeoUri(_lat.text, _lng.text) ?? '';
-
-  bool get _canSend => _geoUri.isNotEmpty;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_locate());
+  }
 
   @override
   void dispose() {
-    _lat.dispose();
-    _lng.dispose();
-    _body.dispose();
+    _mapController.dispose();
     super.dispose();
+  }
+
+  Future<void> _locate() async {
+    setState(() {
+      _locating = true;
+      _error = null;
+    });
+    try {
+      final point = await currentAttachmentLocation();
+      if (!mounted) return;
+      setState(() {
+        _selected = point;
+        _locating = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _mapController.move(point, 16);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _error = error.toString();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _lat,
-                      enabled: !widget.isSending,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: true,
-                      ),
-                      style: const TextStyle(color: AppColors.onBackground),
-                      decoration: const InputDecoration(
-                        labelText: '纬度',
-                        labelStyle: TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(
-                            color: AppColors.surfaceVariant,
-                          ),
-                        ),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.primary),
-                        ),
-                      ),
-                      onChanged: (_) => setState(() {}),
+    final selected = _selected;
+    if (selected == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+          child: _locating
+              ? const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: AppColors.primary),
+                    SizedBox(height: 12),
+                    Text(
+                      '正在获取当前位置',
+                      style: TextStyle(color: AppColors.onSurfaceVariant),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _lng,
-                      enabled: !widget.isSending,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: true,
-                      ),
-                      style: const TextStyle(color: AppColors.onBackground),
-                      decoration: const InputDecoration(
-                        labelText: '经度',
-                        labelStyle: TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(
-                            color: AppColors.surfaceVariant,
-                          ),
-                        ),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.primary),
-                        ),
-                      ),
-                      onChanged: (_) => setState(() {}),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.location_off_rounded,
+                      color: AppColors.onSurfaceVariant,
+                      size: 36,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _error ?? '无法获取当前位置',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: widget.isSending ? null : _locate,
+                      icon: const Icon(Icons.my_location_rounded),
+                      label: const Text('重新定位'),
+                    ),
+                  ],
+                ),
+        ),
+      );
+    }
+
+    final geoUri = canonicalGeoUri(
+      selected.latitude.toString(),
+      selected.longitude.toString(),
+    )!;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: selected,
+              initialZoom: 16,
+              maxZoom: 19,
+              onTap: (_, point) {
+                if (!widget.isSending) setState(() => _selected = point);
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'moe.aks.matter',
+              ),
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: selected,
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.topCenter,
+                    child: const Icon(
+                      Icons.location_on_rounded,
+                      size: 42,
+                      color: AppColors.primary,
+                      shadows: [Shadow(color: Colors.black54, blurRadius: 5)],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _body,
-                enabled: !widget.isSending,
-                style: const TextStyle(color: AppColors.onBackground),
-                decoration: const InputDecoration(
-                  labelText: '描述（可选）',
-                  labelStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.surfaceVariant),
-                  ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.primary),
-                  ),
+              SimpleAttributionWidget(
+                alignment: Alignment.topLeft,
+                backgroundColor: AppColors.surface.withValues(alpha: 0.82),
+                source: const Text(
+                  'OpenStreetMap contributors',
+                  style: TextStyle(fontSize: 9),
                 ),
+                onTap: () {
+                  unawaited(
+                    launchUrl(
+                      Uri.parse('https://www.openstreetmap.org/copyright'),
+                    ),
+                  );
+                },
               ),
             ],
           ),
         ),
-        _SendBar(
-          count: 1,
-          isSending: widget.isSending,
-          enabled: _canSend,
-          onSend: () => widget.onSendLocation(_body.text.trim(), _geoUri),
+        Positioned(
+          top: 10,
+          right: 10,
+          child: Material(
+            color: AppColors.surfaceElevated.withValues(alpha: 0.92),
+            shape: const CircleBorder(),
+            child: IconButton(
+              tooltip: '回到当前位置',
+              onPressed: widget.isSending || _locating ? null : _locate,
+              icon: _locating
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location_rounded, size: 20),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _SendBar(
+            count: 1,
+            isSending: widget.isSending,
+            onSend: () => widget.onSendLocation('位置', geoUri),
+          ),
         ),
       ],
     );
@@ -1619,6 +1876,41 @@ String? canonicalGeoUri(String latitude, String longitude) {
   final lng = _parseCoordinate(longitude, maxAbsolute: 180);
   if (lat == null || lng == null) return null;
   return 'geo:${_formatCoordinate(lat)},${_formatCoordinate(lng)}';
+}
+
+@visibleForTesting
+Future<ll.LatLng> currentAttachmentLocation() async {
+  if (!await Geolocator.isLocationServiceEnabled()) {
+    throw const _AttachmentLocationException('请先开启系统定位服务');
+  }
+
+  var permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+  }
+  if (permission == LocationPermission.denied) {
+    throw const _AttachmentLocationException('未获得定位权限');
+  }
+  if (permission == LocationPermission.deniedForever) {
+    throw const _AttachmentLocationException('定位权限已被永久拒绝，请在系统设置中开启');
+  }
+
+  final position = await Geolocator.getCurrentPosition(
+    locationSettings: const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      timeLimit: Duration(seconds: 12),
+    ),
+  );
+  return ll.LatLng(position.latitude, position.longitude);
+}
+
+class _AttachmentLocationException implements Exception {
+  final String message;
+
+  const _AttachmentLocationException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 String? _guessMime(String filename) {

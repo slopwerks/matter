@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/pages/chat/attachment_picker.dart';
 import 'package:matter/pages/chat/composer_picker_panel.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
@@ -65,21 +66,87 @@ void main() {
     expect(backdropFilters, findsNWidgets(2));
     expect(tester.getBottomLeft(backdropFilters.first).dy, 800);
   });
+
+  testWidgets('plus toggles an inline attachment panel at picker height', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: _MessageInputHarness(initialPanelMode: InputPanelMode.keyboard),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final plus = find.byIcon(Icons.add_rounded);
+    await tester.tap(plus);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AttachmentPicker), findsOneWidget);
+    expect(tester.getSize(find.byType(AttachmentPicker)).height, 300);
+    expect(plus, findsOneWidget);
+
+    await tester.tap(plus);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AttachmentPicker), findsNothing);
+  });
+
+  testWidgets('attachment panel stays mounted while keyboard replaces it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: _MessageInputHarness(
+            initialPanelMode: InputPanelMode.attachment,
+            keepPickerWhileKeyboard: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(AttachmentPicker), findsOneWidget);
+    await tester.tap(find.byType(TextField).first);
+    await tester.pump();
+
+    expect(find.byType(AttachmentPicker), findsOneWidget);
+    expect(find.byType(ComposerPickerPanel), findsNothing);
+  });
 }
 
 class _MessageInputHarness extends StatefulWidget {
-  const _MessageInputHarness();
+  final InputPanelMode initialPanelMode;
+  final bool keepPickerWhileKeyboard;
+
+  const _MessageInputHarness({
+    this.initialPanelMode = InputPanelMode.emoji,
+    this.keepPickerWhileKeyboard = false,
+  });
 
   @override
   State<_MessageInputHarness> createState() => _MessageInputHarnessState();
 }
 
 class _MessageInputHarnessState extends State<_MessageInputHarness> {
-  InputPanelMode _panelMode = InputPanelMode.emoji;
+  late InputPanelMode _panelMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _panelMode = widget.initialPanelMode;
+  }
 
   @override
   Widget build(BuildContext context) {
     const pickerHeight = 300.0;
+    final pickerOpen =
+        _panelMode == InputPanelMode.emoji ||
+        _panelMode == InputPanelMode.attachment ||
+        (widget.keepPickerWhileKeyboard &&
+            _panelMode == InputPanelMode.keyboard);
     return Scaffold(
       body: Align(
         alignment: Alignment.bottomCenter,
@@ -87,7 +154,7 @@ class _MessageInputHarnessState extends State<_MessageInputHarness> {
           roomId: '!room:example.org',
           totalMembers: 2,
           panelMode: _panelMode,
-          pickerHeight: _panelMode == InputPanelMode.emoji ? pickerHeight : 0,
+          pickerHeight: pickerOpen ? pickerHeight : 0,
           pickerFullHeight: pickerHeight,
           pickerBaseHeight: pickerHeight,
           pickerMaxHeight: 500,

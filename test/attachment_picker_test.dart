@@ -6,9 +6,13 @@ import 'package:matter/pages/chat/attachment_picker.dart';
 import 'package:matter/pages/chat/chat_image_editor_page.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/theme/app_theme.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 
 const _pmChannel = 'com.fluttercandies/photo_manager';
+const _locationChannel = MethodChannel('flutter.baseflow.com/geolocator');
+const _fileSelectorChannel = MethodChannel('plugins.flutter.io/file_selector');
 
 Future<void> _mockPhotoManagerEmpty() async {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -17,7 +21,7 @@ Future<void> _mockPhotoManagerEmpty() async {
           case 'requestPermissionExtend':
             return 3; // PermissionState.authorized
           case 'getAssetPathList':
-            return <Map<String, dynamic>>[]; // no albums
+            return <String, dynamic>{'data': <Map<String, dynamic>>[]};
           case 'getAssetCountFromPath':
             return 0;
           default:
@@ -26,7 +30,60 @@ Future<void> _mockPhotoManagerEmpty() async {
       });
 }
 
+void _mockCurrentLocation({
+  bool serviceEnabled = true,
+  int permission = 2,
+  double latitude = 39.9,
+  double longitude = 116.4,
+}) {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(_locationChannel, (call) async {
+        return switch (call.method) {
+          'isLocationServiceEnabled' => serviceEnabled,
+          'checkPermission' => permission,
+          'requestPermission' => permission,
+          'getCurrentPosition' => <String, dynamic>{
+            'latitude': latitude,
+            'longitude': longitude,
+          },
+          _ => null,
+        };
+      });
+}
+
 void main() {
+  test('gallery requests newest assets first', () {
+    expect(attachmentMediaOrder, hasLength(1));
+    expect(attachmentMediaOrder.single.type, OrderOptionType.createDate);
+    expect(attachmentMediaOrder.single.asc, isFalse);
+  });
+
+  test('location sharing resolves the current device position', () async {
+    _mockCurrentLocation();
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_locationChannel, null),
+    );
+
+    final point = await currentAttachmentLocation();
+
+    expect(point.latitude, 39.9);
+    expect(point.longitude, 116.4);
+  });
+
+  test('location sharing reports disabled system location', () async {
+    _mockCurrentLocation(serviceEnabled: false);
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_locationChannel, null),
+    );
+
+    await expectLater(
+      currentAttachmentLocation(),
+      throwsA(predicate<Object>((error) => error.toString() == '请先开启系统定位服务')),
+    );
+  });
+
   test('attachment MIME fallback classifies common image and video files', () {
     final movMime = resolveAttachmentMime(
       'clip.MOV',
@@ -82,7 +139,7 @@ void main() {
     },
   );
 
-  testWidgets('plus button opens the attachment picker (no mandatory editor)', (
+  testWidgets('plus button opens the rounded inline attachment panel', (
     tester,
   ) async {
     await _mockPhotoManagerEmpty();
@@ -99,52 +156,73 @@ void main() {
     await tester.tap(plus);
     await tester.pumpAndSettle();
 
-    // The full-screen picker (with the floating frosted mode bar) is shown.
     expect(find.byType(AttachmentPicker), findsOneWidget);
+    expect(tester.getSize(find.byType(AttachmentPicker)).height, 300);
     expect(find.text('图片'), findsOneWidget);
     expect(find.text('文件'), findsOneWidget);
     expect(find.text('投票'), findsOneWidget);
     expect(find.text('地址'), findsOneWidget);
+
+    final outerSurface = tester
+        .widgetList<Material>(
+          find.descendant(
+            of: find.byType(AttachmentPicker),
+            matching: find.byType(Material),
+          ),
+        )
+        .singleWhere(
+          (material) =>
+              material.color == AppColors.surface &&
+              material.clipBehavior == Clip.antiAlias,
+        );
+    final shape = outerSurface.shape! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(AppRadii.surface));
   });
 
-  testWidgets('location tab disables send until a valid coordinate is set', (
+  testWidgets('attachment panel expands after an upward drag', (tester) async {
+    await _mockPhotoManagerEmpty();
+    await tester.pumpWidget(
+      const MaterialApp(home: _AttachmentPickerHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    final picker = find.byType(AttachmentPicker);
+    expect(tester.getSize(picker).height, 300);
+
+    await tester.drag(find.text('图片 / 视频'), const Offset(0, -260));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(picker).height, 500);
+  });
+
+  testWidgets('file action opens the system file selector directly', (
     tester,
   ) async {
     await _mockPhotoManagerEmpty();
-    await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: _MessageInputHarness())),
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_fileSelectorChannel, (call) async {
+          calls.add(call);
+          return <String>[];
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_fileSelectorChannel, null),
     );
-    await tester.pump();
-
-    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pumpWidget(
+      const MaterialApp(home: _AttachmentPickerHarness()),
+    );
     await tester.pumpAndSettle();
 
-    // Switch to the location tab.
-    await tester.tap(find.text('地址'));
+    await tester.tap(find.text('文件'));
     await tester.pumpAndSettle();
 
-    final sendBtn = find.byType(FilledButton);
-    // Empty coordinates => disabled (onPressed null).
-    expect(tester.widget<FilledButton>(sendBtn).onPressed, isNull);
-
-    // Enter an out-of-range latitude: still disabled.
-    await tester.enterText(find.widgetWithText(TextField, '纬度'), '999');
-    await tester.enterText(find.widgetWithText(TextField, '经度'), '116.4');
-    await tester.pump();
-    expect(tester.widget<FilledButton>(sendBtn).onPressed, isNull);
-
-    // Non-finite and exponent forms are not valid RFC 5870 coordinates.
-    await tester.enterText(find.widgetWithText(TextField, '纬度'), 'NaN');
-    await tester.pump();
-    expect(tester.widget<FilledButton>(sendBtn).onPressed, isNull);
-    await tester.enterText(find.widgetWithText(TextField, '纬度'), '1e-7');
-    await tester.pump();
-    expect(tester.widget<FilledButton>(sendBtn).onPressed, isNull);
-
-    // Valid coordinates => enabled.
-    await tester.enterText(find.widgetWithText(TextField, '纬度'), '39.9');
-    await tester.pump();
-    expect(tester.widget<FilledButton>(sendBtn).onPressed, isNotNull);
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'openFile');
+    expect(
+      (calls.single.arguments as Map<Object?, Object?>)['multiple'],
+      isTrue,
+    );
   });
 
   testWidgets('poll requires two answers and tab state is preserved', (
@@ -172,9 +250,8 @@ void main() {
     sendButton = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(sendButton.onPressed, isNotNull);
 
-    await tester.tap(find.text('地址'));
+    await tester.tap(find.text('图片'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, '纬度'), '39.9');
     await tester.tap(find.text('投票'));
     await tester.pumpAndSettle();
 
@@ -202,6 +279,29 @@ void main() {
   });
 }
 
+class _AttachmentPickerHarness extends StatelessWidget {
+  const _AttachmentPickerHarness();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Align(
+        alignment: Alignment.bottomCenter,
+        child: AttachmentPicker(
+          height: 300,
+          maxHeight: 500,
+          roomId: '!room:example.org',
+          onRefresh: (_) async {},
+          resolveSendPresentation: () => MessageSendPresentation.quiet,
+          onMessageSent: (_, _) {},
+          onHeightChanged: (_) {},
+          onClose: () {},
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageInputHarness extends StatefulWidget {
   const _MessageInputHarness();
 
@@ -214,6 +314,9 @@ class _MessageInputHarnessState extends State<_MessageInputHarness> {
 
   @override
   Widget build(BuildContext context) {
+    final pickerOpen =
+        _panelMode == InputPanelMode.emoji ||
+        _panelMode == InputPanelMode.attachment;
     return Scaffold(
       body: Align(
         alignment: Alignment.bottomCenter,
@@ -221,7 +324,7 @@ class _MessageInputHarnessState extends State<_MessageInputHarness> {
           roomId: '!room:example.org',
           totalMembers: 2,
           panelMode: _panelMode,
-          pickerHeight: 0,
+          pickerHeight: pickerOpen ? 300 : 0,
           pickerFullHeight: 300,
           pickerBaseHeight: 300,
           pickerMaxHeight: 500,

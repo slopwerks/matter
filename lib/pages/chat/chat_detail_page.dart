@@ -112,14 +112,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
 
   void _setInputPanelMode(InputPanelMode mode) {
     if (_inputPanelMode == mode) return;
+    final pickerIsOpen =
+        _inputPanelMode == InputPanelMode.emoji ||
+        _inputPanelMode == InputPanelMode.attachment;
+    final opensPicker =
+        mode == InputPanelMode.emoji || mode == InputPanelMode.attachment;
     setState(() {
       _keepPickerDuringKeyboardOpen =
-          _inputPanelMode == InputPanelMode.emoji &&
-          mode == InputPanelMode.keyboard;
+          pickerIsOpen && mode == InputPanelMode.keyboard;
       if (mode == InputPanelMode.none) {
         _keepPickerDuringKeyboardOpen = false;
       }
-      if (mode != InputPanelMode.emoji) {
+      if (!opensPicker || (pickerIsOpen && _inputPanelMode != mode)) {
         _expandedPickerHeight = 0;
       }
       _inputPanelMode = mode;
@@ -679,7 +683,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   }
 
   void _handlePickerHeightChanged(double height, double baseHeight) {
-    if (!mounted || _inputPanelMode != InputPanelMode.emoji) return;
+    if (!mounted ||
+        (_inputPanelMode != InputPanelMode.emoji &&
+            _inputPanelMode != InputPanelMode.attachment)) {
+      return;
+    }
     _pickerResizeTimer?.cancel();
     final nextHeight = math.max(baseHeight, height);
     if ((_expandedPickerHeight - nextHeight).abs() >= 0.5 ||
@@ -786,6 +794,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     }
     final keepsStablePicker =
         _inputPanelMode == InputPanelMode.emoji ||
+        _inputPanelMode == InputPanelMode.attachment ||
         _keepPickerDuringKeyboardOpen;
     final pickerBaseHeight = _panelBaselineHeight > 0
         ? _panelBaselineHeight

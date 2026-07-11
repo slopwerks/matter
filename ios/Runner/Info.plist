@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>需要访问您的位置以在聊天中分享当前位置。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>需要访问相册以选择要发送的图片和视频。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
