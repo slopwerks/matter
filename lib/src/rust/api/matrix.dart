@@ -410,11 +410,13 @@ Future<void> sendPoll({
   required String question,
   required List<String> answers,
   required bool disclosed,
+  required int maxSelections,
 }) => RustLib.instance.api.crateApiMatrixSendPoll(
   roomId: roomId,
   question: question,
   answers: answers,
   disclosed: disclosed,
+  maxSelections: maxSelections,
 );
 
 /// Submit a vote on a poll. Replaces the current user's previous response on

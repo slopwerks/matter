@@ -801,6 +801,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                   ? const Duration(milliseconds: 180)
                   : Duration.zero,
               curve: Curves.easeOutCubic,
+              width: double.infinity,
               height: widget.pickerHeight,
               child: ClipRect(
                 child: OverflowBox(
@@ -808,6 +809,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                   minHeight: widget.pickerFullHeight,
                   maxHeight: widget.pickerFullHeight,
                   child: SizedBox(
+                    width: double.infinity,
                     height: widget.pickerFullHeight,
                     child: widget.pickerHeight <= 0
                         ? const SizedBox.shrink()

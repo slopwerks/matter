@@ -4143,6 +4143,7 @@ fn poll_start_content(
     question: &str,
     answers: Vec<String>,
     disclosed: bool,
+    max_selections: usize,
 ) -> Result<matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent, String> {
     use matrix_sdk::ruma::events::poll::{
         start::PollKind,
@@ -4171,6 +4172,9 @@ fn poll_start_content(
     if !(2..=20).contains(&answer_list.len()) {
         return Err("A poll needs between 2 and 20 answers.".to_string());
     }
+    if !(1..=answer_list.len()).contains(&max_selections) {
+        return Err("A poll's maximum selections must match its answers.".to_string());
+    }
     let mut fallback = question.to_owned();
     for (index, answer) in answer_list.iter().enumerate() {
         fallback.push_str(&format!("\n{}. {}", index + 1, answer.text));
@@ -4184,6 +4188,7 @@ fn poll_start_content(
     } else {
         PollKind::Undisclosed
     };
+    poll_start.max_selections = matrix_sdk::ruma::UInt::from(max_selections as u32);
     Ok(NewUnstablePollStartEventContent::plain_text(fallback, poll_start).into())
 }
 
@@ -4197,8 +4202,11 @@ pub async fn send_poll(
     question: String,
     answers: Vec<String>,
     disclosed: bool,
+    max_selections: i32,
 ) -> Result<(), String> {
-    let content = poll_start_content(&question, answers, disclosed)?;
+    let max_selections = usize::try_from(max_selections)
+        .map_err(|_| "A poll's maximum selections must be positive.".to_string())?;
+    let content = poll_start_content(&question, answers, disclosed, max_selections)?;
 
     let client = get_client().await.ok_or("No client created.")?;
     let room = get_room_by_id(&client, &room_id)?;
@@ -4285,7 +4293,10 @@ mod attachment_message_tests {
     };
     use matrix_sdk::ruma::{
         events::{
-            poll::unstable_start::UnstablePollStartEventContent,
+            poll::{
+                unstable_response::UnstablePollResponseEventContent,
+                unstable_start::UnstablePollStartEventContent,
+            },
             room::{
                 message::{AudioMessageEventContent, MessageType, RoomMessageEventContent},
                 MediaSource,
@@ -4353,6 +4364,7 @@ mod attachment_message_tests {
             " Lunch? ",
             vec![" Noodles ".to_owned(), String::new(), "Rice".to_owned()],
             true,
+            2,
         )
         .unwrap();
         let json = serde_json::to_value(&content).unwrap();
@@ -4370,8 +4382,23 @@ mod attachment_message_tests {
         assert_eq!(poll["answers"].as_array().unwrap().len(), 2);
         assert_eq!(poll["answers"][0]["id"], "0");
         assert_eq!(poll["answers"][1]["id"], "1");
-        assert!(poll_start_content("", vec!["yes".to_owned()], false).is_err());
-        assert!(poll_start_content("Question", vec!["yes".to_owned()], false).is_err());
+        assert_eq!(poll["max_selections"], 2);
+        assert!(poll_start_content("", vec!["yes".to_owned()], false, 1).is_err());
+        assert!(poll_start_content("Question", vec!["yes".to_owned()], false, 1).is_err());
+        assert!(poll_start_content(
+            "Question",
+            vec!["yes".to_owned(), "no".to_owned()],
+            false,
+            0,
+        )
+        .is_err());
+        assert!(poll_start_content(
+            "Question",
+            vec!["yes".to_owned(), "no".to_owned()],
+            false,
+            3,
+        )
+        .is_err());
     }
 
     #[test]
@@ -4384,6 +4411,7 @@ mod attachment_message_tests {
             "Lunch?",
             vec!["Rice".to_owned(), "Noodles".to_owned()],
             false,
+            1,
         )
         .unwrap();
 
@@ -4407,6 +4435,7 @@ mod attachment_message_tests {
             "Lunch?",
             vec!["Rice".to_owned(), "Noodles".to_owned()],
             false,
+            1,
         )
         .unwrap();
         let forwarded = poll_start_for_forward(&poll).unwrap();
@@ -4421,6 +4450,21 @@ mod attachment_message_tests {
         assert!(validate_poll_answer_ids(&[]).is_err());
         assert!(validate_poll_answer_ids(&["0".to_owned(), "0".to_owned()]).is_err());
         assert!(validate_poll_answer_ids(&[String::new()]).is_err());
+    }
+
+    #[test]
+    fn poll_response_uses_the_poll_start_as_its_reference() {
+        let event_id = matrix_sdk::ruma::EventId::parse("$poll:example.org").unwrap();
+        let content =
+            UnstablePollResponseEventContent::new(vec!["0".to_owned(), "1".to_owned()], event_id);
+        let json = serde_json::to_value(content).unwrap();
+
+        assert_eq!(
+            json["org.matrix.msc3381.poll.response"]["answers"],
+            serde_json::json!(["0", "1"]),
+        );
+        assert_eq!(json["m.relates_to"]["event_id"], "$poll:example.org");
+        assert_eq!(json["m.relates_to"]["rel_type"], "m.reference");
     }
 }
 

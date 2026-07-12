@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/attachment_picker.dart';
@@ -162,6 +163,8 @@ void main() {
     expect(find.text('文件'), findsOneWidget);
     expect(find.text('投票'), findsOneWidget);
     expect(find.text('地址'), findsOneWidget);
+    expect(find.text('图片 / 视频'), findsNothing);
+    expect(find.byIcon(Icons.close_rounded), findsNothing);
 
     final outerSurface = tester
         .widgetList<Material>(
@@ -189,7 +192,43 @@ void main() {
     final picker = find.byType(AttachmentPicker);
     expect(tester.getSize(picker).height, 300);
 
-    await tester.drag(find.text('图片 / 视频'), const Offset(0, -260));
+    await tester.drag(
+      find.byKey(const ValueKey('attachment-panel-drag-handle')),
+      const Offset(0, -260),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(picker).height, 500);
+  });
+
+  testWidgets('location map uses the panel resize handle', (tester) async {
+    await _mockPhotoManagerEmpty();
+    _mockCurrentLocation();
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_locationChannel, null),
+    );
+    await tester.pumpWidget(
+      const MaterialApp(home: _AttachmentPickerHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('地址'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('attachment-map-drag-handle')),
+      findsNothing,
+    );
+    final markerLayer = tester.widget<MarkerLayer>(find.byType(MarkerLayer));
+    expect(markerLayer.markers, hasLength(1));
+    expect(find.text('发送'), findsOneWidget);
+
+    final picker = find.byType(AttachmentPicker);
+    await tester.drag(
+      find.byKey(const ValueKey('attachment-panel-drag-handle')),
+      const Offset(0, -260),
+    );
     await tester.pumpAndSettle();
 
     expect(tester.getSize(picker).height, 500);
@@ -225,7 +264,7 @@ void main() {
     );
   });
 
-  testWidgets('poll requires two answers and tab state is preserved', (
+  testWidgets('poll starts with two answers and preserves tab state', (
     tester,
   ) async {
     await _mockPhotoManagerEmpty();
@@ -239,16 +278,29 @@ void main() {
     await tester.tap(find.text('投票'));
     await tester.pumpAndSettle();
 
+    expect(find.widgetWithText(TextField, '选项 2'), findsOneWidget);
+    expect(find.byTooltip('删除选项'), findsNothing);
+    expect(find.text('发送'), findsOneWidget);
+
     await tester.enterText(find.widgetWithText(TextField, '问题'), '午饭吃什么？');
     await tester.enterText(find.widgetWithText(TextField, '选项 1'), '面条');
     await tester.pump();
-    var sendButton = tester.widget<FilledButton>(find.byType(FilledButton));
+    final sendButtonFinder = find.byKey(
+      const ValueKey('attachment-send-button'),
+    );
+    var sendButton = tester.widget<FilledButton>(sendButtonFinder);
     expect(sendButton.onPressed, isNull);
 
     await tester.enterText(find.widgetWithText(TextField, '选项 2'), '米饭');
     await tester.pump();
-    sendButton = tester.widget<FilledButton>(find.byType(FilledButton));
+    sendButton = tester.widget<FilledButton>(sendButtonFinder);
     expect(sendButton.onPressed, isNotNull);
+    expect(tester.getSize(sendButtonFinder).height, 44);
+    final tabBarTop = tester
+        .getTopLeft(find.byKey(const ValueKey('attachment-tab-bar')))
+        .dy;
+    final sendButtonBottom = tester.getBottomLeft(sendButtonFinder).dy;
+    expect(tabBarTop - sendButtonBottom, greaterThanOrEqualTo(8));
 
     await tester.tap(find.text('图片'));
     await tester.pumpAndSettle();
@@ -276,6 +328,57 @@ void main() {
           ?.text,
       '米饭',
     );
+  });
+
+  testWidgets('removing an option expands the remaining input smoothly', (
+    tester,
+  ) async {
+    await _mockPhotoManagerEmpty();
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: _MessageInputHarness())),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('投票'));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('attachment-panel-drag-handle')),
+      const Offset(0, -260),
+    );
+    await tester.pumpAndSettle();
+
+    final firstOption = find.byKey(const ValueKey('poll-option-input-0'));
+    final fullWidth = tester.getSize(firstOption).width;
+
+    await tester.tap(find.text('添加选项'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    final compactWidth = tester.getSize(firstOption).width;
+    expect(compactWidth, lessThan(fullWidth));
+
+    final removeButton = find.byTooltip('删除选项').last;
+    await tester.tap(removeButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(tester.getSize(firstOption).width, greaterThan(compactWidth));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(firstOption).width, fullWidth);
+    expect(find.widgetWithText(TextField, '选项 3'), findsNothing);
+
+    final addButton = find.text('添加选项');
+    await tester.tap(addButton);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(tester.getSize(firstOption).width, lessThan(fullWidth));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(firstOption).width, compactWidth);
+    expect(find.widgetWithText(TextField, '选项 2'), findsOneWidget);
   });
 }
 
@@ -320,20 +423,23 @@ class _MessageInputHarnessState extends State<_MessageInputHarness> {
     return Scaffold(
       body: Align(
         alignment: Alignment.bottomCenter,
-        child: MessageInput(
-          roomId: '!room:example.org',
-          totalMembers: 2,
-          panelMode: _panelMode,
-          pickerHeight: pickerOpen ? 300 : 0,
-          pickerFullHeight: 300,
-          pickerBaseHeight: 300,
-          pickerMaxHeight: 500,
-          animatePickerHeight: false,
-          onPanelModeChanged: (mode) => setState(() => _panelMode = mode),
-          onPickerHeightChanged: (_) {},
-          resolveSendPresentation: () => MessageSendPresentation.quiet,
-          onMessageQueued: (_, _) {},
-          onMessageSent: (_, _) {},
+        child: SizedBox(
+          width: double.infinity,
+          child: MessageInput(
+            roomId: '!room:example.org',
+            totalMembers: 2,
+            panelMode: _panelMode,
+            pickerHeight: pickerOpen ? 300 : 0,
+            pickerFullHeight: 300,
+            pickerBaseHeight: 300,
+            pickerMaxHeight: 500,
+            animatePickerHeight: false,
+            onPanelModeChanged: (mode) => setState(() => _panelMode = mode),
+            onPickerHeightChanged: (_) {},
+            resolveSendPresentation: () => MessageSendPresentation.quiet,
+            onMessageQueued: (_, _) {},
+            onMessageSent: (_, _) {},
+          ),
         ),
       ),
     );

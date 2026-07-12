@@ -22,6 +22,14 @@ import '../chat/latest_message_control.dart';
 /// The four attachment modes offered by the floating frosted-glass bar.
 enum AttachmentTab { media, file, poll, location }
 
+const _attachmentDockHeight = 72.0;
+const _attachmentDockGap = 8.0;
+const _attachmentSendButtonHeight = 44.0;
+const _attachmentDockClearance = _attachmentDockHeight + _attachmentDockGap;
+const _attachmentSendBarClearance =
+    _attachmentDockClearance + _attachmentSendButtonHeight + _attachmentDockGap;
+const _pollOptionAnimationDuration = Duration(milliseconds: 180);
+
 /// Whether [photo_manager]'s native gallery grid works on this platform.
 /// On Web/Linux/Windows it has no implementation and must be replaced with a
 /// [file_selector] fallback to avoid MissingPluginException.
@@ -431,12 +439,14 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     String question,
     List<String> answers,
     bool disclosed,
+    int maxSelections,
   ) => _runBatch([
     () => rust.sendPoll(
       roomId: widget.roomId,
       question: question,
       answers: answers,
       disclosed: disclosed,
+      maxSelections: maxSelections,
     ),
   ], null);
 
@@ -527,6 +537,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
           maxHeight,
         );
         return SizedBox(
+          width: double.infinity,
           height: visibleHeight,
           child: ClipRect(
             child: OverflowBox(
@@ -534,6 +545,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
               minHeight: maxHeight,
               maxHeight: maxHeight,
               child: SizedBox(
+                width: double.infinity,
                 height: maxHeight,
                 child: NotificationListener<DraggableScrollableNotification>(
                   onNotification: (notification) {
@@ -572,12 +584,6 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     required double maxHeight,
     required double minSize,
   }) {
-    final titles = const {
-      AttachmentTab.media: '图片 / 视频',
-      AttachmentTab.file: '文件',
-      AttachmentTab.poll: '投票',
-      AttachmentTab.location: '位置',
-    };
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Material(
@@ -592,6 +598,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         child: Column(
           children: [
             GestureDetector(
+              key: const ValueKey('attachment-panel-drag-handle'),
               behavior: HitTestBehavior.opaque,
               onVerticalDragUpdate: (details) => _dragSheet(
                 details.primaryDelta ?? 0,
@@ -601,46 +608,16 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
               onVerticalDragEnd: (details) =>
                   _settleSheet(details.primaryVelocity ?? 0, minSize: minSize),
               child: SizedBox(
-                height: 52,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned(
-                      top: 7,
-                      child: Container(
-                        width: 34,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: AppColors.muted,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
+                height: 32,
+                child: Center(
+                  child: Container(
+                    width: 34,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.muted,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    Positioned(
-                      left: 16,
-                      right: 48,
-                      bottom: 9,
-                      child: Text(
-                        titles[_tab]!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.onBackground,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      right: 4,
-                      bottom: 0,
-                      child: IconButton(
-                        tooltip: '关闭',
-                        onPressed: _isSending ? null : widget.onClose,
-                        icon: const Icon(Icons.close_rounded, size: 21),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -724,6 +701,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
       ),
       AttachmentTab.location => _LocationTabBody(
         isSending: _isSending,
+        scrollController: scrollController,
         onSendLocation: _sendLocation,
       ),
       AttachmentTab.file => const SizedBox.shrink(),
@@ -793,30 +771,34 @@ class _FrostedTabBar extends StatelessWidget {
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.nav),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceElevated.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(AppRadii.nav),
-              border: Border.all(color: AppColors.glassBorder, width: 0.8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                for (final item in items)
-                  _TabButton(
-                    item: item,
-                    selected: tab == item.tab,
-                    busy: item.tab == AttachmentTab.file && isFileBusy,
-                    onTap: onTabChanged == null
-                        ? null
-                        : () => onTabChanged!(item.tab),
-                  ),
-              ],
+      child: SizedBox(
+        key: const ValueKey('attachment-tab-bar'),
+        height: _attachmentDockHeight - _attachmentDockGap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadii.nav),
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated.withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(AppRadii.nav),
+                border: Border.all(color: AppColors.glassBorder, width: 0.8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  for (final item in items)
+                    _TabButton(
+                      item: item,
+                      selected: tab == item.tab,
+                      busy: item.tab == AttachmentTab.file && isFileBusy,
+                      onTap: onTabChanged == null
+                          ? null
+                          : () => onTabChanged!(item.tab),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1066,7 +1048,9 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
                       2,
                       2,
                       2,
-                      _selected.isEmpty ? 96 : 158,
+                      _selected.isEmpty
+                          ? _attachmentDockClearance
+                          : _attachmentSendBarClearance,
                     ),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1161,7 +1145,7 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
             right: 0,
             bottom: 0,
             child: _SendBar(
-              count: _selected.length,
+              label: '发送 ${_selected.length} 项',
               isSending: widget.isSending,
               // Pass by reference so partial-success items are pruned by the
               // send loop and a retry never re-sends delivered items.
@@ -1263,13 +1247,13 @@ class _SelectionBadge extends StatelessWidget {
 }
 
 class _SendBar extends StatelessWidget {
-  final int count;
+  final String label;
   final bool isSending;
   final bool enabled;
   final VoidCallback onSend;
 
   const _SendBar({
-    required this.count,
+    required this.label,
     required this.isSending,
     required this.onSend,
     this.enabled = true,
@@ -1281,33 +1265,37 @@ class _SendBar extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 96),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: active ? onSend : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: AppColors.primary.withValues(
-                alpha: 0.35,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, _attachmentDockClearance),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            height: _attachmentSendButtonHeight,
+            child: FilledButton.icon(
+              key: const ValueKey('attachment-send-button'),
+              onPressed: active ? onSend : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.primary.withValues(
+                  alpha: 0.35,
+                ),
+                disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
+                minimumSize: const Size(0, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: const StadiumBorder(),
               ),
-              disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.button),
-              ),
+              icon: isSending
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.send_rounded, size: 20),
+              label: Text(label),
             ),
-            icon: isSending
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.send_rounded),
-            label: Text('发送 $count 项'),
           ),
         ),
       ),
@@ -1386,7 +1374,9 @@ class _MediaFallbackState extends State<_MediaFallback> {
               24,
               32,
               24,
-              _picked.isEmpty ? 120 : 182,
+              _picked.isEmpty
+                  ? _attachmentDockClearance
+                  : _attachmentSendBarClearance,
             ),
             children: [
               const Icon(
@@ -1442,7 +1432,7 @@ class _MediaFallbackState extends State<_MediaFallback> {
             right: 0,
             bottom: 0,
             child: _SendBar(
-              count: _picked.length,
+              label: '发送 ${_picked.length} 项',
               isSending: widget.isSending,
               onSend: () => widget.onSendFiles(_picked),
             ),
@@ -1461,6 +1451,7 @@ class _PollTabBody extends StatefulWidget {
     String question,
     List<String> answers,
     bool disclosed,
+    int maxSelections,
   )
   onSendPoll;
 
@@ -1476,29 +1467,106 @@ class _PollTabBody extends StatefulWidget {
 
 class _PollTabBodyState extends State<_PollTabBody> {
   final _question = TextEditingController();
-  final List<TextEditingController> _answers = [
-    TextEditingController(),
-    TextEditingController(),
+  final List<_PollAnswerDraft> _answers = [
+    _PollAnswerDraft(0),
+    _PollAnswerDraft(1),
   ];
+  var _nextAnswerId = 2;
   bool _disclosed = false;
+  bool _allowMultiple = false;
 
   @override
   void dispose() {
     _question.dispose();
-    for (final c in _answers) {
-      c.dispose();
+    for (final answer in _answers) {
+      answer.controller.dispose();
     }
     super.dispose();
   }
 
   bool get _canSend {
     if (_question.text.trim().isEmpty) return false;
-    final valid = _answers.where((c) => c.text.trim().isNotEmpty).length;
+    final valid = _validAnswers.length;
     return valid >= 2;
   }
 
-  List<String> get _validAnswers =>
-      _answers.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+  List<String> get _validAnswers => _answers
+      .where((answer) => answer.visible)
+      .map((answer) => answer.controller.text.trim())
+      .where((answer) => answer.isNotEmpty)
+      .toList();
+
+  int get _visibleAnswerCount =>
+      _answers.where((answer) => answer.visible).length;
+
+  void _addAnswer() {
+    if (widget.isSending || _visibleAnswerCount >= 20) return;
+    final answer = _PollAnswerDraft(_nextAnswerId++, visible: false);
+    setState(() => _answers.add(answer));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_answers.contains(answer)) return;
+      setState(() => answer.visible = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final answerContext = answer.fieldContext;
+        if (!mounted || answerContext == null) return;
+        unawaited(
+          Scrollable.ensureVisible(
+            answerContext,
+            alignment: 0.25,
+            duration: _pollOptionAnimationDuration,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+      });
+    });
+  }
+
+  void _removeAnswer(_PollAnswerDraft answer) {
+    if (widget.isSending || !answer.visible || _visibleAnswerCount <= 2) {
+      return;
+    }
+    setState(() => answer.visible = false);
+    Future<void>.delayed(_pollOptionAnimationDuration, () {
+      if (!mounted) return;
+      setState(() => _answers.remove(answer));
+      answer.controller.dispose();
+    });
+  }
+
+  List<Widget> _buildAnswerRows() {
+    var visibleIndex = 0;
+    return [
+      for (final answer in _answers)
+        _buildAnswerRow(answer, answer.visible ? visibleIndex++ : 0),
+    ];
+  }
+
+  Widget _buildAnswerRow(_PollAnswerDraft answer, int index) {
+    return AnimatedSize(
+      duration: _pollOptionAnimationDuration,
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: answer.visible
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Builder(
+                builder: (context) {
+                  answer.fieldContext = context;
+                  return _PollOptionInput(
+                    key: ValueKey('poll-option-${answer.id}'),
+                    controller: answer.controller,
+                    index: index,
+                    enabled: !widget.isSending,
+                    showRemoveButton: _visibleAnswerCount > 2,
+                    onChanged: (_) => setState(() {}),
+                    onRemove: () => _removeAnswer(answer),
+                  );
+                },
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1507,7 +1575,12 @@ class _PollTabBodyState extends State<_PollTabBody> {
         Positioned.fill(
           child: ListView(
             controller: widget.scrollController,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 182),
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              _attachmentSendBarClearance,
+            ),
             children: [
               TextField(
                 controller: _question,
@@ -1517,43 +1590,11 @@ class _PollTabBodyState extends State<_PollTabBody> {
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 16),
-              for (var i = 0; i < _answers.length; i++)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _answers[i],
-                          enabled: !widget.isSending,
-                          style: const TextStyle(color: AppColors.onBackground),
-                          decoration: InputDecoration(hintText: '选项 ${i + 1}'),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      if (_answers.length > 2)
-                        IconButton(
-                          icon: const Icon(
-                            Icons.remove_circle_outline_rounded,
-                            color: AppColors.onSurfaceVariant,
-                          ),
-                          onPressed: widget.isSending
-                              ? null
-                              : () {
-                                  setState(() {
-                                    _answers[i].dispose();
-                                    _answers.removeAt(i);
-                                  });
-                                },
-                        ),
-                    ],
-                  ),
-                ),
+              ..._buildAnswerRows(),
               TextButton.icon(
-                onPressed: widget.isSending || _answers.length >= 20
+                onPressed: widget.isSending || _visibleAnswerCount >= 20
                     ? null
-                    : () =>
-                          setState(() => _answers.add(TextEditingController())),
+                    : _addAnswer,
                 icon: const Icon(Icons.add_rounded),
                 label: const Text(
                   '添加选项',
@@ -1571,6 +1612,17 @@ class _PollTabBodyState extends State<_PollTabBody> {
                     : (v) => setState(() => _disclosed = v),
                 activeThumbColor: AppColors.primary,
               ),
+              SwitchListTile(
+                title: const Text(
+                  '允许多选',
+                  style: TextStyle(color: AppColors.onBackground),
+                ),
+                value: _allowMultiple,
+                onChanged: widget.isSending
+                    ? null
+                    : (v) => setState(() => _allowMultiple = v),
+                activeThumbColor: AppColors.primary,
+              ),
             ],
           ),
         ),
@@ -1579,15 +1631,91 @@ class _PollTabBodyState extends State<_PollTabBody> {
           right: 0,
           bottom: 0,
           child: _SendBar(
-            count: 1,
+            label: '发送',
             isSending: widget.isSending,
             enabled: _canSend,
-            onSend: () => widget.onSendPoll(
-              _question.text.trim(),
-              _validAnswers,
-              _disclosed,
-            ),
+            onSend: () {
+              final answers = _validAnswers;
+              unawaited(
+                widget.onSendPoll(
+                  _question.text.trim(),
+                  answers,
+                  _disclosed,
+                  _allowMultiple ? answers.length : 1,
+                ),
+              );
+            },
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PollAnswerDraft {
+  final int id;
+  final TextEditingController controller = TextEditingController();
+  BuildContext? fieldContext;
+  bool visible;
+
+  _PollAnswerDraft(this.id, {this.visible = true});
+}
+
+class _PollOptionInput extends StatelessWidget {
+  final TextEditingController controller;
+  final int index;
+  final bool enabled;
+  final bool showRemoveButton;
+  final ValueChanged<String> onChanged;
+  final VoidCallback? onRemove;
+
+  const _PollOptionInput({
+    super.key,
+    required this.controller,
+    required this.index,
+    required this.enabled,
+    required this.showRemoveButton,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            key: ValueKey('poll-option-input-$index'),
+            controller: controller,
+            enabled: enabled,
+            style: const TextStyle(color: AppColors.onBackground),
+            decoration: InputDecoration(hintText: '选项 ${index + 1}'),
+            onChanged: onChanged,
+          ),
+        ),
+        AnimatedContainer(
+          duration: _pollOptionAnimationDuration,
+          curve: Curves.easeOutCubic,
+          width: showRemoveButton ? 44 : 0,
+          clipBehavior: Clip.hardEdge,
+          decoration: const BoxDecoration(),
+          child: showRemoveButton
+              ? Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: SizedBox.square(
+                    dimension: 40,
+                    child: IconButton(
+                      tooltip: '删除选项',
+                      icon: const Icon(
+                        Icons.remove_circle_outline_rounded,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                      onPressed: enabled ? onRemove : null,
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                )
+              : null,
         ),
       ],
     );
@@ -1598,10 +1726,12 @@ class _PollTabBodyState extends State<_PollTabBody> {
 
 class _LocationTabBody extends StatefulWidget {
   final bool isSending;
+  final ScrollController? scrollController;
   final Future<void> Function(String body, String geoUri) onSendLocation;
 
   const _LocationTabBody({
     required this.isSending,
+    required this.scrollController,
     required this.onSendLocation,
   });
 
@@ -1657,7 +1787,12 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
     if (selected == null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            _attachmentDockClearance,
+          ),
           child: _locating
               ? const Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1702,6 +1837,19 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
     )!;
     return Stack(
       children: [
+        // Keep the sheet controller attached without covering map gestures.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 0,
+          child: SingleChildScrollView(
+            controller: widget.scrollController,
+            primary: false,
+            physics: const NeverScrollableScrollPhysics(),
+            child: const SizedBox(height: 1),
+          ),
+        ),
         Positioned.fill(
           child: FlutterMap(
             mapController: _mapController,
@@ -1729,7 +1877,6 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
                       Icons.location_on_rounded,
                       size: 42,
                       color: AppColors.primary,
-                      shadows: [Shadow(color: Colors.black54, blurRadius: 5)],
                     ),
                   ),
                 ],
@@ -1775,7 +1922,7 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
           right: 0,
           bottom: 0,
           child: _SendBar(
-            count: 1,
+            label: '发送',
             isSending: widget.isSending,
             onSend: () => widget.onSendLocation('位置', geoUri),
           ),

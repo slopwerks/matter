@@ -40,6 +40,7 @@ class PollMessageBubble extends ConsumerStatefulWidget {
 
 class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
   late Set<String> _selected;
+  Set<String>? _optimisticVote;
   bool _submitting = false;
   bool _endedLocally = false;
 
@@ -52,41 +53,66 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
   @override
   void didUpdateWidget(covariant PollMessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_submitting &&
-        (oldWidget.pollStartEventId != widget.pollStartEventId ||
-            !_setsEqual(
-              oldWidget.poll.myAnswerIds.toSet(),
-              widget.poll.myAnswerIds.toSet(),
-            ))) {
-      _selected = Set<String>.of(widget.poll.myAnswerIds);
-    }
     if (oldWidget.pollStartEventId != widget.pollStartEventId) {
+      _selected = Set<String>.of(widget.poll.myAnswerIds);
+      _optimisticVote = null;
       _endedLocally = widget.poll.ended;
     } else if (widget.poll.ended) {
       _endedLocally = true;
     }
+    final oldRemoteVote = Set<String>.of(oldWidget.poll.myAnswerIds);
+    final remoteVote = Set<String>.of(widget.poll.myAnswerIds);
+    if (_optimisticVote != null && _setsEqual(_optimisticVote!, remoteVote)) {
+      _optimisticVote = null;
+    }
+    if (!_submitting &&
+        _optimisticVote == null &&
+        !_setsEqual(oldRemoteVote, remoteVote)) {
+      _selected = remoteVote;
+    }
   }
 
   int _countFor(String id) {
+    var count = 0;
     for (final result in widget.poll.results) {
-      if (result.answerId == id) return result.count;
+      if (result.answerId == id) {
+        count = result.count;
+        break;
+      }
     }
-    return 0;
+    final optimisticVote = _optimisticVote;
+    if (optimisticVote == null) return count;
+    final remoteVote = widget.poll.myAnswerIds.toSet();
+    if (remoteVote.contains(id) && !optimisticVote.contains(id)) count--;
+    if (!remoteVote.contains(id) && optimisticVote.contains(id)) count++;
+    return count < 0 ? 0 : count;
   }
 
-  Future<void> _vote(String answerId) async {
+  int get _totalVoters {
+    final optimisticVote = _optimisticVote;
+    if (optimisticVote == null) return widget.poll.totalVoters;
+    final remoteHasVoted = widget.poll.myAnswerIds.isNotEmpty;
+    if (!remoteHasVoted && optimisticVote.isNotEmpty) {
+      return widget.poll.totalVoters + 1;
+    }
+    return widget.poll.totalVoters;
+  }
+
+  Set<String> get _committedVote =>
+      _optimisticVote ?? Set<String>.of(widget.poll.myAnswerIds);
+
+  Future<void> _selectAnswer(String answerId) async {
     if (_submitting || widget.poll.ended || _endedLocally) return;
     final previous = Set<String>.of(_selected);
     final next = Set<String>.of(previous);
     if (widget.poll.maxSelections > 1) {
       if (next.contains(answerId)) {
+        if (next.length == 1) return;
         next.remove(answerId);
       } else if (next.length < widget.poll.maxSelections) {
         next.add(answerId);
       } else {
-        next
-          ..remove(next.first)
-          ..add(answerId);
+        return;
       }
     } else {
       next
@@ -95,29 +121,47 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
     }
     if (next.isEmpty || _setsEqual(next, previous)) return;
 
+    if (widget.poll.maxSelections > 1) {
+      setState(() => _selected = next);
+      return;
+    }
+    await _submitVote(next, rollbackSelection: previous);
+  }
+
+  Future<void> _submitVote(
+    Set<String> vote, {
+    required Set<String> rollbackSelection,
+  }) async {
+    if (_submitting || vote.isEmpty || widget.poll.ended || _endedLocally) {
+      return;
+    }
+
     setState(() {
-      _selected = next;
+      _selected = vote;
       _submitting = true;
     });
+    var succeeded = false;
     try {
       if (widget.onVote != null) {
-        await widget.onVote!(next.toList());
+        await widget.onVote!(vote.toList());
       } else {
         await rust.sendPollResponse(
           roomId: widget.roomId,
           pollStartEventId: widget.pollStartEventId,
-          answerIds: next.toList(),
+          answerIds: vote.toList(),
         );
       }
+      succeeded = true;
+      if (mounted) setState(() => _optimisticVote = Set<String>.of(vote));
     } catch (error) {
       if (!mounted) return;
-      setState(() => _selected = previous);
+      setState(() => _selected = rollbackSelection);
       _showError('投票失败: $error');
       return;
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
-    await _refreshBestEffort();
+    if (succeeded) await _refreshBestEffort();
   }
 
   Future<void> _endPoll() async {
@@ -172,6 +216,13 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
     final ended = poll.ended || _endedLocally;
     final reveal = poll.disclosed || ended;
     final multi = poll.maxSelections > 1;
+    final totalVoters = _totalVoters;
+    final canSubmitMulti =
+        multi &&
+        !ended &&
+        !_submitting &&
+        _selected.isNotEmpty &&
+        !_setsEqual(_selected, _committedVote);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: widget.maxWidth),
       child: ClipRRect(
@@ -222,22 +273,45 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
                         multi: multi,
                         selected: _selected.contains(answer.id),
                         count: _countFor(answer.id),
-                        totalVoters: poll.totalVoters,
+                        totalVoters: totalVoters,
                         reveal: reveal,
                         enabled: !ended && !_submitting,
-                        onTap: () => _vote(answer.id),
+                        onTap: () => _selectAnswer(answer.id),
                       ),
-                    if (reveal) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      '$totalVoters 人已投票${ended ? ' · 已结束' : ''}',
+                      style: const TextStyle(
+                        color: AppColors.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (multi && !ended) ...[
                       const SizedBox(height: 6),
-                      Text(
-                        '${poll.totalVoters} 人参与${ended ? ' · 已结束' : ''}',
-                        style: const TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                          fontSize: 11,
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed: canSubmitMulti
+                              ? () => _submitVote(
+                                  Set<String>.of(_selected),
+                                  rollbackSelection: Set<String>.of(_selected),
+                                )
+                              : null,
+                          icon: const Icon(Icons.how_to_vote_rounded, size: 18),
+                          label: const Text('提交投票'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(0, 36),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.button,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ] else
-                      const SizedBox(height: 4),
+                    ],
                     if (widget.isMe && !ended) ...[
                       const SizedBox(height: 4),
                       Align(
