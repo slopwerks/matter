@@ -217,9 +217,21 @@ impl RoomSubscriptionState {
     }
 }
 
+fn receipt_extension_for_subscribed_rooms(
+) -> matrix_sdk::ruma::api::client::sync::sync_events::v5::request::Receipts {
+    use matrix_sdk::ruma::api::client::sync::sync_events::v5::request::{
+        ExtensionRoomConfig, Receipts,
+    };
+
+    let mut receipts = Receipts::default();
+    receipts.enabled = Some(true);
+    receipts.rooms = Some(vec![ExtensionRoomConfig::AllSubscribed]);
+    receipts
+}
+
 #[cfg(test)]
 mod room_subscription_tests {
-    use super::RoomSubscriptionState;
+    use super::{receipt_extension_for_subscribed_rooms, RoomSubscriptionState};
     use std::collections::HashMap;
 
     fn state() -> RoomSubscriptionState {
@@ -247,6 +259,14 @@ mod room_subscription_tests {
         assert!(state.add_desired("!second:example.org"));
         assert!(state.remove_desired("!second:example.org"));
         assert!(state.desired.contains_key("!first:example.org"));
+    }
+
+    #[test]
+    fn receipt_extension_requests_all_subscribed_rooms() {
+        assert_eq!(
+            serde_json::to_value(receipt_extension_for_subscribed_rooms()).unwrap(),
+            serde_json::json!({"enabled": true, "rooms": ["*"]}),
+        );
     }
 }
 
@@ -2616,6 +2636,7 @@ async fn try_start_sliding_sync(client: Client) -> Result<JoinHandle<()>, String
             .map_err(|e| format!("Failed to create Sliding Sync: {e}"))?
             .version(Version::Native)
             .with_all_extensions()
+            .with_receipt_extension(receipt_extension_for_subscribed_rooms())
             .add_list(
                 SlidingSyncList::builder("all_rooms")
                     .sync_mode(SlidingSyncMode::Growing {
