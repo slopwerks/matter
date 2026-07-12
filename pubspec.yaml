@@ -34,29 +34,29 @@ dependencies:
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^1.0.9
   flutter_rust_bridge: 2.12.0
   flutter_riverpod: ^3.3.2
   google_fonts: ^8.1.0
-  intl: ^0.20.2
+  intl: ^0.20.3
   flutter_sticky_header: ^0.8.0
   shared_preferences: ^2.5.5
-  path_provider: ^2.1.5
+  path_provider: ^2.1.6
   freezed_annotation: ^3.1.0
-  image_picker: ^1.1.2
-  photo_manager: ^3.6.0
-  file_selector: ^1.0.0
-  flutter_image_compress: ^2.3.0
+  image_picker: ^1.2.3
+  photo_manager: ">=3.9.0 <3.10.0"
+  file_selector: ^1.1.0
+  flutter_image_compress: ^2.4.0
   flutter_secure_storage: ^10.3.1
   image: ^4.9.1
   cached_network_image: ^3.4.1
-  video_player: ^2.11.1
+  video_player: ^2.12.0
   web: ^1.1.1
   markdown: ^7.3.1
   html: ^0.15.6
   http: ^1.6.0
   url_launcher: ^6.3.2
-  pro_image_editor: ^12.8.0
+  pro_image_editor: ^13.2.0
   flutter_cache_manager: ^3.4.1
   riverpod: ^3.3.2
   package_info_plus: ^10.2.0
@@ -78,7 +78,7 @@ dev_dependencies:
   # integration_test Android plugin class (flutter/flutter#169336). Re-add when
   # fixed upstream.
   freezed: ^3.2.5
-  build_runner: ^2.15.0
+  build_runner: ^2.15.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
