@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
 import 'chat_timestamp.dart';
 import 'chat_detail_page.dart';
+import 'message_input.dart';
 import 'space_detail_page.dart';
 
 String chatListPreview(ChatRoom room) {
@@ -40,9 +42,22 @@ class ChatListItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final room = this.room;
-    final preview = chatListPreview(room);
     final isPendingMembership =
         room.roomState == 'invited' || room.roomState == 'knocked';
+    final userId =
+        ref.watch(activeUserIdProvider) ??
+        ref.watch(currentUserProvider.select((user) => user?.id)) ??
+        'anonymous';
+    final draft = ref.watch(
+      messageDraftProvider((roomId: room.id, userId: userId)),
+    );
+    final hasDraft =
+        room.roomState == 'joined' &&
+        room.roomType != 'space' &&
+        draft.trim().isNotEmpty;
+    final preview = hasDraft
+        ? draft.trim().replaceAll(RegExp(r'\s+'), ' ')
+        : chatListPreview(room);
 
     return InkWell(
       onTap: () {
@@ -121,8 +136,20 @@ class ChatListItem extends ConsumerWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          preview,
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              if (hasDraft)
+                                const TextSpan(
+                                  text: '草稿：',
+                                  style: TextStyle(
+                                    color: AppColors.error,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              TextSpan(text: preview),
+                            ],
+                          ),
                           style: const TextStyle(
                             color: AppColors.onSurfaceVariant,
                             fontSize: 13.5,

@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_list_item.dart';
+import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 
 void main() {
   group('ChatListItem', () {
     ChatRoom room({
+      String id = '!room:example.org',
       String name = 'Room',
       String lastMessage = 'Hello',
       String lastMessageTime = '0',
@@ -14,7 +17,7 @@ void main() {
       String roomType = 'group',
       String roomState = 'joined',
     }) => ChatRoom(
-      id: '!room:example.org',
+      id: id,
       name: name,
       lastMessage: lastMessage,
       lastMessageTime: lastMessageTime,
@@ -36,6 +39,89 @@ void main() {
 
       expect(find.text('Room'), findsOneWidget);
       expect(find.text('Hello'), findsOneWidget);
+    });
+
+    testWidgets('draft replaces the preview and clearing restores it', (
+      tester,
+    ) async {
+      const userId = '@alice:example.org';
+      const roomId = '!room:example.org';
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value = userId;
+      final draft = messageDraftProvider((roomId: roomId, userId: userId));
+      container.read(draft.notifier).value = 'unfinished';
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatListItem(room: room(id: roomId)),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('草稿：unfinished'), findsOneWidget);
+      expect(find.text('Hello'), findsNothing);
+
+      container.read(draft.notifier).value = '';
+      await tester.pump();
+
+      expect(find.text('草稿：unfinished'), findsNothing);
+      expect(find.text('Hello'), findsOneWidget);
+    });
+
+    testWidgets('draft only replaces the matching room preview', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(260, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const userId = '@alice:example.org';
+      const roomA = '!room-a:example.org';
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value = userId;
+      final draft = messageDraftProvider((roomId: roomA, userId: userId));
+      container.read(draft.notifier).value = 'first line\nsecond line';
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  ChatListItem(
+                    room: room(
+                      id: roomA,
+                      name: 'Room A',
+                      lastMessage: 'Message A',
+                      unreadCount: 150,
+                    ),
+                  ),
+                  ChatListItem(
+                    room: room(
+                      id: '!room-b:example.org',
+                      name: 'Room B',
+                      lastMessage: 'Message B',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('草稿：first line second line'), findsOneWidget);
+      expect(find.text('Message A'), findsNothing);
+      expect(find.text('Message B'), findsOneWidget);
+      expect(find.text('99+'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('shows unread count badge', (tester) async {

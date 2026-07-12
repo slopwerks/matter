@@ -33,6 +33,14 @@ final editingMessageProvider =
       String
     >((_) => MutableState(null));
 
+typedef MessageDraftKey = ({String roomId, String userId});
+
+/// In-memory draft text, isolated by both account and room.
+final messageDraftProvider =
+    NotifierProvider.family<MutableState<String>, String, MessageDraftKey>(
+      (_) => MutableState(''),
+    );
+
 enum InputPanelMode { none, keyboard, emoji, attachment }
 
 class MessageInput extends ConsumerStatefulWidget {
@@ -88,6 +96,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _textFieldKey = GlobalKey();
+  late final MessageDraftKey _draftKey;
   bool _hasText = false;
   bool _isSending = false;
   Timer? _typingTimer;
@@ -106,6 +115,19 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     if (widget.panelMode == InputPanelMode.attachment) {
       _lastPickerPanelMode = InputPanelMode.attachment;
     }
+    _draftKey = (
+      roomId: widget.roomId,
+      userId:
+          ref.read(activeUserIdProvider) ??
+          ref.read(currentUserProvider)?.id ??
+          'anonymous',
+    );
+    final draft = ref.read(messageDraftProvider(_draftKey));
+    _controller.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
+    );
+    _hasText = draft.trim().isNotEmpty;
     _controller.addListener(_onTextChanged);
     _focusNode.addListener(() {
       if (_focusNode.hasFocus && mounted) {
@@ -149,6 +171,10 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
   void _onTextChanged() {
     final hasText = _controller.text.trim().isNotEmpty;
+    if (ref.read(editingMessageProvider(widget.roomId)) == null) {
+      ref.read(messageDraftProvider(_draftKey).notifier).value =
+          _controller.text;
+    }
     if (_hasText != hasText) {
       setState(() {
         _hasText = hasText;
@@ -308,6 +334,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
       if (!isNewMessage) _controller.clear();
       if (editing != null) {
         ref.read(editingMessageProvider(widget.roomId).notifier).value = null;
+        _restoreDraft();
       }
       if (localId != null && mounted) {
         final sentId = markLocalOutgoingMessageSent(
@@ -918,6 +945,22 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     setState(() => _hasText = _controller.text.trim().isNotEmpty);
   }
 
+  void _restoreDraft() {
+    _lastEditingId = null;
+    _stopTyping();
+    final draft = ref.read(messageDraftProvider(_draftKey));
+    _controller.removeListener(_onTextChanged);
+    _controller.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
+    );
+    _controller.addListener(_onTextChanged);
+    final hasText = draft.trim().isNotEmpty;
+    if (_hasText != hasText) {
+      setState(() => _hasText = hasText);
+    }
+  }
+
   Widget _buildReplyBar(rust.ChatMessage replyTo) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1011,8 +1054,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
             onTap: () {
               ref.read(editingMessageProvider(widget.roomId).notifier).value =
                   null;
-              _controller.clear();
-              setState(() => _hasText = false);
+              _restoreDraft();
             },
             child: const Icon(
               Icons.close_rounded,
