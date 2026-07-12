@@ -33,7 +33,7 @@ final editingMessageProvider =
       String
     >((_) => MutableState(null));
 
-enum InputPanelMode { none, keyboard, emoji }
+enum InputPanelMode { none, keyboard, emoji, attachment }
 
 class MessageInput extends ConsumerStatefulWidget {
   final String roomId;
@@ -94,6 +94,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   bool _isTyping = false;
   ComposerPickerTab _pickerTab = ComposerPickerTab.emoji;
   int _pickerInstance = 0;
+  InputPanelMode _lastPickerPanelMode = InputPanelMode.emoji;
 
   /// Tracks the event id currently being edited, so we only prefill the input
   /// when the edited message changes (not on every rebuild).
@@ -102,6 +103,9 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   @override
   void initState() {
     super.initState();
+    if (widget.panelMode == InputPanelMode.attachment) {
+      _lastPickerPanelMode = InputPanelMode.attachment;
+    }
     _controller.addListener(_onTextChanged);
     _focusNode.addListener(() {
       if (_focusNode.hasFocus && mounted) {
@@ -113,6 +117,10 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   @override
   void didUpdateWidget(covariant MessageInput oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.panelMode == InputPanelMode.emoji ||
+        widget.panelMode == InputPanelMode.attachment) {
+      _lastPickerPanelMode = widget.panelMode;
+    }
     if (oldWidget.panelMode != widget.panelMode &&
         widget.panelMode == InputPanelMode.none) {
       _focusNode.unfocus();
@@ -451,18 +459,18 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     );
   }
 
-  Future<void> _openAttachmentPicker() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => AttachmentPicker(
-          roomId: widget.roomId,
-          onRefresh: (roomId) => refreshMessages(ref, roomId),
-          resolveSendPresentation: widget.resolveSendPresentation,
-          onMessageSent: widget.onMessageSent,
-        ),
-      ),
-    );
+  void _toggleAttachmentPicker() {
+    if (widget.panelMode == InputPanelMode.attachment) {
+      widget.onPanelModeChanged(InputPanelMode.none);
+      return;
+    }
+
+    _focusNode.unfocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onPanelModeChanged(InputPanelMode.attachment);
+    });
   }
 
   void _insertEmoji(String emoji) {
@@ -584,6 +592,11 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   Widget build(BuildContext context) {
     final replyTo = ref.watch(replyingToProvider(widget.roomId));
     final editing = ref.watch(editingMessageProvider(widget.roomId));
+    final visiblePickerMode =
+        widget.panelMode == InputPanelMode.emoji ||
+            widget.panelMode == InputPanelMode.attachment
+        ? widget.panelMode
+        : _lastPickerPanelMode;
 
     // When entering edit mode (or switching the edited message), prefill the
     // input with the original text. Tracked via id so re-renders don't reset.
@@ -748,11 +761,15 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                                         tooltip: '附件',
                                         onPressed: _isSending
                                             ? null
-                                            : _openAttachmentPicker,
+                                            : _toggleAttachmentPicker,
                                         padding: EdgeInsets.zero,
-                                        icon: const Icon(
+                                        icon: Icon(
                                           Icons.add_rounded,
-                                          color: AppColors.onSurfaceVariant,
+                                          color:
+                                              widget.panelMode ==
+                                                  InputPanelMode.attachment
+                                              ? AppColors.primary
+                                              : AppColors.onSurfaceVariant,
                                           size: 26,
                                         ),
                                       ),
@@ -784,6 +801,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                   ? const Duration(milliseconds: 180)
                   : Duration.zero,
               curve: Curves.easeOutCubic,
+              width: double.infinity,
               height: widget.pickerHeight,
               child: ClipRect(
                 child: OverflowBox(
@@ -791,25 +809,46 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                   minHeight: widget.pickerFullHeight,
                   maxHeight: widget.pickerFullHeight,
                   child: SizedBox(
+                    width: double.infinity,
                     height: widget.pickerFullHeight,
-                    child: widget.pickerHeight > 0
-                        ? ComposerPickerPanel(
-                            key: ValueKey(
-                              'composer_picker_${widget.roomId}_$_pickerInstance',
+                    child: widget.pickerHeight <= 0
+                        ? const SizedBox.shrink()
+                        : switch (visiblePickerMode) {
+                            InputPanelMode.emoji => ComposerPickerPanel(
+                              key: ValueKey(
+                                'composer_picker_${widget.roomId}_$_pickerInstance',
+                              ),
+                              height: widget.pickerBaseHeight,
+                              maxHeight: widget.pickerMaxHeight,
+                              roomId: widget.roomId,
+                              tab: _pickerTab,
+                              onTabChanged: (tab) =>
+                                  setState(() => _pickerTab = tab),
+                              onEmojiSelected: _insertEmoji,
+                              onStickerSelected: (sticker, sourceRect) {
+                                _sendSticker(sticker, sourceRect);
+                              },
+                              onHeightChanged: widget.onPickerHeightChanged,
                             ),
-                            height: widget.pickerBaseHeight,
-                            maxHeight: widget.pickerMaxHeight,
-                            roomId: widget.roomId,
-                            tab: _pickerTab,
-                            onTabChanged: (tab) =>
-                                setState(() => _pickerTab = tab),
-                            onEmojiSelected: _insertEmoji,
-                            onStickerSelected: (sticker, sourceRect) {
-                              _sendSticker(sticker, sourceRect);
-                            },
-                            onHeightChanged: widget.onPickerHeightChanged,
-                          )
-                        : const SizedBox.shrink(),
+                            InputPanelMode.attachment => AttachmentPicker(
+                              key: ValueKey(
+                                'attachment_picker_${widget.roomId}',
+                              ),
+                              roomId: widget.roomId,
+                              onRefresh: (roomId) =>
+                                  refreshMessages(ref, roomId),
+                              resolveSendPresentation:
+                                  widget.resolveSendPresentation,
+                              onMessageSent: widget.onMessageSent,
+                              height: widget.pickerBaseHeight,
+                              maxHeight: widget.pickerMaxHeight,
+                              onHeightChanged: widget.onPickerHeightChanged,
+                              onClose: () => widget.onPanelModeChanged(
+                                InputPanelMode.none,
+                              ),
+                            ),
+                            _ => const SizedBox.shrink(),
+                          },
                   ),
                 ),
               ),

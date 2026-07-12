@@ -126,7 +126,7 @@ void main() {
       expect(find.text('米饭'), findsOneWidget);
       // Disclosed => tally shown.
       expect(find.text('2'), findsWidgets);
-      expect(find.text('2 人参与'), findsOneWidget);
+      expect(find.text('2 人已投票'), findsOneWidget);
     });
 
     testWidgets('undisclosed poll hides tallies until ended', (tester) async {
@@ -158,8 +158,9 @@ void main() {
           ),
         ),
       );
-      // No tally row while undisclosed and open.
-      expect(find.textContaining('人参与'), findsNothing);
+      // Per-answer tallies stay hidden, but participation remains visible.
+      expect(find.text('5 人已投票'), findsOneWidget);
+      expect(find.text('5'), findsNothing);
     });
 
     testWidgets('multi-select poll uses distinct voter total', (tester) async {
@@ -196,8 +197,60 @@ void main() {
           ),
         ),
       );
-      expect(find.text('2 人参与'), findsOneWidget);
-      expect(find.text('3 人参与'), findsNothing);
+      expect(find.text('2 人已投票'), findsOneWidget);
+      expect(find.text('3 人已投票'), findsNothing);
+    });
+
+    testWidgets('multi-select poll submits the selected answers together', (
+      tester,
+    ) async {
+      final submittedVotes = <List<String>>[];
+      final poll = PollInfo(
+        question: '多选',
+        answers: const [
+          PollAnswerInfo(id: '0', text: 'A'),
+          PollAnswerInfo(id: '1', text: 'B'),
+        ],
+        disclosed: true,
+        maxSelections: 2,
+        myAnswerIds: const [],
+        results: const [],
+        totalVoters: 0,
+        ended: false,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: PollMessageBubble(
+                roomId: '!r:ex.org',
+                pollStartEventId: '\$poll:ex.org',
+                poll: poll,
+                isMe: false,
+                metadata: _metadata,
+                onVote: (answerIds) async => submittedVotes.add(answerIds),
+                onRefresh: () async {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('A'));
+      await tester.pump();
+      await tester.tap(find.text('B'));
+      await tester.pump();
+
+      expect(submittedVotes, isEmpty);
+      expect(find.byIcon(Icons.check_box_rounded), findsNWidgets(2));
+
+      await tester.tap(find.text('提交投票'));
+      await tester.pumpAndSettle();
+
+      expect(submittedVotes, [
+        <String>['0', '1'],
+      ]);
+      expect(find.text('1 人已投票'), findsOneWidget);
     });
 
     testWidgets('vote is optimistic, serial, and rolls back on failure', (
@@ -289,7 +342,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(ended, isTrue);
       expect(find.text('结束投票'), findsNothing);
-      expect(find.text('0 人参与 · 已结束'), findsOneWidget);
+      expect(find.text('0 人已投票 · 已结束'), findsOneWidget);
     });
 
     testWidgets('location falls back to an HTTPS map', (tester) async {
