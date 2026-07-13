@@ -2786,8 +2786,24 @@ static TYPING_TX: Lazy<tokio::sync::broadcast::Sender<TypingNotification>> = Laz
 
 /// Handle to the background task that owns the per-room typing subscription,
 /// so we can abort it when switching rooms or leaving.
-static TYPING_TASK: Lazy<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>> =
+struct TypingTask {
+    room_id: String,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+static TYPING_TASK: Lazy<tokio::sync::Mutex<Option<TypingTask>>> =
     Lazy::new(|| tokio::sync::Mutex::new(None));
+
+fn take_typing_task_for_room(task: &mut Option<TypingTask>, room_id: &str) -> Option<TypingTask> {
+    if task
+        .as_ref()
+        .is_some_and(|active| active.room_id == room_id)
+    {
+        task.take()
+    } else {
+        None
+    }
+}
 
 /// Stream typing-notification updates (room_id + typing user ids) to Dart.
 /// Mirrors `watch_sync_events`.
@@ -2815,7 +2831,7 @@ pub async fn subscribe_typing_for_room(room_id: String) -> Result<(), String> {
     {
         let mut task = TYPING_TASK.lock().await;
         if let Some(prev) = task.take() {
-            prev.abort();
+            prev.handle.abort();
         }
     }
 
@@ -2839,16 +2855,35 @@ pub async fn subscribe_typing_for_room(room_id: String) -> Result<(), String> {
     });
 
     let mut task = TYPING_TASK.lock().await;
-    *task = Some(handle);
+    *task = Some(TypingTask { room_id, handle });
     Ok(())
 }
 
 /// Stop tracking typing notifications (e.g. when leaving the room screen).
 #[frb]
-pub async fn unsubscribe_typing() {
+pub async fn unsubscribe_typing(room_id: String) {
     let mut task = TYPING_TASK.lock().await;
-    if let Some(handle) = task.take() {
-        handle.abort();
+    if let Some(task) = take_typing_task_for_room(&mut task, &room_id) {
+        task.handle.abort();
+    }
+}
+
+#[cfg(test)]
+mod typing_subscription_tests {
+    use super::{take_typing_task_for_room, TypingTask};
+
+    #[tokio::test]
+    async fn stale_unsubscribe_does_not_cancel_a_newer_room() {
+        let handle = tokio::spawn(std::future::pending());
+        let mut task = Some(TypingTask {
+            room_id: "!current:example.org".to_string(),
+            handle,
+        });
+
+        assert!(take_typing_task_for_room(&mut task, "!stale:example.org").is_none());
+        assert_eq!(task.as_ref().unwrap().room_id, "!current:example.org");
+
+        task.take().unwrap().handle.abort();
     }
 }
 

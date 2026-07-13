@@ -202,7 +202,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       }
     });
     unawaited(
-      unsubscribeTyping().catchError((e) {
+      unsubscribeTyping(roomId: roomId).catchError((e) {
         debugPrint('unsubscribeTyping failed: $e');
       }),
     );
