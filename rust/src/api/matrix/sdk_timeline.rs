@@ -98,8 +98,32 @@ pub(super) async fn get_messages(client: &Client, room: &Room) -> Result<Vec<Cha
     ensure_initial_window(&timeline, LIVE_WINDOW).await?;
 
     // The Timeline guards against moving either marker backwards.
-    let _ = timeline.mark_as_read(ReceiptType::Read).await;
-    let _ = timeline.mark_as_read(ReceiptType::FullyRead).await;
+    match timeline.mark_as_read(ReceiptType::Read).await {
+        Ok(true) => super::app_log(
+            "info",
+            "receipts",
+            format!("Sent explicit read receipt for room {}", room.room_id()),
+        ),
+        Ok(false) => {}
+        Err(error) => super::app_log(
+            "warn",
+            "receipts",
+            format!(
+                "Failed to send explicit read receipt for room {}: {error}",
+                room.room_id()
+            ),
+        ),
+    }
+    if let Err(error) = timeline.mark_as_read(ReceiptType::FullyRead).await {
+        super::app_log(
+            "warn",
+            "receipts",
+            format!(
+                "Failed to update fully-read marker for room {}: {error}",
+                room.room_id()
+            ),
+        );
+    }
 
     let mut messages = convert_snapshot(room, &snapshot(&timeline).await).await;
     if messages.len() > LIVE_WINDOW {
@@ -155,19 +179,29 @@ async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatM
                 .map(|event_id| (event_id.to_string(), position))
         })
         .collect();
+    let mut receipt_positions = HashMap::new();
+    for (position, event) in event_items.iter().enumerate() {
+        for user_id in event.read_receipts().keys() {
+            if my_user_id.as_deref() != Some(user_id.as_str()) {
+                record_latest_receipt_position(
+                    &mut receipt_positions,
+                    user_id.to_string(),
+                    position,
+                );
+            }
+        }
+    }
     let members = room
         .members(matrix_sdk::RoomMemberships::JOIN)
         .await
         .unwrap_or_default();
 
-    // Reader positions come entirely from the state store, not from
-    // `EventTimelineItem::read_receipts()`. The store is written synchronously
-    // while the sync response is processed (before the sync stream yields), but
-    // the timeline only attaches receipts to items via background tasks that may
-    // not have drained by the time we snapshot — yielding stale positions and
-    // missed read receipts. By the Matrix spec only our own private receipts are
-    // withheld from sync, so every other member's public `Read` receipt is in
-    // the store.
+    // The timeline includes implicit receipts (for example, sending an event
+    // means that member read everything before it), which the state store does
+    // not persist. Keep those positions, then merge in explicit receipts from
+    // the store. The store is written synchronously while the sync response is
+    // processed, so it also covers the race where the timeline's background
+    // receipt task has not drained before this snapshot.
     //
     // A receipt whose target is inside the loaded window resolves to that
     // event's position; one outside the window clamps to 0 (oldest), so the
@@ -215,9 +249,8 @@ async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatM
             .collect::<Vec<_>>(),
     )
     .await;
-    let mut receipt_positions = HashMap::new();
     for (user_id, position) in member_receipts.into_iter().flatten() {
-        receipt_positions.insert(user_id, position);
+        record_latest_receipt_position(&mut receipt_positions, user_id, position);
     }
 
     let mut profiles: HashMap<String, (String, Option<String>)> = members
@@ -292,6 +325,17 @@ async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatM
         message.readers = readers;
     }
     messages
+}
+
+fn record_latest_receipt_position(
+    receipt_positions: &mut HashMap<String, usize>,
+    user_id: String,
+    position: usize,
+) {
+    receipt_positions
+        .entry(user_id)
+        .and_modify(|current| *current = (*current).max(position))
+        .or_insert(position);
 }
 
 fn resolve_receipt_position(
@@ -901,7 +945,10 @@ fn state_event_label(item: &EventTimelineItem) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{messages_before, reader_ids_for_position, resolve_receipt_position};
+    use super::{
+        messages_before, reader_ids_for_position, record_latest_receipt_position,
+        resolve_receipt_position,
+    };
     use crate::api::matrix::uint_to_i32;
     use crate::api::matrix::{ChatMessage, MessageType};
     use std::collections::HashMap;
@@ -961,6 +1008,17 @@ mod tests {
             reader_ids_for_position(&receipts, 2),
             ["@bob:example.org", "@carol:example.org"]
         );
+    }
+
+    #[test]
+    fn implicit_receipt_is_not_replaced_by_older_explicit_receipt() {
+        let mut positions = HashMap::new();
+
+        record_latest_receipt_position(&mut positions, "@bob:example.org".to_owned(), 4);
+        record_latest_receipt_position(&mut positions, "@bob:example.org".to_owned(), 1);
+
+        assert_eq!(positions["@bob:example.org"], 4);
+        assert_eq!(reader_ids_for_position(&positions, 3), ["@bob:example.org"]);
     }
 
     #[test]

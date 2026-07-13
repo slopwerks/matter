@@ -344,8 +344,24 @@ fn install_live_update_event_handlers(client: &Client) {
         },
     );
 
-    client.add_event_handler(|_event: SyncReceiptEvent, room: Room| async move {
+    client.add_event_handler(|event: SyncReceiptEvent, room: Room| async move {
         let room_id = room.room_id().to_string();
+        let public_receipt_count = event
+            .content
+            .values()
+            .filter_map(|receipts| {
+                receipts.get(&matrix_sdk::ruma::events::receipt::ReceiptType::Read)
+            })
+            .map(|receipts| receipts.len())
+            .sum::<usize>();
+        app_log(
+            "info",
+            "receipts",
+            format!(
+                "Received explicit receipt event for room {room_id}: {} public receipt(s)",
+                public_receipt_count
+            ),
+        );
         notify_sync_event(SyncEvent::MessageSent { room_id });
     });
 }
@@ -2875,7 +2891,7 @@ pub async fn subscribe_room_for_receipts(room_id: String) -> Result<(), String> 
             use matrix_sdk::ruma::UInt;
             let mut sub = RoomSubscription::default();
             sub.timeline_limit = UInt::from(50u32);
-            sliding_sync.subscribe_to_rooms(&[&parsed], Some(sub), false);
+            sliding_sync.subscribe_to_rooms(&[&parsed], Some(sub), true);
         }
     }
     Ok(())
@@ -2898,7 +2914,7 @@ pub async fn unsubscribe_room_for_receipts(room_id: String) -> Result<(), String
     let last_subscriber = state.remove_desired(&room_id);
     if last_subscriber {
         if let Some(sliding_sync) = state.active.as_ref() {
-            sliding_sync.unsubscribe_to_rooms(&[&parsed], false);
+            sliding_sync.unsubscribe_to_rooms(&[&parsed], true);
         }
     }
     Ok(())
