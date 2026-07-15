@@ -9,6 +9,7 @@ import 'pages/login/login_page.dart';
 import 'pages/chat/decrypted_video_source.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/mutable_state.dart';
 import 'src/rust/api/matrix.dart' as rust;
 import 'src/rust/frb_generated.dart';
 import 'theme/app_theme.dart';
@@ -41,7 +42,15 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  runApp(ProviderScope(child: _AppRoot(hasSessions: hasSessions)));
+  runApp(
+    ProviderScope(
+      overrides: [
+        if (!hasSessions)
+          sessionReadyProvider.overrideWith(() => MutableState(true)),
+      ],
+      child: _AppRoot(hasSessions: hasSessions),
+    ),
+  );
 }
 
 class _AppRoot extends ConsumerStatefulWidget {
@@ -67,8 +76,6 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     if (widget.hasSessions) {
       _restoring = true;
       _restoreSessionsInBackground();
-    } else {
-      ref.read(sessionReadyProvider.notifier).value = true;
     }
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _checkForUpdatesAtStartup(),
