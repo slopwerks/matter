@@ -51,6 +51,7 @@ class MessageGroupWidget extends ConsumerWidget {
   final Map<String, ChatMessage> messageIndex;
   final Map<String, String> remoteToLocalFlightId;
   final Set<String> insertionAnimationIds;
+  final Set<String> lateralInsertionAnimationIds;
   final Map<String, Contact> membersById;
   final String? senderAvatarUrl;
   final bool compact;
@@ -68,6 +69,7 @@ class MessageGroupWidget extends ConsumerWidget {
     required this.messageIndex,
     this.remoteToLocalFlightId = const {},
     this.insertionAnimationIds = const {},
+    this.lateralInsertionAnimationIds = const {},
     this.membersById = const {},
     this.showAvatar = true,
     this.senderAvatarUrl,
@@ -91,14 +93,11 @@ class MessageGroupWidget extends ConsumerWidget {
   /// state (and its animation target position) survives id transitions.
   /// Matched remote events also reuse the local flight id so the animation can
   /// follow the message to its final position.
-  String? _messageFlightId(ChatMessage message) {
-    final matchedFlightId = remoteToLocalFlightId[message.id];
-    if (matchedFlightId != null) return matchedFlightId;
-    if (isLocalOutgoingMessage(message.id)) return sendFlightId(message.id);
-    return null;
-  }
+  String? _messageFlightId(ChatMessage message) =>
+      messageSendFlightId(message.id, remoteToLocalFlightId);
 
   String _messageRowKey(ChatMessage message) {
+    // Preserve the bubble and loaded media while the server event takes over.
     final flightId = _messageFlightId(message);
     if (flightId != null) return 'message-row:$flightId';
     return 'message-row:${message.id}';
@@ -290,9 +289,16 @@ class MessageGroupWidget extends ConsumerWidget {
       );
     }
 
+    final flightId = _messageFlightId(message);
+    final visualMessageId = flightId ?? message.id;
     final isLocalOutgoing = isLocalOutgoingMessage(message.id);
     final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
     final isLocalSent = isLocalOutgoingSentMessage(message.id);
+    final messageBorderRadius = _messageBorderRadius(
+      isMe: isMe,
+      isFirst: isFirst,
+      isLast: isLast,
+    );
     final metadata = _buildMessageMetadata(
       context,
       ref,
@@ -305,14 +311,14 @@ class MessageGroupWidget extends ConsumerWidget {
         message.msgType == MessageType.video &&
             (message.imageUrl != null || message.mediaSourceJson != null)
         ? VideoMessageBubble(
-            key: ValueKey('video-bubble:${message.id}'),
+            key: ValueKey('video-bubble:$visualMessageId'),
             videoUrl: message.imageUrl,
             mediaSourceJson: message.mediaSourceJson,
             filename: message.content,
             videoWidth: message.imageWidth,
             videoHeight: message.imageHeight,
             isMe: isMe,
-            heroTag: 'video-preview:${message.id}',
+            heroTag: 'video-preview:$visualMessageId',
             metadata: metadata,
             onLoaded: onImageLoaded,
           )
@@ -320,7 +326,7 @@ class MessageGroupWidget extends ConsumerWidget {
                   message.msgType == MessageType.sticker) &&
               (message.imageUrl != null || message.mediaSourceJson != null)
         ? ImageMessageBubble(
-            key: ValueKey('image-bubble:${message.id}'),
+            key: ValueKey('image-bubble:$visualMessageId'),
             imageUrl: message.imageUrl,
             mediaSourceJson: message.mediaSourceJson,
             imageWidth: message.imageWidth,
@@ -331,14 +337,10 @@ class MessageGroupWidget extends ConsumerWidget {
             mentionedUserIds: message.mentionedUserIds,
             onMentionTap: onMentionTap,
             isMe: isMe,
-            heroTag: 'image-preview:${message.id}',
+            heroTag: 'image-preview:$visualMessageId',
             isSticker: message.msgType == MessageType.sticker,
             metadata: metadata,
-            borderRadius: _messageBorderRadius(
-              isMe: isMe,
-              isFirst: isFirst,
-              isLast: isLast,
-            ),
+            borderRadius: messageBorderRadius,
             onLoaded: onImageLoaded,
           )
         : message.msgType == MessageType.poll && message.poll != null
@@ -381,7 +383,6 @@ class MessageGroupWidget extends ConsumerWidget {
             onMentionTap: onMentionTap,
           );
     final bubble = coreBubble;
-    final flightId = _messageFlightId(message);
     // Capture the bubble's own build context so the floating menu can anchor
     // to the bubble rect rather than the whole message-group rect. The outer
     // `_buildMessage` context resolves to the group's outer render object.
@@ -399,6 +400,9 @@ class MessageGroupWidget extends ConsumerWidget {
             flightId: flightId,
             latestScrollController: scrollController,
             lockEndAtLatest: true,
+            waitForTargetReady: message.msgType == MessageType.sticker,
+            endBorderRadius: messageBorderRadius,
+            bottomInset: stickyBottomInset,
             child: trackedBubble,
           )
         : trackedBubble;
@@ -427,7 +431,11 @@ class MessageGroupWidget extends ConsumerWidget {
                   _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
                   const SizedBox(width: 6),
                 ],
-                Flexible(fit: FlexFit.loose, child: displayedBubble),
+                Flexible(
+                  key: ValueKey('message-bubble-slot:$visualMessageId'),
+                  fit: FlexFit.loose,
+                  child: displayedBubble,
+                ),
                 if (!isMe && isLocalOutgoing) ...[
                   const SizedBox(width: 6),
                   _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
@@ -441,25 +449,23 @@ class MessageGroupWidget extends ConsumerWidget {
       ),
     );
 
-    if (isLocalOutgoing) {
-      final shouldAnimateInsertion =
-          flightId != null && insertionAnimationIds.contains(flightId);
-      return shouldAnimateInsertion
-          ? MessageInsertAnimation(
-              key: ValueKey('message-insert:$flightId'),
-              child: messageRow,
-            )
-          : messageRow;
-    }
+    final displayedRow = flightId != null
+        ? MessageInsertAnimation(
+            key: ValueKey('message-insert:$flightId'),
+            animate: insertionAnimationIds.contains(flightId),
+            slideFromRight: lateralInsertionAnimationIds.contains(flightId),
+            child: messageRow,
+          )
+        : messageRow;
     return SizedBox(
       width: double.infinity,
       child: _SwipeToReply(
-        key: ValueKey('swipe-reply:${message.id}'),
-        onReply: () => _startReply(ref, message),
+        key: ValueKey('swipe-reply:$visualMessageId'),
+        onReply: isLocalOutgoing ? null : () => _startReply(ref, message),
         linkedOffset: linkedAvatarOffset,
         child: Align(
           alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-          child: messageRow,
+          child: displayedRow,
         ),
       ),
     );
@@ -1303,7 +1309,7 @@ class MessageGroupWidget extends ConsumerWidget {
 
 class _SwipeToReply extends StatefulWidget {
   final Widget child;
-  final VoidCallback onReply;
+  final VoidCallback? onReply;
   final ValueNotifier<double>? linkedOffset;
 
   const _SwipeToReply({
@@ -1381,7 +1387,7 @@ class _SwipeToReplyState extends State<_SwipeToReply>
   void _handleDragEnd(DragEndDetails details) {
     final shouldReply = _dragController.value >= _triggerDistance;
     _settle();
-    if (shouldReply) widget.onReply();
+    if (shouldReply) widget.onReply?.call();
   }
 
   void _settle() {
@@ -1395,13 +1401,14 @@ class _SwipeToReplyState extends State<_SwipeToReply>
 
   @override
   Widget build(BuildContext context) {
+    final enabled = widget.onReply != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       dragStartBehavior: DragStartBehavior.down,
-      onHorizontalDragStart: _handleDragStart,
-      onHorizontalDragUpdate: _handleDragUpdate,
-      onHorizontalDragEnd: _handleDragEnd,
-      onHorizontalDragCancel: _settle,
+      onHorizontalDragStart: enabled ? _handleDragStart : null,
+      onHorizontalDragUpdate: enabled ? _handleDragUpdate : null,
+      onHorizontalDragEnd: enabled ? _handleDragEnd : null,
+      onHorizontalDragCancel: enabled ? _settle : null,
       child: AnimatedBuilder(
         animation: _dragController,
         child: widget.child,

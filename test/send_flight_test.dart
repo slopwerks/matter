@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/pages/chat/message_insert_animation.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/chat_provider.dart';
+
+void expectBorderRadiusClose(BorderRadius actual, BorderRadius expected) {
+  expect(actual.topLeft.x, closeTo(expected.topLeft.x, 0.1));
+  expect(actual.topRight.x, closeTo(expected.topRight.x, 0.1));
+  expect(actual.bottomLeft.x, closeTo(expected.bottomLeft.x, 0.1));
+  expect(actual.bottomRight.x, closeTo(expected.bottomRight.x, 0.1));
+}
 
 void main() {
   test('send flight id stays stable across optimistic states', () {
     expect(sendFlightId('${localOutgoingPendingPrefix}42'), '42');
     expect(sendFlightId('${localOutgoingSentPrefix}42'), '42');
     expect(sendFlightId('${localOutgoingFailedPrefix}42'), '42');
+    expect(messageSendFlightId(r'$remote', const {r'$remote': '42'}), '42');
   });
 
   testWidgets(
@@ -89,6 +98,50 @@ void main() {
       find.ancestor(of: find.byKey(targetKey), matching: find.byType(Opacity)),
     );
     expect(visibleTarget.opacity, 1);
+
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('canceling an active flight reveals its real target', (
+    tester,
+  ) async {
+    const messageId = '${localOutgoingPendingPrefix}canceled-flight';
+    const sourceKey = ValueKey('canceled-flight-source');
+    const targetKey = ValueKey('canceled-flight-target');
+    final completed = registerSendFlight(
+      messageId,
+      const SendFlightSpec(
+        sourceRect: Rect.fromLTWH(20, 500, 80, 80),
+        kind: SendFlightKind.sticker,
+        child: ColoredBox(key: sourceKey, color: Colors.blue),
+      ),
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SendFlightTarget(
+            messageId: messageId,
+            child: SizedBox(key: targetKey, width: 90, height: 90),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(hasOngoingSendFlight, isTrue);
+    expect(find.byKey(sourceKey), findsOneWidget);
+
+    cancelOngoingSendFlights();
+    expect(hasOngoingSendFlight, isFalse);
+    await tester.pump();
+
+    expect(find.byKey(sourceKey), findsNothing);
+    final target = tester.widget<Opacity>(
+      find.ancestor(of: find.byKey(targetKey), matching: find.byType(Opacity)),
+    );
+    expect(target.opacity, 1);
+    await expectLater(completed, completes);
 
     await tester.pump(const Duration(seconds: 2));
   });
@@ -348,12 +401,145 @@ void main() {
     expect(endPositioned.top, closeTo(targetRect.top, 1));
     expect(endPositioned.width, closeTo(targetRect.width, 1));
     expect(endPositioned.height, closeTo(targetRect.height, 1));
+    final decoratedBox = tester.widget<DecoratedBox>(
+      find.ancestor(
+        of: find.byKey(sourceKey),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    final decoration = decoratedBox.decoration as BoxDecoration;
+    expectBorderRadiusClose(
+      decoration.borderRadius! as BorderRadius,
+      outgoingTextBubbleBorderRadius,
+    );
 
     // Run to completion and let the overlay entry remove itself.
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.byKey(sourceKey), findsNothing);
 
     // Drain cleanup timers.
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('locked sticker flight matches a target in an expanding row', (
+    tester,
+  ) async {
+    const messageId = '${localOutgoingPendingPrefix}expanding-target';
+    const sourceKey = ValueKey('expanding-source');
+    const targetKey = ValueKey('expanding-target');
+
+    registerSendFlight(
+      messageId,
+      const SendFlightSpec(
+        sourceRect: Rect.fromLTWH(100, 600, 80, 80),
+        kind: SendFlightKind.sticker,
+        child: ColoredBox(key: sourceKey, color: Colors.green),
+      ),
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomRight,
+            child: MessageInsertAnimation(
+              child: SendFlightTarget(
+                messageId: messageId,
+                lockEndAtLatest: true,
+                child: SizedBox(key: targetKey, width: 100, height: 100),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 359));
+
+    final targetRect = tester.getRect(find.byKey(targetKey));
+    final flightRect = tester.widget<Positioned>(
+      find.ancestor(
+        of: find.byKey(sourceKey),
+        matching: find.byType(Positioned),
+      ),
+    );
+    expect(flightRect.left, closeTo(targetRect.left, 1));
+    expect(flightRect.top, closeTo(targetRect.top, 1));
+    expect(flightRect.width, closeTo(targetRect.width, 1));
+    expect(flightRect.height, closeTo(targetRect.height, 1));
+
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('sticker flight waits for the target image frame', (
+    tester,
+  ) async {
+    const messageId = '${localOutgoingPendingPrefix}sticker-ready';
+    const sourceKey = ValueKey('sticker-ready-source');
+    const targetKey = ValueKey('sticker-ready-target');
+    late BuildContext targetContext;
+
+    registerSendFlight(
+      messageId,
+      const SendFlightSpec(
+        sourceRect: Rect.fromLTWH(100, 600, 80, 80),
+        kind: SendFlightKind.sticker,
+        child: ColoredBox(key: sourceKey, color: Colors.green),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topRight,
+            child: SendFlightTarget(
+              messageId: messageId,
+              waitForTargetReady: true,
+              child: Builder(
+                builder: (context) {
+                  targetContext = context;
+                  return const SizedBox(
+                    key: targetKey,
+                    width: 100,
+                    height: 100,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(sourceKey), findsOneWidget);
+    final hiddenTarget = tester.widget<Opacity>(
+      find.ancestor(of: find.byKey(targetKey), matching: find.byType(Opacity)),
+    );
+    expect(hiddenTarget.opacity, 0);
+
+    notifySendFlightTargetReady(targetContext);
+    await tester.pump();
+    await tester.pump();
+
+    // Paint the real target behind the flight before removing the overlay.
+    expect(find.byKey(sourceKey), findsOneWidget);
+    final paintedTarget = tester.widget<Opacity>(
+      find.ancestor(of: find.byKey(targetKey), matching: find.byType(Opacity)),
+    );
+    expect(paintedTarget.opacity, 1);
+
+    await tester.pump();
+
+    expect(find.byKey(sourceKey), findsNothing);
+    final visibleTarget = tester.widget<Opacity>(
+      find.ancestor(of: find.byKey(targetKey), matching: find.byType(Opacity)),
+    );
+    expect(visibleTarget.opacity, 1);
+
     await tester.pump(const Duration(seconds: 2));
   });
 
@@ -365,6 +551,7 @@ void main() {
     const targetKey = ValueKey('moving-target');
     const sourceRect = Rect.fromLTWH(100, 560, 80, 80);
     var targetTop = 420.0;
+    var targetBorderRadius = outgoingTextBubbleBorderRadius;
     late StateSetter setTargetState;
 
     registerSendFlight(
@@ -387,9 +574,14 @@ void main() {
                   Positioned(
                     left: 220,
                     top: targetTop,
-                    child: const SendFlightTarget(
+                    child: SendFlightTarget(
                       messageId: messageId,
-                      child: SizedBox(key: targetKey, width: 96, height: 64),
+                      endBorderRadius: targetBorderRadius,
+                      child: const SizedBox(
+                        key: targetKey,
+                        width: 96,
+                        height: 64,
+                      ),
                     ),
                   ),
                 ],
@@ -402,7 +594,10 @@ void main() {
     await tester.pump();
 
     await tester.pump(const Duration(milliseconds: 120));
-    setTargetState(() => targetTop = 260);
+    setTargetState(() {
+      targetTop = 260;
+      targetBorderRadius = BorderRadius.circular(6);
+    });
     await tester.pump();
 
     await tester.pump(const Duration(milliseconds: 239));
@@ -416,10 +611,124 @@ void main() {
     expect(endPositioned.top, closeTo(260, 1));
     expect(endPositioned.width, closeTo(96, 1));
     expect(endPositioned.height, closeTo(64, 1));
+    final decoratedBox = tester.widget<DecoratedBox>(
+      find.ancestor(
+        of: find.byKey(sourceKey),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    final decoration = decoratedBox.decoration as BoxDecoration;
+    expectBorderRadiusClose(
+      decoration.borderRadius! as BorderRadius,
+      targetBorderRadius,
+    );
 
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(seconds: 2));
   });
+
+  testWidgets(
+    'locked flights survive reconciliation and follow bottom inset changes',
+    (tester) async {
+      const insetMessage = '${localOutgoingPendingPrefix}moving-inset';
+      const lockedMessage = '${localOutgoingPendingPrefix}locked-target';
+      const insetSourceKey = ValueKey('moving-inset-source');
+      const lockedSourceKey = ValueKey('locked-target-source');
+      var insetTargetMessageId = insetMessage;
+      var remoteToLocalFlightId = const <String, String>{};
+      var insetTargetTop = 220.0;
+      var lockedTargetTop = 400.0;
+      var bottomInset = 300.0;
+      late StateSetter setTargetState;
+
+      registerSendFlight(
+        insetMessage,
+        const SendFlightSpec(
+          sourceRect: Rect.fromLTWH(100, 560, 80, 80),
+          kind: SendFlightKind.sticker,
+          child: ColoredBox(key: insetSourceKey, color: Colors.green),
+        ),
+      );
+      registerSendFlight(
+        lockedMessage,
+        const SendFlightSpec(
+          sourceRect: Rect.fromLTWH(200, 560, 80, 80),
+          kind: SendFlightKind.sticker,
+          child: ColoredBox(key: lockedSourceKey, color: Colors.blue),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                setTargetState = setState;
+                return Stack(
+                  children: [
+                    Positioned(
+                      left: 220,
+                      top: insetTargetTop,
+                      child: KeyedSubtree(
+                        key: ValueKey(
+                          messageSendFlightId(
+                                insetTargetMessageId,
+                                remoteToLocalFlightId,
+                              ) ??
+                              insetTargetMessageId,
+                        ),
+                        child: SendFlightTarget(
+                          messageId: insetTargetMessageId,
+                          flightId: messageSendFlightId(
+                            insetTargetMessageId,
+                            remoteToLocalFlightId,
+                          ),
+                          lockEndAtLatest: true,
+                          bottomInset: bottomInset,
+                          child: const SizedBox(width: 96, height: 64),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 100,
+                      top: lockedTargetTop,
+                      child: const SendFlightTarget(
+                        messageId: lockedMessage,
+                        lockEndAtLatest: true,
+                        bottomInset: 120,
+                        child: SizedBox(width: 96, height: 64),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.pump(const Duration(milliseconds: 120));
+      setTargetState(() {
+        insetTargetMessageId = r'$remote-inset';
+        remoteToLocalFlightId = const {r'$remote-inset': 'moving-inset'};
+        insetTargetTop = 400;
+        lockedTargetTop = 220;
+        bottomInset = 120;
+      });
+      await tester.pump();
+
+      await tester.pump(const Duration(milliseconds: 239));
+      Positioned flightPosition(ValueKey key) => tester.widget<Positioned>(
+        find.ancestor(of: find.byKey(key), matching: find.byType(Positioned)),
+      );
+      expect(flightPosition(insetSourceKey).top, closeTo(400, 1));
+      expect(flightPosition(lockedSourceKey).top, closeTo(400, 1));
+
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(seconds: 2));
+    },
+  );
 
   testWidgets(
     'send flight can land on a remote target using the local flight id',

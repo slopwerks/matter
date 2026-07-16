@@ -22,6 +22,7 @@ import 'latest_message_control.dart';
 import 'local_outgoing_matcher.dart';
 import 'message_group.dart';
 import 'message_input.dart';
+import 'send_flight.dart';
 
 class ChatDetailPage extends ConsumerStatefulWidget {
   final String roomId;
@@ -81,6 +82,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   bool _showSentNotice = false;
   ChatRoom? _forwardNoticeRoom;
   final Set<String> _insertionAnimationIds = {};
+  final Set<String> _lateralInsertionAnimationIds = {};
 
   /// Remote event ids that have already been matched with a local outgoing
   /// message. Keeps duplicate sends of the same payload from being incorrectly
@@ -109,6 +111,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   static const Duration _insertionAnimationLifetime = Duration(
     milliseconds: 500,
   );
+  static const Duration _sendFlightBurstSuppression = Duration(
+    milliseconds: 450,
+  );
+  DateTime _sendFlightSuppressedUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
   void _setInputPanelMode(InputPanelMode mode) {
     if (_inputPanelMode == mode) return;
@@ -272,14 +278,26 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
   }
 
   MessageSendPresentation _resolveSendPresentation() {
-    if (!_scrollController.hasClients) {
-      return MessageSendPresentation.flight;
+    final presentation = !_scrollController.hasClients
+        ? MessageSendPresentation.flight
+        : resolveMessageSendPresentation(
+            distanceFromLatest: _distanceFromLatest(_scrollController.position),
+            viewportDimension: _scrollController.position.viewportDimension,
+          );
+    if (presentation == MessageSendPresentation.quiet) return presentation;
+
+    final now = DateTime.now();
+    if (hasOngoingSendFlight) {
+      _sendFlightSuppressedUntil = now.add(_sendFlightBurstSuppression);
+      cancelOngoingSendFlights();
+      return MessageSendPresentation.insert;
     }
-    final position = _scrollController.position;
-    return resolveMessageSendPresentation(
-      distanceFromLatest: _distanceFromLatest(position),
-      viewportDimension: position.viewportDimension,
-    );
+    if (presentation == MessageSendPresentation.flight &&
+        now.isBefore(_sendFlightSuppressedUntil)) {
+      _sendFlightSuppressedUntil = now.add(_sendFlightBurstSuppression);
+      return MessageSendPresentation.insert;
+    }
+    return presentation;
   }
 
   void _handleMessageQueued(
@@ -287,15 +305,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     MessageSendPresentation presentation,
   ) {
     if (presentation == MessageSendPresentation.quiet) return;
-    if (presentation == MessageSendPresentation.insert) {
-      setState(() => _insertionAnimationIds.add(stableMessageId));
-      Future<void>.delayed(_insertionAnimationLifetime, () {
-        if (!mounted || !_insertionAnimationIds.contains(stableMessageId)) {
-          return;
-        }
-        setState(() => _insertionAnimationIds.remove(stableMessageId));
+    setState(() {
+      _insertionAnimationIds.add(stableMessageId);
+      if (presentation == MessageSendPresentation.insert) {
+        _lateralInsertionAnimationIds.add(stableMessageId);
+      }
+    });
+    Future<void>.delayed(_insertionAnimationLifetime, () {
+      if (!mounted || !_insertionAnimationIds.contains(stableMessageId)) {
+        return;
+      }
+      setState(() {
+        _insertionAnimationIds.remove(stableMessageId);
+        _lateralInsertionAnimationIds.remove(stableMessageId);
       });
-    }
+    });
     _scrollToLatest();
   }
 
@@ -657,8 +681,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
     for (var i = groups.length - 1; i >= 0; i--) {
       final group = groups[i];
       final dateKey = chatDateKey(group.messages.first.timestamp);
-      final anchorId =
-          '$dateKey:${group.senderId}:${group.messages.first.id}:${group.messages.last.id}';
+      // Keep the sliver element alive across optimistic reconciliation.
+      final firstMessageId =
+          messageSendFlightId(
+            group.messages.first.id,
+            _remoteToLocalFlightId,
+          ) ??
+          group.messages.first.id;
+      final anchorId = '$dateKey:${group.senderId}:$firstMessageId';
       entries.add(
         _TimelineEntry.group(
           group,
@@ -729,6 +759,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage> {
           messageIndex: messageIndex,
           remoteToLocalFlightId: _remoteToLocalFlightId,
           insertionAnimationIds: _insertionAnimationIds,
+          lateralInsertionAnimationIds: _lateralInsertionAnimationIds,
           membersById: membersById,
           showAvatar: _needsStickyAvatar(group),
           compact: widget.isDm,

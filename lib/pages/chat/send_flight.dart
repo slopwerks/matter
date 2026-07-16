@@ -28,7 +28,7 @@ class SendFlightSpec {
 }
 
 final Map<String, _PendingFlight> _pendingSendFlights = {};
-final Map<String, Completer<void>> _activeSendFlights = {};
+final Map<String, _ActiveFlight> _activeSendFlights = {};
 final ValueNotifier<int> _sendFlightStateRevision = ValueNotifier<int>(0);
 
 class _PendingFlight {
@@ -36,6 +36,13 @@ class _PendingFlight {
   final Completer<void> completer = Completer<void>();
 
   _PendingFlight(this.spec);
+}
+
+class _ActiveFlight {
+  final Completer<void> completer;
+  VoidCallback? cancel;
+
+  _ActiveFlight(this.completer);
 }
 
 String sendFlightId(String messageId) {
@@ -51,12 +58,55 @@ String sendFlightId(String messageId) {
   return messageId;
 }
 
+/// Resolves the identity shared by an optimistic message and its server event.
+String? messageSendFlightId(
+  String messageId,
+  Map<String, String> remoteToLocalFlightId,
+) {
+  final matchedFlightId = remoteToLocalFlightId[messageId];
+  if (matchedFlightId != null) return matchedFlightId;
+  if (isLocalOutgoingMessage(messageId)) return sendFlightId(messageId);
+  return null;
+}
+
+void notifySendFlightTargetReady(BuildContext context) {
+  context.findAncestorStateOfType<_SendFlightTargetState>()?._markTargetReady();
+}
+
 void _notifySendFlightStateChanged() {
   _sendFlightStateRevision.value++;
 }
 
 bool _shouldHideSendFlightTarget(String id) =>
     _pendingSendFlights.containsKey(id) || _activeSendFlights.containsKey(id);
+
+bool get hasOngoingSendFlight =>
+    _pendingSendFlights.isNotEmpty || _activeSendFlights.isNotEmpty;
+
+/// Stops the current flight before a rapid send inserts another target row.
+/// The existing target is revealed at its current slot, then the normal row
+/// insertion animation can move it without competing with a floating overlay.
+void cancelOngoingSendFlights() {
+  final pending = _pendingSendFlights.values.toList();
+  final active = _activeSendFlights.values.toList();
+  if (pending.isEmpty && active.isEmpty) return;
+
+  _pendingSendFlights.clear();
+  _activeSendFlights.clear();
+  _notifySendFlightStateChanged();
+
+  for (final flight in pending) {
+    if (!flight.completer.isCompleted) flight.completer.complete();
+  }
+  for (final flight in active) {
+    final cancel = flight.cancel;
+    if (cancel != null) {
+      cancel();
+    } else if (!flight.completer.isCompleted) {
+      flight.completer.complete();
+    }
+  }
+}
 
 Rect projectSendFlightTargetToLatest(Rect currentRect, ScrollMetrics metrics) {
   final distance = math.max(0.0, metrics.pixels - metrics.minScrollExtent);
@@ -78,7 +128,7 @@ Future<void> registerSendFlight(String messageId, SendFlightSpec spec) {
     return existing.completer.future;
   }
   final active = _activeSendFlights[id];
-  if (active != null) return active.future;
+  if (active != null) return active.completer.future;
   final pending = _PendingFlight(spec);
   _pendingSendFlights[id] = pending;
   _notifySendFlightStateChanged();
@@ -99,6 +149,11 @@ class SendFlightTarget extends StatefulWidget {
   final String? flightId;
   final ScrollController? latestScrollController;
   final bool lockEndAtLatest;
+  final bool waitForTargetReady;
+  final BorderRadius? endBorderRadius;
+
+  /// Current bottom inset that vertically positions the timeline.
+  final double bottomInset;
   final Widget child;
 
   const SendFlightTarget({
@@ -107,6 +162,9 @@ class SendFlightTarget extends StatefulWidget {
     this.flightId,
     this.latestScrollController,
     this.lockEndAtLatest = false,
+    this.waitForTargetReady = false,
+    this.endBorderRadius,
+    this.bottomInset = 0,
     required this.child,
   });
 
@@ -115,8 +173,13 @@ class SendFlightTarget extends StatefulWidget {
 }
 
 class _SendFlightTargetState extends State<SendFlightTarget> {
+  static const _targetReadyTimeout = Duration(seconds: 5);
+
   final GlobalKey _targetKey = GlobalKey();
   bool _hideTarget = false;
+  bool _handoffVisible = false;
+  bool _targetReady = false;
+  Completer<void>? _targetReadyCompleter;
   String? _scheduledFlightId;
 
   String get _flightId => widget.flightId ?? sendFlightId(widget.messageId);
@@ -136,6 +199,9 @@ class _SendFlightTargetState extends State<SendFlightTarget> {
     final newId = _flightId;
     if (oldId != newId) {
       _scheduledFlightId = null;
+      _handoffVisible = false;
+      _targetReady = false;
+      _targetReadyCompleter = null;
     }
     _syncHiddenState();
     _maybeStartFlight(newId);
@@ -154,9 +220,34 @@ class _SendFlightTargetState extends State<SendFlightTarget> {
   }
 
   void _syncHiddenState() {
-    final shouldHide = _shouldHideSendFlightTarget(_flightId);
+    final shouldHide =
+        !_handoffVisible && _shouldHideSendFlightTarget(_flightId);
     if (_hideTarget == shouldHide) return;
     setState(() => _hideTarget = shouldHide);
+  }
+
+  void _markTargetReady() {
+    if (_targetReady) return;
+    _targetReady = true;
+    final completer = _targetReadyCompleter;
+    if (completer != null && !completer.isCompleted) completer.complete();
+  }
+
+  Future<void> _waitForTargetReady() async {
+    if (_targetReady) return;
+    final completer = _targetReadyCompleter ??= Completer<void>();
+    await completer.future.timeout(_targetReadyTimeout, onTimeout: () {});
+  }
+
+  Future<void> _prepareTargetHandoff() async {
+    await _waitForTargetReady();
+    if (!mounted) return;
+    setState(() {
+      _handoffVisible = true;
+      _hideTarget = false;
+    });
+    // Keep the flight over the target until the real bubble has painted once.
+    await WidgetsBinding.instance.endOfFrame;
   }
 
   void _maybeStartFlight(String id) {
@@ -169,8 +260,11 @@ class _SendFlightTargetState extends State<SendFlightTarget> {
 
   Future<void> _startFlight(String id) async {
     final pending = _pendingSendFlights.remove(id);
+    final activeFlight = pending == null
+        ? null
+        : _ActiveFlight(pending.completer);
     if (pending != null) {
-      _activeSendFlights[id] = pending.completer;
+      _activeSendFlights[id] = activeFlight!;
       _notifySendFlightStateChanged();
     }
     if (pending == null || !mounted) {
@@ -221,21 +315,42 @@ class _SendFlightTargetState extends State<SendFlightTarget> {
       return projectSendFlightTargetToLatest(rect, controller.position);
     }
 
-    final end = lockedTargetRect() ?? inOverlay(spec.sourceRect);
+    final lockedEnd = lockedTargetRect();
+    final end = lockedEnd ?? inOverlay(spec.sourceRect);
+    final initialBottomInset = widget.bottomInset;
+
+    Rect? resolveEnd() {
+      if (!widget.lockEndAtLatest) return targetRect();
+      if (lockedEnd == null) return null;
+      // Follow composer reflow without chasing a row moved by newer messages.
+      return lockedEnd.translate(0, initialBottomInset - widget.bottomInset);
+    }
+
     final overlayCompleter = Completer<void>();
+    var overlayFinished = false;
     late final OverlayEntry entry;
+    void finishOverlay() {
+      if (overlayFinished) return;
+      overlayFinished = true;
+      entry.remove();
+      if (!overlayCompleter.isCompleted) overlayCompleter.complete();
+    }
+
     entry = OverlayEntry(
       builder: (_) => _SendFlightOverlay(
         spec: spec,
         begin: inOverlay(spec.sourceRect),
         end: end,
-        resolveEnd: widget.lockEndAtLatest ? null : targetRect,
-        onCompleted: () {
-          entry.remove();
-          if (!overlayCompleter.isCompleted) overlayCompleter.complete();
-        },
+        resolveEnd: resolveEnd,
+        resolveEndBorderRadius: () =>
+            widget.endBorderRadius ?? outgoingTextBubbleBorderRadius,
+        waitForTargetReady: widget.waitForTargetReady
+            ? _prepareTargetHandoff
+            : null,
+        onCompleted: finishOverlay,
       ),
     );
+    activeFlight!.cancel = finishOverlay;
     overlay.insert(entry);
     try {
       await overlayCompleter.future;
@@ -260,6 +375,8 @@ class _SendFlightOverlay extends StatefulWidget {
   final Rect begin;
   final Rect end;
   final Rect? Function()? resolveEnd;
+  final BorderRadius Function()? resolveEndBorderRadius;
+  final Future<void> Function()? waitForTargetReady;
   final VoidCallback onCompleted;
 
   const _SendFlightOverlay({
@@ -267,6 +384,8 @@ class _SendFlightOverlay extends StatefulWidget {
     required this.begin,
     required this.end,
     this.resolveEnd,
+    this.resolveEndBorderRadius,
+    this.waitForTargetReady,
     required this.onCompleted,
   });
 
@@ -278,6 +397,7 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _animation;
+  bool _isCompleting = false;
 
   @override
   void initState() {
@@ -294,10 +414,17 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
           curve: Curves.easeInOutCubicEmphasized,
         )..addStatusListener((status) {
           if (status == AnimationStatus.completed) {
-            widget.onCompleted();
+            unawaited(_completeWhenReady());
           }
         });
     _controller.forward();
+  }
+
+  Future<void> _completeWhenReady() async {
+    if (_isCompleting) return;
+    _isCompleting = true;
+    await widget.waitForTargetReady?.call();
+    if (mounted) widget.onCompleted();
   }
 
   @override
@@ -326,11 +453,12 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
               final end = widget.resolveEnd?.call() ?? widget.end;
               final rect = Rect.lerp(widget.begin, end, progress)!;
               final isText = widget.spec.kind == SendFlightKind.text;
+              final endBorderRadius =
+                  widget.resolveEndBorderRadius?.call() ??
+                  outgoingTextBubbleBorderRadius;
               final borderRadius = BorderRadius.lerp(
                 BorderRadius.circular(AppRadii.surface),
-                isText
-                    ? outgoingTextBubbleBorderRadius
-                    : BorderRadius.circular(AppRadii.content),
+                endBorderRadius,
                 progress,
               )!;
               return Stack(

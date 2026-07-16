@@ -10,6 +10,7 @@ import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
 import 'message_text.dart';
+import 'send_flight.dart';
 
 enum _OriginalImageState { thumbnail, resolving, loading, loaded, failed }
 
@@ -63,6 +64,16 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   String? _originalMxcUrl;
   int? _thumbnailWidth;
   int? _thumbnailHeight;
+
+  void _handleMediaLoaded() {
+    if (!mounted) return;
+    widget.onLoaded?.call();
+    notifySendFlightTargetReady(context);
+  }
+
+  void _handleMediaError() {
+    if (mounted) notifySendFlightTargetReady(context);
+  }
 
   @override
   void initState() {
@@ -185,7 +196,8 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       fit: widget.isSticker || needsShortImageBackdrop
           ? BoxFit.contain
           : BoxFit.cover,
-      onLoaded: widget.onLoaded,
+      onLoaded: _handleMediaLoaded,
+      onError: _handleMediaError,
       cacheWidth: _thumbnailWidth,
       cacheHeight: _thumbnailHeight,
     );

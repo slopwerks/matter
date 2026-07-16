@@ -1,8 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/message_group.dart';
+import 'package:matter/pages/chat/send_flight.dart';
+import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 
 void main() {
@@ -33,6 +36,109 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('msg-image:sticker-test'))),
       const Size(160, 160),
     );
+    expect(
+      tester
+          .widget<CachedNetworkImage>(find.byType(CachedNetworkImage))
+          .useOldImageOnUrlChange,
+      isTrue,
+    );
+  });
+
+  testWidgets('sticker image state survives optimistic reconciliation', (
+    tester,
+  ) async {
+    const localMessage = ChatMessage(
+      id: '${localOutgoingSentPrefix}sticker-handoff',
+      senderId: '@me:example.org',
+      senderName: '我',
+      content: 'sticker',
+      mentionedUserIds: [],
+      mentionsRoom: false,
+      timestamp: '100',
+      isMe: true,
+      msgType: MessageType.sticker,
+      imageUrl: 'https://example.org/local-sticker.png',
+      imageWidth: 512,
+      imageHeight: 512,
+      isEdited: false,
+      editHistory: [],
+      reactions: [],
+      readers: [],
+      totalMembers: 2,
+    );
+    const remoteMessage = ChatMessage(
+      id: r'$remote-sticker',
+      senderId: '@me:example.org',
+      senderName: '我',
+      content: 'sticker',
+      mentionedUserIds: [],
+      mentionsRoom: false,
+      timestamp: '100',
+      isMe: true,
+      msgType: MessageType.sticker,
+      imageUrl: 'https://example.org/remote-sticker.png',
+      imageWidth: 512,
+      imageHeight: 512,
+      isEdited: false,
+      editHistory: [],
+      reactions: [],
+      readers: [],
+      totalMembers: 2,
+    );
+    var message = localMessage;
+    var remoteToLocalFlightId = const <String, String>{};
+    var insertionAnimationIds = const {'sticker-handoff'};
+    late StateSetter updateMessage;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                updateMessage = setState;
+                return MessageGroupWidget(
+                  group: MessageGroup(
+                    senderId: message.senderId,
+                    senderName: message.senderName,
+                    isMe: true,
+                    messages: [message],
+                  ),
+                  roomId: '!room:example.org',
+                  messageIndex: {message.id: message},
+                  remoteToLocalFlightId: remoteToLocalFlightId,
+                  insertionAnimationIds: insertionAnimationIds,
+                  showAvatar: false,
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final localState = tester.state(find.byType(ImageMessageBubble));
+    final flightTarget = tester.widget<SendFlightTarget>(
+      find.byType(SendFlightTarget),
+    );
+    expect(flightTarget.endBorderRadius?.bottomRight.x, 10);
+
+    updateMessage(() {
+      message = remoteMessage;
+      remoteToLocalFlightId = const {r'$remote-sticker': 'sticker-handoff'};
+    });
+    await tester.pump();
+
+    expect(tester.state(find.byType(ImageMessageBubble)), same(localState));
+    expect(
+      find.byKey(const ValueKey('msg-image:image-preview:sticker-handoff')),
+      findsOneWidget,
+    );
+
+    updateMessage(() => insertionAnimationIds = const {});
+    await tester.pump();
+
+    expect(tester.state(find.byType(ImageMessageBubble)), same(localState));
   });
 
   testWidgets('image caption is rendered below the media bubble', (

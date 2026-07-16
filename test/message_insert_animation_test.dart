@@ -56,4 +56,34 @@ void main() {
     final childRect = tester.getRect(find.byKey(childKey));
     expect(childRect.right, containerRect.right);
   });
+
+  testWidgets('burst fallback enters from the right while expanding', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessageInsertAnimation(
+            slideFromRight: true,
+            child: SizedBox(width: 120, height: 48),
+          ),
+        ),
+      ),
+    );
+
+    final slide = tester.widget<SlideTransition>(
+      find.descendant(
+        of: find.byType(MessageInsertAnimation),
+        matching: find.byType(SlideTransition),
+      ),
+    );
+    expect(slide.position.value.dx, closeTo(0.08, 0.001));
+
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(slide.position.value.dx, greaterThan(0));
+    expect(slide.position.value.dx, lessThan(0.08));
+
+    await tester.pumpAndSettle();
+    expect(slide.position.value, Offset.zero);
+  });
 }
