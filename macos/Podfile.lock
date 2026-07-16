@@ -7,7 +7,7 @@ PODS:
 DEPENDENCIES:
   - flutter_image_compress_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_image_compress_macos/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
-  - rust_lib_matter (from `/Users/linus_xu/Downloads/matter/macos`)
+  - rust_lib_matter (from `.`)
 
 EXTERNAL SOURCES:
   flutter_image_compress_macos:
@@ -15,13 +15,13 @@ EXTERNAL SOURCES:
   FlutterMacOS:
     :path: Flutter/ephemeral
   rust_lib_matter:
-    :path: "/Users/linus_xu/Downloads/matter/macos"
+    :path: "."
 
 SPEC CHECKSUMS:
   flutter_image_compress_macos: e68daf54bb4bf2144c580fd4d151c949cbf492f0
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   rust_lib_matter: bf4d3e5d141c32a88b21490c555d7f3e1716abd4
 
-PODFILE CHECKSUM: a173b70d444f93bdf7c7ea9f369d326a96a3c8e2
+PODFILE CHECKSUM: dee804f7cc9eae8522cc5b30dc06889b746a4529
 
 COCOAPODS: 1.16.2

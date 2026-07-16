@@ -32,7 +32,7 @@ target 'Runner' do
 
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
 
-  pod 'rust_lib_matter', :path => File.dirname(File.realpath(__FILE__))
+  pod 'rust_lib_matter', :path => '.'
 
   target 'RunnerTests' do
     inherit! :search_paths
