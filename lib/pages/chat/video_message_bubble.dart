@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
@@ -82,6 +83,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
         }
         final bytes = await rust.downloadMediaSourceBytes(
           mediaSourceJson: mediaSourceJson,
+          maxSizeBytes: 16 * 1024 * 1024,
         );
         preparedSource = await prepareDecryptedVideoSource(
           Uint8List.fromList(bytes),
@@ -95,9 +97,10 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
         if (resolvedUrl == null || resolvedUrl.isEmpty) {
           throw StateError('Unable to resolve video URL');
         }
-        final isMatrixMedia =
-            Uri.tryParse(resolvedUrl)?.path.startsWith('/_matrix/client/') ??
-            false;
+        final isMatrixMedia = isCurrentHomeserverMatrixMediaUrl(
+          resolvedUrl,
+          ref.read(currentUserProvider)?.homeserver,
+        );
         final token = ref.read(currentAccessTokenProvider);
         controller = VideoPlayerController.networkUrl(
           Uri.parse(resolvedUrl),

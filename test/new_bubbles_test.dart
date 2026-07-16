@@ -17,6 +17,11 @@ void main() {
     expect(sanitizeAttachmentFilename(r'C:\temp\CON.txt'), '_CON.txt');
     expect(sanitizeAttachmentFilename('..'), 'attachment.bin');
     expect(sanitizeAttachmentFilename('bad:name?.zip'), 'bad_name_.zip');
+    expect(
+      sanitizeAttachmentFilename('invoice\u202Efdp.exe'),
+      'invoicefdp.exe',
+    );
+    expect(sanitizeAttachmentFilename('safe\u2066.txt'), 'safe.txt');
   });
 
   group('new attachment bubbles render their content', () {

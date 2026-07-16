@@ -9,6 +9,10 @@ import '../../theme/app_theme.dart';
 String sanitizeAttachmentFilename(String filename) {
   var name = filename.replaceAll('\\', '/').split('/').last.trim();
   name = name.replaceAll(RegExp(r'[\x00-\x1f<>:"|?*]'), '_');
+  name = name.replaceAll(
+    RegExp(r'[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]'),
+    '',
+  );
   name = name.replaceAll(RegExp(r'[. ]+$'), '');
   if (name.isEmpty || name == '.' || name == '..') name = 'attachment.bin';
 
@@ -79,6 +83,7 @@ class FileMessageBubble extends StatefulWidget {
 
 class _FileMessageBubbleState extends State<FileMessageBubble> {
   static const _largeDownloadWarningBytes = 64 * 1024 * 1024;
+  static const _maximumManualDownloadBytes = 128 * 1024 * 1024;
   bool _downloading = false;
 
   String get _safeFilename => sanitizeAttachmentFilename(widget.filename);
@@ -86,10 +91,16 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
   Future<void> _download() async {
     if (_downloading) return;
     final fileSize = widget.fileSize;
+    var maxSizeBytes = _largeDownloadWarningBytes;
     if (fileSize != null &&
         fileSize > _largeDownloadWarningBytes &&
         !await _confirmLargeDownload(fileSize)) {
       return;
+    }
+    if (fileSize != null && fileSize > _largeDownloadWarningBytes) {
+      maxSizeBytes = fileSize
+          .clamp(_largeDownloadWarningBytes, _maximumManualDownloadBytes)
+          .toInt();
     }
     if (!mounted) return;
     setState(() => _downloading = true);
@@ -99,6 +110,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
       final bytes = widget.mediaSourceJson != null
           ? await rust.downloadMediaSourceBytes(
               mediaSourceJson: widget.mediaSourceJson!,
+              maxSizeBytes: maxSizeBytes,
             )
           : widget.imageUrl != null
           ? await rust.downloadMediaBytes(mxcUrl: widget.imageUrl!)

@@ -122,6 +122,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       try {
         final bytes = await rust.downloadMediaSourceBytes(
           mediaSourceJson: mediaSourceJson,
+          maxSizeBytes: 16 * 1024 * 1024,
         );
         if (mounted) {
           setState(() => _decryptedBytes = Uint8List.fromList(bytes));

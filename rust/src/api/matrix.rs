@@ -21,6 +21,7 @@ use matrix_sdk::{
 };
 use once_cell::sync::Lazy;
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::io::{Cursor, Read};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -3096,27 +3097,148 @@ pub async fn download_media_bytes(mxc_url: String) -> Option<Vec<u8>> {
     }
 }
 
+fn media_download_limit(max_size_bytes: i32) -> Result<usize, String> {
+    usize::try_from(max_size_bytes)
+        .ok()
+        .filter(|limit| *limit > 0)
+        .ok_or_else(|| "Media download limit must be positive.".to_string())
+}
+
+fn ensure_media_content_length(content_length: Option<u64>, limit: usize) -> Result<(), String> {
+    if content_length.is_some_and(|length| length > limit as u64) {
+        return Err(format!("Media exceeds the {limit}-byte download limit."));
+    }
+    Ok(())
+}
+
+fn append_media_chunk(content: &mut Vec<u8>, chunk: &[u8], limit: usize) -> Result<(), String> {
+    let next_length = content
+        .len()
+        .checked_add(chunk.len())
+        .ok_or_else(|| "Media download is too large.".to_string())?;
+    if next_length > limit {
+        return Err(format!("Media exceeds the {limit}-byte download limit."));
+    }
+    content.extend_from_slice(chunk);
+    Ok(())
+}
+
+fn media_download_url(
+    client: &Client,
+    source: &matrix_sdk::ruma::events::room::MediaSource,
+) -> Result<url::Url, String> {
+    let mxc_url = match source {
+        matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+        matrix_sdk::ruma::events::room::MediaSource::Encrypted(file) => file.url.to_string(),
+    };
+    let mxc_url = url::Url::parse(&mxc_url).map_err(|e| format!("Invalid media URL: {e}"))?;
+    if mxc_url.scheme() != "mxc" {
+        return Err("Media URL must use the mxc scheme.".to_string());
+    }
+    let server_name = mxc_url
+        .host_str()
+        .filter(|server_name| !server_name.is_empty())
+        .ok_or("Media URL is missing a server name.")?;
+    let server_name = match mxc_url.port() {
+        Some(port) => format!("{server_name}:{port}"),
+        None => server_name.to_string(),
+    };
+    let media_id = mxc_url.path().trim_start_matches('/');
+    if media_id.is_empty() {
+        return Err("Media URL is missing a media ID.".to_string());
+    }
+
+    let mut url = client.homeserver();
+    url.set_path("/");
+    url.set_query(None);
+    url.set_fragment(None);
+    let mut segments = url
+        .path_segments_mut()
+        .map_err(|_| "Homeserver URL cannot contain path segments.".to_string())?;
+    segments.extend([
+        "_matrix",
+        "client",
+        "v1",
+        "media",
+        "download",
+        &server_name,
+        media_id,
+    ]);
+    drop(segments);
+    Ok(url)
+}
+
+fn decrypt_media_bytes(
+    encrypted: Vec<u8>,
+    file: matrix_sdk::ruma::events::room::EncryptedFile,
+    limit: usize,
+) -> Result<Vec<u8>, String> {
+    let capacity = encrypted.len();
+    let mut cursor = Cursor::new(encrypted);
+    let mut decryptor = matrix_sdk_base::crypto::AttachmentDecryptor::new(&mut cursor, file.into())
+        .map_err(|e| format!("Invalid encrypted media: {e}"))?;
+    let mut decrypted = Vec::with_capacity(capacity);
+    decryptor
+        .by_ref()
+        .take(limit as u64 + 1)
+        .read_to_end(&mut decrypted)
+        .map_err(|e| format!("Media decryption failed: {e}"))?;
+    if decrypted.len() > limit {
+        return Err(format!("Media exceeds the {limit}-byte download limit."));
+    }
+    Ok(decrypted)
+}
+
 /// Download a Matrix media source, decrypting and integrity-checking encrypted
-/// attachments through the SDK when necessary.
+/// attachments through the SDK when necessary. The response is read in bounded
+/// chunks so automatic media previews cannot allocate unbounded memory.
 #[frb]
-pub async fn download_media_source_bytes(media_source_json: String) -> Result<Vec<u8>, String> {
-    use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+pub async fn download_media_source_bytes(
+    media_source_json: String,
+    max_size_bytes: i32,
+) -> Result<Vec<u8>, String> {
+    use futures_util::StreamExt;
 
     let client = get_client().await.ok_or("No client created.")?;
     let source: matrix_sdk::ruma::events::room::MediaSource =
         serde_json::from_str(&media_source_json)
             .map_err(|e| format!("Invalid media source: {e}"))?;
-    client
-        .media()
-        .get_media_content(
-            &MediaRequestParameters {
-                source,
-                format: MediaFormat::File,
-            },
-            true,
-        )
+    let limit = media_download_limit(max_size_bytes)?;
+    let url = media_download_url(&client, &source)?;
+    let session = client
+        .matrix_auth()
+        .session()
+        .ok_or("No authenticated session.")?;
+    let response = client
+        .http_client()
+        .get(url)
+        .bearer_auth(session.tokens.access_token)
+        .send()
         .await
-        .map_err(|e| format!("Media download or decryption failed: {e}"))
+        .map_err(|e| format!("Media download failed: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Media download failed: {e}"))?;
+    ensure_media_content_length(response.content_length(), limit)?;
+
+    let mut encrypted = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Media download failed: {e}"))?;
+        append_media_chunk(&mut encrypted, &chunk, limit)?;
+    }
+
+    let content = match source {
+        matrix_sdk::ruma::events::room::MediaSource::Encrypted(file) => {
+            decrypt_media_bytes(encrypted, *file, limit)?
+        }
+        matrix_sdk::ruma::events::room::MediaSource::Plain(_) => encrypted,
+    };
+    app_log(
+        "info",
+        "media",
+        format!("download_media_source_bytes: {} bytes", content.len()),
+    );
+    Ok(content)
 }
 
 /// Get the current access token for authenticated media requests.
@@ -5408,4 +5530,47 @@ pub async fn get_messages_before(
     let client = get_client().await.ok_or("No client created.")?;
     let room = get_room_by_id(&client, &room_id)?;
     sdk_timeline::get_messages_before(&client, &room, &from_event_id, limit).await
+}
+
+#[cfg(test)]
+mod media_download_tests {
+    use super::{
+        append_media_chunk, ensure_media_content_length, media_download_limit, media_download_url,
+    };
+    use matrix_sdk::Client;
+
+    #[test]
+    fn media_download_limit_rejects_non_positive_values() {
+        assert!(media_download_limit(0).is_err());
+        assert!(media_download_limit(-1).is_err());
+        assert_eq!(media_download_limit(1024), Ok(1024));
+    }
+
+    #[test]
+    fn media_download_refuses_oversized_headers_and_streams() {
+        assert!(ensure_media_content_length(Some(9), 8).is_err());
+        assert!(ensure_media_content_length(None, 8).is_ok());
+
+        let mut content = vec![1, 2, 3];
+        assert!(append_media_chunk(&mut content, &[4, 5], 4).is_err());
+        assert_eq!(content, [1, 2, 3]);
+        assert!(append_media_chunk(&mut content, &[4], 4).is_ok());
+        assert_eq!(content, [1, 2, 3, 4]);
+    }
+
+    #[tokio::test]
+    async fn media_download_url_uses_the_homeserver_and_mxc_port() {
+        let client = Client::new(url::Url::parse("https://matrix.example/").unwrap())
+            .await
+            .unwrap();
+        let source =
+            serde_json::from_str(r#"{"url":"mxc://media.example:8448/media-id"}"#).unwrap();
+
+        let url = media_download_url(&client, &source).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://matrix.example/_matrix/client/v1/media/download/media.example:8448/media-id"
+        );
+    }
 }
