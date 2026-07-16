@@ -238,7 +238,7 @@
 			buildConfigurationList = 33CC10FB2044A3C60003C045 /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
 				DB745F8FA8CC021CE5111A67 /* [CP] Check Pods Manifest.lock */,
-				08A2573414BE0529B550B825 /* Build Rust Library and Embed Framework */,
+				EAAD8A13F19CEF5E90998E04 /* Build Rust Library and Embed Framework */,
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
@@ -333,24 +333,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		08A2573414BE0529B550B825 /* Build Rust Library and Embed Framework */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Build Rust Library and Embed Framework";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\n\nARCH_NAME=\"$(uname -m)\"\nif [ \"$ARCH_NAME\" = \"arm64\" ]; then\n  RUST_TARGET=\"aarch64-apple-darwin\"\nelse\n  RUST_TARGET=\"x86_64-apple-darwin\"\nfi\n\ncd \"${SRCROOT}/../rust\"\ncargo build --target \"$RUST_TARGET\"\n\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  PROFILE=\"debug\"\nelse\n  PROFILE=\"release\"\nfi\n\nFRAMEWORK_DIR=\"${SRCROOT}/../rust/target/rust_lib_matter.framework\"\n\n# Ensure framework skeleton exists (prepare_command should have\n# created it at pod install time, but be safe if it was cleaned).\nmkdir -p \"$FRAMEWORK_DIR/Versions/A/Resources\"\nif [ ! -f \"$FRAMEWORK_DIR/Versions/A/Resources/Info.plist\" ]; then\n  python3 -c \"import plistlib; plistlib.dump({'CFBundleDevelopmentRegion':'en','CFBundleExecutable':'rust_lib_matter','CFBundleIdentifier':'moe.aks.matter.rust-lib-matter','CFBundleInfoDictionaryVersion':'6.0','CFBundleName':'rust_lib_matter','CFBundlePackageType':'FMWK','CFBundleShortVersionString':'1.0','CFBundleVersion':'1'}, open('$FRAMEWORK_DIR/Versions/A/Resources/Info.plist','wb'))\"\n  ln -sfh A \"$FRAMEWORK_DIR/Versions/Current\"\n  ln -sfh \"Versions/Current/rust_lib_matter\" \"$FRAMEWORK_DIR/rust_lib_matter\"\n  ln -sfh \"Versions/Current/Resources\" \"$FRAMEWORK_DIR/Resources\"\nfi\n\n# Copy the built dylib into the framework\ncp -f \"${SRCROOT}/../rust/target/$RUST_TARGET/$PROFILE/librust_lib_matter.dylib\"   \"$FRAMEWORK_DIR/Versions/A/rust_lib_matter\"\ninstall_name_tool -id \"@rpath/rust_lib_matter.framework/rust_lib_matter\"   \"$FRAMEWORK_DIR/Versions/A/rust_lib_matter\"\n\n# Copy the fully-populated framework into the app bundle's Frameworks dir.\n# $TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH is the correct path on the\n# Runner target (e.g. .../Debug/matter_temp.app/Contents/Frameworks).\nmkdir -p \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\nrm -rf \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/rust_lib_matter.framework\"\ncp -Rf \"$FRAMEWORK_DIR\" \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/\"\n";
-		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -449,6 +431,24 @@
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
+		};
+		EAAD8A13F19CEF5E90998E04 /* Build Rust Library and Embed Framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Library and Embed Framework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\nARCH_NAME=\"$(uname -m)\"\nif [ \"$ARCH_NAME\" = \"arm64\" ]; then\n  RUST_TARGET=\"aarch64-apple-darwin\"\nelse\n  RUST_TARGET=\"x86_64-apple-darwin\"\nfi\n\ncd \"${SRCROOT}/../rust\"\n\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  PROFILE=\"debug\"\n  cargo build --target \"$RUST_TARGET\"\nelse\n  PROFILE=\"release\"\n  cargo build --target \"$RUST_TARGET\" --release\nfi\n\nFRAMEWORK_DIR=\"${SRCROOT}/../rust/target/$RUST_TARGET/$PROFILE/rust_lib_matter.framework\"\n\n# Ensure framework skeleton exists (prepare_command should have\n# created it at pod install time, but be safe if it was cleaned).\nmkdir -p \"$FRAMEWORK_DIR/Versions/A/Resources\"\nif [ ! -f \"$FRAMEWORK_DIR/Versions/A/Resources/Info.plist\" ]; then\n  python3 -c \"import plistlib; plistlib.dump({'CFBundleDevelopmentRegion':'en','CFBundleExecutable':'rust_lib_matter','CFBundleIdentifier':'moe.aks.matter.rust-lib-matter','CFBundleInfoDictionaryVersion':'6.0','CFBundleName':'rust_lib_matter','CFBundlePackageType':'FMWK','CFBundleShortVersionString':'1.0','CFBundleVersion':'1'}, open('$FRAMEWORK_DIR/Versions/A/Resources/Info.plist','wb'))\"\n  ln -sfh A \"$FRAMEWORK_DIR/Versions/Current\"\n  ln -sfh \"Versions/Current/rust_lib_matter\" \"$FRAMEWORK_DIR/rust_lib_matter\"\n  ln -sfh \"Versions/Current/Resources\" \"$FRAMEWORK_DIR/Resources\"\nfi\n\n# Copy the built dylib into the framework\ncp -f \"${SRCROOT}/../rust/target/$RUST_TARGET/$PROFILE/librust_lib_matter.dylib\"   \"$FRAMEWORK_DIR/Versions/A/rust_lib_matter\"\ninstall_name_tool -id \"@rpath/rust_lib_matter.framework/rust_lib_matter\"   \"$FRAMEWORK_DIR/Versions/A/rust_lib_matter\"\n\n# Code sign the framework\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n  /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --timestamp=none --preserve-metadata=identifier,entitlements \"$FRAMEWORK_DIR\"\nfi\n\n# Copy the fully-populated framework into the app bundle's Frameworks dir.\n# $TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH is the correct path on the\n# Runner target (e.g. .../Debug/matter_temp.app/Contents/Frameworks).\nmkdir -p \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\nrm -rf \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/rust_lib_matter.framework\"\ncp -Rf \"$FRAMEWORK_DIR\" \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
