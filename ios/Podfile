@@ -1,5 +1,4 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '13.0'
+platform :ios, '13.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -31,6 +30,9 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  pod 'rust_lib_matter', :path => '.'
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
@@ -39,5 +41,62 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)'
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+    end
+  end
+
+  # --- Add script phase to Runner target to build Rust + embed framework ---
+  # This runs on the Runner target so it has access to the correct
+  # $TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH (the app bundle's Frameworks dir).
+  main_project = installer.aggregate_targets.first.user_project
+  runner_target = main_project.targets.find { |t| t.name == 'Runner' }
+
+  phase_name = 'Build Rust Library and Embed Framework'
+  existing = runner_target.shell_script_build_phases.find { |p| p.name == phase_name }
+  unless existing
+    phase = runner_target.new_shell_script_build_phase
+    phase.name = phase_name
+    phase.shell_script = <<~SCRIPT
+      set -euo pipefail
+
+      cd "${SRCROOT}/../rust"
+      cargo build --target aarch64-apple-ios
+
+      if [ "$CONFIGURATION" = "Debug" ]; then
+        PROFILE="debug"
+      else
+        PROFILE="release"
+      fi
+
+      FRAMEWORK_DIR="${SRCROOT}/../rust/target/rust_lib_matter.framework"
+
+      # Ensure framework skeleton exists (prepare_command should have
+      # created it at pod install time, but be safe if it was cleaned).
+      mkdir -p "$FRAMEWORK_DIR"
+      if [ ! -f "$FRAMEWORK_DIR/Info.plist" ]; then
+        python3 -c "import plistlib; plistlib.dump({'CFBundleDevelopmentRegion':'en','CFBundleExecutable':'rust_lib_matter','CFBundleIdentifier':'moe.aks.matter.rust-lib-matter','CFBundleInfoDictionaryVersion':'6.0','CFBundleName':'rust_lib_matter','CFBundlePackageType':'FMWK','CFBundleShortVersionString':'1.0','CFBundleVersion':'1'}, open('$FRAMEWORK_DIR/Info.plist','wb'))"
+      fi
+
+      # Copy the built dylib into the framework
+      cp -f "${SRCROOT}/../rust/target/$RUST_TARGET/$PROFILE/librust_lib_matter.dylib" \
+        "$FRAMEWORK_DIR/rust_lib_matter"
+      install_name_tool -id "@rpath/rust_lib_matter.framework/rust_lib_matter" \
+        "$FRAMEWORK_DIR/rust_lib_matter"
+
+      # Copy the fully-populated framework into the app bundle's Frameworks dir.
+      # $TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH is the correct path on the
+      # Runner target (e.g. .../Debug/matter_temp.app/Contents/Frameworks).
+      mkdir -p "${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+      rm -rf "${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/rust_lib_matter.framework"
+      cp -Rf "$FRAMEWORK_DIR" "${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/"
+    SCRIPT
+
+    # Move to position 1 (right after Target Dependencies),
+    # so cargo runs early in the Runner's build.
+    index = runner_target.build_phases.index(phase)
+    phase = runner_target.build_phases.delete_at(index)
+    runner_target.build_phases.insert(1, phase)
   end
 end
