@@ -1,8 +1,8 @@
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import 'file_download_saver.dart';
 
 /// Converts an untrusted attachment name into a portable suggested filename.
 @visibleForTesting
@@ -105,8 +105,6 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     if (!mounted) return;
     setState(() => _downloading = true);
     try {
-      final location = await getSaveLocation(suggestedName: _safeFilename);
-      if (location == null) return;
       final bytes = widget.mediaSourceJson != null
           ? await rust.downloadMediaSourceBytes(
               mediaSourceJson: widget.mediaSourceJson!,
@@ -117,12 +115,9 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
           : null;
       if (bytes == null || bytes.isEmpty) throw Exception('文件不可用');
 
-      final file = XFile.fromData(
-        bytes,
-        name: _safeFilename,
-        mimeType: 'application/octet-stream',
-      );
-      await file.saveTo(location.path);
+      if (!await saveDownloadedFile(filename: _safeFilename, bytes: bytes)) {
+        return;
+      }
       if (!mounted) return;
       _showMessage('文件已保存');
     } catch (error) {
