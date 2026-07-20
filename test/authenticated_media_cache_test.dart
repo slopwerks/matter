@@ -1,7 +1,10 @@
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/providers/authenticated_media_cache.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('detects authenticated Matrix media URLs', () {
     expect(
       isMatrixAuthenticatedMediaUrl(
@@ -75,5 +78,15 @@ void main() {
       ),
       isNull,
     );
+  });
+
+  test('authenticated media cache manager supports resized images', () {
+    final manager = authenticatedMediaCacheManager(
+      url: 'https://example.org/_matrix/client/v1/media/thumbnail/server/id',
+      userId: '@alice:example.org',
+      homeserver: 'https://example.org',
+    );
+
+    expect(manager, isA<ImageCacheManager>());
   });
 }

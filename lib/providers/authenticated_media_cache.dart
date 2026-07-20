@@ -62,13 +62,18 @@ Future<void> clearAuthenticatedMediaCacheForSession({
 }
 
 CacheManager _newCacheManager(String scope) {
-  return CacheManager(
+  return _AuthenticatedMediaCacheManager(
     Config(
       '$_cachePrefix-$scope',
       stalePeriod: const Duration(days: 30),
       maxNrOfCacheObjects: 500,
     ),
   );
+}
+
+class _AuthenticatedMediaCacheManager extends CacheManager
+    with ImageCacheManager {
+  _AuthenticatedMediaCacheManager(super.config);
 }
 
 String _homeserverScope(Uri uri, String? homeserver) {
