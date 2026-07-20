@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/diagnostics/diagnostic_exporter.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
@@ -27,9 +28,12 @@ class LogViewerPage extends ConsumerStatefulWidget {
 
 class _LogViewerPageState extends ConsumerState<LogViewerPage> {
   final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
   bool _autoScroll = true;
+  bool _exporting = false;
   String? _levelFilter;
   String? _tagFilter;
+  String _searchQuery = '';
   StreamSubscription<rust.AppLogEntry>? _logSubscription;
 
   @override
@@ -51,9 +55,9 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
     ref.read(logStreamActiveProvider.notifier).value = true;
     _logSubscription = stream.listen((entry) {
       final current = ref.read(logEntriesProvider);
-      if (current.length > 500) {
+      if (current.length >= 5000) {
         ref.read(logEntriesProvider.notifier).value = [
-          ...current.skip(current.length - 499),
+          ...current.skip(current.length - 4999),
           entry,
         ];
       } else {
@@ -66,7 +70,32 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
   void dispose() {
     _logSubscription?.cancel();
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _exportDiagnostics() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final saved = await const DiagnosticExporter().export();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(saved ? '诊断报告已导出' : '已取消导出')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出诊断报告失败：$error')));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  void _clearLogs() {
+    rust.clearAppLogs();
+    ref.read(logEntriesProvider.notifier).value = [];
   }
 
   void _scrollToBottom() {
@@ -84,10 +113,19 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
   @override
   Widget build(BuildContext context) {
     final allLogs = ref.watch(logEntriesProvider);
+    final tags = allLogs.map((log) => log.tag).toSet().toList()..sort();
+    final errorCount = allLogs.where((log) => log.level == 'error').length;
+    final query = _searchQuery.trim().toLowerCase();
 
     final filtered = allLogs.where((log) {
       if (_levelFilter != null && log.level != _levelFilter) return false;
       if (_tagFilter != null && log.tag != _tagFilter) return false;
+      if (query.isNotEmpty &&
+          !log.message.toLowerCase().contains(query) &&
+          !log.tag.toLowerCase().contains(query) &&
+          !log.level.toLowerCase().contains(query)) {
+        return false;
+      }
       return true;
     }).toList();
 
@@ -107,8 +145,8 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
           ),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
-          '日志',
+        title: Text(
+          '日志 (${allLogs.length})',
           style: TextStyle(
             color: AppColors.onBackground,
             fontSize: 17,
@@ -116,6 +154,24 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
           ),
         ),
         actions: [
+          _exporting
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(
+                    Icons.file_download_outlined,
+                    color: AppColors.onSurfaceVariant,
+                    size: 20,
+                  ),
+                  onPressed: _exportDiagnostics,
+                  tooltip: '导出诊断报告',
+                ),
           IconButton(
             icon: Icon(
               _autoScroll
@@ -145,9 +201,9 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
             },
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'all', child: Text('全部级别')),
-              const PopupMenuItem(value: 'error', child: Text('❌ Error')),
-              const PopupMenuItem(value: 'warn', child: Text('⚠️ Warn')),
-              const PopupMenuItem(value: 'info', child: Text('ℹ️ Info')),
+              const PopupMenuItem(value: 'error', child: Text('错误')),
+              const PopupMenuItem(value: 'warn', child: Text('警告')),
+              const PopupMenuItem(value: 'info', child: Text('信息')),
             ],
           ),
           IconButton(
@@ -156,51 +212,89 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
               color: AppColors.onSurfaceVariant,
               size: 20,
             ),
-            onPressed: () {
-              ref.read(logEntriesProvider.notifier).value = [];
-            },
+            onPressed: allLogs.isEmpty ? null : _clearLogs,
             tooltip: '清空日志',
           ),
         ],
       ),
       body: Column(
         children: [
-          // Status bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             color: AppColors.surfaceVariant.withValues(alpha: 0.3),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildFilterChip(
-                  label: '全部',
-                  selected: _tagFilter == null,
-                  onTap: () => setState(() => _tagFilter = null),
+                Text(
+                  '显示 ${filtered.length}/${allLogs.length} 条${errorCount > 0 ? '，错误 $errorCount 条' : ''}',
+                  style: const TextStyle(
+                    color: AppColors.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
-                const SizedBox(width: 6),
-                _buildFilterChip(
-                  label: 'auth',
-                  selected: _tagFilter == 'auth',
-                  onTap: () => setState(() => _tagFilter = 'auth'),
-                ),
-                const SizedBox(width: 6),
-                _buildFilterChip(
-                  label: 'sync',
-                  selected: _tagFilter == 'sync',
-                  onTap: () => setState(() => _tagFilter = 'sync'),
-                ),
-                const SizedBox(width: 6),
-                _buildFilterChip(
-                  label: 'rooms',
-                  selected: _tagFilter == 'rooms',
-                  onTap: () => setState(() => _tagFilter = 'rooms'),
-                ),
-                const SizedBox(width: 6),
-                _buildFilterChip(
-                  label: 'media',
-                  selected: _tagFilter == 'media',
-                  onTap: () => setState(() => _tagFilter = 'media'),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip(
+                        label: '全部',
+                        selected: _tagFilter == null,
+                        onTap: () => setState(() => _tagFilter = null),
+                      ),
+                      for (final tag in tags) ...[
+                        const SizedBox(width: 6),
+                        _buildFilterChip(
+                          label: tag,
+                          selected: _tagFilter == tag,
+                          onTap: () => setState(() => _tagFilter = tag),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _searchQuery = value),
+              style: const TextStyle(
+                color: AppColors.onBackground,
+                fontSize: 13,
+              ),
+              decoration: InputDecoration(
+                hintText: '搜索日志内容或标签',
+                hintStyle: const TextStyle(
+                  color: AppColors.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: AppColors.onSurfaceVariant,
+                  size: 20,
+                ),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        color: AppColors.onSurfaceVariant,
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                        tooltip: '清除搜索',
+                      ),
+                filled: true,
+                fillColor: AppColors.surfaceVariant.withValues(alpha: 0.45),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
             ),
           ),
           Expanded(
