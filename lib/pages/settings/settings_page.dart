@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/app_update/app_update_service.dart';
 import '../../features/app_update/update_dialog.dart';
+import '../../features/diagnostics/diagnostic_exporter.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
@@ -24,6 +25,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   List<rust.AccountInfo> _accounts = [];
   String _versionLabel = '读取中…';
   bool _checkingForUpdate = false;
+  bool _exportingDiagnostics = false;
 
   @override
   void initState() {
@@ -77,6 +79,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ).showSnackBar(SnackBar(content: Text('检查更新失败：$error')));
     } finally {
       if (mounted) setState(() => _checkingForUpdate = false);
+    }
+  }
+
+  Future<void> _exportDiagnostics() async {
+    if (_exportingDiagnostics) return;
+    setState(() => _exportingDiagnostics = true);
+    try {
+      final saved = await const DiagnosticExporter().export();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(saved ? '诊断报告已导出' : '已取消导出')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出诊断报告失败：$error')));
+    } finally {
+      if (mounted) setState(() => _exportingDiagnostics = false);
     }
   }
 
@@ -453,6 +474,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ),
                           );
                         },
+                      ),
+                      _SettingItem(
+                        icon: Icons.file_download_outlined,
+                        iconColor: AppColors.primary,
+                        title: '导出诊断报告',
+                        subtitle: '包含日志、设备及版本信息',
+                        trailing: _exportingDiagnostics
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        onTap: _exportingDiagnostics
+                            ? null
+                            : _exportDiagnostics,
                       ),
                     ],
                   ),

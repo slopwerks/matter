@@ -47,13 +47,13 @@ pub struct AppLogEntry {
 }
 
 static APP_LOG_TX: Lazy<tokio::sync::broadcast::Sender<AppLogEntry>> =
-    Lazy::new(|| tokio::sync::broadcast::channel(2000).0);
+    Lazy::new(|| tokio::sync::broadcast::channel(LOG_RING_CAP).0);
 
-/// Ring buffer that keeps the last 500 log entries so late-joining
+/// Ring buffer that keeps the last 5,000 log entries so late-joining
 /// subscribers (Dart) can retrieve them via `get_recent_logs()`.
 static LOG_RING: Lazy<std::sync::Mutex<VecDeque<AppLogEntry>>> =
     Lazy::new(|| std::sync::Mutex::new(VecDeque::new()));
-const LOG_RING_CAP: usize = 500;
+const LOG_RING_CAP: usize = 5_000;
 
 fn app_log(level: &str, tag: &str, message: String) {
     let ts = SystemTime::now()
@@ -88,15 +88,23 @@ fn app_log(level: &str, tag: &str, message: String) {
 pub fn watch_app_logs(sink: crate::frb_generated::StreamSink<AppLogEntry>) {
     let mut rx = APP_LOG_TX.subscribe();
     std::thread::spawn(move || {
-        while let Ok(entry) = rx.blocking_recv() {
-            if sink.add(entry).is_err() {
-                break;
+        loop {
+            match rx.blocking_recv() {
+                Ok(entry) => {
+                    if sink.add(entry).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Continue listening; the ring buffer remains available for export.
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }
     });
 }
 
-/// Retrieve all buffered logs (up to 500 entries).
+/// Retrieve all buffered logs (up to 5,000 entries).
 /// Call this once after connecting the stream to show historical logs.
 #[frb(sync)]
 pub fn get_recent_logs() -> Vec<AppLogEntry> {
@@ -104,6 +112,14 @@ pub fn get_recent_logs() -> Vec<AppLogEntry> {
         ring.iter().cloned().collect()
     } else {
         vec![]
+    }
+}
+
+/// Clear the buffered diagnostic logs.
+#[frb(sync)]
+pub fn clear_app_logs() {
+    if let Ok(mut ring) = LOG_RING.lock() {
+        ring.clear();
     }
 }
 

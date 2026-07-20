@@ -16,10 +16,13 @@ part 'matrix.freezed.dart';
 Stream<AppLogEntry> watchAppLogs() =>
     RustLib.instance.api.crateApiMatrixWatchAppLogs();
 
-/// Retrieve all buffered logs (up to 500 entries).
+/// Retrieve all buffered logs (up to 5,000 entries).
 /// Call this once after connecting the stream to show historical logs.
 List<AppLogEntry> getRecentLogs() =>
     RustLib.instance.api.crateApiMatrixGetRecentLogs();
+
+/// Clear the buffered diagnostic logs.
+void clearAppLogs() => RustLib.instance.api.crateApiMatrixClearAppLogs();
 
 /// Create a Matrix client for the given homeserver URL.
 /// Must be called before any registration / login attempt.

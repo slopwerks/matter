@@ -64,6 +64,7 @@ dependencies:
   geolocator: ^14.0.3
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
+  device_info_plus: ^13.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
