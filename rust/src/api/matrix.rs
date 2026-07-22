@@ -2507,7 +2507,7 @@ pub struct SyncNotification {
     pub rooms_updated: i32,
 }
 
-/// Perform an initial sync with a 30-second timeout.
+/// Perform an initial sync with a 10-second timeout.
 /// Uses traditional /sync for the initial load (Sliding Sync needs
 /// this data in the state store first).
 #[frb]
@@ -2534,7 +2534,7 @@ pub async fn sync_once() -> Result<(), String> {
         .map_err(|e| format!("Failed to subscribe to the event cache: {e}"))?;
 
     let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(10),
         client.sync_once(matrix_sdk::config::SyncSettings::default()),
     )
     .await;
@@ -2558,12 +2558,12 @@ pub async fn sync_once() -> Result<(), String> {
         }
         Err(_) => {
             let msg = format!(
-                "sync_once: timed out after 30s for user {} (homeserver: {hs})",
+                "sync_once: timed out after 10s for user {} (homeserver: {hs})",
                 user_id
             );
             app_log("error", "sync", msg.clone());
             set_connection_status(ConnectionStatus::Disconnected);
-            Err("Sync timed out after 30 seconds. Check your network connection and homeserver URL.".to_string())
+            Err("Sync timed out after 10 seconds. Check your network connection and homeserver URL.".to_string())
         }
     }
 }

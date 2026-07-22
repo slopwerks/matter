@@ -113,20 +113,13 @@ Future<void> bootstrapActiveSessionSync(
   required String startSyncLabel,
 }) async {
   var initialSyncSucceeded = false;
-  for (var attempt = 0; attempt < 3; attempt++) {
-    try {
-      await rust.syncOnce();
-      initialSyncSucceeded = true;
-      ref.read(connectionProvider.notifier).value =
-          AppConnectionState.connected;
-      invalidateSessionCollections(ref);
-      break;
-    } catch (e) {
-      debugPrint('$attemptLabel ${attempt + 1} failed: $e');
-      if (attempt < 2) {
-        await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
-      }
-    }
+  try {
+    await rust.syncOnce();
+    initialSyncSucceeded = true;
+    ref.read(connectionProvider.notifier).value = AppConnectionState.connected;
+    invalidateSessionCollections(ref);
+  } catch (e) {
+    debugPrint('$attemptLabel failed: $e');
   }
 
   if (!initialSyncSucceeded) {

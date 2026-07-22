@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -179,17 +181,20 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       return;
     }
 
-    await bootstrapActiveSessionSync(
-      ref,
-      attemptLabel: 'Restore sync attempt',
-      startSyncLabel: 'startSync after restore failed',
-    );
-
-    // Signal that Rust APIs are safe to call.
+    // The restored Matrix store already contains the previous room list. Let
+    // it render while the network refresh runs, rather than holding the UI
+    // behind a potentially slow initial sync.
     ref.read(sessionReadyProvider.notifier).value = true;
     if (mounted) {
       setState(() => _restoring = false);
     }
+    unawaited(
+      bootstrapActiveSessionSync(
+        ref,
+        attemptLabel: 'Restore sync attempt',
+        startSyncLabel: 'startSync after restore failed',
+      ),
+    );
   }
 
   @override
