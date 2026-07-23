@@ -193,6 +193,33 @@ void main() {
       expect(find.text('Room'), findsOneWidget);
     });
 
+    testWidgets('uses the selection callback instead of pushing a route', (
+      tester,
+    ) async {
+      ChatRoom? selectedRoom;
+      final selected = room();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatListItem(
+                room: selected,
+                isSelected: true,
+                onRoomSelected: (room) => selectedRoom = room,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Room'));
+      await tester.pump();
+
+      expect(selectedRoom, selected);
+      expect(find.byType(ChatListItem), findsOneWidget);
+    });
+
     testWidgets('shows invite actions for invited rooms', (tester) async {
       await tester.pumpWidget(
         ProviderScope(

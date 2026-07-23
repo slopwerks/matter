@@ -31,12 +31,16 @@ class ChatListItem extends ConsumerWidget {
   final ChatRoom room;
   final bool dense;
   final bool showRoomTypeIcon;
+  final ValueChanged<ChatRoom>? onRoomSelected;
+  final bool isSelected;
 
   const ChatListItem({
     super.key,
     required this.room,
     this.dense = false,
     this.showRoomTypeIcon = true,
+    this.onRoomSelected,
+    this.isSelected = false,
   });
 
   @override
@@ -60,8 +64,13 @@ class ChatListItem extends ConsumerWidget {
         : chatListPreview(room);
 
     return InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.button),
       onTap: () {
         if (isPendingMembership) return;
+        if (onRoomSelected case final onRoomSelected?) {
+          onRoomSelected(room);
+          return;
+        }
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => room.roomType == 'space'
@@ -85,7 +94,17 @@ class ChatListItem extends ConsumerWidget {
         );
       },
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: dense ? 6 : 8),
+        margin: onRoomSelected != null
+            ? const EdgeInsets.symmetric(horizontal: 8)
+            : null,
+        padding: EdgeInsets.symmetric(
+          horizontal: onRoomSelected != null ? 12 : 16,
+          vertical: dense ? 6 : 8,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.surfaceVariant : null,
+          borderRadius: BorderRadius.circular(AppRadii.button),
+        ),
         child: Row(
           children: [
             AppAvatar(

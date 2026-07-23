@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'pages/chat/chat_detail_page.dart';
 import 'pages/chat/chat_page.dart';
+import 'pages/chat/desktop_room_details_panel.dart';
 import 'pages/chat/space_page.dart';
 import 'pages/contacts/contacts_page.dart';
 import 'pages/settings/encryption_page.dart';
@@ -12,7 +14,11 @@ import 'providers/chat_provider.dart';
 import 'providers/navigation_provider.dart';
 import 'src/rust/api/matrix.dart' as rust;
 import 'theme/app_theme.dart';
+import 'widgets/app_avatar.dart';
 import 'widgets/liquid_glass.dart';
+import 'widgets/max_content_width.dart';
+
+enum _DesktopRoomSource { directMessages, ungroupedRooms, space }
 
 class MatterApp extends ConsumerStatefulWidget {
   const MatterApp({super.key});
@@ -26,7 +32,16 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   Timer? _verificationTimer;
   bool _checkingVerification = false;
   bool _verificationDialogOpen = false;
+  bool? _lastLayoutWasDesktop;
   final Set<String> _handledVerificationFlows = {};
+  rust.ChatRoom? _selectedRoom;
+  rust.Space? _selectedDesktopSpace;
+  _DesktopRoomSource _desktopRoomSource = _DesktopRoomSource.directMessages;
+  bool _showRoomDetails = false;
+  String? _lastActiveUserId;
+
+  static const double _desktopBreakpoint = 840;
+  static const double _desktopDetailsPaneBreakpoint = 1024;
 
   static const _pages = [
     ChatPage(),
@@ -125,6 +140,9 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   }
 
   void _onItemTapped(int index) {
+    if (ref.read(navigationIndexProvider) != index) {
+      ref.read(navigationIndexProvider.notifier).value = index;
+    }
     if (_pageController.hasClients) {
       _pageController.animateToPage(
         index,
@@ -134,12 +152,87 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     }
   }
 
+  void _selectRoom(rust.ChatRoom room) {
+    if (room.roomType == 'space') {
+      _showSpace(
+        rust.Space(id: room.id, name: room.name, avatarUrl: room.avatarUrl),
+      );
+      return;
+    }
+    if (_selectedRoom?.id == room.id) return;
+    setState(() => _selectedRoom = room);
+  }
+
+  void _showDirectMessages() {
+    ref.read(navigationIndexProvider.notifier).value = 0;
+    setState(() {
+      _desktopRoomSource = _DesktopRoomSource.directMessages;
+      _selectedDesktopSpace = null;
+      _selectedRoom = null;
+    });
+  }
+
+  void _showUngroupedRooms() {
+    ref.read(navigationIndexProvider.notifier).value = 0;
+    setState(() {
+      _desktopRoomSource = _DesktopRoomSource.ungroupedRooms;
+      _selectedDesktopSpace = null;
+      _selectedRoom = null;
+    });
+  }
+
+  void _showSpace(rust.Space space) {
+    ref.read(navigationIndexProvider.notifier).value = 0;
+    setState(() {
+      _desktopRoomSource = _DesktopRoomSource.space;
+      _selectedDesktopSpace = space;
+      _selectedRoom = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // Keep the sync stream listener alive for the app's lifetime.
     // Without watch(), the provider auto-disposes and stops receiving events.
     ref.watch(syncStreamProvider);
+    _syncDesktopSelectionAfterAccountChange(ref.watch(activeUserIdProvider));
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop = constraints.maxWidth >= _desktopBreakpoint;
+        _syncMobilePageAfterLayoutChange(isDesktop);
+        if (isDesktop) {
+          return _buildDesktopLayout(context, constraints);
+        }
+        return _buildMobileLayout();
+      },
+    );
+  }
+
+  void _syncDesktopSelectionAfterAccountChange(String? activeUserId) {
+    final previousUserId = _lastActiveUserId;
+    _lastActiveUserId = activeUserId;
+    if (previousUserId == null || previousUserId == activeUserId) return;
+
+    _selectedRoom = null;
+    _selectedDesktopSpace = null;
+    _desktopRoomSource = _DesktopRoomSource.directMessages;
+    _showRoomDetails = false;
+  }
+
+  void _syncMobilePageAfterLayoutChange(bool isDesktop) {
+    if (_lastLayoutWasDesktop == isDesktop) return;
+    _lastLayoutWasDesktop = isDesktop;
+    if (isDesktop) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _pageController.hasClients) {
+        _pageController.jumpToPage(ref.read(navigationIndexProvider));
+      }
+    });
+  }
+
+  Widget _buildMobileLayout() {
     return Scaffold(
       extendBody: true,
       body: PageView(
@@ -192,6 +285,322 @@ class _MatterAppState extends ConsumerState<MatterApp> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context, BoxConstraints constraints) {
+    final navigationIndex = ref.watch(navigationIndexProvider);
+    final selectedRoom = _selectedRoom;
+    final canShowRoomDetails =
+        constraints.maxWidth >= _desktopDetailsPaneBreakpoint;
+    final showRoomDetails =
+        canShowRoomDetails &&
+        _showRoomDetails &&
+        navigationIndex == 0 &&
+        selectedRoom != null;
+
+    return Scaffold(
+      body: Row(
+        children: [
+          _DesktopSidebar(
+            navigationIndex: navigationIndex,
+            roomSource: _desktopRoomSource,
+            selectedSpaceId: _selectedDesktopSpace?.id,
+            onDirectMessagesSelected: _showDirectMessages,
+            onUngroupedRoomsSelected: _showUngroupedRooms,
+            onSpaceSelected: _showSpace,
+            onNavigate: _onItemTapped,
+          ),
+          const VerticalDivider(width: 1, thickness: 1),
+          Expanded(
+            child: navigationIndex == 0
+                ? Row(
+                    children: [
+                      SizedBox(width: 320, child: _buildDesktopRoomList()),
+                      const VerticalDivider(width: 1, thickness: 1),
+                      Expanded(
+                        child: selectedRoom == null
+                            ? const _DesktopEmptyChat()
+                            : ChatDetailPage(
+                                key: ValueKey(selectedRoom.id),
+                                roomId: selectedRoom.id,
+                                roomName: selectedRoom.name,
+                                avatarUrl: selectedRoom.avatarUrl,
+                                isDm: selectedRoom.roomType == 'dm',
+                                subtitle: selectedRoom.unreadCount > 0
+                                    ? '${selectedRoom.unreadCount} 条未读消息'
+                                    : '在线',
+                                embedded: true,
+                                detailsPanelOpen: showRoomDetails,
+                                onToggleDetailsPanel: canShowRoomDetails
+                                    ? () => setState(
+                                        () => _showRoomDetails =
+                                            !_showRoomDetails,
+                                      )
+                                    : null,
+                              ),
+                      ),
+                      if (showRoomDetails) ...[
+                        const VerticalDivider(width: 1, thickness: 1),
+                        SizedBox(
+                          width: 300,
+                          child: DesktopRoomDetailsPanel(
+                            roomId: selectedRoom.id,
+                            roomName: selectedRoom.name,
+                            avatarUrl: selectedRoom.avatarUrl,
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : MaxContentWidth(child: _pages[navigationIndex]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopRoomList() {
+    return switch (_desktopRoomSource) {
+      _DesktopRoomSource.directMessages => ChatPage(
+        key: const ValueKey('desktop-direct-messages'),
+        embedded: true,
+        title: '私聊',
+        emptyLabel: '暂无私聊',
+        directMessagesOnly: true,
+        selectedRoomId: _selectedRoom?.id,
+        onRoomSelected: _selectRoom,
+      ),
+      _DesktopRoomSource.ungroupedRooms => ChatPage(
+        key: const ValueKey('desktop-ungrouped-rooms'),
+        embedded: true,
+        title: '未归属群组',
+        emptyLabel: '暂无未归属群组',
+        ungroupedRoomsOnly: true,
+        selectedRoomId: _selectedRoom?.id,
+        onRoomSelected: _selectRoom,
+      ),
+      _DesktopRoomSource.space => switch (_selectedDesktopSpace) {
+        final space? => ChatPage(
+          key: ValueKey('desktop-space:${space.id}'),
+          embedded: true,
+          title: space.name,
+          emptyLabel: '该空间暂无房间',
+          spaceId: space.id,
+          selectedRoomId: _selectedRoom?.id,
+          onRoomSelected: _selectRoom,
+        ),
+        null => const _DesktopEmptyRoomList(),
+      },
+    };
+  }
+}
+
+class _DesktopEmptyChat extends StatelessWidget {
+  const _DesktopEmptyChat();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: AppColors.background,
+      child: Center(
+        child: Text(
+          '选择一个聊天开始查看消息',
+          style: TextStyle(color: AppColors.onSurfaceVariant, fontSize: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopEmptyRoomList extends StatelessWidget {
+  const _DesktopEmptyRoomList();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: AppColors.background,
+      child: Center(
+        child: Text(
+          '选择一个空间',
+          style: TextStyle(color: AppColors.onSurfaceVariant, fontSize: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopSidebar extends ConsumerWidget {
+  final int navigationIndex;
+  final _DesktopRoomSource roomSource;
+  final String? selectedSpaceId;
+  final VoidCallback onDirectMessagesSelected;
+  final VoidCallback onUngroupedRoomsSelected;
+  final ValueChanged<rust.Space> onSpaceSelected;
+  final ValueChanged<int> onNavigate;
+
+  const _DesktopSidebar({
+    required this.navigationIndex,
+    required this.roomSource,
+    required this.selectedSpaceId,
+    required this.onDirectMessagesSelected,
+    required this.onUngroupedRoomsSelected,
+    required this.onSpaceSelected,
+    required this.onNavigate,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final spacesAsync = ref.watch(spacesProvider);
+    final isRoomsPage = navigationIndex == 0;
+
+    return SizedBox(
+      width: 80,
+      child: ColoredBox(
+        color: AppColors.surface,
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            _DesktopRailButton(
+              tooltip: '私聊',
+              selected:
+                  isRoomsPage &&
+                  roomSource == _DesktopRoomSource.directMessages,
+              onPressed: onDirectMessagesSelected,
+              icon: const Icon(Icons.person_rounded),
+            ),
+            _DesktopRailButton(
+              tooltip: '未归属群组',
+              selected:
+                  isRoomsPage &&
+                  roomSource == _DesktopRoomSource.ungroupedRooms,
+              onPressed: onUngroupedRoomsSelected,
+              icon: const Icon(Icons.forum_outlined),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Divider(height: 1),
+            ),
+            Expanded(
+              child: spacesAsync.when(
+                data: (spaces) => ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: spaces.length,
+                  itemBuilder: (context, index) {
+                    final space = spaces[index];
+                    return _DesktopRailButton(
+                      tooltip: space.name,
+                      selected: isRoomsPage && selectedSpaceId == space.id,
+                      onPressed: () => onSpaceSelected(space),
+                      icon: AppAvatar(
+                        fallback: space.name,
+                        size: 36,
+                        radius: 12,
+                        url: space.avatarUrl,
+                      ),
+                    );
+                  },
+                ),
+                loading: () => const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                ),
+                error: (_, _) => const SizedBox.shrink(),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Divider(height: 1),
+            ),
+            _DesktopRailButton(
+              tooltip: '管理空间',
+              selected: navigationIndex == 1,
+              onPressed: () => onNavigate(1),
+              icon: const Icon(Icons.workspaces_outline),
+            ),
+            _DesktopRailButton(
+              tooltip: '通讯录',
+              selected: navigationIndex == 2,
+              onPressed: () => onNavigate(2),
+              icon: const Icon(Icons.people_outline_rounded),
+            ),
+            _DesktopRailButton(
+              tooltip: '设置',
+              selected: navigationIndex == 3,
+              onPressed: () => onNavigate(3),
+              icon: const Icon(Icons.settings_outlined),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopRailButton extends StatelessWidget {
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onPressed;
+  final Widget icon;
+
+  const _DesktopRailButton({
+    required this.tooltip,
+    required this.selected,
+    required this.onPressed,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 80,
+        height: 52,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOutCubic,
+                  width: 3,
+                  height: selected ? 24 : 0,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+            Center(
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.surfaceVariant : null,
+                  borderRadius: BorderRadius.circular(AppRadii.tag),
+                ),
+                child: IconButton(
+                  onPressed: onPressed,
+                  icon: icon,
+                  color: selected ? AppColors.primary : AppColors.onSurface,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

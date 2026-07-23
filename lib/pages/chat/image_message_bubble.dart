@@ -365,7 +365,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     final maxHeight = widget.isSticker ? 160.0 : 280.0;
     final maxWidth = widget.isSticker
         ? 160.0
-        : MediaQuery.sizeOf(context).width * 0.65;
+        : (MediaQuery.sizeOf(context).width * 0.65)
+              .clamp(0.0, 480.0)
+              .toDouble();
     final aspectRatio = _imageAspectRatio;
 
     var width = maxWidth;

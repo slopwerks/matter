@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import '../../widgets/max_content_width.dart';
 import 'homeserver_list.dart';
 import 'homeserver_resolver.dart';
 
@@ -371,30 +372,33 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           slivers: [
             SliverFillRemaining(
               hasScrollBody: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 40),
-                    _buildHeader(),
-                    const SizedBox(height: 32),
-                    _buildTabs(),
-                    const SizedBox(height: 24),
-                    _buildHomeserverField(),
-                    const SizedBox(height: 20),
-                    if (_tabIndex == 0) ..._buildLoginFields(),
-                    if (_tabIndex == 1) ..._buildRegisterFields(),
-                    if (_tabIndex == 2) ..._buildTokenLoginFields(),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      _buildErrorBanner(),
+              child: MaxContentWidth(
+                maxWidth: 440,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 40),
+                      _buildHeader(),
+                      const SizedBox(height: 32),
+                      _buildTabs(),
+                      const SizedBox(height: 24),
+                      _buildHomeserverField(),
+                      const SizedBox(height: 20),
+                      if (_tabIndex == 0) ..._buildLoginFields(),
+                      if (_tabIndex == 1) ..._buildRegisterFields(),
+                      if (_tabIndex == 2) ..._buildTokenLoginFields(),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        _buildErrorBanner(),
+                      ],
+                      const SizedBox(height: 24),
+                      _buildActionButton(),
+                      const Spacer(),
+                      _buildFooter(),
                     ],
-                    const SizedBox(height: 24),
-                    _buildActionButton(),
-                    const Spacer(),
-                    _buildFooter(),
-                  ],
+                  ),
                 ),
               ),
             ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
+import '../../widgets/max_content_width.dart';
 
 class CreateChatPage extends ConsumerStatefulWidget {
   const CreateChatPage({super.key});
@@ -162,147 +163,151 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 8),
-            // Search / user ID input
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(AppRadii.surface),
-              ),
-              child: TextField(
-                controller: _searchController,
-                style: const TextStyle(
-                  color: AppColors.onBackground,
-                  fontSize: 15,
+      body: MaxContentWidth(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              // Search / user ID input
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(AppRadii.surface),
                 ),
-                decoration: const InputDecoration(
-                  hintText: '输入 @用户 ID 发起私聊',
-                  hintStyle: TextStyle(
-                    color: AppColors.onSurfaceVariant,
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(
+                    color: AppColors.onBackground,
                     fontSize: 15,
                   ),
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: AppColors.onSurfaceVariant,
-                    size: 20,
+                  decoration: const InputDecoration(
+                    hintText: '输入 @用户 ID 发起私聊',
+                    hintStyle: TextStyle(
+                      color: AppColors.onSurfaceVariant,
+                      fontSize: 15,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: AppColors.onSurfaceVariant,
+                      size: 20,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 14),
+                    isDense: true,
                   ),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 14),
-                  isDense: true,
+                  textInputAction: TextInputAction.go,
+                  onSubmitted: (value) {
+                    final trimmed = value.trim();
+                    if (trimmed.isNotEmpty) _createDm(trimmed);
+                  },
                 ),
-                textInputAction: TextInputAction.go,
-                onSubmitted: (value) {
-                  final trimmed = value.trim();
-                  if (trimmed.isNotEmpty) _createDm(trimmed);
-                },
               ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () {
-                  final trimmed = _searchController.text.trim();
-                  if (trimmed.isNotEmpty) _createDm(trimmed);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadii.surface),
-                  ),
-                ),
-                child: _isCreating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        '发起私聊',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 32),
-            // Action cards
-            _ActionCard(
-              icon: Icons.group_add_rounded,
-              iconColor: AppColors.primary,
-              title: '创建群组',
-              subtitle: '创建一个新的群聊房间',
-              onTap: () {
-                final nameController = TextEditingController();
-                showDialog(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    backgroundColor: AppColors.surface,
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final trimmed = _searchController.text.trim();
+                    if (trimmed.isNotEmpty) _createDm(trimmed);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppRadii.surface),
                     ),
-                    title: const Text(
-                      '创建群组',
-                      style: TextStyle(color: AppColors.onBackground),
-                    ),
-                    content: TextField(
-                      controller: nameController,
-                      style: const TextStyle(color: AppColors.onBackground),
-                      decoration: const InputDecoration(
-                        hintText: '群组名称',
-                        hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(
-                            color: AppColors.surfaceVariant,
+                  ),
+                  child: _isCreating
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          '发起私聊',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              // Action cards
+              _ActionCard(
+                icon: Icons.group_add_rounded,
+                iconColor: AppColors.primary,
+                title: '创建群组',
+                subtitle: '创建一个新的群聊房间',
+                onTap: () {
+                  final nameController = TextEditingController();
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: AppColors.surface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.surface),
+                      ),
+                      title: const Text(
+                        '创建群组',
+                        style: TextStyle(color: AppColors.onBackground),
+                      ),
+                      content: TextField(
+                        controller: nameController,
+                        style: const TextStyle(color: AppColors.onBackground),
+                        decoration: const InputDecoration(
+                          hintText: '群组名称',
+                          hintStyle: TextStyle(
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          enabledBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.surfaceVariant,
+                            ),
                           ),
                         ),
                       ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: const Text(
+                            '取消',
+                            style: TextStyle(color: AppColors.onSurfaceVariant),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            final name = nameController.text.trim();
+                            if (name.isNotEmpty) _createGroup(name);
+                          },
+                          child: const Text(
+                            '创建',
+                            style: TextStyle(color: AppColors.primary),
+                          ),
+                        ),
+                      ],
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        child: const Text(
-                          '取消',
-                          style: TextStyle(color: AppColors.onSurfaceVariant),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          final name = nameController.text.trim();
-                          if (name.isNotEmpty) _createGroup(name);
-                        },
-                        child: const Text(
-                          '创建',
-                          style: TextStyle(color: AppColors.primary),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            _ActionCard(
-              icon: Icons.meeting_room_rounded,
-              iconColor: AppColors.warning,
-              title: '加入房间',
-              subtitle: '通过房间 ID 加入已有房间',
-              onTap: _showJoinRoomDialog,
-            ),
-          ],
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              _ActionCard(
+                icon: Icons.meeting_room_rounded,
+                iconColor: AppColors.warning,
+                title: '加入房间',
+                subtitle: '通过房间 ID 加入已有房间',
+                onTap: _showJoinRoomDialog,
+              ),
+            ],
+          ),
         ),
       ),
     );

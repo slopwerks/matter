@@ -626,7 +626,10 @@ class MessageGroupWidget extends ConsumerWidget {
     required Map<String, String> mentionDisplayNames,
     required MessageMentionTapHandler onMentionTap,
   }) {
-    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.70;
+    final maxBubbleWidth = math.min(
+      MediaQuery.of(context).size.width * 0.70,
+      800.0,
+    );
     final textStyle = TextStyle(
       color: isMe ? Colors.white : AppColors.onBackground,
       fontSize: 15,
@@ -969,7 +972,7 @@ class MessageGroupWidget extends ConsumerWidget {
       child: Center(
         child: Container(
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.82,
+            maxWidth: math.min(MediaQuery.of(context).size.width * 0.82, 640.0),
             minHeight: 24,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

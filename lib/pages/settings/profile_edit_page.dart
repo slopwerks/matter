@@ -9,6 +9,7 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/max_content_width.dart';
 import 'avatar_crop_editor_page.dart';
 
 /// Edit the current user's display name and avatar.
@@ -120,6 +121,8 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
   }
 
   Future<void> _saveName() async {
+    if (_saving) return;
+
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(
@@ -181,142 +184,144 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Avatar editor
-                  Center(
-                    child: GestureDetector(
-                      onTap: _saving ? null : _pickAvatar,
-                      child: Stack(
-                        children: [
-                          AppAvatar(
-                            fallback: fallbackName,
-                            size: 96,
-                            url: _avatarHttpUrl,
-                          ),
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: AppColors.background,
-                                  width: 2,
+          : MaxContentWidth(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Avatar editor
+                    Center(
+                      child: GestureDetector(
+                        onTap: _saving ? null : _pickAvatar,
+                        child: Stack(
+                          children: [
+                            AppAvatar(
+                              fallback: fallbackName,
+                              size: 96,
+                              url: _avatarHttpUrl,
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppColors.background,
+                                    width: 2,
+                                  ),
                                 ),
-                              ),
-                              child: const Icon(
-                                Icons.camera_alt_rounded,
-                                color: Colors.white,
-                                size: 16,
+                                child: const Icon(
+                                  Icons.camera_alt_rounded,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      '点击头像更换',
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        '点击头像更换',
+                        style: TextStyle(
+                          color: AppColors.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Display name editor
+                    const Text(
+                      '昵称',
                       style: TextStyle(
                         color: AppColors.onSurfaceVariant,
-                        fontSize: 12,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      style: const TextStyle(
+                        color: AppColors.onBackground,
+                        fontSize: 16,
+                      ),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        hintText: '输入你的昵称',
+                        hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadii.content),
+                          borderSide: BorderSide.none,
+                        ),
+                        suffixIcon: TextButton(
+                          onPressed: _saving ? null : _saveName,
+                          child: _saving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('保存'),
+                        ),
+                      ),
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: _saving ? null : (_) => _saveName(),
+                    ),
 
-                  // Display name editor
-                  const Text(
-                    '昵称',
-                    style: TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(height: 24),
+
+                    // User ID (read-only)
+                    const Text(
+                      '用户 ID',
+                      style: TextStyle(
+                        color: AppColors.onSurfaceVariant,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _nameController,
-                    style: const TextStyle(
-                      color: AppColors.onBackground,
-                      fontSize: 16,
-                    ),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      hintText: '输入你的昵称',
-                      hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                      border: OutlineInputBorder(
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
                         borderRadius: BorderRadius.circular(AppRadii.content),
-                        borderSide: BorderSide.none,
                       ),
-                      suffixIcon: TextButton(
-                        onPressed: _saving ? null : _saveName,
-                        child: _saving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('保存'),
+                      child: Text(
+                        _profile?.userId ??
+                            ref.read(currentUserProvider)?.id ??
+                            '',
+                        style: TextStyle(
+                          color: AppColors.onSurfaceVariant,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _saveName(),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // User ID (read-only)
-                  const Text(
-                    '用户 ID',
-                    style: TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(AppRadii.content),
-                    ),
-                    child: Text(
-                      _profile?.userId ??
-                          ref.read(currentUserProvider)?.id ??
-                          '',
+                    const SizedBox(height: 8),
+                    Text(
+                      '用户 ID 是你的唯一标识，无法更改',
                       style: TextStyle(
                         color: AppColors.onSurfaceVariant,
-                        fontSize: 14,
+                        fontSize: 11,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '用户 ID 是你的唯一标识，无法更改',
-                    style: TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
     );

@@ -32,6 +32,9 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final String? avatarUrl;
   final String subtitle;
   final bool isDm;
+  final bool embedded;
+  final bool detailsPanelOpen;
+  final VoidCallback? onToggleDetailsPanel;
 
   const ChatDetailPage({
     super.key,
@@ -40,6 +43,9 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.avatarUrl,
     this.subtitle = '在线',
     this.isDm = false,
+    this.embedded = false,
+    this.detailsPanelOpen = false,
+    this.onToggleDetailsPanel,
   });
 
   @override
@@ -895,7 +901,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
 
     return PopScope(
-      canPop: _inputPanelMode == InputPanelMode.none && !keyboardVisible,
+      canPop:
+          !widget.embedded &&
+          _inputPanelMode == InputPanelMode.none &&
+          !keyboardVisible,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
@@ -908,14 +917,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           backgroundColor: AppColors.background.withValues(alpha: 0.92),
           elevation: 0,
           scrolledUnderElevation: 0,
-          leading: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_rounded,
-              color: AppColors.onBackground,
-            ),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          titleSpacing: 0,
+          leading: widget.embedded
+              ? null
+              : IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: AppColors.onBackground,
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+          titleSpacing: widget.embedded ? 16 : 0,
           title: Row(
             children: [
               AppAvatar(
@@ -961,15 +972,27 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               ),
               onPressed: null,
             ),
-            IconButton(
-              icon: const Icon(
-                Icons.more_vert_rounded,
-                color: AppColors.onBackground,
+            if (widget.embedded && widget.onToggleDetailsPanel != null)
+              IconButton(
+                tooltip: widget.detailsPanelOpen ? '隐藏详情' : '显示详情',
+                icon: Icon(
+                  Icons.people_outline_rounded,
+                  color: widget.detailsPanelOpen
+                      ? AppColors.primary
+                      : AppColors.onBackground,
+                ),
+                onPressed: widget.onToggleDetailsPanel,
+              )
+            else
+              IconButton(
+                icon: const Icon(
+                  Icons.more_vert_rounded,
+                  color: AppColors.onBackground,
+                ),
+                onPressed: () {
+                  _showRoomDetails(context);
+                },
               ),
-              onPressed: () {
-                _showRoomDetails(context);
-              },
-            ),
           ],
         ),
         body: Stack(

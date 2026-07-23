@@ -5,6 +5,7 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/max_content_width.dart';
 import 'chat_detail_page.dart';
 
 class SpaceDetailPage extends ConsumerWidget {
@@ -78,199 +79,201 @@ class SpaceDetailPage extends ConsumerWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(AppRadii.surface),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    AppAvatar(
-                      fallback: details.name,
-                      size: 56,
-                      radius: AppRadii.content,
-                      url: details.avatarUrl,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            details.name,
-                            style: const TextStyle(
-                              color: AppColors.onBackground,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            details.id,
-                            style: const TextStyle(
-                              color: AppColors.onSurfaceVariant,
-                              fontSize: 12.5,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if ((details.topic ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    details.topic!,
-                    style: const TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 13.5,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _Section(
-            title: '房间列表',
-            child: childrenAsync.when(
-              data: (rooms) {
-                if (rooms.isEmpty) {
-                  return const Text(
-                    '这个空间下暂时没有可见房间',
-                    style: TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final room in rooms)
-                      _SpaceChildTile(
-                        room: room,
-                        onRemove: room.roomType == 'space'
-                            ? null
-                            : () => _confirmRemoveRoom(context, ref, room),
-                      ),
-                  ],
-                );
-              },
-              loading: () => const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.primary,
-                  strokeWidth: 2,
-                ),
+      body: MaxContentWidth(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(AppRadii.surface),
               ),
-              error: (err, _) => Text(
-                '加载房间失败: $err',
-                style: const TextStyle(
-                  color: AppColors.onSurfaceVariant,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _Section(
-            title: '成员',
-            child: membersAsync.when(
-              data: (members) {
-                if (members.isEmpty) {
-                  return const Text(
-                    '暂无成员信息',
-                    style: TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final member in members.take(8))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      AppAvatar(
+                        fallback: details.name,
+                        size: 56,
+                        radius: AppRadii.content,
+                        url: details.avatarUrl,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            AppAvatar(
-                              fallback: member.name,
-                              size: 36,
-                              radius: AppRadii.content,
-                              url: member.avatarUrl,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                member.name,
-                                style: const TextStyle(
-                                  color: AppColors.onBackground,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                            Text(
+                              details.name,
+                              style: const TextStyle(
+                                color: AppColors.onBackground,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
                               ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              details.id,
+                              style: const TextStyle(
+                                color: AppColors.onSurfaceVariant,
+                                fontSize: 12.5,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
                       ),
-                    if (members.length > 8)
-                      Text(
-                        '还有 ${members.length - 8} 位成员',
-                        style: const TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                          fontSize: 12.5,
-                        ),
+                    ],
+                  ),
+                  if ((details.topic ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      details.topic!,
+                      style: const TextStyle(
+                        color: AppColors.onSurfaceVariant,
+                        fontSize: 13.5,
+                        height: 1.35,
                       ),
+                    ),
                   ],
-                );
-              },
-              loading: () => const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.primary,
-                  strokeWidth: 2,
-                ),
+                ],
               ),
-              error: (err, _) => Text(
-                '加载成员失败: $err',
-                style: const TextStyle(
-                  color: AppColors.onSurfaceVariant,
-                  fontSize: 13,
+            ),
+            const SizedBox(height: 12),
+            _Section(
+              title: '房间列表',
+              child: childrenAsync.when(
+                data: (rooms) {
+                  if (rooms.isEmpty) {
+                    return const Text(
+                      '这个空间下暂时没有可见房间',
+                      style: TextStyle(
+                        color: AppColors.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final room in rooms)
+                        _SpaceChildTile(
+                          room: room,
+                          onRemove: room.roomType == 'space'
+                              ? null
+                              : () => _confirmRemoveRoom(context, ref, room),
+                        ),
+                    ],
+                  );
+                },
+                loading: () => const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 2,
+                  ),
+                ),
+                error: (err, _) => Text(
+                  '加载房间失败: $err',
+                  style: const TextStyle(
+                    color: AppColors.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          _Section(
-            title: '设置',
-            child: Column(
-              children: [
-                _ActionSettingRow(
-                  icon: Icons.edit_rounded,
-                  label: '编辑空间',
-                  value: '修改名称与说明',
-                  onTap: () => _showEditSpaceDialog(context, ref, details),
+            const SizedBox(height: 12),
+            _Section(
+              title: '成员',
+              child: membersAsync.when(
+                data: (members) {
+                  if (members.isEmpty) {
+                    return const Text(
+                      '暂无成员信息',
+                      style: TextStyle(
+                        color: AppColors.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final member in members.take(8))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              AppAvatar(
+                                fallback: member.name,
+                                size: 36,
+                                radius: AppRadii.content,
+                                url: member.avatarUrl,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  member.name,
+                                  style: const TextStyle(
+                                    color: AppColors.onBackground,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (members.length > 8)
+                        Text(
+                          '还有 ${members.length - 8} 位成员',
+                          style: const TextStyle(
+                            color: AppColors.onSurfaceVariant,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                    ],
+                  );
+                },
+                loading: () => const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 2,
+                  ),
                 ),
-                const SizedBox(height: 10),
-                _ActionSettingRow(
-                  icon: Icons.exit_to_app_rounded,
-                  label: '退出空间',
-                  value: '离开当前空间',
-                  danger: true,
-                  onTap: () => _confirmLeaveSpace(context, ref, details),
+                error: (err, _) => Text(
+                  '加载成员失败: $err',
+                  style: const TextStyle(
+                    color: AppColors.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            _Section(
+              title: '设置',
+              child: Column(
+                children: [
+                  _ActionSettingRow(
+                    icon: Icons.edit_rounded,
+                    label: '编辑空间',
+                    value: '修改名称与说明',
+                    onTap: () => _showEditSpaceDialog(context, ref, details),
+                  ),
+                  const SizedBox(height: 10),
+                  _ActionSettingRow(
+                    icon: Icons.exit_to_app_rounded,
+                    label: '退出空间',
+                    value: '离开当前空间',
+                    danger: true,
+                    onTap: () => _confirmLeaveSpace(context, ref, details),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

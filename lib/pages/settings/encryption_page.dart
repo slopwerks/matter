@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/app_theme.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/max_content_width.dart';
 
 class EncryptionPage extends StatefulWidget {
   const EncryptionPage({super.key});
@@ -116,16 +117,18 @@ class _EncryptionPageState extends State<EncryptionPage> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadAll,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                children: [
-                  _buildOverview(),
-                  const SizedBox(height: 16),
-                  _buildDevices(),
-                  const SizedBox(height: 16),
-                  _buildRecovery(),
-                ],
+              child: MaxContentWidth(
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  children: [
+                    _buildOverview(),
+                    const SizedBox(height: 16),
+                    _buildDevices(),
+                    const SizedBox(height: 16),
+                    _buildRecovery(),
+                  ],
+                ),
               ),
             ),
     );

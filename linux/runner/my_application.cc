@@ -4,6 +4,9 @@
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
 #endif
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -25,31 +28,61 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // Use a header bar when running in GNOME as this is the common style used
-  // by applications and is the setup most users will be using (e.g. Ubuntu
-  // desktop).
-  // If running on X and not using GNOME then just use a traditional title bar
-  // in case the window manager does more exotic layout, e.g. tiling.
-  // If running on Wayland assume the header bar will work (may need changing
-  // if future cases occur).
-  gboolean use_header_bar = TRUE;
+  // Only GNOME expects client-side decorations (a header bar). On other
+  // Wayland compositors, let the environment decide: KDE draws a server-side
+  // title bar, while tiling compositors like niri draw none, which keeps the
+  // window chrome as slim as possible. On X11, keep the header bar only for
+  // GNOME Shell and use a traditional title bar elsewhere.
+  gboolean use_header_bar = FALSE;
+#ifdef GDK_WINDOWING_WAYLAND
+  if (GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default())) {
+    const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
+    use_header_bar =
+        desktop != nullptr && g_strstr_len(desktop, -1, "GNOME") != nullptr;
+  }
+#endif
 #ifdef GDK_WINDOWING_X11
   GdkScreen* screen = gtk_window_get_screen(window);
   if (GDK_IS_X11_SCREEN(screen)) {
     const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
-    if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
-      use_header_bar = FALSE;
+    if (g_strcmp0(wm_name, "GNOME Shell") == 0) {
+      use_header_bar = TRUE;
     }
   }
 #endif
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "matter_temp");
+    gtk_header_bar_set_title(header_bar, "Matter");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
+
+    // Slim down the header bar so it takes as little vertical space as
+    // possible while keeping the window controls.
+    GtkCssProvider* css_provider = gtk_css_provider_new();
+    GError* css_error = nullptr;
+    gtk_css_provider_load_from_data(
+        css_provider,
+        "window.csd headerbar, headerbar.titlebar, headerbar {"
+        "  min-height: 28px; padding: 2px 8px;"
+        "}"
+        "headerbar button, headerbar button.titlebutton {"
+        "  min-height: 24px; min-width: 24px; padding: 0; margin: 0;"
+        "}"
+        "headerbar label, headerbar .title {"
+        "  min-height: 0; padding: 0; margin: 0;"
+        "}",
+        -1, &css_error);
+    if (css_error != nullptr) {
+      g_warning("Failed to load header bar CSS: %s", css_error->message);
+      g_clear_error(&css_error);
+    }
+    gtk_style_context_add_provider_for_screen(
+        gtk_window_get_screen(window), GTK_STYLE_PROVIDER(css_provider),
+        GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(css_provider);
   } else {
-    gtk_window_set_title(window, "matter_temp");
+    gtk_window_set_title(window, "Matter");
   }
 
   gtk_window_set_default_size(window, 1280, 720);

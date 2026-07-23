@@ -53,10 +53,7 @@ void main() {
     );
     expect(surface.borderRadius, AppRadii.nav);
     expect(surface.blurSigma, 18);
-    expect(
-      surface.margin,
-      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    );
+    expect(surface.margin, const EdgeInsets.fromLTRB(10, 4, 10, 12));
     expect(find.byType(ShaderMask), findsOneWidget);
 
     final backdropFilters = find.descendant(

@@ -653,7 +653,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
               _buildReplyBar(replyTo),
             LiquidGlassContainer(
               key: const ValueKey('message-input-surface'),
-              margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              margin: const EdgeInsets.fromLTRB(10, 4, 10, 12),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               borderRadius: AppRadii.nav,
               blurSigma: 18,
