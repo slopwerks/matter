@@ -105,6 +105,29 @@ Future<void> applyActiveSessionState(
     ref.read(isLoggedInProvider.notifier).value = true;
   }
   ref.read(connectionProvider.notifier).value = AppConnectionState.connecting;
+  unawaited(refreshCurrentUserProfile(ref));
+}
+
+/// Fetch the server-side profile (display name + avatar) and merge it into
+/// [currentUserProvider]. Fire-and-forget: failures keep the cached state.
+Future<void> refreshCurrentUserProfile(WidgetRef ref) async {
+  try {
+    final profile = await rust.getProfile();
+    final current = ref.read(currentUserProvider);
+    if (current == null || current.id != profile.userId) return;
+    // Construct directly instead of copyWith: a null profile.avatarUrl means
+    // the avatar was deleted on the server and must clear the cached one.
+    ref.read(currentUserProvider.notifier).value = CurrentUser(
+      id: current.id,
+      displayName: profile.displayName.isEmpty
+          ? current.displayName
+          : profile.displayName,
+      avatarUrl: profile.avatarUrl,
+      homeserver: current.homeserver,
+    );
+  } catch (_) {
+    // Offline, session not ready, or caller widget disposed: keep cached state.
+  }
 }
 
 Future<void> bootstrapActiveSessionSync(

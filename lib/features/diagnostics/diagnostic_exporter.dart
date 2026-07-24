@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:archive/archive.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -51,6 +52,42 @@ class DiagnosticExporter {
     return saveDownloadedFile(
       filename: _diagnosticFilename(generatedAt),
       bytes: Uint8List.fromList(utf8.encode(report)),
+    );
+  }
+
+  /// Export the full persisted logs as a zip bundle. Unlike [export], this is
+  /// not limited to the 5,000-entry in-memory buffer. Log contents are
+  /// redacted before packing.
+  Future<bool> exportLogsZip() async {
+    final generatedAt = DateTime.now();
+    final packageInfo = await PackageInfo.fromPlatform();
+    final deviceInfo = await _collectDeviceInfo();
+
+    final archive = Archive();
+    final info = StringBuffer()
+      ..writeln('Matter log bundle')
+      ..writeln('Generated at (UTC): ${generatedAt.toUtc().toIso8601String()}')
+      ..writeln()
+      ..writeln('== Application ==');
+    _writeSection(info, {
+      'Name': packageInfo.appName,
+      'Version': '${packageInfo.version} (${packageInfo.buildNumber})',
+      'Package': packageInfo.packageName,
+    });
+    info
+      ..writeln()
+      ..writeln('== Device ==');
+    _writeSection(info, deviceInfo);
+    _addZipTextEntry(archive, 'device-info.txt', info.toString());
+
+    for (final file in await rust.readLogFiles()) {
+      _addZipTextEntry(archive, file.name, _redactLogMessage(file.content));
+    }
+
+    final zipBytes = ZipEncoder().encodeBytes(archive);
+    return saveDownloadedFile(
+      filename: _logBundleFilename(generatedAt),
+      bytes: zipBytes,
     );
   }
 }
@@ -179,13 +216,24 @@ void _writeSection(StringBuffer report, Map<String, String> values) {
   }
 }
 
-String _diagnosticFilename(DateTime generatedAt) {
+String _diagnosticFilename(DateTime generatedAt) =>
+    _exportFilename('matter-diagnostics', 'txt', generatedAt);
+
+String _logBundleFilename(DateTime generatedAt) =>
+    _exportFilename('matter-logs', 'zip', generatedAt);
+
+String _exportFilename(String prefix, String extension, DateTime generatedAt) {
   final timestamp = generatedAt.toUtc();
   final date =
       '${timestamp.year}${_twoDigits(timestamp.month)}${_twoDigits(timestamp.day)}';
   final time =
       '${_twoDigits(timestamp.hour)}${_twoDigits(timestamp.minute)}${_twoDigits(timestamp.second)}';
-  return 'matter-diagnostics-$date-$time.txt';
+  return '$prefix-$date-$time.$extension';
+}
+
+void _addZipTextEntry(Archive archive, String name, String text) {
+  final bytes = utf8.encode(text);
+  archive.addFile(ArchiveFile(name, bytes.length, bytes));
 }
 
 String _twoDigits(int value) => value.toString().padLeft(2, '0');

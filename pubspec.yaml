@@ -65,6 +65,7 @@ dependencies:
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
   device_info_plus: ^13.2.0
+  archive: ^4.0.7
 dev_dependencies:
   flutter_test:
     sdk: flutter

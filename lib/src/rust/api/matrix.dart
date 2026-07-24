@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `add_desired`, `app_log`, `append_media_chunk`, `build_mentions`, `build_sdk_data_dir`, `build_text_content`, `clear_timeline_cache`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `decrypt_media_bytes`, `encryption_settings`, `ensure_media_content_length`, `extract_edit_content`, `file_message_content`, `finalize_pending`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `image_mime_type`, `install_live_update_event_handlers`, `install_room_key_event_handler`, `install_verification_event_handler`, `load_room_sticker_packs`, `location_message_content`, `media_caption_parts`, `media_download_limit`, `media_download_url`, `mentions_parts`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `parse_supplied_mime_type`, `poll_start_content`, `poll_start_for_forward`, `receipt_extension_for_subscribed_rooms`, `remove_desired`, `remove_dir_all_if_exists`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_message_preview`, `room_state_label`, `room_to_chat_room`, `sanitize_for_path`, `sanitized_formatted_body`, `sanitized_reply_formatted_body`, `set_connection_status`, `sticker_info_dimensions`, `stop_sync_task`, `strip_reply_fallback`, `take_typing_task_for_room`, `text_message_parts`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `unable_to_decrypt_message`, `unstable_poll_preview`, `usage_allows_sticker`, `validate_poll_answer_ids`, `validated_geo_uri`, `video_mime_type`, `wait_for_e2ee_initialization`
+// These functions are ignored because they are not marked as `pub`: `account_image_pack_to_sticker_pack`, `active_session_meta`, `add_desired`, `app_log`, `append_media_chunk`, `build_mentions`, `build_sdk_data_dir`, `build_text_content`, `civil_from_days`, `clear_timeline_cache`, `clear_verification_session_if`, `clear_verification_session`, `current_verification_session`, `decrypt_media_bytes`, `encryption_settings`, `ensure_media_content_length`, `extract_edit_content`, `file_message_content`, `finalize_pending`, `format_utc`, `friendly_auth_error`, `get_client`, `get_last_message_info`, `get_room_by_id`, `image_info_dimensions`, `image_mime_type`, `init_log_store`, `install_live_update_event_handlers`, `install_room_key_event_handler`, `install_verification_event_handler`, `load_room_sticker_packs`, `location_message_content`, `media_caption_parts`, `media_download_limit`, `media_download_url`, `mentions_parts`, `mxc_to_thumbnail_http`, `notify_sync_event`, `pack_image_to_sticker`, `parse_supplied_mime_type`, `poll_start_content`, `poll_start_for_forward`, `receipt_extension_for_subscribed_rooms`, `remove_desired`, `remove_dir_all_if_exists`, `room_display_name`, `room_image_pack_to_sticker_pack`, `room_message_preview`, `room_state_label`, `room_to_chat_room`, `sanitize_for_path`, `sanitized_formatted_body`, `sanitized_reply_formatted_body`, `set_connection_status`, `sticker_info_dimensions`, `stop_sync_task`, `strip_reply_fallback`, `take_typing_task_for_room`, `text_message_parts`, `try_extract_uiaa`, `try_parse_uiaa_from_string`, `try_start_sliding_sync`, `uiaa_to_auth_result`, `uint_to_i32`, `unable_to_decrypt_message`, `unstable_poll_preview`, `usage_allows_sticker`, `validate_poll_answer_ids`, `validated_geo_uri`, `video_mime_type`, `wait_for_e2ee_initialization`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ClientEntry`, `EditedTextContent`, `PendingEntry`, `RoomSubscriptionState`, `SyncNotification`, `SyncTask`, `TypingTask`, `VerificationSession`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -23,6 +23,12 @@ List<AppLogEntry> getRecentLogs() =>
 
 /// Clear the buffered diagnostic logs.
 void clearAppLogs() => RustLib.instance.api.crateApiMatrixClearAppLogs();
+
+/// Read the persisted app logs (`matter.log` and its rotated backup), oldest
+/// first, for the log bundle export. Unlike `get_recent_logs`, these are not
+/// limited to the 5,000-entry ring buffer.
+Future<List<LogFileContent>> readLogFiles() =>
+    RustLib.instance.api.crateApiMatrixReadLogFiles();
 
 /// Create a Matrix client for the given homeserver URL.
 /// Must be called before any registration / login attempt.
@@ -181,7 +187,7 @@ Future<String> enableEncryptionRecovery({String? passphrase}) => RustLib
     .api
     .crateApiMatrixEnableEncryptionRecovery(passphrase: passphrase);
 
-/// Perform an initial sync with a 30-second timeout.
+/// Perform an initial sync with a 10-second timeout.
 /// Uses traditional /sync for the initial load (Sliding Sync needs
 /// this data in the state store first).
 Future<void> syncOnce() => RustLib.instance.api.crateApiMatrixSyncOnce();
@@ -1071,6 +1077,25 @@ class FormattedMessageInput {
           formattedBody == other.formattedBody &&
           mentionedUserIds == other.mentionedUserIds &&
           mentionsRoom == other.mentionsRoom;
+}
+
+/// A persisted log file's name and contents.
+class LogFileContent {
+  final String name;
+  final String content;
+
+  const LogFileContent({required this.name, required this.content});
+
+  @override
+  int get hashCode => name.hashCode ^ content.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LogFileContent &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          content == other.content;
 }
 
 /// A single member's read receipt on a message.

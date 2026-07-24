@@ -61,6 +61,23 @@ Future<void> clearAuthenticatedMediaCacheForSession({
   await manager.dispose();
 }
 
+/// Whether [dirName] (a basename under the system temp dir) belongs to an
+/// authenticated media cache store.
+bool isAuthenticatedMediaCacheDirName(String dirName) =>
+    dirName.startsWith('$_cachePrefix-');
+
+/// Empty and dispose every authenticated media cache manager created this
+/// session. On-disk stores not touched this session are removed separately
+/// by the platform image cache control.
+Future<void> resetAuthenticatedMediaCacheManagers() async {
+  final managers = _cacheManagers.values.toList();
+  _cacheManagers.clear();
+  for (final manager in managers) {
+    await manager.emptyCache();
+    await manager.dispose();
+  }
+}
+
 CacheManager _newCacheManager(String scope) {
   return _AuthenticatedMediaCacheManager(
     Config(

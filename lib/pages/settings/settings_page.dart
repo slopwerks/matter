@@ -1,9 +1,14 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/app_update/app_update_service.dart';
 import '../../features/app_update/update_dialog.dart';
+import '../../features/cache/image_cache_control.dart';
 import '../../features/diagnostics/diagnostic_exporter.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 
@@ -24,14 +29,19 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   List<rust.AccountInfo> _accounts = [];
   String _versionLabel = '读取中…';
+  String _cacheSizeLabel = '计算中…';
   bool _checkingForUpdate = false;
   bool _exportingDiagnostics = false;
+  bool _exportingLogs = false;
+  bool _clearingCache = false;
 
   @override
   void initState() {
     super.initState();
     _loadAccounts();
     _loadAppVersion();
+    if (!kIsWeb) _loadCacheSize();
+    unawaited(refreshCurrentUserProfile(ref));
   }
 
   Future<void> _loadAppVersion() async {
@@ -98,6 +108,87 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ).showSnackBar(SnackBar(content: Text('导出诊断报告失败：$error')));
     } finally {
       if (mounted) setState(() => _exportingDiagnostics = false);
+    }
+  }
+
+  Future<void> _exportLogs() async {
+    if (_exportingLogs) return;
+    setState(() => _exportingLogs = true);
+    try {
+      final saved = await const DiagnosticExporter().exportLogsZip();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(saved ? '日志包已导出' : '已取消导出')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出日志包失败：$error')));
+    } finally {
+      if (mounted) setState(() => _exportingLogs = false);
+    }
+  }
+
+  Future<void> _loadCacheSize() async {
+    try {
+      final bytes = await imageCacheSizeBytes();
+      if (mounted) setState(() => _cacheSizeLabel = _formatCacheSize(bytes));
+    } catch (error) {
+      debugPrint('Failed to measure cache size: $error');
+      if (mounted) setState(() => _cacheSizeLabel = '大小未知');
+    }
+  }
+
+  Future<void> _clearCache() async {
+    if (_clearingCache) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text(
+          '清理缓存',
+          style: TextStyle(color: AppColors.onBackground),
+        ),
+        content: const Text(
+          '将删除已下载的图片与媒体缓存，下次查看时会重新加载。确定继续吗？',
+          style: TextStyle(color: AppColors.onSurfaceVariant),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('清理'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _clearingCache = true);
+    try {
+      imageCache.clear();
+      await resetAuthenticatedMediaCacheManagers();
+      await clearImageCacheFiles();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('缓存已清理'),
+          duration: Duration(milliseconds: 1200),
+        ),
+      );
+      await _loadCacheSize();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('清理缓存失败：$error')));
+    } finally {
+      if (mounted) setState(() => _clearingCache = false);
     }
   }
 
@@ -430,6 +521,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                     ],
                   ),
+                  // On web there is no app-managed disk cache to clear; the
+                  // browser owns the HTTP cache.
+                  if (!kIsWeb) ...[
+                    const SizedBox(height: 20),
+                    _buildGroup(
+                      title: '存储',
+                      items: [
+                        _SettingItem(
+                          icon: Icons.cleaning_services_rounded,
+                          iconColor: AppColors.secondary,
+                          title: '清理缓存',
+                          subtitle: '图片与媒体缓存 · $_cacheSizeLabel',
+                          trailing: _clearingCache
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : null,
+                          onTap: _clearingCache ? null : _clearCache,
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   _buildGroup(
                     title: '关于',
@@ -492,6 +609,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         onTap: _exportingDiagnostics
                             ? null
                             : _exportDiagnostics,
+                      ),
+                      _SettingItem(
+                        icon: Icons.folder_zip_outlined,
+                        iconColor: AppColors.primaryVariant,
+                        title: '导出日志包',
+                        subtitle: '完整日志 zip，已脱敏',
+                        trailing: _exportingLogs
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        onTap: _exportingLogs ? null : _exportLogs,
                       ),
                     ],
                   ),
@@ -571,6 +704,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
     );
+  }
+
+  String _formatCacheSize(int bytes) {
+    const kilobyte = 1024;
+    const megabyte = kilobyte * 1024;
+    const gigabyte = megabyte * 1024;
+    if (bytes >= gigabyte) {
+      return '${(bytes / gigabyte).toStringAsFixed(1)} GB';
+    }
+    if (bytes >= megabyte) {
+      return '${(bytes / megabyte).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= kilobyte) {
+      return '${(bytes / kilobyte).toStringAsFixed(1)} KB';
+    }
+    return '$bytes B';
   }
 
   String _formatUserId(String userId) {
