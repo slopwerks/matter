@@ -286,8 +286,59 @@ static SYNC_EVENT_TX: Lazy<tokio::sync::broadcast::Sender<SyncEvent>> = Lazy::ne
     tx
 });
 
+#[frb]
+#[derive(Clone, Debug)]
+pub struct SessionTokenUpdate {
+    pub user_id: String,
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+}
+
+static SESSION_TOKEN_TX: Lazy<tokio::sync::broadcast::Sender<SessionTokenUpdate>> =
+    Lazy::new(|| tokio::sync::broadcast::channel(16).0);
+
 fn notify_sync_event(event: SyncEvent) {
     let _ = SYNC_EVENT_TX.send(event);
+}
+
+fn install_session_token_callback(client: &Client) -> Result<(), String> {
+    client
+        .set_session_callbacks(
+            Box::new(|client| {
+                client
+                    .session_tokens()
+                    .ok_or_else(|| std::io::Error::other("Session tokens are unavailable").into())
+            }),
+            Box::new(|client| {
+                let session = client
+                    .matrix_auth()
+                    .session()
+                    .ok_or_else(|| std::io::Error::other("Session is unavailable"))?;
+                let _ = SESSION_TOKEN_TX.send(SessionTokenUpdate {
+                    user_id: session.meta.user_id.to_string(),
+                    access_token: session.tokens.access_token,
+                    refresh_token: session.tokens.refresh_token,
+                });
+                Ok(())
+            }),
+        )
+        .map_err(|error| format!("Failed to install session token callback: {error}"))
+}
+
+#[frb]
+pub fn watch_session_token_updates(sink: crate::frb_generated::StreamSink<SessionTokenUpdate>) {
+    let mut rx = SESSION_TOKEN_TX.subscribe();
+    std::thread::spawn(move || loop {
+        match rx.blocking_recv() {
+            Ok(update) => {
+                if sink.add(update).is_err() {
+                    break;
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+        }
+    });
 }
 
 async fn clear_timeline_cache() {
@@ -726,6 +777,7 @@ async fn finalize_pending() -> Result<String, String> {
             return Err(format!("Failed to create per-user client: {error}"));
         }
     };
+    install_session_token_callback(&new_client)?;
 
     app_log(
         "info",
@@ -1564,6 +1616,7 @@ pub async fn create_client(homeserver_url: String, data_dir: String) -> Result<(
             app_log("error", "auth", msg.clone());
             msg
         })?;
+    install_session_token_callback(&client)?;
 
     app_log(
         "info",
@@ -2214,6 +2267,7 @@ pub async fn restore_session(session: StoredSession, data_dir: String) -> Result
             app_log("error", "auth", msg.clone());
             msg
         })?;
+    install_session_token_callback(&client)?;
 
     let user_id = matrix_sdk::ruma::UserId::parse(&session.user_id).map_err(|e| {
         let msg = format!("Invalid user ID: {e}");

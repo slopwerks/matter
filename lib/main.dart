@@ -199,6 +199,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(sessionTokenPersistenceProvider);
     final isLoggedIn = ref.watch(isLoggedInProvider);
     final showMainApp = isLoggedIn || _restoring;
 

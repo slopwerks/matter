@@ -1,13 +1,16 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+
+import '../features/markdown/markdown_source_store.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'authenticated_media_cache.dart';
 import 'message_cache_persistence.dart';
 import 'mutable_state.dart';
-import '../features/markdown/markdown_source_store.dart';
 
 class CurrentUser {
   final String id;
@@ -245,10 +248,11 @@ Future<void> saveActiveUserId(String userId) async {
   await prefs.setString(_kActiveUserId, userId);
 }
 
-Future<void> syncStoredSessionTokens(String userId) async {
-  final accessToken = await rust.getAccessToken();
-  if (accessToken == null || accessToken.isEmpty) return;
-  final refreshToken = await rust.getRefreshToken();
+Future<void> persistSessionTokens({
+  required String userId,
+  required String accessToken,
+  String? refreshToken,
+}) async {
   await _secureStorage.write(key: _tokenKey(userId), value: accessToken);
   if (refreshToken != null && refreshToken.isNotEmpty) {
     await _secureStorage.write(
@@ -259,6 +263,39 @@ Future<void> syncStoredSessionTokens(String userId) async {
     await _secureStorage.delete(key: _refreshTokenKey(userId));
   }
 }
+
+Future<void> syncStoredSessionTokens(String userId) async {
+  final accessToken = await rust.getAccessToken();
+  if (accessToken == null || accessToken.isEmpty) return;
+  await persistSessionTokens(
+    userId: userId,
+    accessToken: accessToken,
+    refreshToken: await rust.getRefreshToken(),
+  );
+}
+
+final sessionTokenPersistenceProvider =
+    Provider<StreamSubscription<rust.SessionTokenUpdate>>((ref) {
+      var pendingWrite = Future<void>.value();
+      final subscription = rust.watchSessionTokenUpdates().listen((update) {
+        pendingWrite = pendingWrite.then((_) async {
+          try {
+            await persistSessionTokens(
+              userId: update.userId,
+              accessToken: update.accessToken,
+              refreshToken: update.refreshToken,
+            );
+          } catch (error) {
+            debugPrint(
+              'Failed to persist refreshed session tokens for '
+              '${update.userId}: $error',
+            );
+          }
+        });
+      });
+      ref.onDispose(subscription.cancel);
+      return subscription;
+    });
 
 /// Get the display name for a user.
 Future<String> loadDisplayName(String userId) async {

@@ -142,6 +142,27 @@ void main() {
       },
     );
 
+    test('persistSessionTokens replaces rotated tokens', () async {
+      await addSession(
+        homeserver: 'https://example.org',
+        accessToken: 'token-a',
+        refreshToken: 'refresh-a',
+        userId: '@alice:example.org',
+        deviceId: 'DEVICE_A',
+        displayName: 'Alice',
+      );
+
+      await persistSessionTokens(
+        userId: '@alice:example.org',
+        accessToken: 'token-b',
+        refreshToken: 'refresh-b',
+      );
+
+      final sessions = await loadAllSessions();
+      expect(sessions.single.accessToken, 'token-b');
+      expect(sessions.single.refreshToken, 'refresh-b');
+    });
+
     test('loadAllSessions skips sessions with missing tokens', () async {
       SharedPreferences.setMockInitialValues({
         'multi_sessions': jsonEncode([
