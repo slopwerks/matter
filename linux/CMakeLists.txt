@@ -94,6 +94,16 @@ add_custom_target(build_rust_lib ALL
   COMMENT "Building Rust library (${CMAKE_BUILD_TYPE})"
 )
 
+# Cargo's release profile uses strip = "none" (see rust/Cargo.toml) to avoid an
+# upstream linker bug that corrupts chained-fixups libraries for a non-Linux build context,
+# so strip the Rust shared library manually on non-Debug builds manually here.
+if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
+  add_custom_command(TARGET build_rust_lib POST_BUILD
+    COMMAND strip "${RUST_SO_DIR}/${RUST_SO_NAME}"
+    COMMENT "Stripping Rust library"
+  )
+endif()
+
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
 # directory.
