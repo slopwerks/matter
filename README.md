@@ -12,10 +12,10 @@ A `flutter build` for a platform supported by your Flutter toolchain should gene
 
 ### macOS/iOS Specific notes
 
-As the macOS build is tested on a Mac running the dev beta of macOS 27, whose toolchain only supports macOS 12.0 and higher, this will also be the minimum supported version for the current Xcode project as reported. This is different from the default minumum version as Flutter currently configures by default. While it is possible to change the minimum supported version by manually editing `macos/Runner.xcodeproj/project.pbxproj`, it is recommended to change it from Xcode instead. The same would apply to iOS builds (17.0 or higher).
+If you are building a release build on a macOS 27 host:
+- <del>Flutter 3.47.0 or higher is required due to [this Flutter issue](https://github.com/flutter/flutter/issues/188461).</del> No longer an extra requirement since the project's own Flutter dependency is now higher.
+- Rust 1.98.0 or higher is required due to [this Rust issue](https://github.com/rust-lang/rust/issues/157750).
 
-Building for macOS (release build only) or iOS (physical or simulator) from a macOS 27 host requires Flutter 3.47.0 or higher due to [this Flutter issue](https://github.com/flutter/flutter/issues/188461).
-
-For iOS, simulator builds (inherently Debug) are broken due to #56. Release build should work provided that you configure your own `DEVELOPMENT_TEAM` identifier.
+When building for iOS, simulator builds (inherently Debug) are broken due to [#56](https://github.com/slopwerks/matter/issues/56). Release build should work provided that you configure your own provisioning.
 
 Note that currently the Rust component is only built for the current arch while the Xcode build is universal for release. This results in a supposedly universal app but with a framework that only runs on the same arch it is built on.
