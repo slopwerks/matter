@@ -42,8 +42,7 @@ mime = "0.3"
 [profile.release]
 opt-level = "z"
 lto = true
-# A global `strip = "symbols"` config breaks macOS release builds for any minimum target of 12.0 and above when building on a macOS 27 host (https://github.com/rust-lang/rust/issues/157750, fixed by upstream but not merged in any stable tag as of rust-lang/rust 1.97.1). The issue is specific to build-time artifacts that do not enter the final build, so it doesn't have an effect on the final product (rust_lib_matter) as long as it is manually stripped in the platform-specific build scripts.
-strip = "none"
+strip = "symbols"
 codegen-units = 1
 panic = "abort"
 
