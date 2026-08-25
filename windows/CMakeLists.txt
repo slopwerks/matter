@@ -72,13 +72,6 @@ add_custom_target(build_rust_lib ALL
   COMMENT "Building Rust library ($<CONFIG>)"
 )
 
-# Cargo's release profile uses strip = "none" (see rust/Cargo.toml) to avoid
-# an upstream linker bug that corrupts chained-fixups libraries for another
-# build context, so we strip the Rust shared library manually on non-Debug
-# builds here.
-# TODO: Either figure this out for Windows somehow, or just wait since I'm
-# reverting the profile change in the next PR anyways...
-
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
 # run in place. This is done instead of making a separate bundle (as on Linux)
