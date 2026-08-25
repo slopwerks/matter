@@ -1,10 +1,10 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(matter_temp LANGUAGES CXX)
+project(matter LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "matter_temp")
+set(BINARY_NAME "Matter")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -57,6 +57,27 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# === Rust library build ===
+set(RUST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust")
+set(RUST_DLL_NAME "rust_lib_matter.dll")
+
+set(CARGO_BUILD_CMD cargo build --target x86_64-pc-windows-msvc $<$<NOT:$<CONFIG:Debug>>:--release>)
+set(RUST_DLL_DIR "${RUST_DIR}/target/x86_64-pc-windows-msvc/$<IF:$<CONFIG:Debug>,debug,release>")
+
+add_custom_target(build_rust_lib ALL
+  # Let Rust determine what to build incrementally
+  # COMMAND cargo clean -p rust_lib_matter
+  COMMAND ${CARGO_BUILD_CMD}
+  WORKING_DIRECTORY "${RUST_DIR}"
+  COMMENT "Building Rust library ($<CONFIG>)"
+)
+
+# Cargo's release profile uses strip = "none" (see rust/Cargo.toml) to avoid
+# an upstream linker bug that corrupts chained-fixups libraries for another
+# build context, so we strip the Rust shared library manually on non-Debug
+# builds here.
+# TODO: Either figure this out for Windows somehow, or just wait since I'm
+# reverting the profile change in the next PR anyways...
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
@@ -101,6 +122,11 @@ install(CODE "
   " COMPONENT Runtime)
 install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
+
+# Install the Rust shared library.
+install(FILES "${RUST_DLL_DIR}/${RUST_DLL_NAME}"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
 
 # Install the AOT library on non-Debug builds only.
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

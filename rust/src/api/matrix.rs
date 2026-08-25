@@ -2836,6 +2836,9 @@ async fn finalize_pending() -> Result<String, String> {
         *pending = None;
     }
     drop(pending_client);
+    // TODO: Tweak this value to avoid "Access Denied" (OS error 5) errors on
+    // Windows on login (on `rename(&temp_dir, &sdk_dir)`).
+    // 20000 (20 seconds) worked for me but obviously butchered the waiting time.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let temp_dir = build_sdk_data_dir(&data_dir, None);

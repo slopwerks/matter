@@ -79,19 +79,15 @@ include(flutter/generated_plugins.cmake)
 set(RUST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust")
 set(RUST_SO_NAME "librust_lib_matter.so")
 
-if(CMAKE_BUILD_TYPE MATCHES "Release")
-  set(CARGO_BUILD_CMD cargo build --release --target x86_64-unknown-linux-gnu)
-  set(RUST_SO_DIR "${RUST_DIR}/target/x86_64-unknown-linux-gnu/release")
-else()
-  set(CARGO_BUILD_CMD cargo build --target x86_64-unknown-linux-gnu)
-  set(RUST_SO_DIR "${RUST_DIR}/target/x86_64-unknown-linux-gnu/debug")
-endif()
+set(CARGO_BUILD_CMD cargo build --target x86_64-unknown-linux-gnu $<$<NOT:$<CONFIG:Debug>>:--release>)
+set(RUST_SO_DIR "${RUST_DIR}/target/x86_64-unknown-linux-gnu/$<IF:$<CONFIG:Debug>,debug,release>")
 
 add_custom_target(build_rust_lib ALL
-  COMMAND cargo clean -p rust_lib_matter
+  # Let Rust determine what to build incrementally
+  # COMMAND cargo clean -p rust_lib_matter
   COMMAND ${CARGO_BUILD_CMD}
   WORKING_DIRECTORY "${RUST_DIR}"
-  COMMENT "Building Rust library (${CMAKE_BUILD_TYPE})"
+  COMMENT "Building Rust library ($<CONFIG>)"
 )
 
 # === Installation ===
