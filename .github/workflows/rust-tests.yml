@@ -33,14 +33,14 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, cargo-expand
+          components: clippy
 
       - name: Get Flutter dependencies
         run: flutter pub get
 
       - name: Generate Flutter Rust Bridge bindings
         run: |
-          cargo install flutter_rust_bridge_codegen --version 2.13.0
+          cargo install flutter_rust_bridge_codegen --version 2.13.0 cargo-expand
           flutter_rust_bridge_codegen generate
 
       - name: Test application Rust crate
