@@ -40,7 +40,7 @@ jobs:
 
       - name: Generate Flutter Rust Bridge bindings
         run: |
-          cargo install flutter_rust_bridge_codegen --version 2.13.0 cargo-expand
+          cargo install flutter_rust_bridge_codegen@2.13.0 cargo-expand
           flutter_rust_bridge_codegen generate
 
       - name: Test application Rust crate
