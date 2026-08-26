@@ -69,6 +69,9 @@ String _searchIndexTestKey(String userId) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+  final supportDirectory = Directory(
+    '/tmp/matter_session_credential_store_test',
+  );
   late _FakeRustApi rustApi;
 
   setUpAll(() {
@@ -81,12 +84,16 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
+    if (await supportDirectory.exists()) {
+      await supportDirectory.delete(recursive: true);
+    }
+    await supportDirectory.create(recursive: true);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(pathProviderChannel, (call) async {
           switch (call.method) {
             case 'getTemporaryDirectory':
             case 'getApplicationSupportDirectory':
-              return '/tmp/matter_auth_provider_test';
+              return supportDirectory.path;
           }
           return null;
         });
@@ -97,6 +104,15 @@ void main() {
     rustApi.logoutCleanupError = null;
     rustApi.logoutRemotePending = false;
     rustApi.logoutCalls = 0;
+  });
+
+  tearDown(() async {
+    debugDefaultTargetPlatformOverride = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, null);
+    if (await supportDirectory.exists()) {
+      await supportDirectory.delete(recursive: true);
+    }
   });
 
   test(

@@ -13,6 +13,9 @@ env:
   FLUTTER_VERSION: 3.47.1
 
 jobs:
+  # Ideally we should split Flutter and Rust tests, but the Rust test requires
+  # some generated files from the bridge so it depends on Flutter. Therefore,
+  # we do both in the same workflow job run.
   flutter-and-rust-tests:
     runs-on: ubuntu-24.04
     steps:
