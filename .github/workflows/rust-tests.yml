@@ -33,7 +33,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, expand
+          components: clippy, cargo-expand
 
       - name: Get Flutter dependencies
         run: flutter pub get
