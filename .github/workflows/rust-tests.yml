@@ -24,6 +24,11 @@ jobs:
         with:
           components: clippy
 
+      - name: Generate Flutter Rust Bridge bindings
+        run: |
+          cargo install flutter_rust_bridge_codegen --version 2.13.0
+          flutter_rust_bridge_codegen generate
+
       - name: Test application Rust crate
         run: cargo test --manifest-path rust/Cargo.toml --locked
 
