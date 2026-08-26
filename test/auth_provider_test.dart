@@ -70,7 +70,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
   final supportDirectory = Directory(
-    '/tmp/matter_session_credential_store_test',
+    '/tmp/matter_auth_provider_test',
   );
   late _FakeRustApi rustApi;
 
