@@ -86,3 +86,5 @@ android/app/src/main/jniLibs/
 build/
 local.properties
 *.p12
+
+.zvec-grep/
