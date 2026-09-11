@@ -10,7 +10,12 @@ import 'neu_colors.dart';
 /// body 15/13/12 正文→次级说明→元信息；label 15 按钮、11 徽标/极小标签。
 ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
   TextStyle ts(double size, FontWeight weight, Color color, [double? height]) =>
-      TextStyle(fontSize: size, fontWeight: weight, color: color, height: height);
+      TextStyle(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        height: height,
+      );
 
   return ThemeData(
     useMaterial3: true,

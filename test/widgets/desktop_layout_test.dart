@@ -11,6 +11,8 @@ import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/neu_test_theme.dart';
+
 class _FakeRustApi implements RustLibApi {
   int markRoomAsReadCalls = 0;
 
@@ -91,7 +93,7 @@ Future<void> _pumpApp(WidgetTester tester, ProviderContainer container) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: MatterApp()),
+      child: MaterialApp(theme: neuTestTheme(), home: const MatterApp()),
     ),
   );
   for (var i = 0; i < 4; i++) {

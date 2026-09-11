@@ -69,9 +69,7 @@ String _searchIndexTestKey(String userId) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
-  final supportDirectory = Directory(
-    '/tmp/matter_auth_provider_test',
-  );
+  final supportDirectory = Directory('/tmp/matter_auth_provider_test');
   late _FakeRustApi rustApi;
 
   setUpAll(() {
