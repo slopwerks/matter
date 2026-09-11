@@ -11,11 +11,13 @@ import '../../providers/auth_provider.dart';
 import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/session_credential_store.dart';
+import '../../providers/theme_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 
 import '../../theme/app_theme.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/sheets.dart';
 import 'encryption_page.dart';
 import 'log_viewer_page.dart';
 import 'profile_edit_page.dart';
@@ -737,7 +739,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         icon: Icons.dark_mode_rounded,
                         iconColor: AppColors.secondary,
                         title: '主题',
-                        subtitle: '当前固定为深色',
+                        subtitle: _themeStyleLabel(
+                          ref.watch(appThemeStyleProvider),
+                        ),
+                        onTap: _showThemeStylePicker,
                       ),
                       _SettingItem(
                         icon: Icons.notifications_rounded,
@@ -1022,6 +1027,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final local = parts.first.replaceFirst('@', '');
     final server = parts.length > 1 ? parts.sublist(1).join(':') : '';
     return server.isNotEmpty ? '$local ($server)' : local;
+  }
+
+  String _themeStyleLabel(AppThemeStyle style) => switch (style) {
+    AppThemeStyle.classic => '经典深色',
+    AppThemeStyle.neuLight => '新拟物 · 浅色',
+    AppThemeStyle.neuDark => '新拟物 · 深色',
+    AppThemeStyle.neuSystem => '新拟物 · 跟随系统',
+  };
+
+  Future<void> _showThemeStylePicker() async {
+    final current = ref.read(appThemeStyleProvider);
+    await showNeuSheet<void>(
+      context: context,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final style in AppThemeStyle.values)
+            NeuSheetItem(
+              icon: style == current
+                  ? Icons.check_circle_rounded
+                  : Icons.circle_outlined,
+              label: _themeStyleLabel(style),
+              onTap: () {
+                ref.read(appThemeStyleProvider.notifier).setStyle(style);
+                Navigator.of(context).pop();
+              },
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildGroup({required String title, required List<Widget> items}) {
