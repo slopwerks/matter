@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -224,6 +225,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   int _messageJumpGeneration = 0;
   int _pinnedStackVisibleCount = 0;
 
+  /// Measured height of the floating top bar (SafeArea + panel included).
+  /// Null until the first layout; [build] falls back to the design estimate
+  /// [_headerChromeHeight] before that.
+  double? _measuredHeaderHeight;
+
   /// True while the timeline shows a detached history slice loaded by
   /// [_loadMessageContext] instead of the live window. The slice does not
   /// connect to the live window (pagination only walks backwards, so the gap
@@ -254,14 +260,17 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   static const double _olderLoadTriggerViewportMultiplier = 2.0;
   static const double _olderLoadRearmDistance = 480.0;
   static const double _baseInputChromeHeight = 60.0;
-  // Floating glass header: 12pt gap above a 54pt panel (38pt row + v8
+  // Floating glass header: 12pt gap above a ~54pt panel (38pt row + v8
   // padding), then an 8pt gap before the pinned stack / timeline clearance.
+  // The panel height is measured at runtime (CJK text metrics can exceed the
+  // estimate); these constants are only the first-frame fallback.
   static const double _headerTopGap = 12.0;
   static const double _headerPanelHeight = 54.0;
   static const double _headerBottomGap = 8.0;
   static const double _headerChromeHeight =
       _headerTopGap + _headerPanelHeight + _headerBottomGap;
   static const double _headerCompactBreakpoint = 480.0;
+  static const double _pinnedStackFadeHeight = 40.0;
   static const int _maxMessagesPerRenderGroup = 12;
   static const Duration _sentNoticeDuration = Duration(milliseconds: 2800);
   static const Duration _forwardNoticeDuration = Duration(seconds: 4);
@@ -1895,7 +1904,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final colors = context.neu;
     // The floating header hangs below the status bar; the pinned stack and
     // the timeline's oldest-end clearance are measured from its bottom edge.
-    final headerInset = mediaQuery.padding.top + _headerChromeHeight;
+    // Prefer the measured panel height (CJK title metrics can exceed the
+    // estimate and would otherwise eat the gap above the pinned stack).
+    final headerInset = _measuredHeaderHeight != null
+        ? _measuredHeaderHeight! + _headerBottomGap
+        : mediaQuery.padding.top + _headerChromeHeight;
     final inputChromeHeight =
         _inputChromeHeight ??
         _baseInputChromeHeight + mediaQuery.padding.bottom;
@@ -2163,7 +2176,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               left: 0,
               top: 0,
               right: 0,
-              child: _buildTopBar(headerSubtitle),
+              child: _MeasuredSize(
+                onChanged: (size) {
+                  if (_measuredHeaderHeight == size.height) return;
+                  setState(() => _measuredHeaderHeight = size.height);
+                },
+                child: _buildTopBar(headerSubtitle),
+              ),
             ),
             Positioned(
               left: 12,
@@ -2180,6 +2199,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 },
               ),
             ),
+            // Progressive blur below the pinned stack: the timeline viewport
+            // starts right at its bottom edge, and a hard clip there reads
+            // as the content being sliced off. Fade blur+background out over
+            // a short strip so messages dissolve instead.
+            if (_pinnedStackVisibleCount > 0)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: headerInset + pinnedStackHeight,
+                height: _pinnedStackFadeHeight,
+                child: const _TimelineTopFade(),
+              ),
             // Telegram-style floating date that tracks the day at the top edge
             // of the viewport while scrolling, then fades out.
             if (_hasTimelineGroups)
@@ -2651,6 +2682,35 @@ class _TimelineEntry {
       type: _TimelineEntryType.date,
       dateLabel: label,
       separatorKey: key,
+    );
+  }
+}
+
+/// Progressive blur strip directly below the pinned-message stack: strongest
+/// (and closest to the background color) at the top, fully clear at the
+/// bottom, so messages scrolled under the stack dissolve instead of being
+/// clipped at a hard edge.
+class _TimelineTopFade extends StatelessWidget {
+  const _TimelineTopFade();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.neu;
+    return IgnorePointer(
+      child: ClipRect(
+        child: ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (rect) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white, Colors.transparent],
+          ).createShader(rect),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: ColoredBox(color: colors.base.withValues(alpha: 0.55)),
+          ),
+        ),
+      ),
     );
   }
 }
