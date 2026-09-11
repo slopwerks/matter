@@ -12,9 +12,11 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
-import '../../widgets/liquid_glass.dart';
+import '../../widgets/glass.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_surface.dart';
 import 'attachment_picker.dart';
 import 'composer_autocomplete.dart';
 import 'composer_picker_panel.dart';
@@ -950,18 +952,18 @@ class MessageInputState extends ConsumerState<MessageInput> {
         buttonBox.localToGlobal(Offset.zero) & buttonBox.size,
         Offset.zero & overlay.size,
       ),
-      items: const [
+      items: [
         PopupMenuItem<String>(
           value: 'markdown',
           child: Row(
             children: [
               Icon(
                 Icons.edit_note_rounded,
-                color: AppColors.onSurfaceVariant,
+                color: context.neu.textSecondary,
                 size: 22,
               ),
-              SizedBox(width: 12),
-              Text('Markdown 编辑器'),
+              const SizedBox(width: 12),
+              const Text('Markdown 编辑器'),
             ],
           ),
         ),
@@ -1300,12 +1302,11 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 text,
                 maxLines: 5,
                 overflow: TextOverflow.clip,
-                style: const TextStyle(
-                  color: AppColors.onBackground,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w400,
-                  decoration: TextDecoration.none,
-                ),
+                style:
+                    Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      decoration: TextDecoration.none,
+                    ) ??
+                    const TextStyle(decoration: TextDecoration.none),
               ),
             ),
           ),
@@ -1510,6 +1511,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
         : _autocompleteIndex.clamp(0, options.length - 1);
     final visibleItems = options.length.clamp(1, viewportItemCount);
     final height = loading && options.isEmpty ? 52.0 : visibleItems * 52.0;
+    final colors = context.neu;
     return TextFieldTapRegion(
       child: Container(
         key: const ValueKey('composer-autocomplete-panel'),
@@ -1517,17 +1519,17 @@ class MessageInputState extends ConsumerState<MessageInput> {
         margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.glassBorder),
+          color: colors.surfaceStrong,
+          borderRadius: BorderRadius.circular(NeuRadius.button),
+          border: Border.all(color: colors.hairline),
         ),
         child: loading && options.isEmpty
-            ? const Center(
+            ? Center(
                 child: SizedBox.square(
                   dimension: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: AppColors.primary,
+                    color: colors.accent,
                   ),
                 ),
               )
@@ -1545,9 +1547,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                     final selected = index == selectedIndex;
                     return Material(
                       key: ValueKey('composer-autocomplete-option-$index'),
-                      color: selected
-                          ? AppColors.primary.withValues(alpha: 0.16)
-                          : Colors.transparent,
+                      color: selected ? colors.accentSoft : Colors.transparent,
                       child: InkWell(
                         onHover: (hovering) {
                           if (hovering && _autocompleteIndex != index) {
@@ -1589,21 +1589,18 @@ class MessageInputState extends ConsumerState<MessageInput> {
                                       option.title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: AppColors.onBackground,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleSmall,
                                     ),
                                     if (option.subtitle case final subtitle?)
                                       Text(
                                         subtitle,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: AppColors.onSurfaceVariant,
-                                          fontSize: 11,
-                                        ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.labelSmall,
                                       ),
                                   ],
                                 ),
@@ -1622,6 +1619,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final replyTo = ref.watch(replyingToProvider(_draftKey));
     final editing = ref.watch(editingMessageProvider(_draftKey));
     // Do not expose a stale new-message draft as editable content while the
@@ -1717,170 +1715,149 @@ class MessageInputState extends ConsumerState<MessageInput> {
                   viewportItemCount: _autocompleteViewportCount(context),
                 ),
               ),
-            LiquidGlassContainer(
-              key: const ValueKey('message-input-surface'),
-              margin: const EdgeInsets.fromLTRB(10, 4, 10, 12),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              borderRadius: AppRadii.nav,
-              blurSigma: 18,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  SizedBox.square(
-                    dimension: 44,
-                    child: IconButton(
-                      icon: Icon(
-                        widget.panelMode == InputPanelMode.emoji
-                            ? Icons.keyboard_rounded
-                            : (_pickerTab == ComposerPickerTab.sticker
-                                  ? Icons.interests_rounded
-                                  : Icons.sentiment_satisfied_alt_rounded),
-                        color: widget.panelMode == InputPanelMode.emoji
-                            ? AppColors.primary
-                            : AppColors.onSurfaceVariant,
-                        size: 25,
-                      ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 12),
+              child: GlassPanel(
+                key: const ValueKey('message-input-surface'),
+                radius: NeuRadius.nav,
+                blur: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    NeuIconButton(
+                      icon: widget.panelMode == InputPanelMode.emoji
+                          ? Icons.keyboard_rounded
+                          : (_pickerTab == ComposerPickerTab.sticker
+                                ? Icons.interests_rounded
+                                : Icons.sentiment_satisfied_alt_rounded),
+                      size: 44,
+                      selected: widget.panelMode == InputPanelMode.emoji,
                       onPressed: sendBusy
                           ? null
                           : widget.panelMode == InputPanelMode.emoji
                           ? _showKeyboard
                           : _togglePicker,
-                      padding: EdgeInsets.zero,
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Container(
-                      key: _textFieldKey,
-                      constraints: const BoxConstraints(
-                        minHeight: 44,
-                        maxHeight: 120,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceVariant.withValues(alpha: 0.58),
-                        borderRadius: BorderRadius.circular(AppRadii.surface),
-                        border: Border.all(color: AppColors.glassBorder),
-                      ),
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focusNode,
-                        readOnly: editingSourceLoading,
-                        contextMenuBuilder: markdownSelectionContextMenuBuilder,
-                        style: const TextStyle(
-                          color: AppColors.onBackground,
-                          fontSize: 15,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Container(
+                        key: _textFieldKey,
+                        constraints: const BoxConstraints(
+                          minHeight: 44,
+                          maxHeight: 120,
                         ),
-                        decoration: InputDecoration(
-                          hintText: '消息',
-                          hintStyle: const TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 15,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 11,
-                          ),
-                          border: InputBorder.none,
-                          isDense: true,
+                        decoration: NeuDecoration(
+                          colors: colors,
+                          depth: NeuDepth.pressed,
+                          radius: NeuRadius.content,
+                          intensity: .85,
+                          borderColor: _focusNode.hasFocus
+                              ? colors.accent
+                              : null,
                         ),
-                        maxLines: null,
-                        textInputAction: TextInputAction.newline,
-                        keyboardType: TextInputType.multiline,
-                        onTap: () {
-                          widget.onPanelModeChanged(InputPanelMode.keyboard);
-                        },
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          readOnly: editingSourceLoading,
+                          contextMenuBuilder:
+                              markdownSelectionContextMenuBuilder,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                          cursorColor: colors.accent,
+                          decoration: InputDecoration(
+                            hintText: '消息',
+                            hintStyle: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(color: colors.textTertiary),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 11,
+                            ),
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                          maxLines: null,
+                          textInputAction: TextInputAction.newline,
+                          keyboardType: TextInputType.multiline,
+                          onTap: () {
+                            widget.onPanelModeChanged(InputPanelMode.keyboard);
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  SizedBox(
-                    width: 94,
-                    height: 44,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        SizedBox.square(
-                          dimension: 44,
-                          child: Builder(
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      width: 94,
+                      height: 44,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Builder(
                             builder: (buttonContext) => Tooltip(
                               message: '附件',
                               // Desktop hover still shows the tooltip; its
-                              // long-press trigger belongs to the InkWell so
-                              // it can open the tools menu instead.
+                              // long-press trigger belongs to the outer
+                              // GestureDetector so it can open the tools menu
+                              // instead.
                               triggerMode: TooltipTriggerMode.manual,
-                              child: Material(
-                                type: MaterialType.transparency,
-                                child: InkWell(
-                                  customBorder: const CircleBorder(),
-                                  onTap: sendBusy
+                              child: GestureDetector(
+                                onLongPress: sendBusy
+                                    ? null
+                                    : () =>
+                                          _showComposerToolsMenu(buttonContext),
+                                child: NeuIconButton(
+                                  icon: Icons.add_rounded,
+                                  size: 44,
+                                  selected:
+                                      widget.panelMode ==
+                                      InputPanelMode.attachment,
+                                  onPressed: sendBusy
                                       ? null
                                       : _toggleAttachmentPicker,
-                                  onLongPress: sendBusy
-                                      ? null
-                                      : () => _showComposerToolsMenu(
-                                          buttonContext,
-                                        ),
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.add_rounded,
-                                      color:
-                                          widget.panelMode ==
-                                              InputPanelMode.attachment
-                                          ? AppColors.primary
-                                          : AppColors.onSurfaceVariant,
-                                      size: 26,
-                                    ),
-                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        AnimatedSwitcher(
-                          duration: _toolbarAnimationDuration,
-                          switchInCurve: _toolbarAnimationCurve,
-                          switchOutCurve: Curves.easeInCubic,
-                          child: _hasText
-                              ? SizedBox.square(
-                                  key: const ValueKey('send_only'),
-                                  dimension: 44,
-                                  child: IconButton(
-                                    onPressed: sendBusy ? null : _sendMessage,
-                                    padding: EdgeInsets.zero,
-                                    icon: sendBusy
-                                        ? const SizedBox.square(
-                                            dimension: 20,
-                                            child: CircularProgressIndicator(
-                                              color: AppColors.primary,
-                                              strokeWidth: 2,
+                          AnimatedSwitcher(
+                            duration: _toolbarAnimationDuration,
+                            switchInCurve: _toolbarAnimationCurve,
+                            switchOutCurve: Curves.easeInCubic,
+                            child: _hasText
+                                ? SizedBox.square(
+                                    key: const ValueKey('send_only'),
+                                    dimension: 44,
+                                    child: sendBusy
+                                        ? Center(
+                                            child: SizedBox.square(
+                                              dimension: 20,
+                                              child: CircularProgressIndicator(
+                                                color: colors.accent,
+                                                strokeWidth: 2,
+                                              ),
                                             ),
                                           )
-                                        : const Icon(
-                                            Icons.send_rounded,
-                                            color: AppColors.primary,
-                                            size: 25,
+                                        : NeuIconButton(
+                                            icon: Icons.send_rounded,
+                                            size: 44,
+                                            accent: true,
+                                            onPressed: _sendMessage,
                                           ),
-                                  ),
-                                )
-                              : SizedBox.square(
-                                  key: const ValueKey('voice_only'),
-                                  dimension: 44,
-                                  child: IconButton(
-                                    tooltip: '语音消息暂未提供',
-                                    icon: const Icon(
-                                      Icons.mic_none_rounded,
-                                      color: AppColors.onSurfaceVariant,
-                                      size: 25,
+                                  )
+                                : const SizedBox.square(
+                                    key: ValueKey('voice_only'),
+                                    dimension: 44,
+                                    child: NeuIconButton(
+                                      tooltip: '语音消息暂未提供',
+                                      icon: Icons.mic_none_rounded,
+                                      size: 44,
+                                      onPressed: null,
                                     ),
-                                    onPressed: null,
-                                    padding: EdgeInsets.zero,
                                   ),
-                                ),
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             AnimatedContainer(
@@ -1972,8 +1949,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            AppColors.background.withValues(alpha: 0.52),
-                            AppColors.background.withValues(alpha: 0.88),
+                            colors.base.withValues(alpha: 0.52),
+                            colors.base.withValues(alpha: 0.88),
                           ],
                           stops: [0, fadeStop, 1],
                         ),
@@ -2056,50 +2033,56 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   Widget _buildReplyBar(rust.ChatMessage replyTo) {
+    final colors = context.neu;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceVariant.withValues(alpha: 0.3),
-        border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: NeuDecoration(
+        colors: colors,
+        depth: NeuDepth.pressed,
+        radius: NeuRadius.button,
+        intensity: .7,
       ),
       child: Row(
         children: [
+          Container(
+            width: 3,
+            height: 32,
+            decoration: BoxDecoration(
+              color: colors.accent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   replyTo.senderName,
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colors.accent,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   replyTo.content,
-                  style: TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          GestureDetector(
-            onTap: () {
+          NeuIconButton(
+            icon: Icons.close_rounded,
+            size: 30,
+            onPressed: () {
               ref.read(replyingToProvider(_draftKey).notifier).value = null;
             },
-            child: const Icon(
-              Icons.close_rounded,
-              color: AppColors.onSurfaceVariant,
-              size: 18,
-            ),
           ),
         ],
       ),
@@ -2110,37 +2093,44 @@ class MessageInputState extends ConsumerState<MessageInput> {
     rust.ChatMessage editing, {
     required bool sendInFlight,
   }) {
+    final colors = context.neu;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceVariant.withValues(alpha: 0.3),
-        border: Border(left: BorderSide(color: AppColors.primary, width: 3)),
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: NeuDecoration(
+        colors: colors,
+        depth: NeuDepth.pressed,
+        radius: NeuRadius.button,
+        intensity: .7,
       ),
       child: Row(
         children: [
-          const Icon(Icons.edit_rounded, color: AppColors.primary, size: 16),
-          const SizedBox(width: 8),
+          Container(
+            width: 3,
+            height: 32,
+            decoration: BoxDecoration(
+              color: colors.warning,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   '编辑中',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colors.warning,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   editing.content,
-                  style: TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -2148,25 +2138,27 @@ class MessageInputState extends ConsumerState<MessageInput> {
             ),
           ),
           if (sendInFlight)
-            const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-                strokeWidth: 2,
+            SizedBox.square(
+              dimension: 30,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                    color: colors.accent,
+                    strokeWidth: 2,
+                  ),
+                ),
               ),
             )
           else
-            GestureDetector(
-              onTap: () {
+            NeuIconButton(
+              icon: Icons.close_rounded,
+              size: 30,
+              onPressed: () {
                 ref.read(editingMessageProvider(_draftKey).notifier).value =
                     null;
                 ref.read(editingDraftProvider(_draftKey).notifier).value = null;
               },
-              child: const Icon(
-                Icons.close_rounded,
-                color: AppColors.onSurfaceVariant,
-                size: 18,
-              ),
             ),
         ],
       ),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/floating_date_header.dart';
 
+import '../helpers/neu_test_theme.dart';
+
 void main() {
   testWidgets(
     'does not inspect separator geometry while sliver children are moving',
@@ -15,6 +17,7 @@ void main() {
 
       Widget buildTimeline(List<GlobalKey> separatorKeys) {
         return MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: Stack(
               children: [

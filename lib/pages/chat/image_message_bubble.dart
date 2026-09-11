@@ -7,8 +7,9 @@ import '../../features/matrix_html/matrix_html_renderer.dart';
 import '../../features/matrix_html/matrix_link_router.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import 'message_group.dart' show neuBubbleShadows;
 import 'message_text.dart';
 import 'send_flight.dart';
 
@@ -168,6 +169,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final url = _resolvedUrl;
     final bytes = _decryptedBytes;
     final bubbleSize = _bubbleSize(context);
@@ -209,9 +211,12 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
         color: widget.isSticker
             ? Colors.transparent
             : isMe
-            ? AppColors.primary.withValues(alpha: 0.3)
-            : AppColors.surfaceElevated,
+            ? colors.accent.withValues(alpha: 0.3)
+            : colors.card,
         borderRadius: mediaBorderRadius,
+        boxShadow: widget.isSticker || hasCaption
+            ? null
+            : neuBubbleShadows(colors),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -285,13 +290,15 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   Widget _withCaption(Widget bubble, String? caption, bool hasCaption) {
     if (!hasCaption || caption == null) return bubble;
+    final colors = context.neu;
     return Container(
       key: const ValueKey('image-caption-bubble'),
       width: _bubbleSize(context).width,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: widget.isMe ? AppColors.primary : AppColors.surfaceElevated,
+        color: widget.isMe ? colors.accent : colors.card,
         borderRadius: _bubbleBorderRadius,
+        boxShadow: neuBubbleShadows(colors),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -315,13 +322,13 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   BorderRadius get _bubbleBorderRadius =>
       widget.borderRadius ??
       BorderRadius.only(
-        topLeft: const Radius.circular(AppRadii.content),
-        topRight: const Radius.circular(AppRadii.content),
+        topLeft: const Radius.circular(NeuRadius.content),
+        topRight: const Radius.circular(NeuRadius.content),
         bottomLeft: Radius.circular(
-          widget.isMe ? AppRadii.content : AppRadii.tag,
+          widget.isMe ? NeuRadius.content : NeuRadius.tag,
         ),
         bottomRight: Radius.circular(
-          widget.isMe ? AppRadii.tag : AppRadii.content,
+          widget.isMe ? NeuRadius.tag : NeuRadius.content,
         ),
       );
 
@@ -380,25 +387,27 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   }
 
   Widget _buildBroken(BuildContext context, Size bubbleSize) {
+    final colors = context.neu;
     return Container(
       width: bubbleSize.width,
       height: bubbleSize.height,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isMe
-            ? AppColors.primary.withValues(alpha: 0.3)
-            : AppColors.surfaceElevated,
+        color: isMe ? colors.accent.withValues(alpha: 0.3) : colors.card,
         borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(AppRadii.content),
-          topRight: const Radius.circular(AppRadii.content),
-          bottomLeft: Radius.circular(isMe ? AppRadii.content : AppRadii.tag),
-          bottomRight: Radius.circular(isMe ? AppRadii.tag : AppRadii.content),
+          topLeft: const Radius.circular(NeuRadius.content),
+          topRight: const Radius.circular(NeuRadius.content),
+          bottomLeft: Radius.circular(isMe ? NeuRadius.content : NeuRadius.tag),
+          bottomRight: Radius.circular(
+            isMe ? NeuRadius.tag : NeuRadius.content,
+          ),
         ),
+        boxShadow: neuBubbleShadows(colors),
       ),
-      child: const Center(
+      child: Center(
         child: Icon(
           Icons.broken_image_rounded,
-          color: AppColors.onSurfaceVariant,
+          color: colors.textTertiary,
           size: 32,
         ),
       ),
@@ -406,12 +415,14 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   }
 
   Widget _buildLoading(BuildContext context, Size bubbleSize) {
+    final colors = context.neu;
     return Container(
       width: bubbleSize.width,
       height: bubbleSize.height,
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: colors.card,
         borderRadius: _bubbleBorderRadius,
+        boxShadow: neuBubbleShadows(colors),
       ),
       child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
     );
@@ -437,9 +448,10 @@ class _ImageCaption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = TextStyle(
-      color: isMe ? Colors.white : AppColors.onBackground,
-      fontSize: 14,
+    final colors = context.neu;
+    final accent = isMe ? colors.onAccent : colors.accent;
+    final style = Theme.of(context).textTheme.bodyMedium!.copyWith(
+      color: isMe ? colors.onAccent : colors.text,
       height: 1.35,
     );
     return Container(
@@ -450,15 +462,15 @@ class _ImageCaption extends StatelessWidget {
           ? MatrixHtmlMessage(
               html: formattedBody!,
               style: style,
-              accentColor: isMe ? Colors.white : AppColors.secondary,
+              accentColor: accent,
               mentionDisplayNames: mentionDisplayNames,
               onMentionTap: onMentionTap,
             )
           : MessageText(
               text,
               style: style,
-              mentionColor: isMe ? Colors.white : AppColors.secondary,
-              linkColor: isMe ? Colors.white : AppColors.secondary,
+              mentionColor: accent,
+              linkColor: accent,
               onUrlTap: const MatrixLinkRouter().open,
               mentionDisplayNames: mentionDisplayNames,
               mentionedUserIds: mentionedUserIds,
@@ -813,9 +825,9 @@ class _MediaImage extends StatelessWidget {
         },
         errorBuilder: (context, error, stackTrace) {
           WidgetsBinding.instance.addPostFrameCallback((_) => onError?.call());
-          return const ColoredBox(
-            color: AppColors.surfaceElevated,
-            child: Center(
+          return ColoredBox(
+            color: context.neu.card,
+            child: const Center(
               child: Icon(Icons.broken_image_rounded, color: Colors.white54),
             ),
           );
@@ -825,7 +837,7 @@ class _MediaImage extends StatelessWidget {
 
     final url = imageUrl;
     if (url == null || url.isEmpty) {
-      return const ColoredBox(color: AppColors.surfaceElevated);
+      return ColoredBox(color: context.neu.card);
     }
     return AuthenticatedImageMessage(
       imageUrl: url,

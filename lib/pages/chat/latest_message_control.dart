@@ -2,7 +2,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 
 /// Sending while closer than this fraction of the visible timeline scrolls
 /// directly to the newest message.
@@ -133,6 +133,7 @@ class _LatestMessageControlState extends State<LatestMessageControl>
             for (var index = 0; index < characters.length; index++)
               Builder(
                 builder: (context) {
+                  final colors = context.neu;
                   final start = 0.12 + index * 0.045;
                   final progress = _intervalProgress(
                     value,
@@ -148,8 +149,8 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                         characters[index],
                         style: TextStyle(
                           color: isViewCharacter
-                              ? AppColors.primaryVariant
-                              : AppColors.onBackground,
+                              ? colors.accentPressed
+                              : colors.text,
                           fontSize: 13.5,
                           fontWeight: isViewCharacter
                               ? FontWeight.w700
@@ -168,6 +169,7 @@ class _LatestMessageControlState extends State<LatestMessageControl>
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return IgnorePointer(
       ignoring: !widget.visible,
       child: AnimatedOpacity(
@@ -195,7 +197,7 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: widget.onPressed,
-                    borderRadius: BorderRadius.circular(AppRadii.surface),
+                    borderRadius: BorderRadius.circular(NeuRadius.surface),
                     child: Ink(
                       width: lerpDouble(
                         _collapsedWidth,
@@ -204,14 +206,12 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                       ),
                       height: 44,
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceElevated.withValues(
-                          alpha: 0.96,
-                        ),
-                        borderRadius: BorderRadius.circular(AppRadii.surface),
-                        border: Border.all(color: AppColors.glassBorder),
+                        color: colors.surfaceStrong.withValues(alpha: 0.96),
+                        borderRadius: BorderRadius.circular(NeuRadius.surface),
+                        border: Border.all(color: colors.glassBorder),
                       ),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadii.surface),
+                        borderRadius: BorderRadius.circular(NeuRadius.surface),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
@@ -219,9 +219,9 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                               opacity: 1 - arrowExit,
                               child: Transform.translate(
                                 offset: Offset(0, -6 * arrowExit),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.keyboard_arrow_down_rounded,
-                                  color: AppColors.onBackground,
+                                  color: colors.text,
                                   size: 25,
                                 ),
                               ),

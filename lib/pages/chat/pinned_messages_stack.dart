@@ -6,7 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/glass.dart';
 import 'action_failure_message.dart';
 
 /// Row height of one pinned message in the stack. The chat page reserves the
@@ -138,16 +139,12 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
     const rowHeight = kPinnedMessageRowHeight;
     final visibleRows = messages.length.clamp(1, 3);
     _reportVisibleCount(visibleRows);
-    return Material(
-      color: AppColors.surface,
-      child: Container(
+    final colors = context.neu;
+    return GlassPanel(
+      radius: NeuRadius.surface,
+      child: SizedBox(
         key: const ValueKey('pinned-messages-stack'),
         height: rowHeight * visibleRows,
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: AppColors.surfaceVariant, width: 0.5),
-          ),
-        ),
         child: ListView.builder(
           padding: EdgeInsets.zero,
           itemCount: messages.length,
@@ -174,7 +171,7 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
                     width: 3,
                     height: 28,
                     decoration: BoxDecoration(
-                      color: AppColors.primary,
+                      color: colors.accent,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -188,8 +185,8 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
                           message.senderName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.primary,
+                          style: TextStyle(
+                            color: colors.accent,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -198,8 +195,8 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
                           content,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.onSurfaceVariant,
+                          style: TextStyle(
+                            color: colors.textTertiary,
                             fontSize: 12.5,
                           ),
                         ),
@@ -212,9 +209,9 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
                     onPressed: _unpinningMessageIds.contains(message.id)
                         ? null
                         : () => unawaited(_unpin(message)),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.push_pin_outlined,
-                      color: AppColors.onSurfaceVariant,
+                      color: colors.textTertiary,
                       size: 19,
                     ),
                   ),

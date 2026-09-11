@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/sheets.dart';
 import 'file_download_saver.dart';
+import 'message_group.dart' show neuBubbleShadows;
 
 /// Converts an untrusted attachment name into a portable suggested filename.
 @visibleForTesting
@@ -134,26 +136,13 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     }
   }
 
-  Future<bool> _confirmLargeDownload(int fileSize) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('下载大文件？'),
-            content: Text('文件大小约 ${_formatFileSize(fileSize)}，下载时会占用较多内存和流量。'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('取消'),
-              ),
-              FilledButton.icon(
-                onPressed: () => Navigator.of(context).pop(true),
-                icon: const Icon(Icons.download_rounded, size: 18),
-                label: const Text('继续下载'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+  Future<bool> _confirmLargeDownload(int fileSize) {
+    return showNeuConfirm(
+      context,
+      title: '下载大文件？',
+      message: '文件大小约 ${_formatFileSize(fileSize)}，下载时会占用较多内存和流量。',
+      confirmLabel: '继续下载',
+    );
   }
 
   void _showMessage(String message) {
@@ -164,72 +153,84 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final caption = widget.caption?.trim();
+    final foreground = widget.isMe ? colors.onAccent : colors.text;
+    final secondary = widget.isMe
+        ? colors.onAccent.withValues(alpha: 0.7)
+        : colors.textTertiary;
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(NeuRadius.content),
+    );
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: widget.maxWidth),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.content),
-        child: Stack(
-          children: [
-            Material(
-              color: widget.isMe
-                  ? AppColors.primary.withValues(alpha: 0.22)
-                  : AppColors.surfaceVariant,
-              child: InkWell(
-                onTap: _downloading ? null : _download,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _downloading
-                                ? Icons.downloading_rounded
-                                : Icons.insert_drive_file_rounded,
-                            size: 30,
-                            color: AppColors.onBackground,
-                          ),
-                          const SizedBox(width: 10),
-                          Flexible(
-                            child: Text(
-                              _safeFilename,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppColors.onBackground,
-                                fontSize: 14,
+      child: Container(
+        decoration: ShapeDecoration(
+          shape: shape,
+          color: widget.isMe ? colors.accent : colors.card,
+          shadows: neuBubbleShadows(colors),
+        ),
+        child: ClipPath.shape(
+          shape: shape,
+          child: Stack(
+            children: [
+              Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: _downloading ? null : _download,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _downloading
+                                  ? Icons.downloading_rounded
+                                  : Icons.insert_drive_file_rounded,
+                              size: 30,
+                              color: widget.isMe
+                                  ? colors.onAccent
+                                  : colors.accent,
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                _safeFilename,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: foreground),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.download_rounded,
-                            size: 18,
-                            color: AppColors.onSurfaceVariant,
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.download_rounded,
+                              size: 18,
+                              color: secondary,
+                            ),
+                          ],
+                        ),
+                        if (caption != null && caption.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            caption,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(color: foreground),
                           ),
                         ],
-                      ),
-                      if (caption != null && caption.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          caption,
-                          style: const TextStyle(
-                            color: AppColors.onBackground,
-                            fontSize: 14,
-                          ),
-                        ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            widget.metadata,
-          ],
+              widget.metadata,
+            ],
+          ),
         ),
       ),
     );

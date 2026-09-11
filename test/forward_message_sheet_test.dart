@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/forward_message_sheet.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
-import 'package:matter/theme/app_theme.dart';
+import 'package:matter/theme/neu_colors.dart';
+
+import 'helpers/neu_test_theme.dart';
 
 rust.ChatRoom _room(
   String id,
@@ -163,6 +165,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Stack(
             children: [
@@ -202,7 +205,10 @@ void main() {
     expect(noticeRect.bottom, lessThanOrEqualTo(inputRect.top - 12));
     expect(noticeRect.center.dx, closeTo(200, 0.5));
     expect(textRect.center.dx, closeTo(200, 0.5));
-    expect(noticeMaterial.borderRadius, BorderRadius.circular(AppRadii.button));
+    expect(
+      noticeMaterial.borderRadius,
+      BorderRadius.circular(NeuRadius.button),
+    );
 
     await tester.tap(find.byKey(const ValueKey('forward-success-room-link')));
     await tester.pump();
@@ -219,6 +225,7 @@ Future<void> _pumpLauncher(
     ProviderScope(
       overrides: [chatRoomsProvider.overrideWith((ref) async => rooms)],
       child: MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(

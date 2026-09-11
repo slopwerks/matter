@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
 import 'emoji_data.dart';
 import 'emoji_keywords.dart';
 
@@ -59,6 +61,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final emojis = _currentEmojis;
     return Column(
       children: [
@@ -69,42 +72,18 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
+                  child: NeuTextField(
                     controller: _searchController,
                     autofocus: true,
-                    style: const TextStyle(
-                      color: AppColors.onSurface,
-                      fontSize: 14,
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: '搜索表情，如 笑 / heart',
-                      hintStyle: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 14,
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.search_rounded,
-                        color: AppColors.onSurfaceVariant,
-                        size: 18,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.surfaceVariant,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppRadii.tag),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    ),
+                    hint: '搜索表情，如 笑 / heart',
+                    leading: const Icon(Icons.search_rounded),
                     onChanged: (v) => setState(() => _query = v),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: AppColors.onSurfaceVariant,
-                    size: 20,
-                  ),
+                const SizedBox(width: 8),
+                NeuIconButton(
+                  icon: Icons.close_rounded,
+                  size: 36,
                   onPressed: () {
                     setState(() {
                       _showSearch = false;
@@ -132,7 +111,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
             itemBuilder: (context, index) {
               final emoji = emojis[index];
               return InkWell(
-                borderRadius: BorderRadius.circular(AppRadii.tag),
+                borderRadius: BorderRadius.circular(NeuRadius.tag),
                 onTap: () => widget.onEmojiSelected(emoji),
                 child: Center(
                   child: Text(emoji, style: const TextStyle(fontSize: 24)),
@@ -145,13 +124,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
         if (_query.isEmpty)
           Container(
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              border: Border(
-                top: BorderSide(
-                  color: AppColors.surfaceVariant.withValues(alpha: 0.5),
-                  width: 0.5,
-                ),
-              ),
+              border: Border(top: BorderSide(color: colors.hairline)),
             ),
             child: Row(
               children: [
@@ -169,8 +142,8 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
                             style: TextStyle(
                               fontSize: 20,
                               color: selected
-                                  ? AppColors.primary
-                                  : AppColors.onSurfaceVariant,
+                                  ? colors.accent
+                                  : colors.textTertiary,
                             ),
                           ),
                           tooltip: cat.label,
@@ -187,7 +160,7 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
                 IconButton(
                   icon: Icon(
                     _showSearch ? Icons.close_rounded : Icons.search_rounded,
-                    color: AppColors.onSurfaceVariant,
+                    color: colors.textTertiary,
                     size: 20,
                   ),
                   onPressed: () {

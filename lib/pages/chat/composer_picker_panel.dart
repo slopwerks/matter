@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_surface.dart';
 import 'emoji_picker_panel.dart';
 import 'sticker_catalog.dart';
 
@@ -191,16 +193,13 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
   }
 
   Widget _buildSheet(BuildContext context, ScrollController scrollController) {
+    final colors = context.neu;
     return Container(
-      clipBehavior: Clip.antiAlias,
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        border: Border.all(
-          color: AppColors.surfaceVariant.withValues(alpha: 0.65),
-          width: 1,
-        ),
+      decoration: NeuDecoration(
+        colors: colors,
+        radius: NeuRadius.surface,
+        intensity: .7,
       ),
       child: Column(
         children: [
@@ -208,13 +207,13 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: Row(
               children: [
-                _PickerTabChip(
+                NeuChip(
                   label: 'Emoji',
                   selected: widget.tab == ComposerPickerTab.emoji,
                   onTap: () => widget.onTabChanged(ComposerPickerTab.emoji),
                 ),
                 const SizedBox(width: 8),
-                _PickerTabChip(
+                NeuChip(
                   label: '贴纸',
                   selected: widget.tab == ComposerPickerTab.sticker,
                   onTap: () => widget.onTabChanged(ComposerPickerTab.sticker),
@@ -222,7 +221,7 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
               ],
             ),
           ),
-          const Divider(height: 1, color: AppColors.surfaceVariant),
+          Divider(height: 1, color: colors.hairline),
           Expanded(
             child: switch (widget.tab) {
               ComposerPickerTab.emoji => EmojiPickerPanel(
@@ -517,9 +516,9 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
         _syncVisibleStickers(packs);
         return _buildPackStream(packs);
       },
-      loading: () => const Center(
+      loading: () => Center(
         child: CircularProgressIndicator(
-          color: AppColors.primary,
+          color: context.neu.accent,
           strokeWidth: 2,
         ),
       ),
@@ -530,20 +529,14 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
             child: Text(
               '加载贴纸包失败',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.onSurfaceVariant,
-                fontSize: 12,
-              ),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Center(
               child: Text(
                 '当前无法读取可用贴纸包',
-                style: TextStyle(
-                  color: AppColors.onSurfaceVariant,
-                  fontSize: 13,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
           ),
@@ -553,12 +546,13 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   }
 
   Widget _buildPackStream(List<StickerPack> packs) {
+    final colors = context.neu;
     if (packs.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           '当前房间没有可用贴纸包',
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.onSurfaceVariant, fontSize: 13),
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
     }
@@ -590,7 +584,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
             ),
           ),
         ),
-        const Divider(height: 1, color: AppColors.surfaceVariant),
+        Divider(height: 1, color: colors.hairline),
         Expanded(
           child: KeyedSubtree(
             key: _scrollViewportKey,
@@ -618,8 +612,8 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                                 height: 6,
                                 decoration: BoxDecoration(
                                   color: i == _activePackIndex
-                                      ? AppColors.primary
-                                      : AppColors.onSurfaceVariant.withValues(
+                                      ? colors.accent
+                                      : colors.textTertiary.withValues(
                                           alpha: 0.65,
                                         ),
                                   shape: BoxShape.circle,
@@ -631,13 +625,13 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                                   packs[i].title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: i == _activePackIndex
-                                        ? AppColors.onBackground
-                                        : AppColors.onSurface,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: i == _activePackIndex
+                                            ? colors.text
+                                            : colors.textSecondary,
+                                      ),
                                 ),
                               ),
                             ],
@@ -706,8 +700,9 @@ class _PackThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(NeuRadius.button),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
@@ -715,18 +710,16 @@ class _PackThumb extends StatelessWidget {
         height: 40,
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primary.withValues(alpha: 0.16)
-              : AppColors.surfaceVariant.withValues(alpha: 0.18),
-          borderRadius: BorderRadius.circular(14),
+          color: selected ? colors.accentSoft : colors.card,
+          borderRadius: BorderRadius.circular(NeuRadius.button),
           border: Border.all(
             color: selected
-                ? AppColors.primary.withValues(alpha: 0.5)
-                : AppColors.surfaceVariant.withValues(alpha: 0.45),
+                ? colors.accent.withValues(alpha: 0.5)
+                : colors.hairline,
           ),
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(NeuRadius.tag),
           child: _RemoteStickerPreview(sticker: sticker, fallback: fallback),
         ),
       ),
@@ -765,6 +758,7 @@ class _StickerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return GestureDetector(
       onTap: onTap,
       onLongPressStart: onLongPressStart,
@@ -774,12 +768,9 @@ class _StickerCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Ink(
         decoration: BoxDecoration(
-          color: AppColors.surfaceVariant.withValues(alpha: 0.18),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: AppColors.surfaceVariant.withValues(alpha: 0.35),
-            width: 0.6,
-          ),
+          color: colors.card,
+          borderRadius: BorderRadius.circular(NeuRadius.button),
+          border: Border.all(color: colors.hairline, width: 0.6),
         ),
         child: Padding(
           padding: const EdgeInsets.all(4),
@@ -800,6 +791,7 @@ class _StickerHoldPreviewOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final screenSize = MediaQuery.sizeOf(context);
     final previewMaxSide = math.min(screenSize.width * 0.62, 260.0);
 
@@ -831,13 +823,9 @@ class _StickerHoldPreviewOverlay extends StatelessWidget {
                       ),
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppColors.surface.withValues(alpha: 0.94),
-                        borderRadius: BorderRadius.circular(AppRadii.surface),
-                        border: Border.all(
-                          color: AppColors.surfaceVariant.withValues(
-                            alpha: 0.65,
-                          ),
-                        ),
+                        color: colors.surfaceStrong.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(NeuRadius.surface),
+                        border: Border.all(color: colors.hairline),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.28),
@@ -849,7 +837,9 @@ class _StickerHoldPreviewOverlay extends StatelessWidget {
                       child: AspectRatio(
                         aspectRatio: sticker.aspectRatio,
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(
+                            NeuRadius.content,
+                          ),
                           child: _RemoteStickerPreview(
                             sticker: sticker,
                             fit: BoxFit.contain,
@@ -864,15 +854,14 @@ class _StickerHoldPreviewOverlay extends StatelessWidget {
                         vertical: 7,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.42),
-                        borderRadius: BorderRadius.circular(AppRadii.button),
+                        color: colors.surfaceStrong,
+                        borderRadius: BorderRadius.circular(NeuRadius.button),
                       ),
                       child: Text(
                         sticker.label,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.text,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -955,11 +944,11 @@ class _RemoteStickerPreviewState extends ConsumerState<_RemoteStickerPreview> {
         final resolvedUrl = snapshot.data;
         if (resolvedUrl == null) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
+            return Center(
               child: SizedBox.square(
                 dimension: 28,
                 child: CircularProgressIndicator(
-                  color: AppColors.primary,
+                  color: context.neu.accent,
                   strokeWidth: 2,
                 ),
               ),
@@ -1015,67 +1004,24 @@ class _StickerFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final label = this.label;
     if (label != null && label.isNotEmpty) {
       return Center(
         child: Text(
           label,
-          style: const TextStyle(
-            color: AppColors.onSurfaceVariant,
-            fontSize: 15,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: colors.textTertiary,
             fontWeight: FontWeight.w700,
           ),
         ),
       );
     }
-    return const Center(
+    return Center(
       child: Icon(
         Icons.sticky_note_2_rounded,
-        color: AppColors.onSurfaceVariant,
+        color: colors.textTertiary,
         size: 28,
-      ),
-    );
-  }
-}
-
-class _PickerTabChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _PickerTabChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadii.button),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primary.withValues(alpha: 0.16)
-              : AppColors.surfaceVariant.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(AppRadii.button),
-          border: Border.all(
-            color: selected
-                ? AppColors.primary.withValues(alpha: 0.4)
-                : AppColors.surfaceVariant.withValues(alpha: 0.35),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? AppColors.primary : AppColors.onSurfaceVariant,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
       ),
     );
   }

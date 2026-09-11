@@ -9,6 +9,8 @@ import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 
+import '../helpers/neu_test_theme.dart';
+
 class _FakeRustApi implements RustLibApi {
   String? unpinnedEventId;
 
@@ -84,6 +86,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: PinnedMessagesStack(
               roomId: roomId,
@@ -139,8 +142,9 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const Scaffold(
             body: PinnedMessagesStack(roomId: roomId, onMessageTap: _noop),
           ),
         ),

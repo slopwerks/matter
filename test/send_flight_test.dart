@@ -4,6 +4,8 @@ import 'package:matter/pages/chat/message_insert_animation.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/chat_provider.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 void expectBorderRadiusClose(BorderRadius actual, BorderRadius expected) {
   expect(actual.topLeft.x, closeTo(expected.topLeft.x, 0.1));
   expect(actual.topRight.x, closeTo(expected.topRight.x, 0.1));
@@ -28,6 +30,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: SingleChildScrollView(
               controller: controller,
@@ -72,7 +75,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Align(
             alignment: Alignment.bottomRight,
@@ -118,7 +122,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: SendFlightTarget(
             messageId: messageId,
@@ -163,7 +168,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Align(
             alignment: Alignment.bottomRight,
@@ -222,6 +228,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Stack(
             children: [
@@ -297,7 +304,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Column(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -361,6 +369,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Stack(
             children: [
@@ -438,7 +447,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Align(
             alignment: Alignment.bottomRight,
@@ -491,6 +501,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: Align(
             alignment: Alignment.topRight,
@@ -565,6 +576,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: StatefulBuilder(
             builder: (context, setState) {
@@ -660,6 +672,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: StatefulBuilder(
               builder: (context, setState) {
@@ -750,6 +763,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: Stack(
               children: [

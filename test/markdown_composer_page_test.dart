@@ -12,7 +12,9 @@ import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/widgets/neu_surface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
   Completer<String>? pendingSend;
@@ -142,6 +144,7 @@ void main() {
     }) async {
       await tester.pumpWidget(
         MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -375,6 +378,7 @@ void main() {
       return UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: Align(
               alignment: Alignment.bottomCenter,
@@ -426,6 +430,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ValueListenableBuilder<bool>(
                 valueListenable: showInput,
@@ -1102,6 +1107,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: MessageGroupWidget(
                 group: MessageGroup(
@@ -1166,6 +1172,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: Column(
                 children: [
@@ -1435,11 +1442,18 @@ void main() {
 
       expect(tester.widget<TextField>(inputField()).readOnly, isTrue);
       expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('send_only')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      expect(
         tester
-            .widget<IconButton>(
-              find.descendant(
-                of: find.byKey(const ValueKey('send_only')),
-                matching: find.byType(IconButton),
+            .widget<NeuIconButton>(
+              find.ancestor(
+                of: find.byIcon(Icons.add_rounded),
+                matching: find.byType(NeuIconButton),
               ),
             )
             .onPressed,
@@ -1447,10 +1461,14 @@ void main() {
       );
       expect(
         tester
-            .widget<InkWell>(
+            .widget<GestureDetector>(
               find.ancestor(
                 of: find.byIcon(Icons.add_rounded),
-                matching: find.byType(InkWell),
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is GestureDetector &&
+                      widget.child is NeuIconButton,
+                ),
               ),
             )
             .onLongPress,
@@ -1468,18 +1486,22 @@ void main() {
       );
       expect(
         tester
-            .widget<IconButton>(
-              find.widgetWithIcon(IconButton, Icons.send_rounded),
+            .widget<NeuIconButton>(
+              find.widgetWithIcon(NeuIconButton, Icons.send_rounded),
             )
             .onPressed,
         isNotNull,
       );
       expect(
         tester
-            .widget<InkWell>(
+            .widget<GestureDetector>(
               find.ancestor(
                 of: find.byIcon(Icons.add_rounded),
-                matching: find.byType(InkWell),
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is GestureDetector &&
+                      widget.child is NeuIconButton,
+                ),
               ),
             )
             .onLongPress,

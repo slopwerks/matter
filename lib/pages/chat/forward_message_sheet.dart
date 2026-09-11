@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/neu_field.dart';
 
 typedef ForwardMessageSender =
     Future<void> Function({
@@ -75,15 +76,16 @@ class ForwardSuccessNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Material(
           key: const ValueKey('forward-success-notice-surface'),
-          color: AppColors.surfaceElevated,
+          color: colors.surfaceStrong,
           elevation: 8,
           shadowColor: Colors.black54,
-          borderRadius: BorderRadius.circular(AppRadii.button),
+          borderRadius: BorderRadius.circular(NeuRadius.button),
           clipBehavior: Clip.antiAlias,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
@@ -91,10 +93,10 @@ class ForwardSuccessNotice extends StatelessWidget {
               alignment: WrapAlignment.center,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Text(
+                Text(
                   '成功转发到',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.onBackground),
+                  style: TextStyle(color: colors.text),
                 ),
                 Semantics(
                   link: true,
@@ -105,10 +107,10 @@ class ForwardSuccessNotice extends StatelessWidget {
                     child: Text(
                       roomName,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: AppColors.primary,
+                      style: TextStyle(
+                        color: colors.accent,
                         decoration: TextDecoration.underline,
-                        decorationColor: AppColors.primary,
+                        decorationColor: colors.accent,
                       ),
                     ),
                   ),
@@ -206,13 +208,15 @@ class _ForwardMessageSheetState extends ConsumerState<ForwardMessageSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final rooms = ref.watch(chatRoomsProvider);
     return FractionallySizedBox(
       heightFactor: 0.72,
       child: Material(
-        color: AppColors.surface,
+        color: colors.surfaceStrong,
         borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppRadii.surface),
+          top: Radius.circular(NeuRadius.surface),
         ),
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
@@ -224,7 +228,7 @@ class _ForwardMessageSheetState extends ConsumerState<ForwardMessageSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
+                  color: colors.hairline,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -232,16 +236,7 @@ class _ForwardMessageSheetState extends ConsumerState<ForwardMessageSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
                 child: Row(
                   children: [
-                    const Expanded(
-                      child: Text(
-                        '转发到',
-                        style: TextStyle(
-                          color: AppColors.onBackground,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
+                    Expanded(child: Text('转发到', style: textTheme.titleMedium)),
                     IconButton(
                       tooltip: '关闭',
                       onPressed: _sendingRoomId == null
@@ -254,28 +249,28 @@ class _ForwardMessageSheetState extends ConsumerState<ForwardMessageSheet> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: TextField(
-                  key: const ValueKey('forward-room-search'),
-                  controller: _searchController,
-                  enabled: _sendingRoomId == null,
-                  onChanged: (value) => setState(() => _query = value),
-                  decoration: InputDecoration(
-                    hintText: '搜索会话',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                    suffixIcon: _query.isEmpty
+                child: IgnorePointer(
+                  ignoring: _sendingRoomId != null,
+                  child: NeuTextField(
+                    key: const ValueKey('forward-room-search'),
+                    controller: _searchController,
+                    hint: '搜索会话',
+                    radius: NeuRadius.button,
+                    onChanged: (value) => setState(() => _query = value),
+                    leading: const Icon(Icons.search_rounded),
+                    trailing: _query.isEmpty
                         ? null
-                        : IconButton(
-                            tooltip: '清除',
-                            onPressed: () {
+                        : GestureDetector(
+                            onTap: () {
                               _searchController.clear();
                               setState(() => _query = '');
                             },
-                            icon: const Icon(Icons.close_rounded, size: 18),
+                            child: const Icon(Icons.close_rounded),
                           ),
                   ),
                 ),
               ),
-              const Divider(height: 0.5, color: AppColors.surfaceVariant),
+              Divider(height: 0.5, color: colors.hairline),
               Expanded(
                 child: rooms.when(
                   loading: () => const Center(
@@ -321,7 +316,10 @@ class _ForwardMessageSheetState extends ConsumerState<ForwardMessageSheet> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.chevron_right_rounded),
+                              : Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: colors.textTertiary,
+                                ),
                           onTap: () => _forwardTo(room),
                         );
                       },
@@ -345,18 +343,19 @@ class _ForwardRoomsMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: AppColors.onSurfaceVariant, size: 30),
+            Icon(icon, color: colors.textTertiary, size: 30),
             const SizedBox(height: 10),
             Text(
               text,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.onSurfaceVariant),
+              style: TextStyle(color: colors.textTertiary),
             ),
           ],
         ),

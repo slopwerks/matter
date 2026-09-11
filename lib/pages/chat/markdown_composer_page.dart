@@ -7,7 +7,7 @@ import '../../features/markdown/markdown_composer.dart';
 import '../../features/markdown/markdown_format_toolbar.dart';
 import '../../features/markdown/markdown_text_editing_controller.dart';
 import '../../features/matrix_html/matrix_html_renderer.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 
 /// What the full-screen markdown composer returns to the message input:
 /// the (possibly edited) draft [text], and whether the message was [sent]
@@ -158,6 +158,7 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return PopScope(
       // Keep system back from dropping in-editor edits: veto it and close
       // through the same draft-returning path as the close button.
@@ -179,14 +180,14 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
               tooltip: '发送',
               onPressed: _hasText && !_sending ? _send : null,
               icon: _sending
-                  ? const SizedBox.square(
+                  ? SizedBox.square(
                       dimension: 20,
                       child: CircularProgressIndicator(
-                        color: AppColors.primary,
+                        color: colors.accent,
                         strokeWidth: 2,
                       ),
                     )
-                  : const Icon(Icons.send_rounded, color: AppColors.primary),
+                  : Icon(Icons.send_rounded, color: colors.accent),
             ),
           ],
         ),
@@ -222,6 +223,10 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
   }
 
   Widget _buildEditor() {
+    final colors = context.neu;
+    final editorStyle = Theme.of(
+      context,
+    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w400, height: 1.5);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: TextField(
@@ -235,14 +240,11 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
         minLines: null,
         textAlignVertical: TextAlignVertical.top,
         keyboardType: TextInputType.multiline,
-        style: const TextStyle(
-          color: AppColors.onBackground,
-          fontSize: 16,
-          height: 1.5,
-        ),
-        decoration: const InputDecoration(
+        cursorColor: colors.accent,
+        style: editorStyle,
+        decoration: InputDecoration(
           hintText: '用 Markdown 编写消息…',
-          hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
+          hintStyle: editorStyle?.copyWith(color: colors.textTertiary),
           border: InputBorder.none,
         ),
       ),
@@ -250,34 +252,27 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
   }
 
   Widget _buildPreview() {
+    final colors = context.neu;
+    final textStyle =
+        Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+        ) ??
+        const TextStyle(fontSize: 16, height: 1.5);
     final compiled = _composer.compile(_controller.text);
     final formattedBody = compiled.formattedBody;
     final Widget content;
     if (formattedBody != null) {
       content = MatrixHtmlMessage(
         html: formattedBody,
-        style: const TextStyle(
-          color: AppColors.onBackground,
-          fontSize: 16,
-          height: 1.5,
-        ),
-        accentColor: AppColors.secondary,
+        style: textStyle,
+        accentColor: colors.accent,
       );
     } else if (compiled.body.isNotEmpty) {
-      content = Text(
-        compiled.body,
-        style: const TextStyle(
-          color: AppColors.onBackground,
-          fontSize: 16,
-          height: 1.5,
-        ),
-      );
+      content = Text(compiled.body, style: textStyle);
     } else {
-      content = const Center(
-        child: Text(
-          '暂无内容可预览',
-          style: TextStyle(color: AppColors.onSurfaceVariant),
-        ),
+      content = Center(
+        child: Text('暂无内容可预览', style: Theme.of(context).textTheme.bodyMedium),
       );
     }
     return SingleChildScrollView(

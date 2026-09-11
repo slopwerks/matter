@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import 'chat_timestamp.dart';
 
 /// A timeline day-boundary used by [FloatingDateHeader] to decide which date
@@ -208,15 +208,13 @@ class _DateChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(AppRadii.tag),
-        border: Border.all(
-          color: AppColors.surfaceVariant.withValues(alpha: 0.6),
-          width: 0.6,
-        ),
+        color: colors.surfaceStrong.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(NeuRadius.tag),
+        border: Border.all(color: colors.hairline, width: 0.6),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.12),
@@ -227,8 +225,8 @@ class _DateChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(
-          color: AppColors.onSurface,
+        style: TextStyle(
+          color: colors.textSecondary,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),

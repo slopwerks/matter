@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 
 /// Full image editor shown before a gallery image is sent to a chat room.
 class ChatImageEditorPage extends StatelessWidget {
@@ -28,13 +28,14 @@ class ChatImageEditorPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final editorTheme = Theme.of(context).copyWith(
-      scaffoldBackgroundColor: AppColors.background,
+      scaffoldBackgroundColor: colors.base,
       colorScheme: Theme.of(context).colorScheme.copyWith(
-        primary: AppColors.primary,
-        secondary: AppColors.secondary,
-        surface: AppColors.surface,
-        onSurface: AppColors.onBackground,
+        primary: colors.accent,
+        secondary: colors.accent,
+        surface: colors.surface,
+        onSurface: colors.text,
       ),
     );
 
@@ -48,8 +49,8 @@ class ChatImageEditorPage extends StatelessWidget {
       configs: ProImageEditorConfigs(
         theme: editorTheme,
         i18n: _imageEditorI18n,
-        mainEditor: const MainEditorConfigs(
-          tools: [
+        mainEditor: MainEditorConfigs(
+          tools: const [
             SubEditorMode.cropRotate,
             SubEditorMode.paint,
             SubEditorMode.text,
@@ -59,21 +60,21 @@ class ChatImageEditorPage extends StatelessWidget {
             SubEditorMode.emoji,
           ],
           style: MainEditorStyle(
-            background: AppColors.background,
-            appBarBackground: AppColors.background,
-            appBarColor: AppColors.onBackground,
-            bottomBarBackground: AppColors.surface,
-            bottomBarColor: AppColors.onBackground,
+            background: colors.base,
+            appBarBackground: colors.base,
+            appBarColor: colors.text,
+            bottomBarBackground: colors.surface,
+            bottomBarColor: colors.text,
             uiOverlayStyle: SystemUiOverlayStyle(
               statusBarColor: Colors.transparent,
               statusBarIconBrightness: Brightness.light,
-              systemNavigationBarColor: AppColors.surface,
+              systemNavigationBarColor: colors.surface,
               systemNavigationBarIconBrightness: Brightness.light,
             ),
           ),
         ),
-        paintEditor: const PaintEditorConfigs(
-          tools: [
+        paintEditor: PaintEditorConfigs(
+          tools: const [
             PaintMode.moveAndZoom,
             PaintMode.freeStyle,
             PaintMode.arrow,
@@ -85,55 +86,55 @@ class ChatImageEditorPage extends StatelessWidget {
             PaintMode.eraser,
           ],
           style: PaintEditorStyle(
-            appBarBackground: AppColors.background,
-            appBarColor: AppColors.onBackground,
-            background: AppColors.background,
-            bottomBarBackground: AppColors.surface,
-            bottomBarActiveItemColor: AppColors.primary,
-            bottomBarInactiveItemColor: AppColors.onSurface,
-            initialColor: AppColors.primary,
+            appBarBackground: colors.base,
+            appBarColor: colors.text,
+            background: colors.base,
+            bottomBarBackground: colors.surface,
+            bottomBarActiveItemColor: colors.accent,
+            bottomBarInactiveItemColor: colors.textSecondary,
+            initialColor: colors.accent,
             uiOverlayStyle: SystemUiOverlayStyle(
               statusBarColor: Colors.transparent,
               statusBarIconBrightness: Brightness.light,
-              systemNavigationBarColor: AppColors.surface,
+              systemNavigationBarColor: colors.surface,
               systemNavigationBarIconBrightness: Brightness.light,
             ),
           ),
         ),
-        cropRotateEditor: const CropRotateEditorConfigs(
+        cropRotateEditor: CropRotateEditorConfigs(
           maxScale: 8,
           style: CropRotateEditorStyle(
-            appBarBackground: AppColors.background,
-            appBarColor: AppColors.onBackground,
-            background: AppColors.background,
-            bottomBarBackground: AppColors.surface,
-            bottomBarColor: AppColors.onBackground,
-            cropCornerColor: AppColors.primary,
+            appBarBackground: colors.base,
+            appBarColor: colors.text,
+            background: colors.base,
+            bottomBarBackground: colors.surface,
+            bottomBarColor: colors.text,
+            cropCornerColor: colors.accent,
             helperLineColor: Colors.white54,
             uiOverlayStyle: SystemUiOverlayStyle(
               statusBarColor: Colors.transparent,
               statusBarIconBrightness: Brightness.light,
-              systemNavigationBarColor: AppColors.surface,
+              systemNavigationBarColor: colors.surface,
               systemNavigationBarIconBrightness: Brightness.light,
             ),
           ),
         ),
-        tuneEditor: const TuneEditorConfigs(
+        tuneEditor: TuneEditorConfigs(
           style: TuneEditorStyle(
-            appBarBackground: AppColors.background,
-            appBarColor: AppColors.onBackground,
-            background: AppColors.background,
-            bottomBarBackground: AppColors.surface,
-            bottomBarActiveItemColor: AppColors.primary,
-            bottomBarInactiveItemColor: AppColors.onSurface,
+            appBarBackground: colors.base,
+            appBarColor: colors.text,
+            background: colors.base,
+            bottomBarBackground: colors.surface,
+            bottomBarActiveItemColor: colors.accent,
+            bottomBarInactiveItemColor: colors.textSecondary,
           ),
         ),
-        filterEditor: const FilterEditorConfigs(
+        filterEditor: FilterEditorConfigs(
           style: FilterEditorStyle(
-            appBarBackground: AppColors.background,
-            appBarColor: AppColors.onBackground,
-            background: AppColors.background,
-            previewSelectedTextColor: AppColors.primary,
+            appBarBackground: colors.base,
+            appBarColor: colors.text,
+            background: colors.base,
+            previewSelectedTextColor: colors.accent,
           ),
         ),
         imageGeneration: imageGenerationConfigs,

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 void main() {
   group('latest-message thresholds', () {
     test('selects flight, insertion, and quiet presentations', () {
@@ -79,6 +81,7 @@ void main() {
     Future<void> pumpControl(bool showSentNotice) {
       return tester.pumpWidget(
         MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: Center(
               child: LatestMessageControl(

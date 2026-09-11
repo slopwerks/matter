@@ -8,6 +8,8 @@ import 'package:matter/pages/chat/message_input.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/src/rust/frb_generated.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 /// Records every typing-notice send and holds each one in flight until the
 /// test resolves it, so the race between a stale `true` and the stop
 /// `false` can be reproduced deterministically.
@@ -145,6 +147,7 @@ Widget _messageInput(ProviderContainer container, String roomId) {
   return UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
+      theme: neuTestTheme(),
       home: Scaffold(
         body: Align(
           alignment: Alignment.bottomCenter,

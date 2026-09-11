@@ -9,6 +9,8 @@ import 'package:matter/providers/mutable_state.dart';
 import 'package:matter/widgets/app_avatar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 void main() {
   testWidgets('sticker preview replaces a cached MXC thumbnail with download', (
     tester,
@@ -62,6 +64,7 @@ Future<void> _pumpPreview(
     ProviderScope(
       overrides: overrides,
       child: MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: SizedBox.square(
             dimension: 100,

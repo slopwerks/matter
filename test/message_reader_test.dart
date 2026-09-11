@@ -51,7 +51,15 @@ void main() {
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
 
-      await tester.longPress(find.byKey(const ValueKey('text-bubble:\$read')));
+      // Press the bubble's edge padding: the formatted body is selectable,
+      // so a long-press landing on the text starts selection instead of
+      // opening the message menu.
+      final bubbleRect = tester.getRect(
+        find.byKey(const ValueKey('text-bubble:\$read')),
+      );
+      await tester.longPressAt(
+        Offset(bubbleRect.right - 6, bubbleRect.top + 6),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('全屏阅读'), findsOneWidget);

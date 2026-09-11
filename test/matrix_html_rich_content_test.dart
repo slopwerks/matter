@@ -8,10 +8,13 @@ import 'package:matter/features/matrix_html/matrix_html_renderer.dart';
 import 'package:matter/widgets/app_avatar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 void main() {
   Widget app(String html, {MatrixHtmlImageResolver? imageResolver}) =>
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MatrixHtmlMessage(
               html: html,

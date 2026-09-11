@@ -11,7 +11,7 @@ import 'package:http/http.dart' as http;
 import '../../features/matrix_html/matrix_link_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 
 class LinkPreviewCard extends ConsumerWidget {
@@ -71,19 +71,21 @@ class _LinkPreviewFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final background = isMe
-        ? Colors.black.withValues(alpha: 0.16)
-        : AppColors.surface;
+        ? Colors.white.withValues(alpha: 0.14)
+        : colors.base.withValues(alpha: 0.55);
     final border = isMe
         ? Colors.white.withValues(alpha: 0.16)
-        : AppColors.surfaceVariant;
-    final titleColor = isMe ? Colors.white : AppColors.onBackground;
+        : colors.hairline;
+    final titleColor = isMe ? colors.onAccent : colors.text;
     final secondaryColor = isMe
-        ? Colors.white.withValues(alpha: 0.72)
-        : AppColors.onSurfaceVariant;
+        ? colors.onAccent.withValues(alpha: 0.72)
+        : colors.textTertiary;
     final linkColor = isMe
-        ? Colors.white.withValues(alpha: 0.86)
-        : AppColors.secondary;
+        ? colors.onAccent.withValues(alpha: 0.86)
+        : colors.accent;
     final imageUrl = preview.imageUrl;
     final showImage = imageUrl != null && width >= 300;
     final imageWidth = math.min(156.0, math.max(112.0, width * 0.34));
@@ -93,12 +95,12 @@ class _LinkPreviewFrame extends StatelessWidget {
       height: _height,
       child: InkWell(
         onTap: () => onOpen(preview.uri),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(NeuRadius.tag),
         child: Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: background,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(NeuRadius.tag),
             border: Border.all(color: border),
           ),
           child: Row(
@@ -119,10 +121,8 @@ class _LinkPreviewFrame extends StatelessWidget {
                         preview.titleLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: textTheme.titleSmall?.copyWith(
                           color: titleColor,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
                           height: 1.2,
                         ),
                       ),
@@ -132,9 +132,8 @@ class _LinkPreviewFrame extends StatelessWidget {
                           preview.descriptionLabel!,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          style: textTheme.bodySmall?.copyWith(
                             color: secondaryColor,
-                            fontSize: 12.5,
                             height: 1.28,
                           ),
                         ),
@@ -144,9 +143,8 @@ class _LinkPreviewFrame extends StatelessWidget {
                         preview.displayUrl,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: textTheme.bodySmall?.copyWith(
                           color: linkColor,
-                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                           height: 1.2,
                         ),
@@ -210,9 +208,8 @@ class _PreviewSourceRow extends StatelessWidget {
             preview.sourceLabel,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: color,
-              fontSize: 12,
               fontWeight: FontWeight.w600,
               height: 1.2,
             ),

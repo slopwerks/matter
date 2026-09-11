@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 import 'package:matter/src/rust/frb_generated.dart';
-import 'package:matter/theme/app_theme.dart';
+import 'package:matter/theme/neu_colors.dart';
+
+import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
   @override
@@ -65,6 +67,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: MessageGroupWidget(
                 group: MessageGroup(
@@ -91,7 +94,7 @@ void main() {
 
       expect(
         _mentionSpan(tester).style?.color,
-        isMe ? Colors.white : AppColors.secondary,
+        isMe ? Colors.white : NeuColors.dark.accent,
         reason: isMe ? 'own bubble' : 'other bubble',
       );
     }

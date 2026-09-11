@@ -14,8 +14,11 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import 'action_failure_message.dart';
 import '../../src/rust/api/matrix.dart' hide redactMessage;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/glass.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/sheets.dart';
 import 'chat_timestamp.dart';
 import 'emoji_picker_panel.dart';
 import 'message_input.dart'
@@ -41,6 +44,43 @@ String? effectiveFormattedHtml(ChatMessage message) =>
       formattedBody: message.formattedBody,
     ) ??
     message.formattedBody;
+
+/// 新拟物气泡装饰:超椭圆圆角 + 对角渐变填充 + 双向收敛投影。
+/// 配方与 [NeuDecoration] 的 raised/intensity .7 一致,但接受分角
+/// [BorderRadius],以保留同发送者聚合时的拼接圆角。
+Decoration neuBubbleDecoration(
+  NeuColors colors, {
+  required bool isMe,
+  required BorderRadius borderRadius,
+}) {
+  const offset = 3.8 * .7;
+  return ShapeDecoration(
+    shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: isMe
+          ? [neuShift(colors.accent, .08), neuShift(colors.accent, -.06)]
+          : [neuShift(colors.card, .055), neuShift(colors.card, -.05)],
+    ),
+    shadows: neuBubbleShadows(colors, offset: offset),
+  );
+}
+
+/// 与 [NeuDecoration] raised/intensity .7 观感一致的柔和小投影
+/// (BoxShadow 形式,供 BoxDecoration 的媒体气泡复用)。
+List<BoxShadow> neuBubbleShadows(NeuColors colors, {double offset = 2.66}) => [
+  BoxShadow(
+    color: colors.shadowDark.withValues(alpha: .72),
+    blurRadius: offset * 2.3,
+    offset: Offset(offset, offset),
+  ),
+  BoxShadow(
+    color: colors.shadowLight.withValues(alpha: colors.highlightAlpha),
+    blurRadius: offset * 1.5,
+    offset: Offset(-offset, -offset),
+  ),
+];
 
 class MessageGroup {
   final String senderId;
@@ -486,7 +526,11 @@ class MessageGroupWidget extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (isMe && isLocalOutgoing) ...[
-                  _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
+                  _buildLocalOutgoingStatus(
+                    context,
+                    isLocalFailed,
+                    isLocalSent,
+                  ),
                   const SizedBox(width: 6),
                 ],
                 Flexible(
@@ -496,7 +540,11 @@ class MessageGroupWidget extends ConsumerWidget {
                 ),
                 if (!isMe && isLocalOutgoing) ...[
                   const SizedBox(width: 6),
-                  _buildLocalOutgoingStatus(isLocalFailed, isLocalSent),
+                  _buildLocalOutgoingStatus(
+                    context,
+                    isLocalFailed,
+                    isLocalSent,
+                  ),
                 ],
               ],
             ),
@@ -531,21 +579,26 @@ class MessageGroupWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildLocalOutgoingStatus(bool failed, bool sent) {
+  Widget _buildLocalOutgoingStatus(
+    BuildContext context,
+    bool failed,
+    bool sent,
+  ) {
+    final colors = context.neu;
     if (failed) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 6),
-        child: Icon(Icons.error_rounded, color: AppColors.error, size: 18),
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Icon(Icons.error_rounded, color: colors.error, size: 18),
       );
     }
     if (sent) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 6),
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
         child: Tooltip(
           message: '已发送，等待服务器同步',
           child: Icon(
             Icons.schedule_rounded,
-            color: AppColors.onSurfaceVariant,
+            color: colors.textTertiary,
             size: 16,
           ),
         ),
@@ -557,7 +610,7 @@ class MessageGroupWidget extends ConsumerWidget {
         dimension: 12,
         child: CircularProgressIndicator(
           strokeWidth: 1.6,
-          color: AppColors.onSurfaceVariant.withValues(alpha: 0.72),
+          color: colors.textTertiary.withValues(alpha: 0.72),
         ),
       ),
     );
@@ -582,7 +635,6 @@ class MessageGroupWidget extends ConsumerWidget {
             key: ValueKey('${message.id}:${reaction.key}'),
             reaction: reaction,
             reacted: reacted,
-            isMe: isMe,
             onTap: () async {
               try {
                 if (reacted) {
@@ -626,11 +678,10 @@ class MessageGroupWidget extends ConsumerWidget {
       context: context,
       builder: (dialogContext) => Dialog(
         key: ValueKey('mention-profile:$userId'),
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-        ),
-        child: Padding(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: GlassPanel(
+          radius: NeuRadius.nav,
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -645,20 +696,13 @@ class MessageGroupWidget extends ConsumerWidget {
               Text(
                 displayName,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.onBackground,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(dialogContext).textTheme.titleLarge,
               ),
               const SizedBox(height: 5),
               SelectableText(
                 userId,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.onSurfaceVariant,
-                  fontSize: 13,
-                ),
+                style: Theme.of(dialogContext).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
               Align(
@@ -709,13 +753,14 @@ class MessageGroupWidget extends ConsumerWidget {
     required Map<String, String> mentionDisplayNames,
     required MessageMentionTapHandler onMentionTap,
   }) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final maxBubbleWidth = math.min(
-      MediaQuery.of(context).size.width * 0.70,
-      800.0,
+      MediaQuery.of(context).size.width * 0.68,
+      520.0,
     );
-    final textStyle = TextStyle(
-      color: isMe ? Colors.white : AppColors.onBackground,
-      fontSize: 15,
+    final textStyle = textTheme.bodyLarge!.copyWith(
+      color: isMe ? colors.onAccent : colors.text,
       height: 1.35,
     );
     final previewTextSource = formattedBody == null || formattedBody.isEmpty
@@ -743,9 +788,8 @@ class MessageGroupWidget extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: 3),
             child: Text(
               message.senderName,
-              style: TextStyle(
-                color: AppColors.primary.withValues(alpha: 0.85),
-                fontSize: 12.5,
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -774,7 +818,7 @@ class MessageGroupWidget extends ConsumerWidget {
             key: ValueKey('formatted-body:${message.id}'),
             html: readerHtml,
             style: textStyle,
-            accentColor: isMe ? Colors.white : AppColors.secondary,
+            accentColor: isMe ? colors.onAccent : colors.accent,
             mentionDisplayNames: mentionDisplayNames,
             onMentionTap: onMentionTap,
             trailingMetadata: metadata,
@@ -788,7 +832,7 @@ class MessageGroupWidget extends ConsumerWidget {
             metadata: metadata,
             maxWidth: maxBubbleWidth - 28,
             minWidth: replyPreviewWidth,
-            linkColor: isMe ? Colors.white : AppColors.secondary,
+            linkColor: isMe ? colors.onAccent : colors.accent,
             onUrlTap: linkRouter.open,
             mentionDisplayNames: mentionDisplayNames,
             mentionedUserIds: message.mentionedUserIds,
@@ -801,8 +845,9 @@ class MessageGroupWidget extends ConsumerWidget {
       key: ValueKey('text-bubble:${message.id}'),
       constraints: BoxConstraints(maxWidth: maxBubbleWidth),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: isMe ? AppColors.primary : AppColors.surfaceElevated,
+      decoration: neuBubbleDecoration(
+        colors,
+        isMe: isMe,
         borderRadius: _messageBorderRadius(
           isMe: isMe,
           isFirst: isFirst,
@@ -819,144 +864,83 @@ class MessageGroupWidget extends ConsumerWidget {
     required bool isFirst,
     required bool isLast,
   }) {
-    final outer = const Radius.circular(AppRadii.content);
+    final outer = const Radius.circular(NeuRadius.content);
     final joined = const Radius.circular(_joinedRadius);
     if (isMe) {
       return BorderRadius.only(
         topLeft: outer,
         topRight: isFirst ? outer : joined,
         bottomLeft: outer,
-        bottomRight: isLast ? const Radius.circular(AppRadii.tag) : joined,
+        bottomRight: isLast ? const Radius.circular(NeuRadius.tag) : joined,
       );
     }
     return BorderRadius.only(
       topLeft: isFirst ? outer : joined,
       topRight: outer,
-      bottomLeft: isLast ? const Radius.circular(AppRadii.tag) : joined,
+      bottomLeft: isLast ? const Radius.circular(NeuRadius.tag) : joined,
       bottomRight: outer,
     );
   }
 
   void _showEditHistory(BuildContext context, ChatMessage message) {
-    showModalBottomSheet(
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
+    showNeuSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.3,
-        maxChildSize: 0.8,
-        expand: false,
-        builder: (context, scrollController) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(AppRadii.surface),
-              ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+              child: Text('编辑记录', style: textTheme.titleMedium),
             ),
-            child: Column(
-              children: [
-                // Handle bar
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8, bottom: 12),
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.onSurfaceVariant.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Text(
-                    '编辑记录',
-                    style: TextStyle(
-                      color: AppColors.onBackground,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const Divider(color: AppColors.surfaceVariant, height: 0.5),
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 16,
-                    ),
-                    itemCount: message.editHistory.length,
-                    itemBuilder: (context, index) {
-                      final isOriginal = index == 0;
-                      final isLatest = index == message.editHistory.length - 1;
-                      String label;
-                      if (isOriginal) {
-                        label = '原始';
-                      } else if (isLatest) {
-                        label = '最新';
-                      } else {
-                        label = '第 $index 次编辑';
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isLatest
-                                        ? AppColors.primary.withValues(
-                                            alpha: 0.15,
-                                          )
-                                        : AppColors.surfaceVariant.withValues(
-                                            alpha: 0.5,
-                                          ),
-                                    borderRadius: BorderRadius.circular(
-                                      AppRadii.tag,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    label,
-                                    style: TextStyle(
-                                      color: isLatest
-                                          ? AppColors.primary
-                                          : AppColors.onSurfaceVariant,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              message.editHistory[index],
-                              style: const TextStyle(
-                                color: AppColors.onBackground,
-                                fontSize: 14,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
+            for (var index = 0; index < message.editHistory.length; index++)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: index == message.editHistory.length - 1
+                            ? colors.accentSoft
+                            : colors.card.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(NeuRadius.tag),
+                      ),
+                      child: Text(
+                        index == 0
+                            ? '原始'
+                            : index == message.editHistory.length - 1
+                            ? '最新'
+                            : '第 $index 次编辑',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: index == message.editHistory.length - 1
+                              ? colors.accent
+                              : colors.textTertiary,
+                          fontWeight: FontWeight.w600,
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      message.editHistory[index],
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colors.text,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          );
-        },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -967,6 +951,7 @@ class MessageGroupWidget extends ConsumerWidget {
     String replyContent,
     bool isMe,
   ) {
+    final colors = context.neu;
     return Semantics(
       button: true,
       label: '跳转到被回复的消息',
@@ -980,20 +965,20 @@ class MessageGroupWidget extends ConsumerWidget {
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: (isMe ? Colors.white : AppColors.primary).withValues(
-              alpha: 0.1,
-            ),
-            borderRadius: BorderRadius.circular(AppRadii.tag),
+            color: isMe
+                ? Colors.white.withValues(alpha: 0.16)
+                : colors.base.withValues(alpha: 0.65),
+            borderRadius: BorderRadius.circular(NeuRadius.tag),
             border: Border(
               left: BorderSide(
-                color: isMe ? Colors.white : AppColors.primary,
-                width: 2,
+                color: isMe ? Colors.white70 : colors.accent,
+                width: 3,
               ),
             ),
           ),
           child: Text(
             replyContent,
-            style: _replyPreviewTextStyle(isMe),
+            style: _replyPreviewTextStyle(context, isMe),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1002,12 +987,12 @@ class MessageGroupWidget extends ConsumerWidget {
     );
   }
 
-  TextStyle _replyPreviewTextStyle(bool isMe) {
-    return TextStyle(
+  TextStyle _replyPreviewTextStyle(BuildContext context, bool isMe) {
+    final colors = context.neu;
+    return Theme.of(context).textTheme.bodySmall!.copyWith(
       color: isMe
-          ? Colors.white.withValues(alpha: 0.7)
-          : AppColors.onSurfaceVariant,
-      fontSize: 12,
+          ? colors.onAccent.withValues(alpha: 0.7)
+          : colors.textTertiary,
       height: 1.3,
     );
   }
@@ -1021,7 +1006,10 @@ class MessageGroupWidget extends ConsumerWidget {
     const horizontalPadding = 16.0;
     final textMaxWidth = math.max(0.0, maxWidth - horizontalPadding);
     final painter = TextPainter(
-      text: TextSpan(text: replyContent, style: _replyPreviewTextStyle(isMe)),
+      text: TextSpan(
+        text: replyContent,
+        style: _replyPreviewTextStyle(context, isMe),
+      ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       maxLines: 2,
@@ -1066,6 +1054,7 @@ class MessageGroupWidget extends ConsumerWidget {
   }
 
   Widget _buildEventMessage(BuildContext context, ChatMessage message) {
+    final colors = context.neu;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Center(
@@ -1076,28 +1065,21 @@ class MessageGroupWidget extends ConsumerWidget {
           ),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: AppColors.surfaceVariant.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(AppRadii.tag),
+            color: colors.card.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(NeuRadius.tag),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                _eventIcon(message),
-                size: 13,
-                color: AppColors.onSurfaceVariant,
-              ),
+              Icon(_eventIcon(message), size: 13, color: colors.textTertiary),
               const SizedBox(width: 5),
               Flexible(
                 child: Text(
                   message.content,
-                  style: const TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                    height: 1.2,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(height: 1.2),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -1114,11 +1096,13 @@ class MessageGroupWidget extends ConsumerWidget {
     ChatMessage message, {
     bool overlay = false,
   }) {
+    final colors = context.neu;
+    final labelStyle = Theme.of(context).textTheme.labelSmall;
     final foreground = overlay
         ? Colors.white.withValues(alpha: 0.9)
         : message.isMe
-        ? Colors.white.withValues(alpha: 0.65)
-        : AppColors.onSurfaceVariant;
+        ? colors.onAccent.withValues(alpha: 0.65)
+        : colors.textTertiary;
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1128,9 +1112,8 @@ class MessageGroupWidget extends ConsumerWidget {
             onTap: () => _showEditHistory(context, message),
             child: Text(
               '已编辑',
-              style: TextStyle(
+              style: labelStyle?.copyWith(
                 color: foreground.withValues(alpha: 0.75),
-                fontSize: 10,
               ),
             ),
           ),
@@ -1138,9 +1121,8 @@ class MessageGroupWidget extends ConsumerWidget {
         ],
         Text(
           formatMessageTime(message.timestamp),
-          style: TextStyle(
+          style: labelStyle?.copyWith(
             color: foreground,
-            fontSize: 10.5,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -1205,12 +1187,9 @@ class MessageGroupWidget extends ConsumerWidget {
     WidgetRef ref,
     ChatMessage message,
   ) {
-    showModalBottomSheet(
+    showNeuSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) =>
-          _ReadReceiptsSheet(message: message, roomId: roomId),
+      child: _ReadReceiptsSheet(message: message, roomId: roomId),
     );
   }
 
@@ -1241,63 +1220,39 @@ class MessageGroupWidget extends ConsumerWidget {
     WidgetRef ref,
     ChatMessage message,
   ) {
-    showModalBottomSheet(
+    final colors = context.neu;
+    showNeuSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) => Container(
-        margin: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.5,
-            child: Column(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+            child: Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
-                  child: Row(
-                    children: [
-                      const Text(
-                        '选择表情',
-                        style: TextStyle(
-                          color: AppColors.onBackground,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => Navigator.of(sheetContext).pop(),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          color: AppColors.onSurfaceVariant,
-                          size: 22,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: EmojiPickerPanel(
-                    onEmojiSelected: (emoji) async {
-                      Navigator.of(sheetContext).pop();
-                      await _sendReactionAndRefresh(
-                        context,
-                        ref,
-                        message.id,
-                        emoji,
-                      );
-                    },
+                Text('选择表情', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: colors.textTertiary,
+                    size: 22,
                   ),
                 ),
               ],
             ),
           ),
-        ),
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.5,
+            child: EmojiPickerPanel(
+              onEmojiSelected: (emoji) async {
+                Navigator.of(context).pop();
+                await _sendReactionAndRefresh(context, ref, message.id, emoji);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1340,12 +1295,7 @@ class MessageGroupWidget extends ConsumerWidget {
         onCopy: () async {
           await Clipboard.setData(ClipboardData(text: message.content));
           if (overlayContext.mounted) {
-            ScaffoldMessenger.of(overlayContext).showSnackBar(
-              const SnackBar(
-                content: Text('已复制'),
-                duration: Duration(seconds: 1),
-              ),
-            );
+            neuToast(overlayContext, '已复制');
           }
         },
         onReply: () => _startReply(overlayContext, ref, message),
@@ -1516,66 +1466,63 @@ class MessageGroupWidget extends ConsumerWidget {
     WidgetRef ref,
     ChatMessage message,
   ) {
+    final colors = context.neu;
     final roomAccountKey = activeRoomAccountKey(ref, roomId);
-    showModalBottomSheet<void>(
+    final canRetry = message.msgType == MessageType.text;
+    showNeuSheet<void>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.refresh_rounded),
-              title: const Text('重试发送'),
-              subtitle: message.msgType == MessageType.text
-                  ? null
-                  : const Text('仅文本消息支持重试'),
-              enabled: message.msgType == MessageType.text,
-              onTap: () async {
-                Navigator.of(sheetContext).pop();
-                try {
-                  await retryFailedLocalMessage(
-                    ref,
-                    roomAccountKey,
-                    message.id,
-                  );
-                  if (context.mounted &&
-                      ref.read(activeUserIdProvider) == roomAccountKey.userId) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('已重新发送'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                  }
-                } catch (error) {
-                  if (context.mounted &&
-                      ref.read(activeUserIdProvider) == roomAccountKey.userId) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('重试失败: $error'),
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  }
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.delete_outline_rounded,
-                color: AppColors.error,
-              ),
-              title: const Text(
-                '删除消息',
-                style: TextStyle(color: AppColors.error),
-              ),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                removeLocalOutgoingMessage(ref, roomAccountKey, message.id);
-              },
-            ),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          NeuSheetItem(
+            icon: Icons.refresh_rounded,
+            label: '重试发送',
+            color: canRetry ? null : colors.textTertiary,
+            trailing: canRetry
+                ? null
+                : Text(
+                    '仅文本消息支持重试',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+            onTap: !canRetry
+                ? () {}
+                : () async {
+                    Navigator.of(context).pop();
+                    try {
+                      await retryFailedLocalMessage(
+                        ref,
+                        roomAccountKey,
+                        message.id,
+                      );
+                      if (context.mounted &&
+                          ref.read(activeUserIdProvider) ==
+                              roomAccountKey.userId) {
+                        neuToast(context, '已重新发送');
+                      }
+                    } catch (error) {
+                      if (context.mounted &&
+                          ref.read(activeUserIdProvider) ==
+                              roomAccountKey.userId) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('重试失败: $error'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    }
+                  },
+          ),
+          NeuSheetItem(
+            icon: Icons.delete_outline_rounded,
+            label: '删除消息',
+            color: colors.error,
+            onTap: () {
+              Navigator.of(context).pop();
+              removeLocalOutgoingMessage(ref, roomAccountKey, message.id);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1728,12 +1675,12 @@ class _SwipeToReplyState extends State<_SwipeToReply>
                         width: 34,
                         height: 34,
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.14),
+                          color: context.neu.accent.withValues(alpha: 0.14),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.reply_rounded,
-                          color: AppColors.primary,
+                          color: context.neu.accent,
                           size: 20,
                         ),
                       ),
@@ -1920,10 +1867,11 @@ class _IconTextAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? AppColors.onSurface;
+    final colors = context.neu;
+    final c = color ?? colors.textSecondary;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadii.tag),
+      borderRadius: BorderRadius.circular(NeuRadius.tag),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Column(
@@ -1933,9 +1881,8 @@ class _IconTextAction extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               label,
-              style: TextStyle(
-                color: color ?? AppColors.onBackground,
-                fontSize: 12,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: color ?? colors.text,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -2074,13 +2021,13 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: InkWell(
-                borderRadius: BorderRadius.circular(AppRadii.tag),
+                borderRadius: BorderRadius.circular(NeuRadius.tag),
                 onTap: () => _select(widget.onShowFullEmojiPicker),
-                child: const Padding(
-                  padding: EdgeInsets.all(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
                   child: Icon(
                     Icons.add_rounded,
-                    color: AppColors.onSurfaceVariant,
+                    color: context.neu.textTertiary,
                     size: 22,
                   ),
                 ),
@@ -2096,7 +2043,7 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadii.tag),
+        borderRadius: BorderRadius.circular(NeuRadius.tag),
         onTap: () => _select(() => widget.onReact(emoji)),
         child: Padding(
           padding: const EdgeInsets.all(8),
@@ -2149,7 +2096,7 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
                 onTap: () => _select(widget.onPin!),
               ),
             if (!isEvent && widget.pinStateLoading)
-              const SizedBox(
+              SizedBox(
                 width: 56,
                 height: 48,
                 child: Center(
@@ -2157,7 +2104,7 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
                     dimension: 16,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.6,
-                      color: AppColors.onSurfaceVariant,
+                      color: context.neu.textTertiary,
                     ),
                   ),
                 ),
@@ -2172,7 +2119,7 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
               _IconTextAction(
                 icon: Icons.delete_outline_rounded,
                 label: '撤回',
-                color: AppColors.error,
+                color: context.neu.error,
                 onTap: () => _select(widget.onRecall),
               ),
           ],
@@ -2186,25 +2133,15 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
     final isEvent = msg.msgType == MessageType.event;
     return Material(
       type: MaterialType.transparency,
-      child: Container(
+      child: GlassPanel(
         key: _menuKey,
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
+        radius: NeuRadius.surface,
+        padding: EdgeInsets.zero,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (!isEvent) _buildEmojiRow(),
-            if (!isEvent)
-              const Divider(color: AppColors.surfaceVariant, height: 0.5),
+            if (!isEvent) Divider(color: context.neu.hairline, height: 0.5),
             _buildActionRow(),
           ],
         ),
@@ -2253,35 +2190,28 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
 class _ReactionChip extends StatelessWidget {
   final Reaction reaction;
   final bool reacted;
-  final bool isMe;
   final VoidCallback onTap;
 
   const _ReactionChip({
     super.key,
     required this.reaction,
     required this.reacted,
-    required this.isMe,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final highlight = reacted
-        ? (isMe ? Colors.white.withValues(alpha: 0.25) : AppColors.primary)
-        : AppColors.surfaceElevated;
+    final colors = context.neu;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: highlight,
-          borderRadius: BorderRadius.circular(AppRadii.tag),
-          border: reacted && !isMe
-              ? Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.4),
-                  width: 1,
-                )
-              : null,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: NeuDecoration(
+          colors: colors,
+          depth: NeuDepth.pressed,
+          radius: NeuRadius.nav,
+          intensity: .6,
+          borderColor: reacted ? colors.accent : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -2290,14 +2220,9 @@ class _ReactionChip extends StatelessWidget {
             const SizedBox(width: 3),
             Text(
               '${reaction.senders.length}',
-              style: TextStyle(
-                fontSize: 11,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: reacted
-                    ? (isMe
-                          ? Colors.white.withValues(alpha: 0.9)
-                          : AppColors.primary)
-                    : AppColors.onSurfaceVariant,
+                color: reacted ? colors.accent : colors.textTertiary,
               ),
             ),
           ],
@@ -2316,77 +2241,50 @@ class _ReadReceiptsSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
-      margin: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-      ),
-      child: SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.6,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '已读 ${message.readers.length}',
-                        style: const TextStyle(
-                          color: AppColors.onBackground,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: AppColors.onSurfaceVariant,
-                        size: 22,
-                      ),
-                    ),
-                  ],
+              Expanded(
+                child: Text(
+                  '已读 ${message.readers.length}',
+                  style: textTheme.titleMedium,
                 ),
               ),
-              Flexible(
-                child: message.readers.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32),
-                        child: Center(
-                          child: Text(
-                            '暂无已读',
-                            style: TextStyle(
-                              color: AppColors.onSurfaceVariant,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.only(bottom: 8),
-                        itemCount: message.readers.length,
-                        itemBuilder: (context, index) {
-                          final reader = message.readers[index];
-                          return _ReadReceiptRow(
-                            reader: reader,
-                            roomId: roomId,
-                          );
-                        },
-                      ),
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Icon(
+                  Icons.close_rounded,
+                  color: colors.textTertiary,
+                  size: 22,
+                ),
               ),
             ],
           ),
         ),
-      ),
+        if (message.readers.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: Text('暂无已读', style: textTheme.bodyMedium)),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 8),
+            itemCount: message.readers.length,
+            itemBuilder: (context, index) {
+              final reader = message.readers[index];
+              return _ReadReceiptRow(reader: reader, roomId: roomId);
+            },
+          ),
+      ],
     );
   }
 }
@@ -2499,7 +2397,7 @@ class _StickyGroupAvatar extends SingleChildRenderObjectWidget {
            child: AppAvatar(
              fallback: fallback,
              size: avatarSize,
-             radius: AppRadii.content,
+             radius: NeuRadius.content,
              url: avatarUrl,
            ),
          ),
@@ -2703,18 +2601,16 @@ class _ReadReceiptRowState extends ConsumerState<_ReadReceiptRow> {
           AppAvatar(
             fallback: widget.reader.displayName,
             size: 40,
-            radius: AppRadii.content,
+            radius: NeuRadius.content,
             url: _avatarUrl,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               widget.reader.displayName,
-              style: const TextStyle(
-                color: AppColors.onBackground,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

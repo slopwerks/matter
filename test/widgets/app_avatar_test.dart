@@ -3,15 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/widgets/app_avatar.dart';
 
+import '../helpers/neu_test_theme.dart';
+
 void main() {
   group('AppAvatar', () {
     testWidgets('shows a single-letter initial for one-word names', (
       tester,
     ) async {
       await tester.pumpWidget(
-        const ProviderScope(
+        ProviderScope(
           child: MaterialApp(
-            home: Scaffold(body: AppAvatar(fallback: 'Alice')),
+            theme: neuTestTheme(),
+            home: const Scaffold(body: AppAvatar(fallback: 'Alice')),
           ),
         ),
       );
@@ -24,9 +27,10 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        const ProviderScope(
+        ProviderScope(
           child: MaterialApp(
-            home: Scaffold(body: AppAvatar(fallback: 'Alice Smith')),
+            theme: neuTestTheme(),
+            home: const Scaffold(body: AppAvatar(fallback: 'Alice Smith')),
           ),
         ),
       );
@@ -37,9 +41,10 @@ void main() {
 
     testWidgets('collapses whitespace when building initials', (tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
+        ProviderScope(
           child: MaterialApp(
-            home: Scaffold(body: AppAvatar(fallback: 'Alice  Bob')),
+            theme: neuTestTheme(),
+            home: const Scaffold(body: AppAvatar(fallback: 'Alice  Bob')),
           ),
         ),
       );
@@ -51,9 +56,10 @@ void main() {
 
     testWidgets('shows question mark for empty fallback', (tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
+        ProviderScope(
           child: MaterialApp(
-            home: Scaffold(body: AppAvatar(fallback: '')),
+            theme: neuTestTheme(),
+            home: const Scaffold(body: AppAvatar(fallback: '')),
           ),
         ),
       );
@@ -64,9 +70,10 @@ void main() {
 
     testWidgets('renders at the requested size', (tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
+        ProviderScope(
           child: MaterialApp(
-            home: Scaffold(body: AppAvatar(fallback: 'A', size: 64)),
+            theme: neuTestTheme(),
+            home: const Scaffold(body: AppAvatar(fallback: 'A', size: 64)),
           ),
         ),
       );

@@ -7,9 +7,13 @@ import 'package:matter/pages/chat/attachment_picker.dart';
 import 'package:matter/pages/chat/chat_image_editor_page.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
-import 'package:matter/theme/app_theme.dart';
+import 'package:matter/theme/neu_colors.dart';
+import 'package:matter/widgets/neu_decoration.dart';
+import 'package:matter/widgets/neu_surface.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
+
+import 'helpers/neu_test_theme.dart';
 
 const _pmChannel = 'com.fluttercandies/photo_manager';
 const _locationChannel = MethodChannel('flutter.baseflow.com/geolocator');
@@ -145,7 +149,12 @@ void main() {
   ) async {
     await _mockPhotoManagerEmpty();
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: _MessageInputHarness())),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const _MessageInputHarness(),
+        ),
+      ),
     );
     await tester.pump();
 
@@ -166,26 +175,36 @@ void main() {
     expect(find.text('图片 / 视频'), findsNothing);
     expect(find.byIcon(Icons.close_rounded), findsNothing);
 
-    final outerSurface = tester
-        .widgetList<Material>(
-          find.descendant(
+    final outerSurface = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byType(AttachmentPicker),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Container && widget.decoration != null,
+            ),
+          )
+          .first,
+    );
+    final decoration = outerSurface.decoration! as NeuDecoration;
+    expect(decoration.radius, NeuRadius.surface);
+    final sheetMaterial = tester.widget<Material>(
+      find
+          .descendant(
             of: find.byType(AttachmentPicker),
             matching: find.byType(Material),
-          ),
-        )
-        .singleWhere(
-          (material) =>
-              material.color == AppColors.surface &&
-              material.clipBehavior == Clip.antiAlias,
-        );
-    final shape = outerSurface.shape! as RoundedRectangleBorder;
-    expect(shape.borderRadius, BorderRadius.circular(AppRadii.surface));
+          )
+          .first,
+    );
+    expect(sheetMaterial.clipBehavior, Clip.antiAlias);
   });
 
   testWidgets('attachment panel expands after an upward drag', (tester) async {
     await _mockPhotoManagerEmpty();
     await tester.pumpWidget(
-      const MaterialApp(home: _AttachmentPickerHarness()),
+      MaterialApp(
+        theme: neuTestTheme(),
+        home: const _AttachmentPickerHarness(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -209,7 +228,10 @@ void main() {
           .setMockMethodCallHandler(_locationChannel, null),
     );
     await tester.pumpWidget(
-      const MaterialApp(home: _AttachmentPickerHarness()),
+      MaterialApp(
+        theme: neuTestTheme(),
+        home: const _AttachmentPickerHarness(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -249,7 +271,10 @@ void main() {
           .setMockMethodCallHandler(_fileSelectorChannel, null),
     );
     await tester.pumpWidget(
-      const MaterialApp(home: _AttachmentPickerHarness()),
+      MaterialApp(
+        theme: neuTestTheme(),
+        home: const _AttachmentPickerHarness(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -269,7 +294,12 @@ void main() {
   ) async {
     await _mockPhotoManagerEmpty();
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: _MessageInputHarness())),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const _MessageInputHarness(),
+        ),
+      ),
     );
     await tester.pump();
 
@@ -288,12 +318,12 @@ void main() {
     final sendButtonFinder = find.byKey(
       const ValueKey('attachment-send-button'),
     );
-    var sendButton = tester.widget<FilledButton>(sendButtonFinder);
+    var sendButton = tester.widget<NeuButton>(sendButtonFinder);
     expect(sendButton.onPressed, isNull);
 
     await tester.enterText(find.widgetWithText(TextField, '选项 2'), '米饭');
     await tester.pump();
-    sendButton = tester.widget<FilledButton>(sendButtonFinder);
+    sendButton = tester.widget<NeuButton>(sendButtonFinder);
     expect(sendButton.onPressed, isNotNull);
     expect(tester.getSize(sendButtonFinder).height, 44);
     final tabBarTop = tester
@@ -335,7 +365,12 @@ void main() {
   ) async {
     await _mockPhotoManagerEmpty();
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: _MessageInputHarness())),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const _MessageInputHarness(),
+        ),
+      ),
     );
     await tester.pump();
 

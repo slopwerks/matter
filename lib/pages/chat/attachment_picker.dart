@@ -15,7 +15,10 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/glass.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_surface.dart';
 import '../chat/chat_image_editor_page.dart';
 import '../chat/latest_message_control.dart';
 
@@ -588,74 +591,84 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     required double maxHeight,
     required double minSize,
   }) {
+    final colors = context.neu;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Material(
-        color: AppColors.surface,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-          side: BorderSide(
-            color: AppColors.surfaceVariant.withValues(alpha: 0.65),
-          ),
+      child: Container(
+        decoration: NeuDecoration(
+          colors: colors,
+          radius: NeuRadius.surface,
+          intensity: .6,
         ),
-        child: Column(
-          children: [
-            GestureDetector(
-              key: const ValueKey('attachment-panel-drag-handle'),
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragUpdate: (details) => _dragSheet(
-                details.primaryDelta ?? 0,
-                maxHeight: maxHeight,
-                minSize: minSize,
-              ),
-              onVerticalDragEnd: (details) =>
-                  _settleSheet(details.primaryVelocity ?? 0, minSize: minSize),
-              child: SizedBox(
-                height: 32,
-                child: Center(
-                  child: Container(
-                    width: 34,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.muted,
-                      borderRadius: BorderRadius.circular(2),
+        child: Material(
+          type: MaterialType.transparency,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(NeuRadius.surface),
+          ),
+          child: Column(
+            children: [
+              GestureDetector(
+                key: const ValueKey('attachment-panel-drag-handle'),
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragUpdate: (details) => _dragSheet(
+                  details.primaryDelta ?? 0,
+                  maxHeight: maxHeight,
+                  minSize: minSize,
+                ),
+                onVerticalDragEnd: (details) => _settleSheet(
+                  details.primaryVelocity ?? 0,
+                  minSize: minSize,
+                ),
+                child: SizedBox(
+                  height: 32,
+                  child: Center(
+                    child: Container(
+                      width: 34,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colors.textTertiary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            const Divider(height: 1, color: AppColors.surfaceVariant),
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: IndexedStack(
-                      index: _tab.index,
-                      children: [
-                        _buildTabBody(AttachmentTab.media, scrollController),
-                        const SizedBox.shrink(),
-                        _buildTabBody(AttachmentTab.poll, scrollController),
-                        _buildTabBody(AttachmentTab.location, scrollController),
-                      ],
+              Divider(height: 1, color: colors.hairline),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: IndexedStack(
+                        index: _tab.index,
+                        children: [
+                          _buildTabBody(AttachmentTab.media, scrollController),
+                          const SizedBox.shrink(),
+                          _buildTabBody(AttachmentTab.poll, scrollController),
+                          _buildTabBody(
+                            AttachmentTab.location,
+                            scrollController,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: _FrostedTabBar(
-                      tab: _tab,
-                      isFileBusy: _isPickingFiles,
-                      onTabChanged: _isSending || _isPickingFiles
-                          ? null
-                          : _selectTab,
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _FrostedTabBar(
+                        tab: _tab,
+                        isFileBusy: _isPickingFiles,
+                        onTabChanged: _isSending || _isPickingFiles
+                            ? null
+                            : _selectTab,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -778,32 +791,22 @@ class _FrostedTabBar extends StatelessWidget {
       child: SizedBox(
         key: const ValueKey('attachment-tab-bar'),
         height: _attachmentDockHeight - _attachmentDockGap,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadii.nav),
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceElevated.withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(AppRadii.nav),
-                border: Border.all(color: AppColors.glassBorder, width: 0.8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  for (final item in items)
-                    _TabButton(
-                      item: item,
-                      selected: tab == item.tab,
-                      busy: item.tab == AttachmentTab.file && isFileBusy,
-                      onTap: onTabChanged == null
-                          ? null
-                          : () => onTabChanged!(item.tab),
-                    ),
-                ],
-              ),
-            ),
+        child: GlassPanel(
+          radius: NeuRadius.nav,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              for (final item in items)
+                _TabButton(
+                  item: item,
+                  selected: tab == item.tab,
+                  busy: item.tab == AttachmentTab.file && isFileBusy,
+                  onTap: onTabChanged == null
+                      ? null
+                      : () => onTabChanged!(item.tab),
+                ),
+            ],
           ),
         ),
       ),
@@ -833,7 +836,8 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.primary : AppColors.onSurfaceVariant;
+    final colors = context.neu;
+    final color = selected ? colors.accent : colors.textTertiary;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -843,14 +847,22 @@ class _TabButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (busy)
-              const SizedBox.square(
+              SizedBox.square(
                 dimension: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colors.accent,
+                ),
               )
             else
               Icon(item.icon, color: color, size: 24),
             const SizedBox(height: 2),
-            Text(item.label, style: TextStyle(color: color, fontSize: 11)),
+            Text(
+              item.label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: color),
+            ),
           ],
         ),
       ),
@@ -1018,19 +1030,15 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
+      return Center(child: CircularProgressIndicator(color: colors.accent));
     }
     if (_error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-            _error!,
-            style: const TextStyle(color: AppColors.onSurfaceVariant),
-          ),
+          child: Text(_error!, style: Theme.of(context).textTheme.bodyMedium),
         ),
       );
     }
@@ -1040,10 +1048,10 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
           child: NotificationListener<ScrollNotification>(
             onNotification: _onScroll,
             child: _assets.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       '没有可用的图片或视频',
-                      style: TextStyle(color: AppColors.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   )
                 : GridView.builder(
@@ -1065,14 +1073,14 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
                     itemCount: _assets.length + (_fetchingMore ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index >= _assets.length) {
-                        return const Center(
+                        return Center(
                           child: Padding(
-                            padding: EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(16),
                             child: SizedBox.square(
                               dimension: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: AppColors.onSurfaceVariant,
+                                color: colors.textTertiary,
                               ),
                             ),
                           ),
@@ -1098,14 +1106,14 @@ class _MediaTabBodyState extends State<_MediaTabBody> {
                             AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
                               color: selected
-                                  ? AppColors.background
+                                  ? colors.base
                                   : Colors.transparent,
                               padding: selected
                                   ? const EdgeInsets.all(6)
                                   : EdgeInsets.zero,
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(
-                                  selected ? 8 : 0,
+                                  selected ? NeuRadius.tag - 2 : 0,
                                 ),
                                 child: _AssetThumbnail(
                                   key: ValueKey('thumbnail_${asset.id}'),
@@ -1191,19 +1199,20 @@ class _AssetThumbnailState extends State<_AssetThumbnail> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return FutureBuilder<Uint8List?>(
       future: _thumbnail,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return Container(color: AppColors.surfaceVariant);
+          return Container(color: colors.card);
         }
         final bytes = snap.data;
         if (bytes == null) {
           return Container(
-            color: AppColors.surfaceVariant,
-            child: const Icon(
+            color: colors.card,
+            child: Icon(
               Icons.broken_image,
-              color: AppColors.onSurfaceVariant,
+              color: colors.textTertiary,
               size: 22,
             ),
           );
@@ -1221,15 +1230,14 @@ class _SelectionBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       width: 22,
       height: 22,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: selected
-            ? AppColors.primary
-            : Colors.black.withValues(alpha: 0.35),
+        color: selected ? colors.accent : Colors.black.withValues(alpha: 0.35),
         border: Border.all(
           color: Colors.white.withValues(alpha: selected ? 0 : 0.7),
           width: 1.5,
@@ -1239,9 +1247,8 @@ class _SelectionBadge extends StatelessWidget {
       child: selected
           ? Text(
               '$order',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.onAccent,
                 fontWeight: FontWeight.w600,
               ),
             )
@@ -1265,6 +1272,7 @@ class _SendBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final active = enabled && !isSending;
     return SafeArea(
       top: false,
@@ -1274,31 +1282,22 @@ class _SendBar extends StatelessWidget {
           alignment: Alignment.centerRight,
           child: SizedBox(
             height: _attachmentSendButtonHeight,
-            child: FilledButton.icon(
+            child: NeuButton(
               key: const ValueKey('attachment-send-button'),
+              accent: true,
+              radius: NeuRadius.nav,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               onPressed: active ? onSend : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: AppColors.primary.withValues(
-                  alpha: 0.35,
-                ),
-                disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
-                minimumSize: const Size(0, 44),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: const StadiumBorder(),
-              ),
               icon: isSending
-                  ? const SizedBox.square(
+                  ? SizedBox.square(
                       dimension: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: colors.onAccent,
                       ),
                     )
-                  : const Icon(Icons.send_rounded, size: 20),
-              label: Text(label),
+                  : const Icon(Icons.send_rounded),
+              child: Text(label),
             ),
           ),
         ),
@@ -1369,6 +1368,7 @@ class _MediaFallbackState extends State<_MediaFallback> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return Stack(
       children: [
         Positioned.fill(
@@ -1383,20 +1383,20 @@ class _MediaFallbackState extends State<_MediaFallback> {
                   : _attachmentSendBarClearance,
             ),
             children: [
-              const Icon(
+              Icon(
                 Icons.photo_library_outlined,
                 size: 48,
-                color: AppColors.onSurfaceVariant,
+                color: colors.textTertiary,
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 '此平台的相册网格不可用，请选择图片或视频',
-                style: TextStyle(color: AppColors.onSurfaceVariant),
+                style: Theme.of(context).textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
               Center(
-                child: OutlinedButton(
+                child: NeuButton(
                   onPressed: widget.isSending ? null : _pick,
                   child: const Text('选择图片 / 视频'),
                 ),
@@ -1406,18 +1406,17 @@ class _MediaFallbackState extends State<_MediaFallback> {
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.insert_drive_file_rounded,
-                    color: AppColors.onSurfaceVariant,
+                    color: colors.textTertiary,
                   ),
                   title: Text(
                     _picked[index].name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.onSurface,
-                      fontSize: 13,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: colors.text),
                   ),
                   trailing: IconButton(
                     tooltip: '移除',
@@ -1574,6 +1573,7 @@ class _PollTabBodyState extends State<_PollTabBody> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return Stack(
       children: [
         Positioned.fill(
@@ -1589,7 +1589,7 @@ class _PollTabBodyState extends State<_PollTabBody> {
               TextField(
                 controller: _question,
                 enabled: !widget.isSending,
-                style: const TextStyle(color: AppColors.onBackground),
+                style: Theme.of(context).textTheme.bodyLarge,
                 decoration: const InputDecoration(labelText: '问题'),
                 onChanged: (_) => setState(() {}),
               ),
@@ -1599,33 +1599,30 @@ class _PollTabBodyState extends State<_PollTabBody> {
                 onPressed: widget.isSending || _visibleAnswerCount >= 20
                     ? null
                     : _addAnswer,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text(
-                  '添加选项',
-                  style: TextStyle(color: AppColors.primary),
-                ),
+                icon: Icon(Icons.add_rounded, color: colors.accent),
+                label: Text('添加选项', style: TextStyle(color: colors.accent)),
               ),
               SwitchListTile(
-                title: const Text(
+                title: Text(
                   '公开投票结果',
-                  style: TextStyle(color: AppColors.onBackground),
+                  style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 value: _disclosed,
                 onChanged: widget.isSending
                     ? null
                     : (v) => setState(() => _disclosed = v),
-                activeThumbColor: AppColors.primary,
+                activeThumbColor: colors.accent,
               ),
               SwitchListTile(
-                title: const Text(
+                title: Text(
                   '允许多选',
-                  style: TextStyle(color: AppColors.onBackground),
+                  style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 value: _allowMultiple,
                 onChanged: widget.isSending
                     ? null
                     : (v) => setState(() => _allowMultiple = v),
-                activeThumbColor: AppColors.primary,
+                activeThumbColor: colors.accent,
               ),
             ],
           ),
@@ -1692,7 +1689,7 @@ class _PollOptionInput extends StatelessWidget {
             key: ValueKey('poll-option-input-$index'),
             controller: controller,
             enabled: enabled,
-            style: const TextStyle(color: AppColors.onBackground),
+            style: Theme.of(context).textTheme.bodyLarge,
             decoration: InputDecoration(hintText: '选项 ${index + 1}'),
             onChanged: onChanged,
           ),
@@ -1710,9 +1707,9 @@ class _PollOptionInput extends StatelessWidget {
                     dimension: 40,
                     child: IconButton(
                       tooltip: '删除选项',
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.remove_circle_outline_rounded,
-                        color: AppColors.onSurfaceVariant,
+                        color: context.neu.textTertiary,
                       ),
                       onPressed: enabled ? onRemove : null,
                       padding: EdgeInsets.zero,
@@ -1787,6 +1784,7 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final selected = _selected;
     if (selected == null) {
       return Center(
@@ -1798,36 +1796,36 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
             _attachmentDockClearance,
           ),
           child: _locating
-              ? const Column(
+              ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: AppColors.primary),
-                    SizedBox(height: 12),
+                    CircularProgressIndicator(color: colors.accent),
+                    const SizedBox(height: 12),
                     Text(
                       '正在获取当前位置',
-                      style: TextStyle(color: AppColors.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                 )
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.location_off_rounded,
-                      color: AppColors.onSurfaceVariant,
+                      color: colors.textTertiary,
                       size: 36,
                     ),
                     const SizedBox(height: 10),
                     Text(
                       _error ?? '无法获取当前位置',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
-                    OutlinedButton.icon(
+                    NeuButton(
                       onPressed: widget.isSending ? null : _locate,
                       icon: const Icon(Icons.my_location_rounded),
-                      label: const Text('重新定位'),
+                      child: const Text('重新定位'),
                     ),
                   ],
                 ),
@@ -1877,17 +1875,17 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
                     width: 44,
                     height: 44,
                     alignment: Alignment.topCenter,
-                    child: const Icon(
+                    child: Icon(
                       Icons.location_on_rounded,
                       size: 42,
-                      color: AppColors.primary,
+                      color: colors.accent,
                     ),
                   ),
                 ],
               ),
               SimpleAttributionWidget(
                 alignment: Alignment.topLeft,
-                backgroundColor: AppColors.surface.withValues(alpha: 0.82),
+                backgroundColor: colors.surfaceStrong.withValues(alpha: 0.82),
                 source: const Text(
                   'OpenStreetMap contributors',
                   style: TextStyle(fontSize: 9),
@@ -1906,20 +1904,24 @@ class _LocationTabBodyState extends State<_LocationTabBody> {
         Positioned(
           top: 10,
           right: 10,
-          child: Material(
-            color: AppColors.surfaceElevated.withValues(alpha: 0.92),
-            shape: const CircleBorder(),
-            child: IconButton(
-              tooltip: '回到当前位置',
-              onPressed: widget.isSending || _locating ? null : _locate,
-              icon: _locating
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.my_location_rounded, size: 20),
-            ),
-          ),
+          child: _locating
+              ? NeuSurface(
+                  depth: NeuDepth.flat,
+                  radius: 20,
+                  width: 40,
+                  height: 40,
+                  padding: const EdgeInsets.all(11),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.accent,
+                  ),
+                )
+              : NeuIconButton(
+                  tooltip: '回到当前位置',
+                  size: 40,
+                  onPressed: widget.isSending ? null : _locate,
+                  icon: Icons.my_location_rounded,
+                ),
         ),
         Positioned(
           left: 0,

@@ -9,8 +9,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import 'decrypted_video_source.dart';
+import 'message_group.dart' show neuBubbleShadows;
 
 class VideoMessageBubble extends ConsumerStatefulWidget {
   final String? videoUrl;
@@ -156,15 +157,15 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
           ? controller!.value.aspectRatio
           : null,
     );
+    final colors = context.neu;
     return Container(
       width: size.width,
       height: size.height,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: widget.isMe
-            ? AppColors.primary.withValues(alpha: 0.3)
-            : AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(14),
+        color: widget.isMe ? colors.accent.withValues(alpha: 0.3) : colors.card,
+        borderRadius: BorderRadius.circular(NeuRadius.button),
+        boxShadow: neuBubbleShadows(colors),
       ),
       child: Stack(
         children: [
@@ -194,7 +195,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
             child: _VideoHeroSurface(
               controller: controller,
               fit: BoxFit.contain,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(NeuRadius.button),
               showPlayButton: !controller.value.isPlaying,
             ),
           ),
@@ -221,7 +222,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
             allowScrubbing: false,
             padding: EdgeInsets.zero,
             colors: VideoProgressColors(
-              playedColor: AppColors.primary,
+              playedColor: context.neu.accent,
               bufferedColor: Colors.white38,
               backgroundColor: Colors.white24,
             ),
@@ -573,7 +574,7 @@ class _FullscreenVideoState extends State<_FullscreenVideo> {
                             allowScrubbing: true,
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             colors: VideoProgressColors(
-                              playedColor: AppColors.primary,
+                              playedColor: context.neu.accent,
                               bufferedColor: Colors.white38,
                               backgroundColor: Colors.white24,
                             ),

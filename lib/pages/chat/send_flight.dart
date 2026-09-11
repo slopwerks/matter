@@ -4,15 +4,15 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../providers/chat_provider.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 
 enum SendFlightKind { text, sticker }
 
 const BorderRadius outgoingTextBubbleBorderRadius = BorderRadius.only(
-  topLeft: Radius.circular(AppRadii.content),
-  topRight: Radius.circular(AppRadii.content),
-  bottomLeft: Radius.circular(AppRadii.content),
-  bottomRight: Radius.circular(AppRadii.tag),
+  topLeft: Radius.circular(NeuRadius.content),
+  topRight: Radius.circular(NeuRadius.content),
+  bottomLeft: Radius.circular(NeuRadius.content),
+  bottomRight: Radius.circular(NeuRadius.tag),
 );
 
 class SendFlightSpec {
@@ -435,16 +435,14 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
 
   @override
   Widget build(BuildContext context) {
+    final neu = context.neu;
     return IgnorePointer(
       child: Material(
         type: MaterialType.transparency,
         child: DefaultTextStyle(
-          style: const TextStyle(
-            color: AppColors.onBackground,
-            fontSize: 15,
-            fontWeight: FontWeight.w400,
-            decoration: TextDecoration.none,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge!.copyWith(decoration: TextDecoration.none),
           child: AnimatedBuilder(
             animation: _animation,
             child: widget.spec.child,
@@ -457,7 +455,7 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
                   widget.resolveEndBorderRadius?.call() ??
                   outgoingTextBubbleBorderRadius;
               final borderRadius = BorderRadius.lerp(
-                BorderRadius.circular(AppRadii.surface),
+                BorderRadius.circular(NeuRadius.surface),
                 endBorderRadius,
                 progress,
               )!;
@@ -468,17 +466,18 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: isText
-                            ? Color.lerp(
-                                AppColors.surfaceVariant,
-                                AppColors.primary,
-                                progress,
-                              )
+                            ? Color.lerp(neu.card, neu.accent, progress)
                             : Colors.transparent,
                         borderRadius: borderRadius,
                       ),
                       child: ClipRRect(
                         borderRadius: borderRadius,
-                        child: child,
+                        child: DefaultTextStyle(
+                          style: DefaultTextStyle.of(context).style.copyWith(
+                            color: Color.lerp(neu.text, neu.onAccent, progress),
+                          ),
+                          child: child!,
+                        ),
                       ),
                     ),
                   ),

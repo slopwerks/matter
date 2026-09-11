@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import 'app_update_service.dart';
 import 'update_exception.dart';
 
@@ -14,68 +14,65 @@ Future<void> showAvailableUpdateDialog(
   final notesSummary = summarizeReleaseNotes(update.notes);
   final shouldDownload = await showDialog<bool>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('发现新版本'),
-      content: SizedBox(
-        width: 360,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'v${update.version}',
-              style: const TextStyle(
-                color: AppColors.primary,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
+    builder: (dialogContext) {
+      final neu = dialogContext.neu;
+      final textTheme = Theme.of(dialogContext).textTheme;
+      return AlertDialog(
+        title: const Text('发现新版本'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'v${update.version}',
+                style: textTheme.titleLarge?.copyWith(color: neu.accent),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${current.displayName} → v${update.version} · '
-              'Android arm64 · ${formatByteSize(update.assetSize)}',
-              style: const TextStyle(color: AppColors.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            const Text('本次更新', style: TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            Text(
-              notesSummary,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.onSurfaceVariant,
-                height: 1.4,
+              const SizedBox(height: 4),
+              Text(
+                '${current.displayName} → v${update.version} · '
+                'Android arm64 · ${formatByteSize(update.assetSize)}',
+                style: textTheme.bodyMedium,
               ),
-            ),
-            const SizedBox(height: 4),
-            TextButton.icon(
-              onPressed: () =>
-                  _openReleasePage(dialogContext, update.releasePage),
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 36),
+              const SizedBox(height: 16),
+              Text('本次更新', style: textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text(
+                notesSummary,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodyMedium?.copyWith(height: 1.4),
               ),
-              icon: const Icon(Icons.open_in_new_rounded, size: 16),
-              label: const Text(
-                '查看完整发布说明',
-                style: TextStyle(decoration: TextDecoration.underline),
+              const SizedBox(height: 4),
+              TextButton.icon(
+                onPressed: () =>
+                    _openReleasePage(dialogContext, update.releasePage),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 36),
+                ),
+                icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                label: const Text(
+                  '查看完整发布说明',
+                  style: TextStyle(decoration: TextDecoration.underline),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext, false),
-          child: const Text('稍后'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(dialogContext, true),
-          child: const Text('下载并安装'),
-        ),
-      ],
-    ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('稍后'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('下载并安装'),
+          ),
+        ],
+      );
+    },
   );
   if (shouldDownload != true || !context.mounted) return;
 
@@ -223,7 +220,7 @@ class _DownloadUpdateDialogState extends State<_DownloadUpdateDialog> {
                   percent == null
                       ? '请稍候'
                       : '$percent · ${formatByteSize(_received)} / ${formatByteSize(_total)}',
-                  style: const TextStyle(color: AppColors.onSurfaceVariant),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ] else
                 Text(_error!),

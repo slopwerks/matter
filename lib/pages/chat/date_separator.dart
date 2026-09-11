@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_surface.dart';
 
 class DateSeparator extends StatelessWidget {
   final String dateLabel;
@@ -9,27 +11,15 @@ class DateSeparator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(height: 0.5, color: AppColors.surfaceVariant),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              dateLabel,
-              style: const TextStyle(
-                color: AppColors.onSurfaceVariant,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Container(height: 0.5, color: AppColors.surfaceVariant),
-          ),
-        ],
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
+        child: NeuSurface(
+          depth: NeuDepth.flat,
+          color: context.neu.surfaceStrong,
+          radius: NeuRadius.nav,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+          child: Text(dateLabel, style: Theme.of(context).textTheme.bodySmall),
+        ),
       ),
     );
   }

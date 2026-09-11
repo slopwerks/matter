@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import 'message_group.dart' show neuBubbleShadows;
 
 typedef LocationUriLauncher = Future<bool> Function(Uri uri);
 
@@ -86,52 +87,63 @@ class LocationMessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final label = body.trim().isEmpty ? geoUri : body;
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(NeuRadius.content),
+    );
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.content),
-        child: Stack(
-          children: [
-            Material(
-              color: isMe
-                  ? AppColors.primary.withValues(alpha: 0.22)
-                  : AppColors.surfaceVariant,
-              child: InkWell(
-                onTap: () => _open(context),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 22),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.location_on_rounded,
-                        color: AppColors.primary,
-                        size: 30,
-                      ),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Text(
-                          label,
-                          style: const TextStyle(
-                            color: AppColors.onBackground,
-                            fontSize: 14,
+      child: Container(
+        decoration: ShapeDecoration(
+          shape: shape,
+          color: isMe ? colors.accent : colors.card,
+          shadows: neuBubbleShadows(colors),
+        ),
+        child: ClipPath.shape(
+          shape: shape,
+          child: Stack(
+            children: [
+              Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: () => _open(context),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 22),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.location_on_rounded,
+                          color: isMe ? colors.onAccent : colors.accent,
+                          size: 30,
+                        ),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            label,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: isMe ? colors.onAccent : colors.text,
+                                ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.open_in_new_rounded,
-                        size: 18,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.open_in_new_rounded,
+                          size: 18,
+                          color: isMe
+                              ? colors.onAccent.withValues(alpha: 0.7)
+                              : colors.textTertiary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            metadata,
-          ],
+              metadata,
+            ],
+          ),
         ),
       ),
     );

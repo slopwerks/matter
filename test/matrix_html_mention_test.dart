@@ -4,13 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/matrix_html/matrix_html_renderer.dart';
 import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/src/rust/api/matrix.dart';
+import 'helpers/neu_test_theme.dart';
 
 void main() {
   testWidgets('formatted mention remains breakable inline text', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: SizedBox(
             width: 120,
@@ -43,6 +45,7 @@ void main() {
     String? mentionedUserId;
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: MatrixHtmlMessage(
             html:
@@ -76,6 +79,7 @@ void main() {
     Uri? openedUri;
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: MatrixHtmlMessage(
             html: '<a href="https://example.org/profile">Website</a>',
@@ -118,6 +122,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(

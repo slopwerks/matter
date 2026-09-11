@@ -7,7 +7,9 @@ import 'package:matter/pages/chat/file_message_bubble.dart';
 import 'package:matter/pages/chat/location_message_bubble.dart';
 import 'package:matter/pages/chat/poll_message_bubble.dart';
 import 'package:matter/src/rust/api/matrix.dart';
-import 'package:matter/theme/app_theme.dart';
+import 'package:matter/theme/neu_colors.dart';
+
+import 'helpers/neu_test_theme.dart';
 
 const _metadata = Positioned(right: 0, bottom: 0, child: SizedBox.shrink());
 
@@ -29,9 +31,10 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        const MaterialApp(
+        MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
-            backgroundColor: AppColors.background,
+            backgroundColor: NeuColors.dark.base,
             body: LocationMessageBubble(
               body: '公司',
               geoUri: 'geo:39.9,116.4',
@@ -47,9 +50,10 @@ void main() {
 
     testWidgets('FileMessageBubble shows the filename', (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
+        MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
-            backgroundColor: AppColors.background,
+            backgroundColor: NeuColors.dark.base,
             body: FileMessageBubble(
               filename: 'report.pdf',
               caption: '季度报告',
@@ -69,7 +73,8 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        const MaterialApp(
+        MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: FileMessageBubble(
               filename: 'archive.zip',
@@ -113,8 +118,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
-              backgroundColor: AppColors.background,
+              backgroundColor: NeuColors.dark.base,
               body: PollMessageBubble(
                 roomId: '!r:ex.org',
                 pollStartEventId: '\$poll:ex.org',
@@ -150,8 +156,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
-              backgroundColor: AppColors.background,
+              backgroundColor: NeuColors.dark.base,
               body: PollMessageBubble(
                 roomId: '!r:ex.org',
                 pollStartEventId: '\$poll:ex.org',
@@ -188,6 +195,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: PollMessageBubble(
                 roomId: '!r:ex.org',
@@ -226,6 +234,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: PollMessageBubble(
                 roomId: '!r:ex.org',
@@ -279,6 +288,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: PollMessageBubble(
                 roomId: '!r:ex.org',
@@ -329,6 +339,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: PollMessageBubble(
                 roomId: '!r:ex.org',
@@ -354,6 +365,7 @@ void main() {
       final launched = <Uri>[];
       await tester.pumpWidget(
         MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: LocationMessageBubble(
               body: '公司',
@@ -380,6 +392,7 @@ void main() {
       var launches = 0;
       await tester.pumpWidget(
         MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: LocationMessageBubble(
               body: '坏位置',

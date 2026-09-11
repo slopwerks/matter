@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/neu_surface.dart';
+import 'message_group.dart' show neuBubbleShadows;
 
 typedef PollVoteCallback = Future<void> Function(List<String> answerIds);
 typedef PollEndCallback = Future<void> Function();
@@ -212,6 +214,8 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final poll = widget.poll;
     final ended = poll.ended || _endedLocally;
     final reveal = poll.disclosed || ended;
@@ -223,124 +227,126 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
         !_submitting &&
         _selected.isNotEmpty &&
         !_setsEqual(_selected, _committedVote);
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(NeuRadius.content),
+    );
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: widget.maxWidth),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.content),
-        child: Stack(
-          children: [
-            Material(
-              color: widget.isMe
-                  ? AppColors.primary.withValues(alpha: 0.18)
-                  : AppColors.surfaceVariant,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 26),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.poll_rounded,
-                          color: AppColors.primary,
-                          size: 18,
+      child: Container(
+        decoration: ShapeDecoration(
+          shape: shape,
+          color: widget.isMe
+              ? colors.accent.withValues(alpha: 0.18)
+              : colors.card,
+          shadows: neuBubbleShadows(colors),
+        ),
+        child: ClipPath.shape(
+          shape: shape,
+          child: Stack(
+            children: [
+              Material(
+                type: MaterialType.transparency,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 26),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.poll_rounded,
+                            color: colors.accent,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Text('投票', style: textTheme.bodySmall),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        poll.question,
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
-                        SizedBox(width: 6),
-                        Text(
-                          '投票',
-                          style: TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 12,
+                      ),
+                      const SizedBox(height: 8),
+                      for (final answer in poll.answers)
+                        _PollAnswerRow(
+                          answer: answer,
+                          multi: multi,
+                          selected: _selected.contains(answer.id),
+                          count: _countFor(answer.id),
+                          totalVoters: totalVoters,
+                          reveal: reveal,
+                          enabled: !ended && !_submitting,
+                          onTap: () => _selectAnswer(answer.id),
+                        ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '$totalVoters 人已投票${ended ? ' · 已结束' : ''}',
+                        style: textTheme.labelSmall,
+                      ),
+                      if (multi && !ended) ...[
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: NeuButton(
+                            accent: true,
+                            onPressed: canSubmitMulti
+                                ? () => _submitVote(
+                                    Set<String>.of(_selected),
+                                    rollbackSelection: Set<String>.of(
+                                      _selected,
+                                    ),
+                                  )
+                                : null,
+                            icon: const Icon(
+                              Icons.how_to_vote_rounded,
+                              size: 18,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: const Text('提交投票'),
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      poll.question,
-                      style: const TextStyle(
-                        color: AppColors.onBackground,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    for (final answer in poll.answers)
-                      _PollAnswerRow(
-                        answer: answer,
-                        multi: multi,
-                        selected: _selected.contains(answer.id),
-                        count: _countFor(answer.id),
-                        totalVoters: totalVoters,
-                        reveal: reveal,
-                        enabled: !ended && !_submitting,
-                        onTap: () => _selectAnswer(answer.id),
-                      ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '$totalVoters 人已投票${ended ? ' · 已结束' : ''}',
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 11,
-                      ),
-                    ),
-                    if (multi && !ended) ...[
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.icon(
-                          onPressed: canSubmitMulti
-                              ? () => _submitVote(
-                                  Set<String>.of(_selected),
-                                  rollbackSelection: Set<String>.of(_selected),
-                                )
-                              : null,
-                          icon: const Icon(Icons.how_to_vote_rounded, size: 18),
-                          label: const Text('提交投票'),
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size(0, 36),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppRadii.button,
-                              ),
+                      if (widget.isMe && !ended) ...[
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _submitting ? null : _endPoll,
+                            icon: const Icon(
+                              Icons.stop_circle_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('结束投票'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: colors.textSecondary,
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
-                    if (widget.isMe && !ended) ...[
-                      const SizedBox(height: 4),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: _submitting ? null : _endPoll,
-                          icon: const Icon(
-                            Icons.stop_circle_outlined,
-                            size: 16,
-                          ),
-                          label: const Text('结束投票'),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            if (_submitting)
-              const Positioned(
-                right: 10,
-                top: 10,
-                child: SizedBox.square(
-                  dimension: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              if (_submitting)
+                const Positioned(
+                  right: 10,
+                  top: 10,
+                  child: SizedBox.square(
+                    dimension: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
-              ),
-            widget.metadata,
-          ],
+              widget.metadata,
+            ],
+          ),
         ),
       ),
     );
@@ -370,6 +376,8 @@ class _PollAnswerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final fraction = totalVoters > 0 && reveal
         ? (count / totalVoters).clamp(0.0, 1.0)
         : 0.0;
@@ -382,7 +390,7 @@ class _PollAnswerRow extends StatelessWidget {
           ? Icons.radio_button_checked_rounded
           : Icons.radio_button_unchecked_rounded,
       size: 18,
-      color: AppColors.primary,
+      color: colors.accent,
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -400,7 +408,7 @@ class _PollAnswerRow extends StatelessWidget {
                   widthFactor: fraction,
                   child: Container(
                     height: 32,
-                    color: AppColors.primary.withValues(
+                    color: colors.accent.withValues(
                       alpha: selected ? 0.28 : 0.16,
                     ),
                   ),
@@ -414,18 +422,16 @@ class _PollAnswerRow extends StatelessWidget {
                     Expanded(
                       child: Text(
                         answer.text,
-                        style: const TextStyle(
-                          color: AppColors.onBackground,
-                          fontSize: 14,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.text,
                         ),
                       ),
                     ),
                     if (reveal)
                       Text(
                         '$count',
-                        style: const TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                          fontSize: 12,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textTertiary,
                         ),
                       ),
                   ],

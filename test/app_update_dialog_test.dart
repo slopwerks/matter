@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/app_update/app_update_service.dart';
 import 'package:matter/features/app_update/update_dialog.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 void main() {
   testWidgets('update prompt shows versions, package size, and confirmation', (
     tester,
@@ -25,6 +27,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () => showAvailableUpdateDialog(

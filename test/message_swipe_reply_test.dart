@@ -7,6 +7,7 @@ import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 import 'package:matter/src/rust/frb_generated.dart';
+import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
   int togglePinnedCalls = 0;
@@ -88,6 +89,7 @@ Widget _buildSubject({
   return UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
+      theme: neuTestTheme(),
       home: Scaffold(
         body: MessageGroupWidget(
           group: MessageGroup(
@@ -291,6 +293,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: StatefulBuilder(
               builder: (context, setState) {
@@ -368,6 +371,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -602,6 +606,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: SizedBox(
               height: 120,

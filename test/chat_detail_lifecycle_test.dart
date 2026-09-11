@@ -16,6 +16,7 @@ import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/widgets/neu_surface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'helpers/neu_test_theme.dart';
 
@@ -399,8 +400,8 @@ void main() {
     );
     await tester.pump();
 
-    final searchButton = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.search_rounded),
+    final searchButton = tester.widget<NeuIconButton>(
+      find.widgetWithIcon(NeuIconButton, Icons.search_rounded),
     );
     searchButton.onPressed!();
     searchButton.onPressed!();
@@ -2508,10 +2509,10 @@ void main() {
     );
     expect(hasOngoingSendFlight, isTrue);
 
-    final sendButton = tester.widget<IconButton>(
+    final sendButton = tester.widget<NeuIconButton>(
       find.descendant(
         of: find.byKey(const ValueKey('send_only')),
-        matching: find.byType(IconButton),
+        matching: find.byType(NeuIconButton),
       ),
     );
     sendButton.onPressed!();

@@ -11,8 +11,11 @@ import '../../providers/message_cache_persistence.dart';
 import '../../providers/message_ordering.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/glass.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 import 'chat_timestamp.dart';
 import 'composer_picker_panel.dart';
 import 'date_separator.dart';
@@ -251,6 +254,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   static const double _olderLoadTriggerViewportMultiplier = 2.0;
   static const double _olderLoadRearmDistance = 480.0;
   static const double _baseInputChromeHeight = 60.0;
+  // Floating glass header: 12pt gap above a 54pt panel (38pt row + v8
+  // padding), then an 8pt gap before the pinned stack / timeline clearance.
+  static const double _headerTopGap = 12.0;
+  static const double _headerPanelHeight = 54.0;
+  static const double _headerBottomGap = 8.0;
+  static const double _headerChromeHeight =
+      _headerTopGap + _headerPanelHeight + _headerBottomGap;
+  static const double _headerCompactBreakpoint = 480.0;
   static const int _maxMessagesPerRenderGroup = 12;
   static const Duration _sentNoticeDuration = Duration(milliseconds: 2800);
   static const Duration _forwardNoticeDuration = Duration(seconds: 4);
@@ -1075,6 +1086,50 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
   }
 
+  Future<void> _openPinnedMessages() async {
+    final messageId = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => PinnedMessagesPage(roomId: widget.roomId),
+      ),
+    );
+    if (messageId != null && mounted) {
+      await _jumpToMessage(messageId);
+    }
+  }
+
+  /// Narrow header: the pinned/details actions collapse into this sheet.
+  void _showMoreActions() {
+    showNeuSheet<void>(
+      context: context,
+      child: Builder(
+        builder: (sheetContext) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            NeuSheetItem(
+              icon: Icons.push_pin_outlined,
+              label: '置顶消息',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(_openPinnedMessages());
+              },
+            ),
+            if (!widget.embedded) ...[
+              const NeuSheetDivider(),
+              NeuSheetItem(
+                icon: Icons.info_outline_rounded,
+                label: '房间详情',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showRoomDetails(context);
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   MessageSendPresentation _resolveSendPresentation() {
     final presentation = !_scrollController.hasClients
         ? MessageSendPresentation.flight
@@ -1837,6 +1892,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ? math.max(pickerBaseHeight, _expandedPickerHeight)
         : pickerBaseHeight;
     final mediaQuery = MediaQuery.of(context);
+    final colors = context.neu;
+    // The floating header hangs below the status bar; the pinned stack and
+    // the timeline's oldest-end clearance are measured from its bottom edge.
+    final headerInset = mediaQuery.padding.top + _headerChromeHeight;
     final inputChromeHeight =
         _inputChromeHeight ??
         _baseInputChromeHeight + mediaQuery.padding.bottom;
@@ -1845,7 +1904,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       mediaQuery.size.height -
           mediaQuery.padding.top -
           mediaQuery.padding.bottom -
-          kToolbarHeight -
+          _headerChromeHeight -
           inputChromeHeight -
           8,
     );
@@ -1863,6 +1922,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
     final pinnedStackHeight =
         kPinnedMessageRowHeight * _pinnedStackVisibleCount;
+    // With a visible pinned stack the timeline viewport starts below it;
+    // otherwise it runs under the floating glass header (like the prototype)
+    // and only clears the status-bar strip above the header's top gap.
+    final timelineTopInset = _pinnedStackVisibleCount > 0
+        ? headerInset + pinnedStackHeight
+        : mediaQuery.padding.top + _headerTopGap;
 
     if (_keepPickerDuringKeyboardOpen &&
         keyboardHeight >= pickerFullHeight - 1) {
@@ -1871,6 +1936,17 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         setState(() => _keepPickerDuringKeyboardOpen = false);
       });
     }
+
+    // Live unread state (override-aware, matching the room list), not the
+    // push-time snapshot: the snapshot would stay stale (e.g. "3 条未读消息")
+    // after the auto-read fired or the user marked the room read/unread.
+    final headerSubtitle = syncedRoom == null
+        ? widget.subtitle
+        : hasUnread
+        ? (syncedRoom.unreadCount > 0
+              ? '${syncedRoom.unreadCount} 条未读消息'
+              : '已标记未读')
+        : '在线';
 
     return PopScope(
       canPop:
@@ -1884,124 +1960,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          backgroundColor: AppColors.background.withValues(alpha: 0.92),
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          leading: widget.embedded
-              ? null
-              : IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: AppColors.onBackground,
-                  ),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-          titleSpacing: widget.embedded ? 16 : 0,
-          title: Row(
-            children: [
-              AppAvatar(
-                fallback: _roomName,
-                size: 36,
-                radius: AppRadii.content,
-                url: _avatarUrl,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _roomName,
-                      style: const TextStyle(
-                        color: AppColors.onBackground,
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      // Live unread state (override-aware, matching the
-                      // room list), not the push-time snapshot: the snapshot
-                      // would stay stale (e.g. "3 条未读消息") after the
-                      // auto-read fired or the user marked the room
-                      // read/unread.
-                      syncedRoom == null
-                          ? widget.subtitle
-                          : hasUnread
-                          ? (syncedRoom.unreadCount > 0
-                                ? '${syncedRoom.unreadCount} 条未读消息'
-                                : '已标记未读')
-                          : '在线',
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              tooltip: '搜索消息',
-              icon: const Icon(
-                Icons.search_rounded,
-                color: AppColors.onBackground,
-              ),
-              onPressed: _openMessageSearch,
-            ),
-            IconButton(
-              tooltip: '置顶消息',
-              icon: const Icon(
-                Icons.push_pin_outlined,
-                color: AppColors.onBackground,
-              ),
-              onPressed: () async {
-                final messageId = await Navigator.of(context).push<String>(
-                  MaterialPageRoute(
-                    builder: (_) => PinnedMessagesPage(roomId: widget.roomId),
-                  ),
-                );
-                if (messageId != null && mounted) {
-                  await _jumpToMessage(messageId);
-                }
-              },
-            ),
-            if (widget.embedded && widget.onToggleDetailsPanel != null)
-              IconButton(
-                tooltip: widget.detailsPanelOpen ? '隐藏详情' : '显示详情',
-                icon: Icon(
-                  Icons.people_outline_rounded,
-                  color: widget.detailsPanelOpen
-                      ? AppColors.primary
-                      : AppColors.onBackground,
-                ),
-                onPressed: widget.onToggleDetailsPanel,
-              )
-            else
-              IconButton(
-                icon: const Icon(
-                  Icons.more_vert_rounded,
-                  color: AppColors.onBackground,
-                ),
-                onPressed: () {
-                  _showRoomDetails(context);
-                },
-              ),
-          ],
-        ),
+        backgroundColor: colors.base,
         body: Stack(
           children: [
-            const Positioned.fill(
-              child: ColoredBox(color: AppColors.background),
-            ),
+            Positioned.fill(child: ColoredBox(color: colors.base)),
             Positioned.fill(
-              top: pinnedStackHeight,
+              top: timelineTopInset,
               child: Builder(
                 builder: (context) {
                   final messages = messageCacheOwner == activeUserId
@@ -2014,10 +1978,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   // (same discipline as the sibling pages).
                   if (messageCacheOwner != activeUserId &&
                       messageCacheOwner != null) {
-                    return const Center(
+                    return Center(
                       child: Text(
                         '账号已切换',
-                        style: TextStyle(color: AppColors.onSurfaceVariant),
+                        style: TextStyle(color: colors.textTertiary),
                       ),
                     );
                   }
@@ -2031,20 +1995,20 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                         child: TextButton.icon(
                           onPressed: () =>
                               ref.invalidate(ignoredUserIdsProvider),
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.refresh_rounded,
-                            color: AppColors.primary,
+                            color: colors.accent,
                           ),
-                          label: const Text(
+                          label: Text(
                             '无法加载忽略列表，消息已隐藏',
-                            style: TextStyle(color: AppColors.onSurface),
+                            style: TextStyle(color: colors.textSecondary),
                           ),
                         ),
                       );
                     }
-                    return const Center(
+                    return Center(
                       child: CircularProgressIndicator(
-                        color: AppColors.primary,
+                        color: colors.accent,
                         strokeWidth: 2,
                       ),
                     );
@@ -2056,9 +2020,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           localOutgoingMessages.isEmpty) ||
                       _inputChromeHeight == null ||
                       (membersAsync.isLoading && !membersAsync.hasValue)) {
-                    return const Center(
+                    return Center(
                       child: CircularProgressIndicator(
-                        color: AppColors.primary,
+                        color: colors.accent,
                         strokeWidth: 2,
                       ),
                     );
@@ -2160,8 +2124,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                       ),
                                     ),
                                   ),
-                              const SliverPadding(
-                                padding: EdgeInsets.only(top: 8),
+                              SliverPadding(
+                                padding: EdgeInsets.only(
+                                  // With no pinned stack the timeline runs
+                                  // under the floating header; keep the
+                                  // oldest end clear of the glass.
+                                  top: _pinnedStackVisibleCount > 0
+                                      ? 8
+                                      : headerInset + 4,
+                                ),
                               ),
                             ],
                           ),
@@ -2176,9 +2147,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       Positioned.fill(
                         child: Opacity(opacity: 0, child: timeline),
                       ),
-                      const Center(
+                      Center(
                         child: CircularProgressIndicator(
-                          color: AppColors.primary,
+                          color: colors.accent,
                           strokeWidth: 2,
                         ),
                       ),
@@ -2187,10 +2158,17 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 },
               ),
             ),
+            // Floating glass header — the only persistent glass layer.
             Positioned(
               left: 0,
               top: 0,
               right: 0,
+              child: _buildTopBar(headerSubtitle),
+            ),
+            Positioned(
+              left: 12,
+              top: headerInset,
+              right: 12,
               child: PinnedMessagesStack(
                 roomId: widget.roomId,
                 onMessageTap: (messageId) =>
@@ -2210,7 +2188,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 scrollViewportKey: _scrollViewportKey,
                 boundaries: _floatingDateBoundariesCache,
                 separatorKeys: _floatingDateSeparatorKeysCache,
-                topInset: pinnedStackHeight,
+                topInset: headerInset + pinnedStackHeight,
               ),
             AnimatedPositioned(
               right: 16,
@@ -2334,6 +2312,118 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     return keys.reversed.toList();
   }
 
+  /// Floating glass top bar: back/avatar/title plus the room actions. The
+  /// only persistent glass layer on this page (see GlassPanel discipline).
+  Widget _buildTopBar(String subtitle) {
+    final colors = context.neu;
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, _headerTopGap, 12, 0),
+        child: GlassPanel(
+          radius: NeuRadius.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < _headerCompactBreakpoint;
+              final hasDetailsToggle =
+                  widget.embedded && widget.onToggleDetailsPanel != null;
+              return Row(
+                children: [
+                  if (!widget.embedded) ...[
+                    NeuIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      size: 38,
+                      tooltip: '返回',
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  AppAvatar(
+                    fallback: _roomName,
+                    size: 36,
+                    radius: NeuRadius.content,
+                    url: _avatarUrl,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _roomName,
+                          style: Theme.of(context).textTheme.titleMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          subtitle,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.textTertiary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  NeuIconButton(
+                    icon: Icons.search_rounded,
+                    size: 38,
+                    tooltip: '搜索消息',
+                    onPressed: () => unawaited(_openMessageSearch()),
+                  ),
+                  const SizedBox(width: 6),
+                  if (compact) ...[
+                    if (hasDetailsToggle) ...[
+                      NeuIconButton(
+                        icon: Icons.people_outline_rounded,
+                        size: 38,
+                        tooltip: widget.detailsPanelOpen ? '隐藏详情' : '显示详情',
+                        selected: widget.detailsPanelOpen,
+                        onPressed: widget.onToggleDetailsPanel,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    NeuIconButton(
+                      icon: Icons.more_horiz_rounded,
+                      size: 38,
+                      tooltip: '更多',
+                      onPressed: _showMoreActions,
+                    ),
+                  ] else ...[
+                    NeuIconButton(
+                      icon: Icons.push_pin_outlined,
+                      size: 38,
+                      tooltip: '置顶消息',
+                      onPressed: () => unawaited(_openPinnedMessages()),
+                    ),
+                    const SizedBox(width: 6),
+                    if (hasDetailsToggle)
+                      NeuIconButton(
+                        icon: Icons.people_outline_rounded,
+                        size: 38,
+                        tooltip: widget.detailsPanelOpen ? '隐藏详情' : '显示详情',
+                        selected: widget.detailsPanelOpen,
+                        onPressed: widget.onToggleDetailsPanel,
+                      )
+                    else
+                      NeuIconButton(
+                        icon: Icons.more_vert_rounded,
+                        size: 38,
+                        onPressed: () => _showRoomDetails(context),
+                      ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   /// "… is typing" indicator shown above the message input.
   Widget _buildTypingIndicator() {
     final activeUserId = ref.watch(activeUserIdProvider);
@@ -2369,7 +2459,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 1.5,
-              color: AppColors.onSurfaceVariant.withValues(alpha: 0.6),
+              color: context.neu.textTertiary.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(width: 8),
@@ -2377,7 +2467,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             child: Text(
               text,
               style: TextStyle(
-                color: AppColors.onSurfaceVariant,
+                color: context.neu.textTertiary,
                 fontSize: 12.5,
                 fontStyle: FontStyle.italic,
               ),
@@ -2391,142 +2481,130 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _showRoomDetails(BuildContext context) {
-    showModalBottomSheet(
+    showNeuSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => Container(
-        margin: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    AppAvatar(fallback: _roomName, size: 56, url: _avatarUrl),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _roomName,
-                            style: const TextStyle(
-                              color: AppColors.onBackground,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            widget.roomId,
-                            style: const TextStyle(
-                              color: AppColors.onSurfaceVariant,
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
+      child: Builder(
+        builder: (sheetContext) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  AppAvatar(fallback: _roomName, size: 56, url: _avatarUrl),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _roomName,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.roomId,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: context.neu.textTertiary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const Divider(color: AppColors.surfaceVariant, height: 0.5),
-              _DetailMenuItem(
-                icon: Icons.settings_rounded,
-                label: '房间管理',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => RoomManagementPage(
-                        roomId: widget.roomId,
-                        roomName: _roomName,
-                        avatarUrl: _avatarUrl,
-                        onRoomClosed: widget.onRoomLeft,
-                        onRoomDetailsChanged: _handleRoomDetailsChanged,
-                      ),
+            ),
+            const NeuSheetDivider(),
+            NeuSheetItem(
+              icon: Icons.settings_rounded,
+              label: '房间管理',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => RoomManagementPage(
+                      roomId: widget.roomId,
+                      roomName: _roomName,
+                      avatarUrl: _avatarUrl,
+                      onRoomClosed: widget.onRoomLeft,
+                      onRoomDetailsChanged: _handleRoomDetailsChanged,
                     ),
-                  );
-                },
-              ),
-              // Room members preview
-              Consumer(
-                builder: (context, ref, _) {
-                  final membersAsync = ref.watch(
-                    roomMembersProvider(widget.roomId),
-                  );
-                  return membersAsync.when(
-                    data: (members) {
-                      return Column(
-                        children: [
-                          _DetailMenuItem(
-                            icon: Icons.people_rounded,
-                            label: '成员 (${members.length})',
-                            onTap: () {
-                              Navigator.of(sheetContext).pop();
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => RoomManagementPage(
-                                    roomId: widget.roomId,
-                                    roomName: _roomName,
-                                    avatarUrl: _avatarUrl,
-                                    onRoomClosed: widget.onRoomLeft,
-                                    onRoomDetailsChanged:
-                                        _handleRoomDetailsChanged,
-                                  ),
+                  ),
+                );
+              },
+            ),
+            // Room members preview
+            Consumer(
+              builder: (context, ref, _) {
+                final membersAsync = ref.watch(
+                  roomMembersProvider(widget.roomId),
+                );
+                return membersAsync.when(
+                  data: (members) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        NeuSheetItem(
+                          icon: Icons.people_rounded,
+                          label: '成员 (${members.length})',
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => RoomManagementPage(
+                                  roomId: widget.roomId,
+                                  roomName: _roomName,
+                                  avatarUrl: _avatarUrl,
+                                  onRoomClosed: widget.onRoomLeft,
+                                  onRoomDetailsChanged:
+                                      _handleRoomDetailsChanged,
                                 ),
-                              );
-                            },
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            child: SizedBox(
-                              height: 44,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: members.length > 10
-                                    ? 10
-                                    : members.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, index) {
-                                  final member = members[index];
-                                  return AppAvatar(
-                                    fallback: member.name,
-                                    size: 40,
-                                    radius: 20,
-                                  );
-                                },
                               ),
+                            );
+                          },
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: SizedBox(
+                            height: 44,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: members.length > 10
+                                  ? 10
+                                  : members.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: 8),
+                              itemBuilder: (context, index) {
+                                final member = members[index];
+                                return AppAvatar(
+                                  fallback: member.name,
+                                  size: 40,
+                                  radius: 20,
+                                );
+                              },
                             ),
                           ),
-                        ],
-                      );
-                    },
-                    loading: () => const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: CircularProgressIndicator(
-                        color: AppColors.primary,
-                        strokeWidth: 2,
-                      ),
+                        ),
+                      ],
+                    );
+                  },
+                  loading: () => Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: CircularProgressIndicator(
+                      color: context.neu.accent,
+                      strokeWidth: 2,
                     ),
-                    error: (_, _) => const SizedBox.shrink(),
-                  );
-                },
-              ),
-            ],
-          ),
+                  ),
+                  error: (_, _) => const SizedBox.shrink(),
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -2573,42 +2651,6 @@ class _TimelineEntry {
       type: _TimelineEntryType.date,
       dateLabel: label,
       separatorKey: key,
-    );
-  }
-}
-
-class _DetailMenuItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _DetailMenuItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, color: AppColors.onSurface, size: 22),
-            const SizedBox(width: 14),
-            Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.onBackground,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

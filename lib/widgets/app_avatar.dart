@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/authenticated_media_cache.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
-import '../theme/app_theme.dart';
+import '../theme/neu_colors.dart';
 
 class AppAvatar extends ConsumerStatefulWidget {
   final double size;
@@ -19,7 +19,7 @@ class AppAvatar extends ConsumerStatefulWidget {
     this.size = 52,
     this.url,
     required this.fallback,
-    this.radius = AppRadii.content,
+    this.radius = NeuRadius.content,
   });
 
   @override
@@ -81,7 +81,7 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     final url = _resolvedUrl;
 
     if (url == null || url.isEmpty) {
-      return _buildFallback();
+      return _buildFallback(context);
     }
 
     // For HTTP URLs, use authenticated image loading
@@ -94,7 +94,7 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
       width: widget.size,
       height: widget.size,
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: context.neu.surfaceStrong,
         borderRadius: BorderRadius.circular(widget.radius),
       ),
       clipBehavior: Clip.antiAlias,
@@ -104,7 +104,7 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
         token: token,
         userId: userId,
         homeserver: homeserver,
-        fallback: _buildFallback(),
+        fallback: _buildFallback(context),
         width: widget.size,
         height: widget.size,
         cacheWidth: _targetPixelSize,
@@ -113,19 +113,19 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     );
   }
 
-  Widget _buildFallback() {
+  Widget _buildFallback(BuildContext context) {
     return Container(
       width: widget.size,
       height: widget.size,
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: context.neu.surfaceStrong,
         borderRadius: BorderRadius.circular(widget.radius),
       ),
       child: Center(
         child: Text(
           _initials,
           style: TextStyle(
-            color: AppColors.primary,
+            color: context.neu.accent,
             fontSize: widget.size * 0.38,
             fontWeight: FontWeight.w700,
           ),
@@ -219,9 +219,9 @@ class _AuthenticatedImage extends StatelessWidget {
           height: height,
         );
       },
-      placeholder: (context, _) => const Center(
+      placeholder: (context, _) => Center(
         child: CircularProgressIndicator(
-          color: AppColors.primary,
+          color: context.neu.accent,
           strokeWidth: 1.5,
         ),
       ),
@@ -259,10 +259,10 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     // mxc:// URLs can't be shown directly
     if (imageUrl.startsWith('mxc://')) {
       WidgetsBinding.instance.addPostFrameCallback((_) => onError?.call());
-      return const Center(
+      return Center(
         child: Icon(
           Icons.broken_image_rounded,
-          color: AppColors.onSurfaceVariant,
+          color: context.neu.textTertiary,
           size: 40,
         ),
       );
@@ -273,10 +273,10 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     final activeUserId = ref.watch(activeUserIdProvider);
     final userId = currentUser?.id ?? activeUserId;
     final homeserver = currentUser?.homeserver;
-    final brokenIcon = const Center(
+    final brokenIcon = Center(
       child: Icon(
         Icons.broken_image_rounded,
-        color: AppColors.onSurfaceVariant,
+        color: context.neu.textTertiary,
         size: 40,
       ),
     );

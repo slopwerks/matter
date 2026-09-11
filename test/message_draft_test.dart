@@ -15,6 +15,8 @@ import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 class _FakeRustApi implements RustLibApi {
   @override
   Future<bool> crateApiMatrixMarkRoomAsRead({
@@ -652,6 +654,7 @@ Widget _messageInput(ProviderContainer container, String roomId) {
   return UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
+      theme: neuTestTheme(),
       home: Scaffold(
         body: Align(
           alignment: Alignment.bottomCenter,

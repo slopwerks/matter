@@ -8,14 +8,16 @@ import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
+import 'helpers/neu_test_theme.dart';
 
 void main() {
   testWidgets('sticker uses a small repaint-isolated bubble without Hero', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const ProviderScope(
+      ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: ImageMessageBubble(
               imageUrl: 'https://example.org/sticker.png',
@@ -94,6 +96,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: StatefulBuilder(
               builder: (context, setState) {
@@ -146,8 +149,9 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const ProviderScope(
+      ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: ImageMessageBubble(
               imageUrl: 'https://example.org/photo.png',
@@ -202,6 +206,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -240,8 +245,9 @@ void main() {
 
   testWidgets('regular image does not add a blurred backdrop', (tester) async {
     await tester.pumpWidget(
-      const ProviderScope(
+      ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: ImageMessageBubble(
               imageUrl: 'https://example.org/photo.png',
@@ -287,6 +293,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -347,6 +354,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -418,6 +426,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: MessageGroupWidget(
                 group: MessageGroup(
@@ -499,6 +508,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: MessageGroupWidget(
                 group: MessageGroup(
@@ -578,6 +588,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: MessageGroupWidget(
                 group: MessageGroup(
@@ -636,6 +647,7 @@ void main() {
       );
       return ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -696,6 +708,7 @@ void main() {
       );
       return ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -773,6 +786,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -796,8 +810,9 @@ void main() {
 
     BorderRadius radiusFor(Key key) {
       final container = tester.widget<Container>(find.byKey(key));
-      return (container.decoration! as BoxDecoration).borderRadius!
-          as BorderRadius;
+      final decoration = container.decoration! as ShapeDecoration;
+      final shape = decoration.shape as RoundedSuperellipseBorder;
+      return shape.borderRadius as BorderRadius;
     }
 
     final firstRadius = radiusFor(const ValueKey(r'text-bubble:$group-first'));
@@ -830,6 +845,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -880,6 +896,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(
@@ -943,6 +960,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: DefaultTextStyle.merge(
               // Reproduce system/fallback metrics that differ from the
