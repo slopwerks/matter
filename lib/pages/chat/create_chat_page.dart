@@ -4,8 +4,14 @@ import 'action_failure_message.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/neu_action.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 
 class CreateChatPage extends ConsumerStatefulWidget {
   const CreateChatPage({super.key});
@@ -51,12 +57,7 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       ref.invalidate(spacesProvider);
       ref.invalidate(searchRoomsProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('私聊已创建'),
-            duration: Duration(seconds: 1),
-          ),
-        );
+        neuToast(context, '私聊已创建');
         // `isCurrent` guard: another modal (e.g. the device-verification
         // dialog) may sit above this page — popping then would dismiss
         // that dialog instead.
@@ -70,12 +71,7 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       if (!mounted) return;
       if (ref.read(activeUserIdProvider) != accountUserId) return;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_actionFailureMessage(e)),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        neuToast(context, _actionFailureMessage(e));
       }
     } finally {
       if (mounted) setState(() => _isCreating = false);
@@ -108,12 +104,7 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       ref.invalidate(spacesProvider);
       ref.invalidate(searchRoomsProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('群组已创建'),
-            duration: Duration(seconds: 1),
-          ),
-        );
+        neuToast(context, '群组已创建');
         // `isCurrent` guard: another modal may sit above this page.
         if (ModalRoute.of(context)?.isCurrent == true) {
           Navigator.of(context).pop();
@@ -125,16 +116,66 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       if (!mounted) return;
       if (ref.read(activeUserIdProvider) != accountUserId) return;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_actionFailureMessage(e)),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        neuToast(context, _actionFailureMessage(e));
       }
     } finally {
       if (mounted) setState(() => _isCreating = false);
     }
+  }
+
+  void _showCreateGroupDialog() {
+    var groupName = '';
+    String? groupNameError;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => _NeuDialog(
+          title: '创建群组',
+          actions: [
+            NeuButton(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Center(child: Text('取消')),
+            ),
+            NeuButton(
+              accent: true,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              onPressed: () {
+                final name = groupName.trim();
+                if (name.isEmpty) {
+                  // Feedback instead of silently closing the dialog (same
+                  // discipline as the space dialogs).
+                  setDialogState(() => groupNameError = '群组名称不能为空');
+                  return;
+                }
+                Navigator.of(ctx).pop();
+                _createGroup(name);
+              },
+              child: const Center(child: Text('创建')),
+            ),
+          ],
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              NeuTextField(
+                hint: '群组名称',
+                onChanged: (value) => groupName = value,
+              ),
+              if (groupNameError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    groupNameError!,
+                    style: Theme.of(
+                      ctx,
+                    ).textTheme.bodyMedium?.copyWith(color: ctx.neu.error),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showJoinRoomDialog() {
@@ -147,51 +188,36 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
-          title: const Text(
-            '加入房间',
-            style: TextStyle(color: AppColors.onBackground),
-          ),
+        builder: (ctx, setDialogState) => _NeuDialog(
+          title: '加入房间',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
+              NeuTextField(
+                hint: '!room_id:matrix.akass.cn',
                 onChanged: (value) => roomIdentifier = value,
-                style: const TextStyle(color: AppColors.onBackground),
-                decoration: const InputDecoration(
-                  hintText: '!room_id:matrix.akass.cn',
-                  hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.surfaceVariant),
-                  ),
-                ),
               ),
               if (joinError != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Text(
                     joinError!,
-                    style: const TextStyle(
-                      color: AppColors.error,
-                      fontSize: 13,
-                    ),
+                    style: Theme.of(
+                      ctx,
+                    ).textTheme.bodyMedium?.copyWith(color: ctx.neu.error),
                   ),
                 ),
             ],
           ),
           actions: [
-            TextButton(
+            NeuButton(
+              padding: const EdgeInsets.symmetric(vertical: 12),
               onPressed: joining ? null : () => Navigator.of(ctx).pop(),
-              child: const Text(
-                '取消',
-                style: TextStyle(color: AppColors.onSurfaceVariant),
-              ),
+              child: const Center(child: Text('取消')),
             ),
-            TextButton(
+            NeuButton(
+              accent: true,
+              padding: const EdgeInsets.symmetric(vertical: 12),
               onPressed: joining
                   ? null
                   : () async {
@@ -246,12 +272,7 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                         }
                         // The dialog may have been dismissed while the
                         // request was in flight: still report success.
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('已加入房间'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
+                        neuToast(context, '已加入房间');
                       } catch (e) {
                         if (!mounted) return;
                         // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
@@ -273,25 +294,20 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                             joinError = _actionFailureMessage(e);
                           });
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(_actionFailureMessage(e)),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
+                          neuToast(context, _actionFailureMessage(e));
                         }
                       }
                     },
               child: joining
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        color: context.neu.onAccent,
+                        strokeWidth: 2,
+                      ),
                     )
-                  : const Text(
-                      '加入',
-                      style: TextStyle(color: AppColors.primary),
-                    ),
+                  : const Center(child: Text('加入')),
             ),
           ],
         ),
@@ -301,205 +317,95 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.onBackground,
-          ),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: const Text(
-          '新建聊天',
-          style: TextStyle(
-            color: AppColors.onBackground,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-      body: MaxContentWidth(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 8),
-              // Search / user ID input
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(AppRadii.surface),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  style: const TextStyle(
-                    color: AppColors.onBackground,
-                    fontSize: 15,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: '输入 @用户 ID 发起私聊',
-                    hintStyle: TextStyle(
-                      color: AppColors.onSurfaceVariant,
-                      fontSize: 15,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search_rounded,
-                      color: AppColors.onSurfaceVariant,
-                      size: 20,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 14),
-                    isDense: true,
-                  ),
-                  textInputAction: TextInputAction.go,
-                  onSubmitted: (value) {
-                    final trimmed = value.trim();
-                    if (trimmed.isNotEmpty) _createDm(trimmed);
-                  },
-                ),
+      backgroundColor: colors.base,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                NeuSpacing.sm,
+                NeuSpacing.sm,
+                NeuSpacing.lg,
+                NeuSpacing.xs,
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () {
-                    final trimmed = _searchController.text.trim();
-                    if (trimmed.isNotEmpty) _createDm(trimmed);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadii.surface),
-                    ),
+              child: Row(
+                children: [
+                  NeuIconButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    size: 40,
+                    tooltip: '返回',
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  child: _isCreating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          '发起私聊',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                ),
+                  const SizedBox(width: NeuSpacing.sm),
+                  Text('新建聊天', style: Theme.of(context).textTheme.titleLarge),
+                ],
               ),
-              const SizedBox(height: 32),
-              // Action cards
-              _ActionCard(
-                icon: Icons.group_add_rounded,
-                iconColor: AppColors.primary,
-                title: '创建群组',
-                subtitle: '创建一个新的群聊房间',
-                onTap: () {
-                  var groupName = '';
-                  String? groupNameError;
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => StatefulBuilder(
-                      builder: (ctx, setDialogState) => AlertDialog(
-                        backgroundColor: AppColors.surface,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppRadii.surface),
-                        ),
-                        title: const Text(
-                          '创建群组',
-                          style: TextStyle(color: AppColors.onBackground),
-                        ),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TextField(
-                              onChanged: (value) => groupName = value,
-                              style: const TextStyle(
-                                color: AppColors.onBackground,
-                              ),
-                              decoration: const InputDecoration(
-                                hintText: '群组名称',
-                                hintStyle: TextStyle(
-                                  color: AppColors.onSurfaceVariant,
-                                ),
-                                enabledBorder: UnderlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: AppColors.surfaceVariant,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (groupNameError != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: Text(
-                                  groupNameError!,
-                                  style: const TextStyle(
-                                    color: AppColors.error,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            child: const Text(
-                              '取消',
-                              style: TextStyle(
-                                color: AppColors.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              final name = groupName.trim();
-                              if (name.isEmpty) {
-                                // Feedback instead of silently closing the
-                                // dialog (same discipline as the space
-                                // dialogs).
-                                setDialogState(
-                                  () => groupNameError = '群组名称不能为空',
-                                );
-                                return;
-                              }
-                              Navigator.of(ctx).pop();
-                              _createGroup(name);
+            ),
+            Expanded(
+              child: MaxContentWidth(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    NeuSpacing.lg,
+                    NeuSpacing.sm,
+                    NeuSpacing.lg,
+                    NeuSpacing.xl,
+                  ),
+                  children: [
+                    NeuTextField(
+                      controller: _searchController,
+                      hint: '输入 @用户 ID 发起私聊',
+                      leading: const Icon(Icons.search_rounded),
+                      textInputAction: TextInputAction.go,
+                      onSubmitted: (value) {
+                        final trimmed = value.trim();
+                        if (trimmed.isNotEmpty) _createDm(trimmed);
+                      },
+                    ),
+                    const SizedBox(height: NeuSpacing.md),
+                    NeuButton(
+                      accent: true,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      onPressed: _isCreating
+                          ? null
+                          : () {
+                              final trimmed = _searchController.text.trim();
+                              if (trimmed.isNotEmpty) _createDm(trimmed);
                             },
-                            child: const Text(
-                              '创建',
-                              style: TextStyle(color: AppColors.primary),
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: _isCreating
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: colors.onAccent,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text('发起私聊'),
                     ),
-                  );
-                },
+                    const SizedBox(height: NeuSpacing.xl),
+                    _ActionCard(
+                      icon: Icons.group_add_rounded,
+                      iconColor: colors.accent,
+                      title: '创建群组',
+                      subtitle: '创建一个新的群聊房间',
+                      onTap: _showCreateGroupDialog,
+                    ),
+                    const SizedBox(height: NeuSpacing.md),
+                    _ActionCard(
+                      icon: Icons.meeting_room_rounded,
+                      iconColor: colors.warning,
+                      title: '加入房间',
+                      subtitle: '通过房间 ID 加入已有房间',
+                      onTap: _showJoinRoomDialog,
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              _ActionCard(
-                icon: Icons.meeting_room_rounded,
-                iconColor: AppColors.warning,
-                title: '加入房间',
-                subtitle: '通过房间 ID 加入已有房间',
-                onTap: _showJoinRoomDialog,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -523,56 +429,85 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
-          child: Row(
+    final colors = context.neu;
+    return NeuAction(
+      radius: NeuRadius.content,
+      label: title,
+      onTap: onTap,
+      child: NeuSurface(
+        color: colors.card,
+        radius: NeuRadius.content,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            NeuSurface(
+              depth: NeuDepth.flat,
+              color: iconColor.withValues(alpha: 0.14),
+              radius: NeuRadius.button,
+              width: 44,
+              height: 44,
+              child: Center(child: Icon(icon, color: iconColor, size: 20)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: colors.textTertiary,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 新拟物玻璃对话框容器:标题 + 内容 + 等宽按钮行。
+class _NeuDialog extends StatelessWidget {
+  const _NeuDialog({
+    required this.title,
+    required this.content,
+    required this.actions,
+  });
+
+  final String title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: GlassPanel(
+        radius: NeuRadius.nav,
+        padding: const EdgeInsets.all(22),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(AppRadii.content),
-                ),
-                child: Icon(icon, color: iconColor, size: 20),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: AppColors.onBackground,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 13,
-                      ),
-                    ),
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 16),
+              content,
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  for (var index = 0; index < actions.length; index++) ...[
+                    if (index > 0) const SizedBox(width: 12),
+                    Expanded(child: actions[index]),
                   ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.onSurfaceVariant,
-                size: 20,
+                ],
               ),
             ],
           ),

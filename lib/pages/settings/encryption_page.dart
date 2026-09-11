@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
-import '../../widgets/app_card.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 
 class EncryptionPage extends StatefulWidget {
   const EncryptionPage({super.key});
@@ -111,8 +115,16 @@ class _EncryptionPageState extends State<EncryptionPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     return Scaffold(
-      appBar: AppBar(title: const Text('加密与验证')),
+      backgroundColor: colors.base,
+      appBar: AppBar(
+        backgroundColor: colors.base,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: Text('加密与验证', style: Theme.of(context).textTheme.titleLarge),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -120,12 +132,17 @@ class _EncryptionPageState extends State<EncryptionPage> {
               child: MaxContentWidth(
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  padding: const EdgeInsets.fromLTRB(
+                    NeuSpacing.lg,
+                    NeuSpacing.sm,
+                    NeuSpacing.lg,
+                    32,
+                  ),
                   children: [
                     _buildOverview(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: NeuSpacing.lg),
                     _buildDevices(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: NeuSpacing.lg),
                     _buildRecovery(),
                   ],
                 ),
@@ -135,40 +152,33 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Widget _buildOverview() {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final verified = _recoveryInfo?.deviceVerified ?? false;
-    return AppCard(
+    return NeuSurface(
+      color: colors.card,
+      radius: NeuRadius.surface,
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: (verified ? AppColors.success : AppColors.warning)
-                  .withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(AppRadii.button),
-            ),
-            child: Icon(
-              verified ? Icons.verified_user_rounded : Icons.shield_outlined,
-              color: verified ? AppColors.success : AppColors.warning,
-            ),
+          Icon(
+            verified ? Icons.verified_user_rounded : Icons.shield_outlined,
+            size: 22,
+            color: verified ? colors.success : colors.warning,
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   verified ? '当前设备已验证' : '当前设备尚未验证',
-                  style: const TextStyle(
-                    color: AppColors.onBackground,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: textTheme.titleSmall,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   _recoveryLabel(_recoveryInfo?.state),
-                  style: const TextStyle(color: AppColors.onSurfaceVariant),
+                  style: textTheme.bodySmall,
                 ),
               ],
             ),
@@ -179,63 +189,114 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Widget _buildDevices() {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _SectionTitle('我的设备'),
-        AppCard(
-          padding: EdgeInsets.zero,
-          child: Column(
+        if (_devices.isEmpty)
+          NeuSurface(
+            color: colors.card,
+            radius: NeuRadius.surface,
+            padding: const EdgeInsets.all(20),
+            child: Text('暂时没有读取到设备，请先完成一次同步', style: textTheme.bodyMedium),
+          )
+        else
+          Column(
             children: [
               for (var index = 0; index < _devices.length; index++) ...[
+                if (index > 0) const SizedBox(height: NeuSpacing.md),
                 _buildDevice(_devices[index]),
-                if (index != _devices.length - 1)
-                  const Divider(height: 1, indent: 64),
               ],
-              if (_devices.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text(
-                    '暂时没有读取到设备，请先完成一次同步',
-                    style: TextStyle(color: AppColors.onSurfaceVariant),
-                  ),
-                ),
             ],
           ),
-        ),
       ],
     );
   }
 
   Widget _buildDevice(rust.VerificationDevice device) {
-    return ListTile(
-      leading: Icon(
-        device.isCurrent ? Icons.phone_android_rounded : Icons.devices_rounded,
-        color: device.isVerified ? AppColors.success : AppColors.primary,
-      ),
-      title: Text(
-        device.displayName,
-        style: const TextStyle(color: AppColors.onBackground),
-      ),
-      subtitle: Text(
-        '${device.deviceId}${device.isCurrent ? ' · 当前设备' : ''}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: AppColors.onSurfaceVariant),
-      ),
-      trailing: device.isCurrent || device.isVerified
-          ? Icon(
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
+    return NeuSurface(
+      color: colors.card,
+      radius: NeuRadius.content,
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Icon(
+            device.isCurrent
+                ? Icons.phone_android_rounded
+                : Icons.devices_rounded,
+            size: 22,
+            color: device.isVerified ? colors.success : colors.textSecondary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        device.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.titleSmall,
+                      ),
+                    ),
+                    if (device.isCurrent) ...[
+                      const SizedBox(width: 8),
+                      NeuSurface(
+                        depth: NeuDepth.flat,
+                        color: colors.accentSoft,
+                        radius: NeuRadius.tag,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          '本机',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.accent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  device.deviceId,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (device.isCurrent || device.isVerified)
+            Icon(
               device.isVerified
                   ? Icons.verified_rounded
                   : Icons.circle_outlined,
-              color: device.isVerified ? AppColors.success : AppColors.muted,
+              size: 20,
+              color: device.isVerified ? colors.success : colors.textTertiary,
             )
-          : TextButton(
+          else
+            NeuButton(
+              accent: true,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              intensity: .7,
               onPressed: _busy
                   ? null
                   : () => _startVerification(device.deviceId),
               child: const Text('验证'),
             ),
+        ],
+      ),
     );
   }
 
@@ -270,53 +331,45 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Widget _buildRecovery() {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final enabled = _recoveryInfo?.state == 'enabled';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _SectionTitle('加密恢复'),
-        AppCard(
+        NeuSurface(
+          color: colors.card,
+          radius: NeuRadius.surface,
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                '恢复历史加密消息',
-                style: TextStyle(
-                  color: AppColors.onBackground,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              Text('恢复历史加密消息', style: textTheme.titleSmall),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 '输入 Matrix 恢复密钥或设置恢复时使用的口令。内容只会交给本机加密存储处理。',
-                style: TextStyle(
-                  color: AppColors.onSurfaceVariant,
-                  height: 1.45,
-                ),
+                style: textTheme.bodySmall,
               ),
               const SizedBox(height: 14),
-              TextField(
+              NeuTextField(
                 controller: _recoveryController,
                 obscureText: _hideRecoveryValue,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  hintText: '恢复密钥或恢复口令',
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(
-                      () => _hideRecoveryValue = !_hideRecoveryValue,
-                    ),
-                    icon: Icon(
-                      _hideRecoveryValue
-                          ? Icons.visibility_rounded
-                          : Icons.visibility_off_rounded,
-                    ),
-                  ),
+                hint: '恢复密钥或恢复口令',
+                trailing: NeuIconButton(
+                  icon: _hideRecoveryValue
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
+                  size: 36,
+                  tooltip: _hideRecoveryValue ? '显示' : '隐藏',
+                  onPressed: () =>
+                      setState(() => _hideRecoveryValue = !_hideRecoveryValue),
                 ),
               ),
               const SizedBox(height: 12),
-              FilledButton(
+              NeuButton(
+                accent: true,
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 onPressed: _busy
                     ? null
                     : () => _run(() async {
@@ -326,18 +379,17 @@ class _EncryptionPageState extends State<EncryptionPage> {
                         _recoveryController.clear();
                         await _refreshDevicesAndRecovery();
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('加密数据恢复完成')),
-                          );
+                          neuToast(context, '加密数据恢复完成');
                         }
                       }),
-                child: const Text('恢复加密数据'),
+                child: const Center(child: Text('恢复加密数据')),
               ),
               if (!enabled) ...[
                 const SizedBox(height: 8),
-                OutlinedButton(
+                NeuButton(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   onPressed: _busy ? null : _enableRecovery,
-                  child: const Text('新建恢复密钥'),
+                  child: const Center(child: Text('新建恢复密钥')),
                 ),
               ],
             ],
@@ -348,37 +400,14 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Future<void> _enableRecovery() async {
-    final controller = TextEditingController();
-    final passphrase = await showDialog<String?>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('新建恢复密钥'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('可选填一个恢复口令。无论是否填写，都必须妥善保存稍后生成的恢复密钥。'),
-            const SizedBox(height: 14),
-            TextField(
-              controller: controller,
-              obscureText: true,
-              decoration: const InputDecoration(hintText: '恢复口令（可选）'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('创建'),
-          ),
-        ],
-      ),
+    final passphrase = await showNeuPrompt(
+      context,
+      title: '新建恢复密钥',
+      message: '可选填一个恢复口令。无论是否填写，都必须妥善保存稍后生成的恢复密钥。',
+      hint: '恢复口令（可选）',
+      confirmLabel: '创建',
+      obscureText: true,
     );
-    controller.dispose();
     if (passphrase == null || !mounted) return;
 
     await _run(() async {
@@ -390,41 +419,69 @@ class _EncryptionPageState extends State<EncryptionPage> {
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('保存恢复密钥'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('这是恢复历史加密消息的最后保障。请保存到安全的位置，关闭后不会再次显示。'),
-              const SizedBox(height: 14),
-              SelectableText(
-                key,
-                style: const TextStyle(
-                  color: AppColors.onBackground,
-                  fontFamily: 'monospace',
-                ),
+        builder: (dialogContext) => Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          child: GlassPanel(
+            radius: NeuRadius.nav,
+            padding: const EdgeInsets.all(22),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '保存恢复密钥',
+                    style: Theme.of(dialogContext).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '这是恢复历史加密消息的最后保障。请保存到安全的位置，关闭后不会再次显示。',
+                    style: Theme.of(dialogContext).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 14),
+                  NeuSurface(
+                    depth: NeuDepth.pressed,
+                    radius: NeuRadius.button,
+                    padding: const EdgeInsets.all(12),
+                    child: SelectableText(
+                      key,
+                      style: Theme.of(dialogContext).textTheme.bodySmall
+                          ?.copyWith(fontFamily: 'monospace', height: 1.6),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: NeuButton(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          icon: const Icon(Icons.copy_rounded, size: 16),
+                          onPressed: () async {
+                            await Clipboard.setData(ClipboardData(text: key));
+                            if (dialogContext.mounted) {
+                              neuToast(dialogContext, '恢复密钥已复制');
+                            }
+                          },
+                          child: const Center(child: Text('复制')),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: NeuButton(
+                          accent: true,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Center(child: Text('我已保存')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-          actions: [
-            TextButton.icon(
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: key));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('恢复密钥已复制')));
-                }
-              },
-              icon: const Icon(Icons.copy_rounded),
-              label: const Text('复制'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('我已保存'),
-            ),
-          ],
         ),
       );
     });
@@ -548,11 +605,13 @@ class _VerificationDialogState extends State<_VerificationDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final comparing = _status.phase == 'comparing';
     final color = switch (_status.phase) {
-      'done' => AppColors.success,
-      'cancelled' => AppColors.error,
-      _ => AppColors.primary,
+      'done' => colors.success,
+      'cancelled' => colors.error,
+      _ => colors.accent,
     };
     final icon = switch (_status.phase) {
       'done' => Icons.verified_rounded,
@@ -560,19 +619,29 @@ class _VerificationDialogState extends State<_VerificationDialog> {
       _ => Icons.phonelink_lock_rounded,
     };
 
-    return AlertDialog(
-      icon: Icon(icon, color: color, size: 40),
-      title: Text(_title, textAlign: TextAlign.center),
-      content: SizedBox(
-        width: 360,
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: GlassPanel(
+        radius: NeuRadius.nav,
+        padding: const EdgeInsets.all(22),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Icon(icon, color: color, size: 40),
+              const SizedBox(height: 12),
+              Text(
+                _title,
+                textAlign: TextAlign.center,
+                style: textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
               Text(
                 _description,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.onSurfaceVariant),
+                style: textTheme.bodyMedium,
               ),
               if (comparing) ...[
                 const SizedBox(height: 20),
@@ -586,15 +655,15 @@ class _VerificationDialogState extends State<_VerificationDialog> {
                     crossAxisSpacing: 8,
                     childAspectRatio: 0.9,
                   ),
-                  itemBuilder: (context, index) => Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(AppRadii.button),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _status.emojis[index].symbol,
-                      style: const TextStyle(fontSize: 30),
+                  itemBuilder: (context, index) => NeuSurface(
+                    depth: NeuDepth.pressed,
+                    color: colors.card,
+                    radius: NeuRadius.button,
+                    child: Center(
+                      child: Text(
+                        _status.emojis[index].symbol,
+                        style: const TextStyle(fontSize: 30),
+                      ),
                     ),
                   ),
                 ),
@@ -602,52 +671,74 @@ class _VerificationDialogState extends State<_VerificationDialog> {
                 const SizedBox(height: 20),
                 const LinearProgressIndicator(),
               ],
+              const SizedBox(height: 20),
+              _buildActions(comparing),
             ],
           ),
         ),
       ),
-      actionsAlignment: MainAxisAlignment.center,
-      actions: _buildActions(comparing),
     );
   }
 
-  List<Widget> _buildActions(bool comparing) {
+  Widget _buildActions(bool comparing) {
+    final buttons = <Widget>[];
+    void add(Widget button) {
+      if (buttons.isNotEmpty) buttons.add(const SizedBox(width: 12));
+      buttons.add(Expanded(child: button));
+    }
+
     if (_finished) {
-      return [
-        FilledButton(onPressed: _busy ? null : _close, child: const Text('关闭')),
-      ];
-    }
-    if (_status.phase == 'requested') {
-      return [
-        TextButton(
+      add(
+        NeuButton(
+          accent: true,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          onPressed: _busy ? null : _close,
+          child: const Center(child: Text('关闭')),
+        ),
+      );
+    } else if (_status.phase == 'requested') {
+      add(
+        NeuButton(
+          padding: const EdgeInsets.symmetric(vertical: 12),
           onPressed: _busy ? null : () => _cancel(mismatch: false),
-          child: const Text('拒绝'),
+          child: const Center(child: Text('拒绝')),
         ),
-        FilledButton(
+      );
+      add(
+        NeuButton(
+          accent: true,
+          padding: const EdgeInsets.symmetric(vertical: 12),
           onPressed: _busy ? null : () => _run(rust.acceptDeviceVerification),
-          child: const Text('接受'),
+          child: const Center(child: Text('接受')),
         ),
-      ];
-    }
-    if (comparing) {
-      return [
-        TextButton(
+      );
+    } else if (comparing) {
+      add(
+        NeuButton(
+          padding: const EdgeInsets.symmetric(vertical: 12),
           onPressed: _busy ? null : () => _cancel(mismatch: true),
-          child: const Text('不相同'),
+          child: const Center(child: Text('不相同')),
         ),
-        FilledButton.icon(
-          onPressed: _busy ? null : () => _run(rust.confirmDeviceVerification),
+      );
+      add(
+        NeuButton(
+          accent: true,
+          padding: const EdgeInsets.symmetric(vertical: 12),
           icon: const Icon(Icons.check_rounded),
-          label: const Text('完全相同'),
+          onPressed: _busy ? null : () => _run(rust.confirmDeviceVerification),
+          child: const Center(child: Text('完全相同')),
         ),
-      ];
+      );
+    } else {
+      add(
+        NeuButton(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          onPressed: _busy ? null : () => _cancel(mismatch: false),
+          child: const Center(child: Text('取消验证')),
+        ),
+      );
     }
-    return [
-      TextButton(
-        onPressed: _busy ? null : () => _cancel(mismatch: false),
-        child: const Text('取消验证'),
-      ),
-    ];
+    return Row(children: buttons);
   }
 }
 
@@ -662,10 +753,9 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
       child: Text(
         text,
-        style: const TextStyle(
-          color: AppColors.onSurfaceVariant,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
         ),
       ),
     );

@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../providers/connection_provider.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/cascade_title.dart';
+import '../../widgets/neu_action.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
 import 'create_chat_page.dart';
 import 'chat_list_item.dart';
-import 'search_bar.dart';
+import 'search_page.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   final ValueChanged<ChatRoom>? onRoomSelected;
@@ -36,8 +39,21 @@ class ChatPage extends ConsumerStatefulWidget {
 }
 
 class _ChatPageState extends ConsumerState<ChatPage> {
+  void _openSearch() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ChatSearchPage()));
+  }
+
+  void _openCreateChat() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const CreateChatPage()));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final AsyncValue<List<ChatRoom>> roomsAsync;
     if (widget.spaceId case final spaceId?) {
       roomsAsync = ref.watch(spaceChildrenProvider(spaceId));
@@ -62,131 +78,124 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         widget.title ??
         (connectionLabel.isNotEmpty ? connectionLabel : 'Matter');
 
-    final content = Stack(
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              floating: !widget.embedded,
-              pinned: true,
-              expandedHeight: 56,
-              collapsedHeight: 56,
-              toolbarHeight: 56,
-              flexibleSpace: FlexibleSpaceBar(
-                titlePadding: const EdgeInsets.only(left: 16, bottom: 12),
-                title: CascadeTitle(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: CascadeTitle(
                   text: titleText,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.onBackground,
-                    letterSpacing: -0.5,
-                  ),
+                  style: Theme.of(context).textTheme.titleLarge!,
                 ),
               ),
-              backgroundColor: widget.embedded
-                  ? AppColors.background
-                  : AppColors.background.withValues(alpha: 0.85),
-            ),
-            const SliverToBoxAdapter(child: ChatSearchBar()),
-            const SliverToBoxAdapter(child: SizedBox(height: 8)),
-            roomsAsync.when(
-              data: (rooms) {
-                if (widget.onRoomSelected != null &&
-                    widget.selectedRoomId == null) {
-                  final firstJoinedRoom = rooms.where(
-                    (room) => room.roomState == 'joined',
-                  );
-                  if (firstJoinedRoom.isNotEmpty) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) {
-                        widget.onRoomSelected!(firstJoinedRoom.first);
-                      }
-                    });
-                  }
-                }
-                if (rooms.isEmpty) {
-                  return SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(40),
-                      child: Center(
-                        child: Text(
-                          widget.emptyLabel ?? '暂无聊天',
-                          style: const TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                return SliverList.separated(
-                  itemCount: rooms.length,
-                  separatorBuilder: (context, index) => widget.embedded
-                      ? const SizedBox(height: 2)
-                      : const Divider(
-                          color: Color(0xFF1E242C),
-                          thickness: 0.5,
-                          height: 0.5,
-                        ),
-                  itemBuilder: (context, index) {
-                    final room = rooms[index];
-                    return ChatListItem(
-                      room: room,
-                      isSelected: room.id == widget.selectedRoomId,
-                      onRoomSelected: widget.onRoomSelected,
-                    );
-                  },
-                );
-              },
-              loading: () => const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primary,
-                      strokeWidth: 2,
-                    ),
-                  ),
-                ),
+              NeuIconButton(
+                icon: Icons.edit_square,
+                tooltip: '新聊天',
+                onPressed: _openCreateChat,
               ),
-              error: (err, _) => SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Center(
-                    child: SelectableText(
-                      '加载失败: $err',
-                      style: const TextStyle(color: AppColors.onSurfaceVariant),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: EdgeInsets.only(bottom: widget.embedded ? 80 : 96),
-            ),
-          ],
+            ],
+          ),
         ),
-        Positioned(
-          right: 16,
-          bottom: widget.embedded ? 16 : 96,
-          child: FloatingActionButton(
-            mini: widget.embedded,
-            onPressed: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const CreateChatPage()));
-            },
-            backgroundColor: AppColors.primary,
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            NeuSpacing.lg,
+            NeuSpacing.xs,
+            NeuSpacing.lg,
+            0,
+          ),
+          // 只读入口:点击进入独立搜索页。
+          child: NeuAction(
+            key: const ValueKey('open-chat-search'),
+            label: '搜索消息或聊天',
+            onTap: _openSearch,
+            child: const ExcludeFocus(
+              child: ExcludeSemantics(
+                child: IgnorePointer(
+                  child: NeuTextField(
+                    hint: '搜索消息或聊天',
+                    leading: Icon(Icons.search),
+                  ),
+                ),
+              ),
             ),
-            child: Icon(
-              Icons.add_rounded,
-              color: Colors.white,
-              size: widget.embedded ? 20 : 24,
+          ),
+        ),
+        Expanded(
+          child: roomsAsync.when(
+            data: (rooms) {
+              if (widget.onRoomSelected != null &&
+                  widget.selectedRoomId == null) {
+                final firstJoinedRoom = rooms.where(
+                  (room) => room.roomState == 'joined',
+                );
+                if (firstJoinedRoom.isNotEmpty) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      widget.onRoomSelected!(firstJoinedRoom.first);
+                    }
+                  });
+                }
+              }
+              if (rooms.isEmpty) {
+                return Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.forum_outlined,
+                          size: 44,
+                          color: colors.textSecondary,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          widget.emptyLabel ?? '暂无聊天',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return ListView.separated(
+                // 与联系人页同节奏:列表上 8、卡片间距 12。
+                padding: EdgeInsets.fromLTRB(
+                  NeuSpacing.lg,
+                  NeuSpacing.sm,
+                  NeuSpacing.lg,
+                  widget.embedded ? NeuSpacing.xl : NeuSpacing.navClearance,
+                ),
+                itemCount: rooms.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: NeuSpacing.md),
+                itemBuilder: (context, index) {
+                  final room = rooms[index];
+                  return ChatListItem(
+                    room: room,
+                    isSelected: room.id == widget.selectedRoomId,
+                    onRoomSelected: widget.onRoomSelected,
+                  );
+                },
+              );
+            },
+            loading: () => Center(
+              child: CircularProgressIndicator(
+                color: colors.accent,
+                strokeWidth: 2,
+              ),
+            ),
+            error: (err, _) => Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: SelectableText(
+                  '加载失败: $err',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
             ),
           ),
         ),
@@ -194,7 +203,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
 
     if (widget.embedded) {
-      return ColoredBox(color: AppColors.background, child: content);
+      return ColoredBox(color: colors.base, child: content);
     }
     return Scaffold(body: content);
   }

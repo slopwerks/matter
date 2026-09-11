@@ -5,6 +5,7 @@ import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/pages/chat/message_reader_page.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
+import 'helpers/neu_test_theme.dart';
 
 void main() {
   group('full-screen reader entry', () {
@@ -28,6 +29,7 @@ void main() {
 
     Widget app() => ProviderScope(
       child: MaterialApp(
+        theme: neuTestTheme(),
         home: Scaffold(
           body: MessageGroupWidget(
             group: MessageGroup(
@@ -83,6 +85,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: MessageGroupWidget(
                 group: MessageGroup(
@@ -154,6 +157,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: MessageGroupWidget(
               group: MessageGroup(

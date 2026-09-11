@@ -10,6 +10,8 @@ import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 import 'package:matter/src/rust/frb_generated.dart';
 
+import '../helpers/neu_test_theme.dart';
+
 class _FakeRustApi implements RustLibApi {
   int markReadCalls = 0;
   int markUnreadCalls = 0;
@@ -83,6 +85,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(body: ChatListItem(room: room())),
           ),
         ),
@@ -108,6 +111,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId)),
             ),
@@ -144,6 +148,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: Column(
                 children: [
@@ -180,6 +185,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(body: ChatListItem(room: room(unreadCount: 5))),
           ),
         ),
@@ -193,6 +199,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(body: ChatListItem(room: room(unreadCount: 150))),
           ),
         ),
@@ -207,6 +214,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId, isMarkedUnread: true)),
             ),
@@ -229,6 +237,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId, isMuted: true)),
             ),
@@ -261,6 +270,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId, unreadCount: 5)),
             ),
@@ -293,6 +303,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId)),
             ),
@@ -325,6 +336,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId, unreadCount: 6)),
             ),
@@ -360,6 +372,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
+              theme: neuTestTheme(),
               home: Scaffold(
                 body: ChatListItem(
                   room: room(
@@ -384,6 +397,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(roomType: 'dm')),
             ),
@@ -399,6 +413,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(roomType: 'space')),
             ),
@@ -414,6 +429,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(roomType: 'space')),
             ),
@@ -432,6 +448,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(body: ChatListItem(room: room(), dense: true)),
           ),
         ),
@@ -450,6 +467,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(
                 room: selected,
@@ -472,6 +490,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(roomState: 'invited')),
             ),
@@ -489,6 +508,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(roomState: 'knocked')),
             ),
@@ -516,6 +536,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId)),
             ),
@@ -554,6 +575,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId)),
             ),
@@ -591,6 +613,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Scaffold(
               body: ChatListItem(room: room(id: roomId)),
             ),

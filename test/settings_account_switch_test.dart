@@ -11,7 +11,10 @@ import 'package:matter/pages/settings/settings_page.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/widgets/neu_action.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
   String activeUserId = '@alice:example.org';
@@ -357,7 +360,7 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: SettingsPage()),
+          child: MaterialApp(theme: neuTestTheme(), home: const SettingsPage()),
         ),
       );
       await tester.pumpAndSettle();
@@ -402,7 +405,7 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: SettingsPage()),
+          child: MaterialApp(theme: neuTestTheme(), home: const SettingsPage()),
         ),
       );
       await tester.pumpAndSettle();
@@ -420,10 +423,10 @@ void main() {
       // does before deleting the active one), so the switch tiles must be
       // disabled like the remove buttons: a tap on the account being
       // removed would queue a switch to a session that is about to be
-      // deleted.
-      final switchTile = find.widgetWithText(InkWell, 'bob (example.org)');
-      expect(tester.widget<InkWell>(switchTile).onTap, isNull);
-      await tester.tap(switchTile);
+      // deleted. Migrated rows only wrap in NeuAction while interactive, so
+      // a disabled tile exposes no tappable action at all.
+      expect(find.widgetWithText(NeuAction, 'bob (example.org)'), findsNothing);
+      await tester.tap(find.text('bob (example.org)'));
       await tester.pump();
       expect(rustApi.switchCalls, isEmpty);
 
@@ -453,7 +456,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: SettingsPage()),
+        child: MaterialApp(theme: neuTestTheme(), home: const SettingsPage()),
       ),
     );
     await tester.pumpAndSettle();

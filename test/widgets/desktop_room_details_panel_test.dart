@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/desktop_room_details_panel.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
+import '../helpers/neu_test_theme.dart';
 
 void main() {
   testWidgets('shows room members in the desktop details panel', (
@@ -28,7 +29,8 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: Scaffold(
             body: SizedBox(
               width: 300,

@@ -7,9 +7,13 @@ import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 import 'avatar_crop_editor_page.dart';
 
 /// Edit the current user's display name and avatar.
@@ -103,12 +107,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
         _refreshCurrentUser(avatarUrl: mxc);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('头像已更新'),
-            duration: Duration(seconds: 1),
-          ),
-        );
+        neuToast(context, '头像已更新');
       }
     } catch (e) {
       if (mounted) {
@@ -125,9 +124,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
 
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('昵称不能为空')));
+      neuToast(context, '昵称不能为空');
       return;
     }
     // Skip if unchanged.
@@ -139,12 +136,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
       _refreshCurrentUser();
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('昵称已更新'),
-            duration: Duration(seconds: 1),
-          ),
-        );
+        neuToast(context, '昵称已更新');
       }
     } catch (e) {
       if (mounted) {
@@ -171,22 +163,25 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final fallbackName = _profile?.displayName.isNotEmpty == true
         ? _profile!.displayName
         : (ref.read(currentUserProvider)?.displayName ?? '我');
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: colors.base,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
-        title: const Text('个人资料'),
+        backgroundColor: colors.base,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
+        title: Text('个人资料', style: textTheme.titleLarge),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : MaxContentWidth(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(NeuSpacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -208,16 +203,16 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
                                 width: 32,
                                 height: 32,
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary,
+                                  color: colors.accent,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: AppColors.background,
+                                    color: colors.base,
                                     width: 2,
                                   ),
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.camera_alt_rounded,
-                                  color: Colors.white,
+                                  color: colors.onAccent,
                                   size: 16,
                                 ),
                               ),
@@ -226,100 +221,72 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Text(
-                        '点击头像更换',
-                        style: TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
+                    const SizedBox(height: NeuSpacing.sm),
+                    Center(child: Text('点击头像更换', style: textTheme.bodySmall)),
                     const SizedBox(height: 32),
 
                     // Display name editor
-                    const Text(
+                    Text(
                       '昵称',
-                      style: TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 13,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
+                    const SizedBox(height: NeuSpacing.sm),
+                    NeuTextField(
                       controller: _nameController,
-                      style: const TextStyle(
-                        color: AppColors.onBackground,
-                        fontSize: 16,
-                      ),
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: AppColors.surface,
-                        hintText: '输入你的昵称',
-                        hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppRadii.content),
-                          borderSide: BorderSide.none,
-                        ),
-                        suffixIcon: TextButton(
-                          onPressed: _saving ? null : _saveName,
-                          child: _saving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text('保存'),
-                        ),
-                      ),
-                      textInputAction: TextInputAction.done,
+                      hint: '输入你的昵称',
                       onSubmitted: _saving ? null : (_) => _saveName(),
                     ),
+                    const SizedBox(height: NeuSpacing.md),
+                    SizedBox(
+                      width: double.infinity,
+                      child: NeuButton(
+                        accent: true,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        onPressed: _saving ? null : _saveName,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : null,
+                        child: const Center(child: Text('保存')),
+                      ),
+                    ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: NeuSpacing.xl),
 
                     // User ID (read-only)
-                    const Text(
+                    Text(
                       '用户 ID',
-                      style: TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 13,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
+                    const SizedBox(height: NeuSpacing.sm),
+                    NeuSurface(
+                      depth: NeuDepth.pressed,
+                      color: colors.card,
+                      radius: NeuRadius.content,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(AppRadii.content),
                       ),
                       child: Text(
                         _profile?.userId ??
                             ref.read(currentUserProvider)?.id ??
                             '',
-                        style: TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                          fontSize: 14,
-                        ),
+                        style: textTheme.bodyMedium,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '用户 ID 是你的唯一标识，无法更改',
-                      style: TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 11,
-                      ),
-                    ),
+                    const SizedBox(height: NeuSpacing.sm),
+                    Text('用户 ID 是你的唯一标识，无法更改', style: textTheme.bodySmall),
                   ],
                 ),
               ),

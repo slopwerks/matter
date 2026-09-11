@@ -5,6 +5,8 @@ import 'package:matter/pages/chat/chat_page.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 
+import '../helpers/neu_test_theme.dart';
+
 void main() {
   ChatRoom room({
     required String id,
@@ -47,8 +49,9 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const Scaffold(
             body: SizedBox(
               width: 320,
               height: 600,
@@ -87,8 +90,9 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: Scaffold(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const Scaffold(
             body: SizedBox(
               width: 320,
               height: 600,

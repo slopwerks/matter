@@ -6,37 +6,29 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/session_credential_store.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
-import '../../widgets/max_content_width.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 import 'homeserver_list.dart';
 import 'homeserver_resolver.dart';
 
 Future<bool> showSessionCredentialCompatibilityDialog(
   BuildContext context, {
   required bool loginAlreadyCompleted,
-}) => showDialog<bool>(
-  context: context,
-  barrierDismissible: false,
-  builder: (dialogContext) => AlertDialog(
-    title: const Text('设备安全存储不可用'),
-    content: Text(
+}) => showNeuConfirm(
+  context,
+  title: '设备安全存储不可用',
+  message:
       '系统密钥库无法读取登录凭据，因此应用重启后会退出登录。\n\n'
       '可以启用兼容模式：登录凭据将改存到应用私有目录。普通应用无法访问，'
       '但 Root 权限、系统备份或取得设备文件访问权的人可能读取凭据。\n\n'
       '${loginAlreadyCompleted ? '启用后将继续当前登录。' : '启用后需要重新登录一次。'}',
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(dialogContext, false),
-        child: const Text('保持安全模式'),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.pop(dialogContext, true),
-        child: const Text('启用兼容模式'),
-      ),
-    ],
-  ),
-).then((enabled) => enabled ?? false);
+  confirmLabel: '启用兼容模式',
+  cancelLabel: '保持安全模式',
+  barrierDismissible: false,
+);
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -47,7 +39,6 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _homeserverController = TextEditingController();
-  final _homeserverFieldKey = GlobalKey();
   List<HomeserverEntry> _homeservers = const [];
 
   /// The resolved homeserver URL actually used to connect and to persist the
@@ -329,27 +320,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<bool> _confirmInsecure(ResolvedHomeserver resolved) {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('不安全的连接'),
-        content: Text(
+    return showNeuConfirm(
+      context,
+      title: '不安全的连接',
+      message:
           '该服务器（${resolved.url}）仅支持未加密的 HTTP 连接。\n\n'
           '你的密码和登录凭证将以明文传输，可能被同一网络中的第三方截获。\n\n'
           '确定要继续吗？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('继续登录'),
-          ),
-        ],
-      ),
-    ).then((v) => v ?? false);
+      confirmLabel: '继续登录',
+    );
   }
 
   Future<void> _login() async {
@@ -511,38 +490,29 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.neu.base,
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
             SliverFillRemaining(
               hasScrollBody: false,
-              child: MaxContentWidth(
-                maxWidth: 440,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 40),
-                      _buildHeader(),
-                      const SizedBox(height: 32),
-                      _buildTabs(),
-                      const SizedBox(height: 24),
-                      _buildHomeserverField(),
-                      const SizedBox(height: 20),
-                      if (_tabIndex == 0) ..._buildLoginFields(),
-                      if (_tabIndex == 1) ..._buildRegisterFields(),
-                      if (_tabIndex == 2) ..._buildTokenLoginFields(),
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        _buildErrorBanner(),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 430),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 40),
+                        _buildHeader(),
+                        const SizedBox(height: 32),
+                        _buildModeChips(),
+                        const SizedBox(height: 20),
+                        _buildFormCard(),
+                        const Spacer(),
+                        _buildFooter(),
                       ],
-                      const SizedBox(height: 24),
-                      _buildActionButton(),
-                      const Spacer(),
-                      _buildFooter(),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -554,197 +524,129 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Widget _buildHeader() {
+    final colors = context.neu;
     return Center(
       child: Column(
         children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppRadii.content),
-            ),
-            child: const Icon(
+          NeuSurface(
+            accent: true,
+            width: 88,
+            height: 88,
+            radius: NeuRadius.nav,
+            child: Icon(
               Icons.chat_bubble_rounded,
-              color: AppColors.primary,
-              size: 36,
+              size: 40,
+              color: colors.onAccent,
             ),
           ),
-          const SizedBox(height: 20),
-          const Text(
+          const SizedBox(height: 22),
+          Text(
             'Matter',
-            style: TextStyle(
-              color: AppColors.onBackground,
-              fontSize: 32,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.w800,
               letterSpacing: -1,
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Matrix 客户端',
-            style: TextStyle(
-              color: AppColors.onSurfaceVariant,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          const SizedBox(height: NeuSpacing.sm),
+          Text('Matrix 客户端', style: Theme.of(context).textTheme.bodyMedium),
         ],
       ),
     );
   }
 
-  Widget _buildTabs() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-      ),
-      child: Row(
+  Widget _buildModeChips() {
+    const labels = ['登录', '注册', 'Token'];
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: NeuSpacing.sm,
+      runSpacing: NeuSpacing.sm,
+      children: [
+        for (var i = 0; i < labels.length; i++)
+          NeuChip(
+            label: labels[i],
+            selected: _tabIndex == i,
+            onTap: () {
+              setState(() {
+                _tabIndex = i;
+                _uiaaSession = null;
+                _clearError();
+              });
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildFormCard() {
+    return NeuSurface(
+      radius: NeuRadius.surface,
+      color: context.neu.surfaceStrong,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTab('登录', 0),
-          _buildTab('注册', 1),
-          _buildTab('Token', 2),
+          _buildLabel('Homeserver'),
+          const SizedBox(height: NeuSpacing.sm),
+          _buildHomeserverField(),
+          if (_tabIndex == 0) ..._buildLoginFields(),
+          if (_tabIndex == 1) ..._buildRegisterFields(),
+          if (_tabIndex == 2) ..._buildTokenLoginFields(),
+          if (_error != null) ...[
+            const SizedBox(height: NeuSpacing.md),
+            _buildErrorBanner(),
+          ],
+          const SizedBox(height: 22),
+          _buildActionButton(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTab(String label, int index) {
-    final isActive = _tabIndex == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _tabIndex = index;
-            _uiaaSession = null;
-            _clearError();
-          });
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? AppColors.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isActive ? Colors.white : AppColors.onSurfaceVariant,
-              fontSize: 14,
-              fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
-        ),
       ),
     );
   }
 
   Widget _buildHomeserverField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildLabel('Homeserver'),
-        const SizedBox(height: 8),
-        Builder(
-          key: _homeserverFieldKey,
-          builder: (_) => _buildTextField(
-            controller: _homeserverController,
-            hintText: 'matrix.org',
-            prefixIcon: Icons.dns_rounded,
-            suffixIcon: IconButton(
-              icon: const Icon(
-                Icons.arrow_drop_down_rounded,
-                color: AppColors.onSurfaceVariant,
-              ),
-              tooltip: '选择预设服务器',
-              onPressed: _homeservers.isEmpty ? null : _showHomeserverDropdown,
-            ),
-            textInputAction: TextInputAction.next,
-          ),
-        ),
-      ],
+    return NeuTextField(
+      controller: _homeserverController,
+      hint: 'matrix.org',
+      leading: const Icon(Icons.dns_rounded),
+      trailing: NeuIconButton(
+        size: 32,
+        icon: Icons.unfold_more_rounded,
+        tooltip: '选择预设服务器',
+        onPressed: _homeservers.isEmpty ? null : _showHomeserverSheet,
+      ),
+      textInputAction: TextInputAction.next,
+      onChanged: (_) => _clearError(),
     );
   }
 
-  /// Open the preset-server dropdown below the homeserver field. Triggered by
-  /// the trailing arrow button only — focusing the field stays a pure typing
-  /// gesture and never opens this menu.
-  Future<void> _showHomeserverDropdown() async {
-    final fieldContext = _homeserverFieldKey.currentContext;
-    if (fieldContext == null) return;
-    final renderBox = fieldContext.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-    final overlay =
-        Overlay.of(fieldContext).context.findRenderObject() as RenderBox?;
-    if (overlay == null) return;
-
-    final size = renderBox.size;
-    final topLeft = renderBox.localToGlobal(Offset.zero, ancestor: overlay);
-    final bottomLeft = renderBox.localToGlobal(
-      Offset(0, size.height),
-      ancestor: overlay,
-    );
-    final position = RelativeRect.fromLTRB(
-      topLeft.dx,
-      bottomLeft.dy,
-      overlay.size.width - topLeft.dx - size.width,
-      0,
-    );
-
-    final selected = await showMenu<HomeserverEntry>(
-      context: fieldContext,
-      position: position,
-      constraints: BoxConstraints(minWidth: size.width, maxWidth: size.width),
-      items: [
-        for (final entry in _homeservers)
-          PopupMenuItem<HomeserverEntry>(
-            value: entry,
-            child: Row(
-              children: [
-                Icon(
-                  Icons.dns_rounded,
-                  size: 18,
-                  color: AppColors.onSurfaceVariant,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        entry.label,
-                        style: const TextStyle(
-                          color: AppColors.onSurface,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (entry.domain != entry.label)
-                        Text(
-                          entry.domain,
-                          style: const TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 13,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                if (entry.domain.toLowerCase() ==
-                    _homeserverController.text.trim().toLowerCase())
-                  const Icon(
-                    Icons.check_rounded,
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
-              ],
+  /// Open the preset-server list as a bottom sheet. Triggered by the trailing
+  /// arrow button only — focusing the field stays a pure typing gesture and
+  /// never opens this sheet.
+  Future<void> _showHomeserverSheet() async {
+    final selected = await showNeuSheet<HomeserverEntry>(
+      context: context,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '选择 Homeserver',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
             ),
           ),
-      ],
+          for (final entry in _homeservers)
+            NeuSheetItem(
+              icon: Icons.dns_rounded,
+              label: entry.label,
+              trailing: _buildHomeserverTrailing(entry),
+              onTap: () => Navigator.of(context).pop(entry),
+            ),
+          const SizedBox(height: NeuSpacing.sm),
+        ],
+      ),
     );
 
     if (selected != null && mounted) {
@@ -753,36 +655,54 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  Widget? _buildHomeserverTrailing(HomeserverEntry entry) {
+    final colors = context.neu;
+    final isSelected =
+        entry.domain.toLowerCase() ==
+        _homeserverController.text.trim().toLowerCase();
+    if (entry.domain == entry.label && !isSelected) return null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (entry.domain != entry.label)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              entry.domain,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        if (isSelected) ...[
+          if (entry.domain != entry.label) const SizedBox(width: NeuSpacing.sm),
+          Icon(Icons.check_rounded, size: 18, color: colors.accent),
+        ],
+      ],
+    );
+  }
+
   List<Widget> _buildLoginFields() {
     return [
       _buildLabel('用户名'),
-      const SizedBox(height: 8),
-      _buildTextField(
+      const SizedBox(height: NeuSpacing.sm),
+      NeuTextField(
         controller: _usernameController,
-        hintText: 'username',
-        prefixIcon: Icons.person_outline_rounded,
+        hint: 'username',
+        leading: const Icon(Icons.person_outline_rounded),
         textInputAction: TextInputAction.next,
+        onChanged: (_) => _clearError(),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: NeuSpacing.lg),
       _buildLabel('密码'),
-      const SizedBox(height: 8),
-      _buildTextField(
+      const SizedBox(height: NeuSpacing.sm),
+      NeuTextField(
         controller: _passwordController,
-        hintText: '你的密码',
-        prefixIcon: Icons.lock_outline_rounded,
+        hint: '你的密码',
+        leading: const Icon(Icons.lock_outline_rounded),
         obscureText: !_isPasswordVisible,
-        suffixIcon: IconButton(
-          icon: Icon(
-            _isPasswordVisible
-                ? Icons.visibility_off_rounded
-                : Icons.visibility_rounded,
-            color: AppColors.onSurfaceVariant,
-            size: 20,
-          ),
-          onPressed: () =>
-              setState(() => _isPasswordVisible = !_isPasswordVisible),
-        ),
+        trailing: _buildPasswordToggle(),
         textInputAction: TextInputAction.done,
+        onChanged: (_) => _clearError(),
         onSubmitted: (_) => _login(),
       ),
     ];
@@ -791,46 +711,39 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   List<Widget> _buildRegisterFields() {
     return [
       _buildLabel('用户名'),
-      const SizedBox(height: 8),
-      _buildTextField(
+      const SizedBox(height: NeuSpacing.sm),
+      NeuTextField(
         controller: _usernameController,
-        hintText: 'username (不含 @ 和域名)',
-        prefixIcon: Icons.person_outline_rounded,
+        hint: 'username (不含 @ 和域名)',
+        leading: const Icon(Icons.person_outline_rounded),
         textInputAction: TextInputAction.next,
+        onChanged: (_) => _clearError(),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: NeuSpacing.lg),
       _buildLabel('密码'),
-      const SizedBox(height: 8),
-      _buildTextField(
+      const SizedBox(height: NeuSpacing.sm),
+      NeuTextField(
         controller: _passwordController,
-        hintText: '你的密码',
-        prefixIcon: Icons.lock_outline_rounded,
+        hint: '你的密码',
+        leading: const Icon(Icons.lock_outline_rounded),
         obscureText: !_isPasswordVisible,
-        suffixIcon: IconButton(
-          icon: Icon(
-            _isPasswordVisible
-                ? Icons.visibility_off_rounded
-                : Icons.visibility_rounded,
-            color: AppColors.onSurfaceVariant,
-            size: 20,
-          ),
-          onPressed: () =>
-              setState(() => _isPasswordVisible = !_isPasswordVisible),
-        ),
+        trailing: _buildPasswordToggle(),
         textInputAction: _uiaaSession != null
             ? TextInputAction.next
             : TextInputAction.done,
+        onChanged: (_) => _clearError(),
         onSubmitted: _uiaaSession == null ? (_) => _register() : null,
       ),
       if (_uiaaSession != null) ...[
-        const SizedBox(height: 20),
+        const SizedBox(height: NeuSpacing.lg),
         _buildLabel('注册 Token'),
-        const SizedBox(height: 8),
-        _buildTextField(
+        const SizedBox(height: NeuSpacing.sm),
+        NeuTextField(
           controller: _tokenController,
-          hintText: '输入服务器要求的注册 Token',
-          prefixIcon: Icons.vpn_key_rounded,
+          hint: '输入服务器要求的注册 Token',
+          leading: const Icon(Icons.vpn_key_rounded),
           textInputAction: TextInputAction.done,
+          onChanged: (_) => _clearError(),
           onSubmitted: (_) => _register(),
         ),
       ],
@@ -840,75 +753,80 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   List<Widget> _buildTokenLoginFields() {
     return [
       _buildLabel('User ID'),
-      const SizedBox(height: 8),
-      _buildTextField(
+      const SizedBox(height: NeuSpacing.sm),
+      NeuTextField(
         controller: _userIdController,
-        hintText: '@user:matrix.local',
-        prefixIcon: Icons.person_outline_rounded,
+        hint: '@user:matrix.local',
+        leading: const Icon(Icons.person_outline_rounded),
         textInputAction: TextInputAction.next,
+        onChanged: (_) => _clearError(),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: NeuSpacing.lg),
       _buildLabel('Device ID'),
-      const SizedBox(height: 8),
-      _buildTextField(
+      const SizedBox(height: NeuSpacing.sm),
+      NeuTextField(
         controller: _deviceIdController,
-        hintText: 'MATTER (可选)',
-        prefixIcon: Icons.devices_rounded,
+        hint: 'MATTER (可选)',
+        leading: const Icon(Icons.devices_rounded),
         textInputAction: TextInputAction.next,
+        onChanged: (_) => _clearError(),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: NeuSpacing.lg),
       _buildLabel('Access Token'),
-      const SizedBox(height: 8),
-      _buildTextField(
+      const SizedBox(height: NeuSpacing.sm),
+      NeuTextField(
         controller: _accessTokenController,
-        hintText: '你的 Access Token',
-        prefixIcon: Icons.key_rounded,
+        hint: '你的 Access Token',
+        leading: const Icon(Icons.key_rounded),
         textInputAction: TextInputAction.done,
+        onChanged: (_) => _clearError(),
         onSubmitted: (_) => _loginWithAccessToken(),
       ),
     ];
   }
 
+  Widget _buildPasswordToggle() {
+    return NeuIconButton(
+      size: 32,
+      icon: _isPasswordVisible
+          ? Icons.visibility_off_rounded
+          : Icons.visibility_rounded,
+      onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
+    );
+  }
+
   Widget _buildErrorBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-      ),
+    final colors = context.neu;
+    return NeuSurface(
+      depth: NeuDepth.flat,
+      radius: NeuRadius.content,
+      color: colors.error.withValues(alpha: .12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 18),
-          const SizedBox(width: 8),
+          Icon(Icons.error_outline_rounded, color: colors.error, size: 18),
+          const SizedBox(width: NeuSpacing.sm),
           Expanded(
             child: Text(
               _error!,
-              style: const TextStyle(color: Colors.red, fontSize: 13),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.error),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: NeuSpacing.sm),
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () {
               Clipboard.setData(ClipboardData(text: _error!));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('已复制到剪贴板'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
+              neuToast(context, '已复制到剪贴板');
             },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Text(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Text(
                 '复制',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontSize: 12,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.error,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -920,6 +838,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Widget _buildActionButton() {
+    final colors = context.neu;
     final label = switch (_tabIndex) {
       0 => '登录',
       1 => _uiaaSession != null ? '完成注册' : '注册',
@@ -938,34 +857,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return SizedBox(
       width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
+      child: NeuButton(
+        accent: true,
+        padding: const EdgeInsets.symmetric(vertical: 15),
         onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
-          padding: EdgeInsets.zero,
-        ),
         child: _isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
-                  color: Colors.white,
+                  color: colors.onAccent,
                   strokeWidth: 2.5,
                 ),
               )
-            : Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+            : Text(label),
       ),
     );
   }
@@ -976,64 +881,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         padding: const EdgeInsets.only(bottom: 16),
         child: Text(
           'Made with AI by Matter Team',
-          style: TextStyle(
-            color: AppColors.onSurfaceVariant.withValues(alpha: 0.5),
-            fontSize: 12,
-          ),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       ),
     );
   }
 
   Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: AppColors.onSurface,
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hintText,
-    required IconData prefixIcon,
-    bool obscureText = false,
-    Widget? suffixIcon,
-    TextInputAction? textInputAction,
-    void Function(String)? onSubmitted,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-      ),
-      child: TextField(
-        controller: controller,
-        obscureText: obscureText,
-        textInputAction: textInputAction,
-        onSubmitted: onSubmitted,
-        onChanged: (_) => _clearError(),
-        style: const TextStyle(color: AppColors.onBackground, fontSize: 15),
-        decoration: InputDecoration(
-          hintText: hintText,
-          hintStyle: const TextStyle(
-            color: AppColors.onSurfaceVariant,
-            fontSize: 15,
-          ),
-          prefixIcon: Icon(
-            prefixIcon,
-            color: AppColors.onSurfaceVariant,
-            size: 20,
-          ),
-          suffixIcon: suffixIcon,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          isDense: true,
-        ),
-      ),
-    );
+    return Text(text, style: Theme.of(context).textTheme.titleSmall);
   }
 }

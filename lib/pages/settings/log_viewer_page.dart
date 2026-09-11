@@ -4,7 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/neu_chip_tray.dart';
+import '../../widgets/neu_decoration.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 
 /// Provider that accumulates log entries from the Rust stream.
 final logEntriesProvider =
@@ -33,6 +38,13 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
   String? _tagFilter;
   String _searchQuery = '';
   StreamSubscription<rust.AppLogEntry>? _logSubscription;
+
+  static const _levelOptions = [
+    (null, '全部'),
+    ('error', '错误'),
+    ('warn', '警告'),
+    ('info', '信息'),
+  ];
 
   @override
   void initState() {
@@ -91,6 +103,8 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final allLogs = ref.watch(logEntriesProvider);
     final tags = allLogs.map((log) => log.tag).toSet().toList()..sort();
     final errorCount = allLogs.where((log) => log.level == 'error').length;
@@ -112,209 +126,155 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
     _scrollToBottom();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: colors.base,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: colors.base,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.onBackground,
-          ),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          '日志 (${allLogs.length})',
-          style: TextStyle(
-            color: AppColors.onBackground,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        title: Text('日志 (${allLogs.length})', style: textTheme.titleMedium),
         actions: [
-          IconButton(
-            icon: Icon(
-              _autoScroll
-                  ? Icons.vertical_align_bottom_rounded
-                  : Icons.vertical_align_top_rounded,
-              color: AppColors.onSurfaceVariant,
-              size: 20,
-            ),
-            onPressed: () => setState(() => _autoScroll = !_autoScroll),
+          NeuIconButton(
+            icon: _autoScroll
+                ? Icons.vertical_align_bottom_rounded
+                : Icons.vertical_align_top_rounded,
+            size: 40,
             tooltip: _autoScroll ? '自动滚动: 开' : '自动滚动: 关',
+            onPressed: () => setState(() => _autoScroll = !_autoScroll),
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(
-              Icons.filter_list_rounded,
-              color: AppColors.onSurfaceVariant,
-              size: 20,
-            ),
-            color: AppColors.surface,
-            onSelected: (value) {
-              setState(() {
-                if (value == 'all') {
-                  _levelFilter = null;
-                } else {
-                  _levelFilter = value;
-                }
-              });
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'all', child: Text('全部级别')),
-              const PopupMenuItem(value: 'error', child: Text('错误')),
-              const PopupMenuItem(value: 'warn', child: Text('警告')),
-              const PopupMenuItem(value: 'info', child: Text('信息')),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.delete_outline_rounded,
-              color: AppColors.onSurfaceVariant,
-              size: 20,
-            ),
-            onPressed: allLogs.isEmpty ? null : _clearLogs,
+          const SizedBox(width: 4),
+          NeuIconButton(
+            icon: Icons.delete_outline_rounded,
+            size: 40,
             tooltip: '清空日志',
+            onPressed: allLogs.isEmpty ? null : _clearLogs,
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: AppColors.surfaceVariant.withValues(alpha: 0.3),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NeuSpacing.lg,
+              NeuSpacing.sm,
+              NeuSpacing.lg,
+              0,
+            ),
+            child: NeuTextField(
+              controller: _searchController,
+              hint: '搜索日志内容或标签',
+              leading: const Icon(Icons.search_rounded),
+              trailing: _searchQuery.isEmpty
+                  ? null
+                  : NeuIconButton(
+                      icon: Icons.close_rounded,
+                      size: 32,
+                      tooltip: '清除搜索',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                    ),
+              onChanged: (value) => setState(() => _searchQuery = value),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NeuSpacing.lg,
+              NeuSpacing.md,
+              NeuSpacing.lg,
+              0,
+            ),
+            child: Row(
+              children: [
+                for (final (value, label) in _levelOptions) ...[
+                  NeuChip(
+                    label: label,
+                    selected: _levelFilter == value,
+                    onTap: () => setState(() => _levelFilter = value),
+                  ),
+                  const SizedBox(width: NeuSpacing.sm),
+                ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              NeuSpacing.lg,
+              NeuSpacing.md,
+              NeuSpacing.lg,
+              NeuSpacing.sm,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   '显示 ${filtered.length}/${allLogs.length} 条${errorCount > 0 ? '，错误 $errorCount 条' : ''}',
-                  style: const TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontSize: 12,
-                  ),
+                  style: textTheme.bodySmall,
                 ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildFilterChip(
-                        label: '全部',
-                        selected: _tagFilter == null,
-                        onTap: () => setState(() => _tagFilter = null),
+                const SizedBox(height: NeuSpacing.sm),
+                NeuChipTray(
+                  children: [
+                    NeuChip(
+                      label: '全部',
+                      selected: _tagFilter == null,
+                      onTap: () => setState(() => _tagFilter = null),
+                    ),
+                    for (final tag in tags)
+                      NeuChip(
+                        label: tag,
+                        selected: _tagFilter == tag,
+                        onTap: () => setState(() => _tagFilter = tag),
                       ),
-                      for (final tag in tags) ...[
-                        const SizedBox(width: 6),
-                        _buildFilterChip(
-                          label: tag,
-                          selected: _tagFilter == tag,
-                          onTap: () => setState(() => _tagFilter = tag),
-                        ),
-                      ],
-                    ],
-                  ),
+                  ],
                 ),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _searchQuery = value),
-              style: const TextStyle(
-                color: AppColors.onBackground,
-                fontSize: 13,
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                NeuSpacing.lg,
+                NeuSpacing.xs,
+                NeuSpacing.lg,
+                NeuSpacing.lg,
               ),
-              decoration: InputDecoration(
-                hintText: '搜索日志内容或标签',
-                hintStyle: const TextStyle(
-                  color: AppColors.onSurfaceVariant,
-                  fontSize: 13,
-                ),
-                prefixIcon: const Icon(
-                  Icons.search_rounded,
-                  color: AppColors.onSurfaceVariant,
-                  size: 20,
-                ),
-                suffixIcon: _searchQuery.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        color: AppColors.onSurfaceVariant,
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
+              child: NeuSurface(
+                depth: NeuDepth.pressed,
+                radius: NeuRadius.content,
+                intensity: .8,
+                padding: const EdgeInsets.all(NeuSpacing.md),
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.article_outlined,
+                              color: colors.textTertiary,
+                              size: 48,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              allLogs.isEmpty ? '等待日志...' : '无匹配日志',
+                              style: textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: EdgeInsets.zero,
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          return _LogEntryTile(entry: filtered[index]);
                         },
-                        tooltip: '清除搜索',
                       ),
-                filled: true,
-                fillColor: AppColors.surfaceVariant.withValues(alpha: 0.45),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
             ),
           ),
-          Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.article_outlined,
-                          color: AppColors.onSurfaceVariant,
-                          size: 48,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          allLogs.isEmpty ? '等待日志...' : '无匹配日志',
-                          style: const TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      return _LogEntryTile(entry: filtered[index]);
-                    },
-                  ),
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : AppColors.surfaceVariant,
-          borderRadius: BorderRadius.circular(AppRadii.tag),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.white : AppColors.onSurfaceVariant,
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
       ),
     );
   }
@@ -327,14 +287,16 @@ class _LogEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final time = DateTime.fromMillisecondsSinceEpoch(entry.timestamp.toInt());
     final timeStr =
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}.${time.millisecond.toString().padLeft(3, '0')}';
 
     final levelColor = switch (entry.level) {
-      'error' => AppColors.error,
-      'warn' => const Color(0xFFFFA726),
-      _ => AppColors.onSurfaceVariant,
+      'error' => colors.error,
+      'warn' => colors.warning,
+      _ => colors.textSecondary,
     };
 
     final levelIcon = switch (entry.level) {
@@ -343,77 +305,66 @@ class _LogEntryTile extends StatelessWidget {
       _ => 'ℹ️',
     };
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: GestureDetector(
-        onLongPress: () {
-          // Copy log entry
-          final text =
-              '[$timeStr] [${entry.level.toUpperCase()}] [${entry.tag}] ${entry.message}';
-          Clipboard.setData(ClipboardData(text: text));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('已复制'),
-              duration: Duration(seconds: 1),
+    return GestureDetector(
+      onLongPress: () {
+        // Copy log entry
+        final text =
+            '[$timeStr] [${entry.level.toUpperCase()}] [${entry.tag}] ${entry.message}';
+        Clipboard.setData(ClipboardData(text: text));
+        neuToast(context, '已复制');
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: entry.level == 'error'
+              ? colors.error.withValues(alpha: 0.08)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(NeuRadius.tag),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 70,
+              child: Text(
+                timeStr,
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.textTertiary,
+                  fontFamily: 'monospace',
+                ),
+              ),
             ),
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: entry.level == 'error'
-                ? AppColors.error.withValues(alpha: 0.06)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 70,
-                child: Text(
-                  timeStr,
-                  style: TextStyle(
-                    color: AppColors.onSurfaceVariant.withValues(alpha: 0.6),
-                    fontSize: 10.5,
-                    fontFamily: 'monospace',
-                  ),
+            SizedBox(
+              width: 20,
+              child: Text(levelIcon, style: textTheme.labelSmall),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: colors.accentSoft,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                entry.tag,
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.accent,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'monospace',
                 ),
               ),
-              SizedBox(
-                width: 20,
-                child: Text(levelIcon, style: const TextStyle(fontSize: 10)),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: Text(
-                  entry.tag,
-                  style: TextStyle(
-                    color: AppColors.primary.withValues(alpha: 0.8),
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'monospace',
-                  ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                entry.message,
+                style: textTheme.bodySmall?.copyWith(
+                  color: levelColor,
+                  fontFamily: 'monospace',
+                  height: 1.3,
                 ),
               ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  entry.message,
-                  style: TextStyle(
-                    color: levelColor,
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                    height: 1.3,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

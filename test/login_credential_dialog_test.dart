@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:matter/pages/login/login_page.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 void main() {
   testWidgets('credential fallback dialog confirms continuing login', (
     tester,
@@ -10,6 +12,7 @@ void main() {
     late Future<bool> result;
     await tester.pumpWidget(
       MaterialApp(
+        theme: neuTestTheme(),
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () {

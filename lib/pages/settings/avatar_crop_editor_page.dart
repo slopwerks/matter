@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 
 /// Lightweight square cropper used for profile avatars.
 class AvatarCropEditorPage extends StatelessWidget {
@@ -12,12 +12,15 @@ class AvatarCropEditorPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final overlayIconBrightness = dark ? Brightness.light : Brightness.dark;
     final editorTheme = Theme.of(context).copyWith(
-      scaffoldBackgroundColor: AppColors.background,
+      scaffoldBackgroundColor: colors.base,
       colorScheme: Theme.of(context).colorScheme.copyWith(
-        primary: AppColors.primary,
-        surface: AppColors.surface,
-        onSurface: AppColors.onBackground,
+        primary: colors.accent,
+        surface: colors.surfaceStrong,
+        onSurface: colors.text,
       ),
     );
 
@@ -55,24 +58,24 @@ class AvatarCropEditorPage extends StatelessWidget {
             maxOutputSize: Size(1024, 1024),
             outputFormat: OutputFormat.jpg,
           ),
-          cropRotateEditor: const CropRotateEditorConfigs(
-            tools: [CropRotateTool.rotate, CropRotateTool.reset],
+          cropRotateEditor: CropRotateEditorConfigs(
+            tools: const [CropRotateTool.rotate, CropRotateTool.reset],
             initAspectRatio: 1,
             maxScale: 6,
             style: CropRotateEditorStyle(
-              appBarBackground: AppColors.background,
-              appBarColor: AppColors.onBackground,
-              background: AppColors.background,
-              bottomBarBackground: AppColors.surface,
-              bottomBarColor: AppColors.onBackground,
-              cropCornerColor: AppColors.primary,
-              helperLineColor: Colors.white54,
+              appBarBackground: colors.base,
+              appBarColor: colors.text,
+              background: colors.base,
+              bottomBarBackground: colors.surfaceStrong,
+              bottomBarColor: colors.text,
+              cropCornerColor: colors.accent,
+              helperLineColor: colors.textTertiary,
               cropOverlayColor: Colors.black,
               uiOverlayStyle: SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
-                statusBarIconBrightness: Brightness.light,
-                systemNavigationBarColor: AppColors.surface,
-                systemNavigationBarIconBrightness: Brightness.light,
+                statusBarIconBrightness: overlayIconBrightness,
+                systemNavigationBarColor: colors.surfaceStrong,
+                systemNavigationBarIconBrightness: overlayIconBrightness,
               ),
             ),
           ),

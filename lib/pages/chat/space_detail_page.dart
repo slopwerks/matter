@@ -4,9 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/avatar.dart';
+import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/neu_action.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 import 'action_failure_message.dart';
 import 'chat_detail_page.dart';
 
@@ -96,32 +102,19 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     final space = widget.space;
     if (_accountSwitched || !_accountActive()) {
       return Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: context.neu.base,
         appBar: AppBar(
-          backgroundColor: AppColors.background,
+          backgroundColor: context.neu.base,
           elevation: 0,
           scrolledUnderElevation: 0,
           leading: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_rounded,
-              color: AppColors.onBackground,
-            ),
+            icon: Icon(Icons.arrow_back_rounded, color: context.neu.text),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          title: const Text(
-            '空间',
-            style: TextStyle(
-              color: AppColors.onBackground,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          title: Text('空间', style: Theme.of(context).textTheme.titleLarge),
         ),
-        body: const Center(
-          child: Text(
-            '账号已切换',
-            style: TextStyle(color: AppColors.onSurfaceVariant),
-          ),
+        body: Center(
+          child: Text('账号已切换', style: Theme.of(context).textTheme.bodyMedium),
         ),
       );
     }
@@ -140,75 +133,45 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     );
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.neu.base,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: context.neu.base,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.onBackground,
-          ),
+          icon: Icon(Icons.arrow_back_rounded, color: context.neu.text),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
-          '空间',
-          style: TextStyle(
-            color: AppColors.onBackground,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        title: Text('空间', style: Theme.of(context).textTheme.titleLarge),
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.playlist_add_rounded,
-              color: AppColors.onBackground,
-            ),
+          NeuIconButton(
+            icon: Icons.playlist_add_rounded,
+            tooltip: '添加房间',
             onPressed: () => _showAddRoomDialog(context, ref),
           ),
-          PopupMenuButton<_SpaceMenuAction>(
-            color: AppColors.surface,
-            icon: const Icon(
-              Icons.more_horiz_rounded,
-              color: AppColors.onBackground,
-            ),
-            onSelected: (action) {
-              switch (action) {
-                case _SpaceMenuAction.edit:
-                  _showEditSpaceDialog(context, ref, details);
-                case _SpaceMenuAction.leave:
-                  _confirmLeaveSpace(context, ref, details);
-              }
-            },
-            // Editing needs the loaded details: with the fallback (loading /
-            // failed fetch) the dialog would prefill an empty topic and
-            // saving would silently clear the server-side topic.
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: _SpaceMenuAction.edit,
-                enabled: detailsAsync.hasValue,
-                child: const Text('编辑空间'),
-              ),
-              const PopupMenuItem(
-                value: _SpaceMenuAction.leave,
-                child: Text('退出空间'),
-              ),
-            ],
+          const SizedBox(width: NeuSpacing.xs),
+          NeuIconButton(
+            icon: Icons.more_horiz_rounded,
+            tooltip: '更多',
+            onPressed: () =>
+                _showSpaceMenu(context, ref, details, detailsAsync.hasValue),
           ),
+          const SizedBox(width: NeuSpacing.sm),
         ],
       ),
       body: MaxContentWidth(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          padding: const EdgeInsets.fromLTRB(
+            NeuSpacing.lg,
+            NeuSpacing.sm,
+            NeuSpacing.lg,
+            NeuSpacing.xl,
+          ),
           children: [
-            Container(
+            NeuSurface(
+              color: context.neu.card,
+              radius: NeuRadius.surface,
               padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(AppRadii.surface),
-              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -217,7 +180,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                       AppAvatar(
                         fallback: details.name,
                         size: 56,
-                        radius: AppRadii.content,
+                        radius: NeuRadius.content,
                         url: details.avatarUrl,
                       ),
                       const SizedBox(width: 14),
@@ -227,19 +190,12 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                           children: [
                             Text(
                               details.name,
-                              style: const TextStyle(
-                                color: AppColors.onBackground,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: Theme.of(context).textTheme.titleLarge,
                             ),
                             const SizedBox(height: 4),
                             Text(
                               details.id,
-                              style: const TextStyle(
-                                color: AppColors.onSurfaceVariant,
-                                fontSize: 12.5,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -252,28 +208,21 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                     const SizedBox(height: 14),
                     Text(
                       details.topic!,
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 13.5,
-                        height: 1.35,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: NeuSpacing.md),
             _Section(
               title: '房间列表',
               child: childrenAsync.when(
                 data: (rooms) {
                   if (rooms.isEmpty) {
-                    return const Text(
+                    return Text(
                       '这个空间下暂时没有可见房间',
-                      style: TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 13,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     );
                   }
                   return Column(
@@ -288,33 +237,27 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                     ],
                   );
                 },
-                loading: () => const Center(
+                loading: () => Center(
                   child: CircularProgressIndicator(
-                    color: AppColors.primary,
+                    color: context.neu.accent,
                     strokeWidth: 2,
                   ),
                 ),
                 error: (err, _) => Text(
                   '加载房间失败: $err',
-                  style: const TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: NeuSpacing.md),
             _Section(
               title: '成员',
               child: membersAsync.when(
                 data: (members) {
                   if (members.isEmpty) {
-                    return const Text(
+                    return Text(
                       '暂无成员信息',
-                      style: TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 13,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     );
                   }
                   return Column(
@@ -327,18 +270,14 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               AppAvatar(
                                 fallback: member.name,
                                 size: 36,
-                                radius: AppRadii.content,
+                                radius: NeuRadius.content,
                                 url: member.avatarUrl,
                               ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
                                   member.name,
-                                  style: const TextStyle(
-                                    color: AppColors.onBackground,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodyLarge,
                                 ),
                               ),
                             ],
@@ -347,30 +286,24 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                       if (members.length > 8)
                         Text(
                           '还有 ${members.length - 8} 位成员',
-                          style: const TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 12.5,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                     ],
                   );
                 },
-                loading: () => const Center(
+                loading: () => Center(
                   child: CircularProgressIndicator(
-                    color: AppColors.primary,
+                    color: context.neu.accent,
                     strokeWidth: 2,
                   ),
                 ),
                 error: (err, _) => Text(
                   '加载成员失败: $err',
-                  style: const TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: NeuSpacing.md),
             _Section(
               title: '设置',
               child: Column(
@@ -398,6 +331,45 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     );
   }
 
+  /// 空间操作菜单:编辑需要已加载的详情——用 fallback(加载中/失败)会
+  /// 预填空说明,保存时会静默清掉服务端说明,所以未加载时不提供编辑。
+  void _showSpaceMenu(
+    BuildContext context,
+    WidgetRef ref,
+    SpaceDetails details,
+    bool detailsLoaded,
+  ) {
+    showNeuSheet<void>(
+      context: context,
+      child: Builder(
+        builder: (sheetContext) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (detailsLoaded)
+              NeuSheetItem(
+                icon: Icons.edit_outlined,
+                label: '编辑空间',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showEditSpaceDialog(context, ref, details);
+                },
+              ),
+            NeuSheetItem(
+              icon: Icons.exit_to_app_rounded,
+              label: '退出空间',
+              color: sheetContext.neu.error,
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _confirmLeaveSpace(context, ref, details);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showEditSpaceDialog(
     BuildContext context,
     WidgetRef ref,
@@ -410,179 +382,180 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
-          title: const Text(
-            '编辑空间',
-            style: TextStyle(color: AppColors.onBackground),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                style: const TextStyle(color: AppColors.onBackground),
-                decoration: const InputDecoration(
-                  hintText: '空间名称',
-                  hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: topicController,
-                minLines: 2,
-                maxLines: 4,
-                style: const TextStyle(color: AppColors.onBackground),
-                decoration: const InputDecoration(
-                  hintText: '空间说明',
-                  hintStyle: TextStyle(color: AppColors.onSurfaceVariant),
-                ),
-              ),
-              if (editError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    editError!,
-                    style: TextStyle(
-                      color: editError == _spaceBusyTip
-                          ? AppColors.onSurfaceVariant
-                          : AppColors.error,
-                      fontSize: 13,
-                    ),
+        builder: (dialogContext, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          child: GlassPanel(
+            radius: NeuRadius.nav,
+            padding: const EdgeInsets.all(22),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '编辑空间',
+                    style: Theme.of(dialogContext).textTheme.titleMedium,
                   ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text(
-                '取消',
-                style: TextStyle(color: AppColors.onSurfaceVariant),
+                  const SizedBox(height: 16),
+                  NeuTextField(controller: nameController, hint: '空间名称'),
+                  const SizedBox(height: 12),
+                  NeuTextField(
+                    controller: topicController,
+                    hint: '空间说明',
+                    maxLines: 4,
+                  ),
+                  if (editError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        editError!,
+                        style: Theme.of(dialogContext).textTheme.bodySmall
+                            ?.copyWith(
+                              color: editError == _spaceBusyTip
+                                  ? dialogContext.neu.textSecondary
+                                  : dialogContext.neu.error,
+                            ),
+                      ),
+                    ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: NeuButton(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          child: const Center(child: Text('取消')),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: NeuButton(
+                          accent: true,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: () async {
+                            // Entry guard: the dialog does not rebuild on a page-level
+                            // setState, so a second tap would otherwise issue a duplicate
+                            // write.
+                            if (_spaceActionInProgress) {
+                              // The previous request may still be in flight (its dialog
+                              // was dismissed): say so instead of silently swallowing the
+                              // tap (same discipline as the leave dialog). Render inside
+                              // the dialog: a page snackbar would sit beneath the modal
+                              // barrier and stay invisible.
+                              setDialogState(() => editError = _spaceBusyTip);
+                              return;
+                            }
+                            // The busy tip may linger from a previous dismissal: clear it
+                            // once the guard passes.
+                            if (editError == _spaceBusyTip) {
+                              setDialogState(() => editError = null);
+                            }
+                            final name = nameController.text.trim();
+                            final topic = topicController.text.trim();
+                            // Validate BEFORE arming the guard: an early return here must
+                            // not strand the flag (every later confirm would be blocked).
+                            if (name.isEmpty) {
+                              // Feedback instead of a silent no-op (same as the room
+                              // management save path).
+                              setDialogState(() => editError = '空间名称不能为空');
+                              return;
+                            }
+                            _spaceActionInProgress = true;
+                            if (dialogContext.mounted) {
+                              setDialogState(() => saving = true);
+                            }
+                            try {
+                              await updateSpaceDetails(
+                                accountUserId: _openedUserId ?? '',
+                                spaceId: details.id,
+                                name: name,
+                                topic: topic.isEmpty ? null : topic,
+                              );
+                              // The account may have switched while the request was in
+                              // flight: the page shows the switched placeholder — skip
+                              // the local bookkeeping (same discipline as the other
+                              // pages).
+                              if (!_accountActive()) {
+                                // Close the dialog: it would otherwise hover over the
+                                // switched placeholder (same as the catch branch).
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                return;
+                              }
+                              ref.invalidate(spaceDetailsProvider(details.id));
+                              ref.invalidate(spacesProvider);
+                              ref.invalidate(chatRoomsProvider);
+                              if (!context.mounted) return;
+                              // `isCurrent` guard: the dialog may have been dismissed
+                              // during its exit animation — popping then would pop the
+                              // PAGE below it.
+                              if (dialogContext.mounted &&
+                                  ModalRoute.of(dialogContext)?.isCurrent ==
+                                      true) {
+                                Navigator.of(dialogContext).pop();
+                              }
+                              // The dialog may have been dismissed while the request was
+                              // in flight: still report success.
+                              neuToast(context, '空间已更新');
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致），并
+                              // 关闭对话框——它停留的旧账号内容已无意义，且重试只会再次被
+                              // Rust 账号守卫拒绝（无反馈）。
+                              if (!_accountActive()) {
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                return;
+                              }
+                              // The name write may have succeeded before a later topic
+                              // write failed. Refresh the affected views even on errors
+                              // so the UI reflects the server's partial result.
+                              ref.invalidate(spaceDetailsProvider(details.id));
+                              ref.invalidate(spacesProvider);
+                              ref.invalidate(chatRoomsProvider);
+                              if (dialogContext.mounted) {
+                                // Render the failure inside the dialog: a page-level
+                                // toast would sit beneath the modal barrier and stay
+                                // invisible while the dialog stays open for retry.
+                                setDialogState(
+                                  () => editError = _actionFailureMessage(e),
+                                );
+                              } else {
+                                neuToast(context, _actionFailureMessage(e));
+                              }
+                            } finally {
+                              if (mounted) _spaceActionInProgress = false;
+                              if (dialogContext.mounted) {
+                                setDialogState(() => saving = false);
+                              }
+                            }
+                          },
+                          child: saving
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    color: dialogContext.neu.onAccent,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Center(child: Text('保存')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            TextButton(
-              onPressed: () async {
-                // Entry guard: the dialog does not rebuild on a page-level
-                // setState, so a second tap would otherwise issue a duplicate
-                // write.
-                if (_spaceActionInProgress) {
-                  // The previous request may still be in flight (its dialog
-                  // was dismissed): say so instead of silently swallowing the
-                  // tap (same discipline as the leave dialog). Render inside
-                  // the dialog: a page snackbar would sit beneath the modal
-                  // barrier and stay invisible.
-                  setDialogState(() => editError = _spaceBusyTip);
-                  return;
-                }
-                // The busy tip may linger from a previous dismissal: clear it
-                // once the guard passes.
-                if (editError == _spaceBusyTip) {
-                  setDialogState(() => editError = null);
-                }
-                final name = nameController.text.trim();
-                final topic = topicController.text.trim();
-                // Validate BEFORE arming the guard: an early return here must
-                // not strand the flag (every later confirm would be blocked).
-                if (name.isEmpty) {
-                  // Feedback instead of a silent no-op (same as the room
-                  // management save path).
-                  setDialogState(() => editError = '空间名称不能为空');
-                  return;
-                }
-                _spaceActionInProgress = true;
-                if (dialogContext.mounted) {
-                  setDialogState(() => saving = true);
-                }
-                try {
-                  await updateSpaceDetails(
-                    accountUserId: _openedUserId ?? '',
-                    spaceId: details.id,
-                    name: name,
-                    topic: topic.isEmpty ? null : topic,
-                  );
-                  // The account may have switched while the request was in
-                  // flight: the page shows the switched placeholder — skip
-                  // the local bookkeeping (same discipline as the other
-                  // pages).
-                  if (!_accountActive()) {
-                    // Close the dialog: it would otherwise hover over the
-                    // switched placeholder (same as the catch branch).
-                    if (dialogContext.mounted &&
-                        ModalRoute.of(dialogContext)?.isCurrent == true) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                    return;
-                  }
-                  ref.invalidate(spaceDetailsProvider(details.id));
-                  ref.invalidate(spacesProvider);
-                  ref.invalidate(chatRoomsProvider);
-                  if (!context.mounted) return;
-                  // `isCurrent` guard: the dialog may have been dismissed
-                  // during its exit animation — popping then would pop the
-                  // PAGE below it.
-                  if (dialogContext.mounted &&
-                      ModalRoute.of(dialogContext)?.isCurrent == true) {
-                    Navigator.of(dialogContext).pop();
-                  }
-                  // The dialog may have been dismissed while the request was
-                  // in flight: still report success.
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('空间已更新')));
-                } catch (e) {
-                  if (!context.mounted) return;
-                  // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致），并
-                  // 关闭对话框——它停留的旧账号内容已无意义，且重试只会再次被
-                  // Rust 账号守卫拒绝（无反馈）。
-                  if (!_accountActive()) {
-                    if (dialogContext.mounted &&
-                        ModalRoute.of(dialogContext)?.isCurrent == true) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                    return;
-                  }
-                  // The name write may have succeeded before a later topic
-                  // write failed. Refresh the affected views even on errors
-                  // so the UI reflects the server's partial result.
-                  ref.invalidate(spaceDetailsProvider(details.id));
-                  ref.invalidate(spacesProvider);
-                  ref.invalidate(chatRoomsProvider);
-                  if (dialogContext.mounted) {
-                    // Render the failure inside the dialog: a page-level
-                    // snackbar would sit beneath the modal barrier and stay
-                    // invisible while the dialog stays open for retry.
-                    setDialogState(() => editError = _actionFailureMessage(e));
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(_actionFailureMessage(e))),
-                    );
-                  }
-                } finally {
-                  if (mounted) _spaceActionInProgress = false;
-                  if (dialogContext.mounted) {
-                    setDialogState(() => saving = false);
-                  }
-                }
-              },
-              child: saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        color: AppColors.secondary,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text(
-                      '保存',
-                      style: TextStyle(color: AppColors.secondary),
-                    ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -599,201 +572,153 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     // sheet is dismissed (Riverpod asserts on disposed widgets), and the
     // write can outlive an early dismissal.
     final container = ProviderScope.containerOf(pageContext, listen: false);
-    showModalBottomSheet<void>(
+    showNeuSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
       // Watch the ungrouped list inside the sheet: a loading or error
       // state must not masquerade as "no rooms" (the previous read-once
       // snapshot did).
-      builder: (sheetContext) => Consumer(
-        builder: (context, ref, _) {
+      child: Consumer(
+        builder: (sheetContext, ref, _) {
           // Track the sheet's context (the Consumer's own): an account
           // switch dismisses the sheet through it (see the
           // activeUserIdProvider listener).
-          _addRoomSheetContext = context;
+          _addRoomSheetContext = sheetContext;
           final ungroupedAsync = ref.watch(ungroupedRoomsProvider);
-          return Container(
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadii.surface),
-            ),
-            child: SafeArea(
-              child: ungroupedAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+          return ungroupedAsync.when(
+            loading: () => Padding(
+              padding: const EdgeInsets.all(NeuSpacing.xl),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: sheetContext.neu.accent,
+                  strokeWidth: 2,
                 ),
-                error: (error, _) => Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        '加载可加入的房间失败',
-                        style: TextStyle(color: AppColors.error, fontSize: 13),
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        onPressed: () => ref.invalidate(ungroupedRoomsProvider),
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  ),
-                ),
-                data: (rooms) => rooms.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text(
-                          '当前没有可加入这个空间的未归属群组。',
-                          style: TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 13,
-                          ),
-                        ),
-                      )
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final room in rooms)
-                            ListTile(
-                              title: Text(
-                                room.name,
-                                style: const TextStyle(
-                                  color: AppColors.onBackground,
-                                ),
-                              ),
-                              subtitle: Text(
-                                room.lastMessage.isEmpty
-                                    ? room.id
-                                    : room.lastMessage,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.onSurfaceVariant,
-                                  fontSize: 12.5,
-                                ),
-                              ),
-                              trailing: const Icon(
-                                Icons.add_link_rounded,
-                                color: AppColors.secondary,
-                              ),
-                              onTap: _addingToSpaceRoomId == room.id
-                                  ? null
-                                  : () async {
-                                      // Entry guard (not only the disabled
-                                      // row): the sheet does not rebuild on
-                                      // a page-level setState, so a second
-                                      // tap on the old row would otherwise
-                                      // issue a duplicate add.
-                                      if (!_accountActive()) return;
-                                      if (_addingToSpaceRoomId != null) {
-                                        // Say so instead of silently
-                                        // swallowing the tap (same
-                                        // discipline as the other guards). A
-                                        // snackbar on the sheet context would
-                                        // render beneath the sheet barrier,
-                                        // so close the sheet first and
-                                        // report on the page (same as the
-                                        // failure path). `isCurrent` guard:
-                                        // the account-switch listener may
-                                        // already be popping the sheet.
-                                        if (sheetContext.mounted &&
-                                            ModalRoute.of(
-                                                  sheetContext,
-                                                )?.isCurrent ==
-                                                true) {
-                                          Navigator.of(sheetContext).pop();
-                                        }
-                                        ScaffoldMessenger.of(
-                                          pageContext,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('正在添加房间，请稍候'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      _addingToSpaceRoomId = room.id;
-                                      try {
-                                        await addRoomToSpace(
-                                          accountUserId: _openedUserId ?? '',
-                                          spaceId: widget.space.id,
-                                          roomId: room.id,
-                                        );
-                                        // The account may have switched
-                                        // while the request was in flight:
-                                        // the page shows the switched
-                                        // placeholder — skip the local
-                                        // bookkeeping.
-                                        if (!_accountActive()) return;
-                                        // Container-level invalidates: the
-                                        // sheet's own `ref` would throw if
-                                        // the sheet was dismissed while the
-                                        // write was in flight.
-                                        container.invalidate(
-                                          spaceChildrenProvider(
-                                            widget.space.id,
-                                          ),
-                                        );
-                                        container.invalidate(
-                                          ungroupedRoomsProvider,
-                                        );
-                                        if (!pageContext.mounted) return;
-                                        if (sheetContext.mounted &&
-                                            ModalRoute.of(
-                                                  sheetContext,
-                                                )?.isCurrent ==
-                                                true) {
-                                          Navigator.of(sheetContext).pop();
-                                        }
-                                        // The sheet may have been dismissed
-                                        // while the request was in flight:
-                                        // still report success on the page.
-                                        ScaffoldMessenger.of(
-                                          pageContext,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('已加入空间'),
-                                          ),
-                                        );
-                                      } catch (e) {
-                                        if (!pageContext.mounted) return;
-                                        // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
-                                        if (!_accountActive()) return;
-                                        if (sheetContext.mounted &&
-                                            ModalRoute.of(
-                                                  sheetContext,
-                                                )?.isCurrent ==
-                                                true) {
-                                          // Close the sheet first, then
-                                          // report: a page snackbar while
-                                          // the sheet is up would sit hidden
-                                          // behind its barrier.
-                                          Navigator.of(sheetContext).pop();
-                                        }
-                                        ScaffoldMessenger.of(
-                                          pageContext,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              _actionFailureMessage(e),
-                                            ),
-                                          ),
-                                        );
-                                      } finally {
-                                        if (mounted) {
-                                          _addingToSpaceRoomId = null;
-                                        }
-                                      }
-                                    },
-                            ),
-                        ],
-                      ),
               ),
             ),
+            error: (error, _) => Padding(
+              padding: const EdgeInsets.all(NeuSpacing.xl),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '加载可加入的房间失败',
+                    style: Theme.of(sheetContext).textTheme.bodyMedium
+                        ?.copyWith(color: sheetContext.neu.error),
+                  ),
+                  const SizedBox(height: NeuSpacing.md),
+                  NeuButton(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 10,
+                    ),
+                    onPressed: () => ref.invalidate(ungroupedRoomsProvider),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+            data: (rooms) => rooms.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(NeuSpacing.xl),
+                    child: Text(
+                      '当前没有可加入这个空间的未归属群组。',
+                      style: Theme.of(sheetContext).textTheme.bodyMedium,
+                    ),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final room in rooms)
+                        NeuSheetItem(
+                          icon: Icons.forum_outlined,
+                          label: room.name,
+                          trailing: _addingToSpaceRoomId == room.id
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    color: sheetContext.neu.accent,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.add_link_rounded,
+                                  size: 18,
+                                  color: sheetContext.neu.accent,
+                                ),
+                          onTap: () async {
+                            // Entry guard (not only the disabled row): the
+                            // sheet does not rebuild on a page-level
+                            // setState, so a second tap on the old row
+                            // would otherwise issue a duplicate add.
+                            if (!_accountActive()) return;
+                            if (_addingToSpaceRoomId != null) {
+                              // Say so instead of silently swallowing the
+                              // tap (same discipline as the other guards).
+                              // A toast on the sheet context would render
+                              // beneath the sheet barrier, so close the
+                              // sheet first and report on the page (same as
+                              // the failure path). `isCurrent` guard: the
+                              // account-switch listener may already be
+                              // popping the sheet.
+                              if (sheetContext.mounted &&
+                                  ModalRoute.of(sheetContext)?.isCurrent ==
+                                      true) {
+                                Navigator.of(sheetContext).pop();
+                              }
+                              neuToast(pageContext, '正在添加房间，请稍候');
+                              return;
+                            }
+                            _addingToSpaceRoomId = room.id;
+                            try {
+                              await addRoomToSpace(
+                                accountUserId: _openedUserId ?? '',
+                                spaceId: widget.space.id,
+                                roomId: room.id,
+                              );
+                              // The account may have switched while the
+                              // request was in flight: the page shows the
+                              // switched placeholder — skip the local
+                              // bookkeeping.
+                              if (!_accountActive()) return;
+                              // Container-level invalidates: the sheet's
+                              // own `ref` would throw if the sheet was
+                              // dismissed while the write was in flight.
+                              container.invalidate(
+                                spaceChildrenProvider(widget.space.id),
+                              );
+                              container.invalidate(ungroupedRoomsProvider);
+                              if (!pageContext.mounted) return;
+                              if (sheetContext.mounted &&
+                                  ModalRoute.of(sheetContext)?.isCurrent ==
+                                      true) {
+                                Navigator.of(sheetContext).pop();
+                              }
+                              // The sheet may have been dismissed while
+                              // the request was in flight: still report
+                              // success on the page.
+                              neuToast(pageContext, '已加入空间');
+                            } catch (e) {
+                              if (!pageContext.mounted) return;
+                              // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
+                              if (!_accountActive()) return;
+                              if (sheetContext.mounted &&
+                                  ModalRoute.of(sheetContext)?.isCurrent ==
+                                      true) {
+                                // Close the sheet first, then report: a
+                                // page toast while the sheet is up would
+                                // sit hidden behind its barrier.
+                                Navigator.of(sheetContext).pop();
+                              }
+                              neuToast(pageContext, _actionFailureMessage(e));
+                            } finally {
+                              if (mounted) {
+                                _addingToSpaceRoomId = null;
+                              }
+                            }
+                          },
+                        ),
+                    ],
+                  ),
           );
         },
       ),
@@ -807,131 +732,151 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
-          title: const Text(
-            '移出空间',
-            style: TextStyle(color: AppColors.onBackground),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '要把“${room.name}”从这个空间移除吗？',
-                style: const TextStyle(color: AppColors.onBackground),
-              ),
-              if (removeError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    removeError!,
-                    style: TextStyle(
-                      color: removeError == _spaceBusyTip
-                          ? AppColors.onSurfaceVariant
-                          : AppColors.error,
-                      fontSize: 13,
-                    ),
+        builder: (dialogContext, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          child: GlassPanel(
+            radius: NeuRadius.nav,
+            padding: const EdgeInsets.all(22),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '移出空间',
+                    style: Theme.of(dialogContext).textTheme.titleMedium,
                   ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text(
-                '取消',
-                style: TextStyle(color: AppColors.onSurfaceVariant),
+                  const SizedBox(height: 6),
+                  Text(
+                    '要把“${room.name}”从这个空间移除吗？',
+                    style: Theme.of(dialogContext).textTheme.bodyMedium,
+                  ),
+                  if (removeError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        removeError!,
+                        style: Theme.of(dialogContext).textTheme.bodySmall
+                            ?.copyWith(
+                              color: removeError == _spaceBusyTip
+                                  ? dialogContext.neu.textSecondary
+                                  : dialogContext.neu.error,
+                            ),
+                      ),
+                    ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: NeuButton(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          child: const Center(child: Text('取消')),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: NeuButton(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: () async {
+                            // Entry guard: the dialog does not rebuild on a page-level
+                            // setState, so a second tap would otherwise issue a duplicate
+                            // removal.
+                            if (_spaceActionInProgress) {
+                              // The previous request may still be in flight (its dialog
+                              // was dismissed): say so instead of silently swallowing the
+                              // tap (same discipline as the leave dialog). Render inside
+                              // the dialog: a page snackbar would sit beneath the modal
+                              // barrier and stay invisible.
+                              setDialogState(() => removeError = _spaceBusyTip);
+                              return;
+                            }
+                            // The busy tip may linger from a previous dismissal: clear it
+                            // once the guard passes.
+                            if (removeError == _spaceBusyTip) {
+                              setDialogState(() => removeError = null);
+                            }
+                            _spaceActionInProgress = true;
+                            try {
+                              await removeRoomFromSpace(
+                                accountUserId: _openedUserId ?? '',
+                                spaceId: widget.space.id,
+                                roomId: room.id,
+                              );
+                              // The account may have switched while the request was in
+                              // flight: the page shows the switched placeholder — skip
+                              // the local bookkeeping and close the dialog (same as the
+                              // catch branch).
+                              if (!_accountActive()) {
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                return;
+                              }
+                              // `context.mounted` first: `ref.invalidate` throws once
+                              // the page is unmounted (the dialog may have been closed
+                              // and the page popped while the write was in flight).
+                              if (!context.mounted) return;
+                              ref.invalidate(
+                                spaceChildrenProvider(widget.space.id),
+                              );
+                              ref.invalidate(ungroupedRoomsProvider);
+                              // `isCurrent` guard: the dialog may have been dismissed
+                              // during its exit animation — popping then would pop the
+                              // PAGE below it.
+                              if (dialogContext.mounted &&
+                                  ModalRoute.of(dialogContext)?.isCurrent ==
+                                      true) {
+                                Navigator.of(dialogContext).pop();
+                              }
+                              // The dialog may have been dismissed while the request was
+                              // in flight: still report success.
+                              neuToast(context, '已从空间移除');
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致），并
+                              // 关闭对话框——它停留的旧账号内容已无意义，且重试只会再次被
+                              // Rust 账号守卫拒绝（无反馈）。
+                              if (!_accountActive()) {
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                return;
+                              }
+                              if (dialogContext.mounted) {
+                                // Render the failure inside the dialog: a page-level
+                                // snackbar would sit beneath the modal barrier and stay
+                                // invisible while the dialog stays open for retry.
+                                setDialogState(
+                                  () => removeError = _actionFailureMessage(e),
+                                );
+                              } else {
+                                neuToast(context, _actionFailureMessage(e));
+                              }
+                            } finally {
+                              if (mounted) _spaceActionInProgress = false;
+                            }
+                          },
+                          child: Center(
+                            child: Text(
+                              '移除',
+                              style: TextStyle(color: dialogContext.neu.error),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            TextButton(
-              onPressed: () async {
-                // Entry guard: the dialog does not rebuild on a page-level
-                // setState, so a second tap would otherwise issue a duplicate
-                // removal.
-                if (_spaceActionInProgress) {
-                  // The previous request may still be in flight (its dialog
-                  // was dismissed): say so instead of silently swallowing the
-                  // tap (same discipline as the leave dialog). Render inside
-                  // the dialog: a page snackbar would sit beneath the modal
-                  // barrier and stay invisible.
-                  setDialogState(() => removeError = _spaceBusyTip);
-                  return;
-                }
-                // The busy tip may linger from a previous dismissal: clear it
-                // once the guard passes.
-                if (removeError == _spaceBusyTip) {
-                  setDialogState(() => removeError = null);
-                }
-                _spaceActionInProgress = true;
-                try {
-                  await removeRoomFromSpace(
-                    accountUserId: _openedUserId ?? '',
-                    spaceId: widget.space.id,
-                    roomId: room.id,
-                  );
-                  // The account may have switched while the request was in
-                  // flight: the page shows the switched placeholder — skip
-                  // the local bookkeeping and close the dialog (same as the
-                  // catch branch).
-                  if (!_accountActive()) {
-                    if (dialogContext.mounted &&
-                        ModalRoute.of(dialogContext)?.isCurrent == true) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                    return;
-                  }
-                  // `context.mounted` first: `ref.invalidate` throws once
-                  // the page is unmounted (the dialog may have been closed
-                  // and the page popped while the write was in flight).
-                  if (!context.mounted) return;
-                  ref.invalidate(spaceChildrenProvider(widget.space.id));
-                  ref.invalidate(ungroupedRoomsProvider);
-                  // `isCurrent` guard: the dialog may have been dismissed
-                  // during its exit animation — popping then would pop the
-                  // PAGE below it.
-                  if (dialogContext.mounted &&
-                      ModalRoute.of(dialogContext)?.isCurrent == true) {
-                    Navigator.of(dialogContext).pop();
-                  }
-                  // The dialog may have been dismissed while the request was
-                  // in flight: still report success.
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('已从空间移除')));
-                } catch (e) {
-                  if (!context.mounted) return;
-                  // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致），并
-                  // 关闭对话框——它停留的旧账号内容已无意义，且重试只会再次被
-                  // Rust 账号守卫拒绝（无反馈）。
-                  if (!_accountActive()) {
-                    if (dialogContext.mounted &&
-                        ModalRoute.of(dialogContext)?.isCurrent == true) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                    return;
-                  }
-                  if (dialogContext.mounted) {
-                    // Render the failure inside the dialog: a page-level
-                    // snackbar would sit beneath the modal barrier and stay
-                    // invisible while the dialog stays open for retry.
-                    setDialogState(
-                      () => removeError = _actionFailureMessage(e),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(_actionFailureMessage(e))),
-                    );
-                  }
-                } finally {
-                  if (mounted) _spaceActionInProgress = false;
-                }
-              },
-              child: const Text('移除', style: TextStyle(color: AppColors.error)),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -946,141 +891,162 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
-          title: const Text(
-            '退出空间',
-            style: TextStyle(color: AppColors.onBackground),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '确认退出“${details.name}”吗？',
-                style: const TextStyle(color: AppColors.onBackground),
-              ),
-              if (leaveSpaceError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    leaveSpaceError!,
-                    style: TextStyle(
-                      color: leaveSpaceError == _spaceBusyTip
-                          ? AppColors.onSurfaceVariant
-                          : AppColors.error,
-                      fontSize: 13,
-                    ),
+        builder: (dialogContext, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          child: GlassPanel(
+            radius: NeuRadius.nav,
+            padding: const EdgeInsets.all(22),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '退出空间',
+                    style: Theme.of(dialogContext).textTheme.titleMedium,
                   ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text(
-                '取消',
-                style: TextStyle(color: AppColors.onSurfaceVariant),
+                  const SizedBox(height: 6),
+                  Text(
+                    '确认退出“${details.name}”吗？',
+                    style: Theme.of(dialogContext).textTheme.bodyMedium,
+                  ),
+                  if (leaveSpaceError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        leaveSpaceError!,
+                        style: Theme.of(dialogContext).textTheme.bodySmall
+                            ?.copyWith(
+                              color: leaveSpaceError == _spaceBusyTip
+                                  ? dialogContext.neu.textSecondary
+                                  : dialogContext.neu.error,
+                            ),
+                      ),
+                    ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: NeuButton(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          child: const Center(child: Text('取消')),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: NeuButton(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: () async {
+                            // Entry guard: the dialog does not rebuild on a page-level
+                            // setState, so a second tap would otherwise issue a duplicate
+                            // leave.
+                            if (_spaceActionInProgress) {
+                              // The previous request may still be in flight (its dialog
+                              // was dismissed): say so instead of silently swallowing the
+                              // tap (same discipline as the leave dialog). Render inside
+                              // the dialog: a page snackbar would sit beneath the modal
+                              // barrier and stay invisible.
+                              setDialogState(
+                                () => leaveSpaceError = _spaceBusyTip,
+                              );
+                              return;
+                            }
+                            // The busy tip may linger from a previous dismissal: clear it
+                            // once the guard passes.
+                            if (leaveSpaceError == _spaceBusyTip) {
+                              setDialogState(() => leaveSpaceError = null);
+                            }
+                            _spaceActionInProgress = true;
+                            try {
+                              await leaveSpace(
+                                accountUserId: _openedUserId ?? '',
+                                spaceId: details.id,
+                              );
+                              // The account may have switched while the request was in
+                              // flight: the page shows the switched placeholder — skip
+                              // the local bookkeeping and close the dialog (same as the
+                              // catch branch).
+                              if (!_accountActive()) {
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                return;
+                              }
+                              // `context.mounted` first: `ref.invalidate` throws once
+                              // the page is unmounted (the dialog may have been closed
+                              // and the page popped while the write was in flight).
+                              if (!context.mounted) return;
+                              ref.invalidate(spacesProvider);
+                              ref.invalidate(chatRoomsProvider);
+                              ref.invalidate(ungroupedRoomsProvider);
+                              // `isCurrent` guard: the dialog may have been dismissed
+                              // during its exit animation — popping then would pop the
+                              // PAGE below it.
+                              if (dialogContext.mounted &&
+                                  ModalRoute.of(dialogContext)?.isCurrent ==
+                                      true) {
+                                Navigator.of(dialogContext).pop();
+                              }
+                              // The dialog may have been dismissed while the request was
+                              // in flight: still close the page and report success.
+                              neuToast(context, '已退出空间');
+                              if (mounted &&
+                                  ModalRoute.of(context)?.isCurrent == true) {
+                                Navigator.of(context).pop();
+                              }
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致），并
+                              // 关闭对话框——它停留的旧账号内容已无意义，且重试只会再次被
+                              // Rust 账号守卫拒绝（无反馈）。
+                              if (!_accountActive()) {
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                return;
+                              }
+                              if (dialogContext.mounted) {
+                                // Render the failure inside the dialog: a page-level
+                                // toast would sit beneath the modal barrier and stay
+                                // invisible while the dialog stays open for retry.
+                                setDialogState(
+                                  () => leaveSpaceError = _actionFailureMessage(
+                                    e,
+                                  ),
+                                );
+                              } else {
+                                neuToast(context, _actionFailureMessage(e));
+                              }
+                            } finally {
+                              if (mounted) _spaceActionInProgress = false;
+                            }
+                          },
+                          child: Center(
+                            child: Text(
+                              '退出',
+                              style: TextStyle(color: dialogContext.neu.error),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            TextButton(
-              onPressed: () async {
-                // Entry guard: the dialog does not rebuild on a page-level
-                // setState, so a second tap would otherwise issue a duplicate
-                // leave.
-                if (_spaceActionInProgress) {
-                  // The previous request may still be in flight (its dialog
-                  // was dismissed): say so instead of silently swallowing the
-                  // tap (same discipline as the leave dialog). Render inside
-                  // the dialog: a page snackbar would sit beneath the modal
-                  // barrier and stay invisible.
-                  setDialogState(() => leaveSpaceError = _spaceBusyTip);
-                  return;
-                }
-                // The busy tip may linger from a previous dismissal: clear it
-                // once the guard passes.
-                if (leaveSpaceError == _spaceBusyTip) {
-                  setDialogState(() => leaveSpaceError = null);
-                }
-                _spaceActionInProgress = true;
-                try {
-                  await leaveSpace(
-                    accountUserId: _openedUserId ?? '',
-                    spaceId: details.id,
-                  );
-                  // The account may have switched while the request was in
-                  // flight: the page shows the switched placeholder — skip
-                  // the local bookkeeping and close the dialog (same as the
-                  // catch branch).
-                  if (!_accountActive()) {
-                    if (dialogContext.mounted &&
-                        ModalRoute.of(dialogContext)?.isCurrent == true) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                    return;
-                  }
-                  // `context.mounted` first: `ref.invalidate` throws once
-                  // the page is unmounted (the dialog may have been closed
-                  // and the page popped while the write was in flight).
-                  if (!context.mounted) return;
-                  ref.invalidate(spacesProvider);
-                  ref.invalidate(chatRoomsProvider);
-                  ref.invalidate(ungroupedRoomsProvider);
-                  // `isCurrent` guard: the dialog may have been dismissed
-                  // during its exit animation — popping then would pop the
-                  // PAGE below it.
-                  if (dialogContext.mounted &&
-                      ModalRoute.of(dialogContext)?.isCurrent == true) {
-                    Navigator.of(dialogContext).pop();
-                  }
-                  // The dialog may have been dismissed while the request was
-                  // in flight: still close the page and report success.
-                  if (mounted && ModalRoute.of(context)?.isCurrent == true) {
-                    Navigator.of(context).pop();
-                  }
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('已退出空间')));
-                } catch (e) {
-                  if (!context.mounted) return;
-                  // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致），并
-                  // 关闭对话框——它停留的旧账号内容已无意义，且重试只会再次被
-                  // Rust 账号守卫拒绝（无反馈）。
-                  if (!_accountActive()) {
-                    if (dialogContext.mounted &&
-                        ModalRoute.of(dialogContext)?.isCurrent == true) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                    return;
-                  }
-                  if (dialogContext.mounted) {
-                    // Render the failure inside the dialog: a page-level
-                    // snackbar would sit beneath the modal barrier and stay
-                    // invisible while the dialog stays open for retry.
-                    setDialogState(
-                      () => leaveSpaceError = _actionFailureMessage(e),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(_actionFailureMessage(e))),
-                    );
-                  }
-                } finally {
-                  if (mounted) _spaceActionInProgress = false;
-                }
-              },
-              child: const Text('退出', style: TextStyle(color: AppColors.error)),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
-
-enum _SpaceMenuAction { edit, leave }
 
 class _Section extends StatelessWidget {
   final String title;
@@ -1090,24 +1056,15 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-      ),
+    return NeuSurface(
+      color: context.neu.surfaceStrong,
+      radius: NeuRadius.surface,
+      padding: const EdgeInsets.all(NeuSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.onBackground,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: NeuSpacing.md),
           child,
         ],
       ),
@@ -1133,8 +1090,8 @@ class _SpaceChildTile extends ConsumerWidget {
         ? unreadOverride!.unread
         : syncedHasUnread;
     final unreadAccent = room.isMuted
-        ? AppColors.onSurfaceVariant
-        : AppColors.primary;
+        ? context.neu.textTertiary
+        : context.neu.accent;
     // Same stale-override cleanup as the main room list: a room managed only
     // from the space view must not keep a dead override in memory. Only a
     // no-longer-applicable override is dropped.
@@ -1142,9 +1099,9 @@ class _SpaceChildTile extends ConsumerWidget {
       clearStaleRoomUnreadOverride(ref, context, room.id, unreadOverride);
     }
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadii.surface),
+      padding: const EdgeInsets.only(bottom: NeuSpacing.sm),
+      child: NeuAction(
+        radius: NeuRadius.content,
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
@@ -1172,37 +1129,33 @@ class _SpaceChildTile extends ConsumerWidget {
             ),
           );
         },
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadii.surface),
-          ),
+        child: NeuSurface(
+          color: context.neu.card,
+          radius: NeuRadius.content,
+          padding: const EdgeInsets.all(NeuSpacing.md),
           child: Row(
             children: [
-              AppAvatar(fallback: room.name, size: 42, url: room.avatarUrl),
-              const SizedBox(width: 12),
+              AppAvatar(
+                fallback: room.name,
+                size: 42,
+                radius: NeuRadius.content,
+                url: room.avatarUrl,
+              ),
+              const SizedBox(width: NeuSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       room.name,
-                      style: const TextStyle(
-                        color: AppColors.onBackground,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Text(
                       room.lastMessage.isEmpty ? room.id : room.lastMessage,
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 12.5,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1210,26 +1163,12 @@ class _SpaceChildTile extends ConsumerWidget {
                 ),
               ),
               if (hasUnread) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: NeuSpacing.sm),
                 if (room.unreadCount > 0)
-                  Container(
+                  NeuBadge(
                     key: ValueKey('space-child-unread-badge:${room.id}'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: unreadAccent,
-                      borderRadius: BorderRadius.circular(AppRadii.tag),
-                    ),
-                    child: Text(
-                      room.unreadCount > 99 ? '99+' : '${room.unreadCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    count: room.unreadCount,
+                    muted: room.isMuted,
                   )
                 else
                   Container(
@@ -1245,16 +1184,16 @@ class _SpaceChildTile extends ConsumerWidget {
               if (onRemove != null)
                 IconButton(
                   onPressed: onRemove,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.remove_circle_outline_rounded,
-                    color: AppColors.error,
+                    color: context.neu.error,
                   ),
                   tooltip: '从空间移除',
                 )
               else
-                const Icon(
+                Icon(
                   Icons.chevron_right_rounded,
-                  color: AppColors.onSurfaceVariant,
+                  color: context.neu.textTertiary,
                 ),
             ],
           ),
@@ -1281,9 +1220,9 @@ class _ActionSettingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = danger ? AppColors.error : AppColors.onBackground;
+    final color = danger ? context.neu.error : context.neu.text;
     return InkWell(
-      borderRadius: BorderRadius.circular(AppRadii.content),
+      borderRadius: BorderRadius.circular(NeuRadius.content),
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1291,31 +1230,24 @@ class _ActionSettingRow extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: danger ? AppColors.error : AppColors.onSurfaceVariant,
+              color: danger ? context.neu.error : context.neu.textSecondary,
               size: 18,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: color,
-                  fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-            Text(
-              value,
-              style: const TextStyle(
-                color: AppColors.onSurfaceVariant,
-                fontSize: 13,
-              ),
-            ),
+            Text(value, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(width: 6),
-            const Icon(
+            Icon(
               Icons.chevron_right_rounded,
-              color: AppColors.onSurfaceVariant,
+              color: context.neu.textTertiary,
               size: 18,
             ),
           ],

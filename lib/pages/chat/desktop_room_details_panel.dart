@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/neu_surface.dart';
 import 'room_metadata_patch.dart';
 import 'room_management_page.dart';
 
@@ -25,42 +26,36 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.neu;
     final membersAsync = ref.watch(roomMembersProvider(roomId));
 
     return ColoredBox(
-      color: AppColors.surface,
+      color: colors.surface,
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 18, 12, 16),
             child: Row(
               children: [
                 AppAvatar(
                   fallback: roomName,
                   size: 40,
-                  radius: AppRadii.content,
+                  radius: NeuRadius.content,
                   url: avatarUrl,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     roomName,
-                    style: const TextStyle(
-                      color: AppColors.onBackground,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                IconButton(
+                NeuIconButton(
+                  icon: Icons.settings_rounded,
+                  size: 38,
                   tooltip: '房间管理',
-                  icon: const Icon(
-                    Icons.settings_rounded,
-                    color: AppColors.onSurfaceVariant,
-                    size: 20,
-                  ),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => RoomManagementPage(
@@ -76,7 +71,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
               ],
             ),
           ),
-          const Divider(color: AppColors.surfaceVariant, height: 1),
+          Divider(color: colors.hairline, height: 1),
           Expanded(
             child: membersAsync.when(
               data: (members) => ListView.builder(
@@ -88,10 +83,9 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                       child: Text(
                         '成员 ${members.length}',
-                        style: const TextStyle(
-                          color: AppColors.onSurface,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2,
                         ),
                       ),
                     );
@@ -102,14 +96,12 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
                     leading: AppAvatar(
                       fallback: member.name,
                       size: 36,
-                      radius: 18,
+                      radius: NeuRadius.content,
                       url: member.avatarUrl,
                     ),
                     title: Text(
                       member.name,
-                      style: const TextStyle(
-                        color: AppColors.onBackground,
-                        fontSize: 14,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                       maxLines: 1,
@@ -117,26 +109,23 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
                     ),
                     subtitle: Text(
                       member.id,
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   );
                 },
               ),
-              loading: () => const Center(
+              loading: () => Center(
                 child: CircularProgressIndicator(
-                  color: AppColors.primary,
+                  color: colors.accent,
                   strokeWidth: 2,
                 ),
               ),
-              error: (_, _) => const Center(
+              error: (_, _) => Center(
                 child: Text(
                   '无法加载成员',
-                  style: TextStyle(color: AppColors.onSurfaceVariant),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
             ),

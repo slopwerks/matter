@@ -4,8 +4,12 @@ import 'action_failure_message.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/avatar.dart' show NeuBadge;
+import '../../widgets/neu_action.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 import 'chat_timestamp.dart';
 import 'chat_detail_page.dart';
 import 'message_input.dart';
@@ -46,6 +50,7 @@ class ChatListItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.neu;
     final room = this.room;
     final isPendingMembership =
         room.roomState == 'invited' || room.roomState == 'knocked';
@@ -69,17 +74,28 @@ class ChatListItem extends ConsumerWidget {
     final hasUnread = overrideApplies
         ? unreadOverride!.unread
         : syncedHasUnread;
-    final unreadAccent = room.isMuted
-        ? AppColors.onSurfaceVariant
-        : AppColors.primary;
+    final unreadAccent = room.isMuted ? colors.textTertiary : colors.accent;
     // Same stale-override cleanup as the main room list: only a no-longer-
     // applicable override is dropped.
     if (unreadOverride != null && !overrideApplies) {
       clearStaleRoomUnreadOverride(ref, context, room.id, unreadOverride);
     }
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadii.button),
+    final surfaceColor = isPendingMembership
+        ? colors.accentSoft.withValues(alpha: .5)
+        : isSelected
+        ? colors.surfaceStrong
+        : colors.card;
+    final borderColor = isSelected
+        ? colors.accent.withValues(alpha: .8)
+        : isPendingMembership
+        ? colors.accent.withValues(alpha: .5)
+        : null;
+
+    return NeuAction(
+      radius: NeuRadius.content,
+      selected: isSelected,
+      label: room.name,
       onTap: () {
         if (isPendingMembership) return;
         if (onRoomSelected case final onRoomSelected?) {
@@ -121,27 +137,20 @@ class ChatListItem extends ConsumerWidget {
       onLongPress: room.roomState == 'joined' && room.roomType != 'space'
           ? () => _showRoomListActions(context, ref, room)
           : null,
-      child: Container(
-        margin: onRoomSelected != null
-            ? const EdgeInsets.symmetric(horizontal: 8)
-            : null,
-        padding: EdgeInsets.symmetric(
-          horizontal: onRoomSelected != null ? 12 : 16,
-          vertical: dense ? 6 : 8,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.surfaceVariant : null,
-          borderRadius: BorderRadius.circular(AppRadii.button),
-        ),
+      child: NeuSurface(
+        radius: NeuRadius.content,
+        color: surfaceColor,
+        borderColor: borderColor,
+        padding: EdgeInsets.all(dense ? 8 : 12),
         child: Row(
           children: [
             AppAvatar(
               key: ValueKey('room-avatar:${room.id}:${room.avatarUrl}'),
               fallback: room.name,
-              size: dense ? 44 : 52,
+              size: dense ? 44 : 46,
               url: room.avatarUrl,
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,17 +158,13 @@ class ChatListItem extends ConsumerWidget {
                   Row(
                     children: [
                       if (showRoomTypeIcon) ...[
-                        _roomTypeIcon(room.roomType),
+                        _roomTypeIcon(context, room.roomType),
                         const SizedBox(width: 4),
                       ],
                       Expanded(
                         child: Text(
                           room.name,
-                          style: const TextStyle(
-                            color: AppColors.onBackground,
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -167,20 +172,17 @@ class ChatListItem extends ConsumerWidget {
                       if (room.isMuted) ...[
                         const SizedBox(width: 6),
                         Icon(
-                          Icons.volume_off_rounded,
+                          Icons.notifications_off_outlined,
                           key: ValueKey('room-muted-icon:${room.id}'),
                           size: 15,
-                          color: AppColors.onSurfaceVariant,
+                          color: colors.textTertiary,
                         ),
                       ],
                       const SizedBox(width: 8),
                       Text(
                         formatChatListTime(room.lastMessageTime),
-                        style: TextStyle(
-                          color: hasUnread
-                              ? unreadAccent
-                              : AppColors.onSurfaceVariant,
-                          fontSize: 12,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: hasUnread ? unreadAccent : colors.textTertiary,
                           fontWeight: hasUnread
                               ? FontWeight.w600
                               : FontWeight.w400,
@@ -192,68 +194,57 @@ class ChatListItem extends ConsumerWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              if (hasDraft)
-                                const TextSpan(
-                                  text: '草稿：',
-                                  style: TextStyle(
-                                    color: AppColors.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                        child: hasDraft
+                            ? Text.rich(
+                                TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: '草稿：',
+                                      style: TextStyle(
+                                        color: colors.error,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    TextSpan(text: preview),
+                                  ],
                                 ),
-                              TextSpan(text: preview),
-                            ],
-                          ),
-                          style: const TextStyle(
-                            color: AppColors.onSurfaceVariant,
-                            fontSize: 13.5,
-                            height: 1.3,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                                style: Theme.of(context).textTheme.bodyMedium,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : Text(
+                                preview,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
                       if (hasUnread) ...[
                         const SizedBox(width: 8),
                         if (room.unreadCount > 0)
-                          Container(
+                          NeuBadge(
                             key: ValueKey('room-unread-badge:${room.id}'),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: unreadAccent,
-                              borderRadius: BorderRadius.circular(AppRadii.tag),
-                            ),
-                            child: Text(
-                              room.unreadCount > 99
-                                  ? '99+'
-                                  : '${room.unreadCount}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                            count: room.unreadCount,
+                            muted: room.isMuted,
                           )
                         else
                           Container(
                             key: ValueKey('room-unread-dot:${room.id}'),
-                            width: 9,
-                            height: 9,
+                            width: 10,
+                            height: 10,
                             decoration: BoxDecoration(
-                              color: unreadAccent,
                               shape: BoxShape.circle,
+                              border: Border.all(
+                                color: unreadAccent,
+                                width: 2.4,
+                              ),
                             ),
                           ),
                       ],
                     ],
                   ),
                   if (isPendingMembership) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     _PendingRoomActions(room: room),
                   ],
                 ],
@@ -265,23 +256,16 @@ class ChatListItem extends ConsumerWidget {
     );
   }
 
-  Widget _roomTypeIcon(String roomType) {
+  Widget _roomTypeIcon(BuildContext context, String roomType) {
+    final colors = context.neu;
     return switch (roomType) {
-      'dm' => const Icon(
-        Icons.person_rounded,
-        size: 14,
-        color: AppColors.primary,
-      ),
-      'space' => const Icon(
+      'dm' => Icon(Icons.person_rounded, size: 14, color: colors.accent),
+      'space' => Icon(
         Icons.account_tree_rounded,
         size: 14,
-        color: AppColors.secondary,
+        color: colors.textSecondary,
       ),
-      _ => const Icon(
-        Icons.group_rounded,
-        size: 14,
-        color: AppColors.onSurfaceVariant,
-      ),
+      _ => Icon(Icons.group_rounded, size: 14, color: colors.textTertiary),
     };
   }
 
@@ -296,46 +280,32 @@ class ChatListItem extends ConsumerWidget {
     // the user taps an item.
     final sheetAccountUserId = ref.read(activeUserIdProvider) ?? '';
     BuildContext? sheetContextRef;
-    final sheetRoute = showModalBottomSheet<void>(
+    // 'read' | 'unread' — the row being written shows a spinner and both
+    // rows stop accepting taps while it is set.
+    String? savingAction;
+    final sheetFuture = showNeuSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        sheetContextRef = sheetContext;
-        String? savingAction; // 'read' | 'unread'
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) => Padding(
-            padding: const EdgeInsets.all(12),
-            child: Material(
-              // A Material host (not a bare decorated container) so the
-              // sheet's ListTiles can paint their ink splashes and
-              // backgrounds.
-              color: AppColors.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.surface),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      leading: const Icon(
-                        Icons.done_all_rounded,
-                        color: AppColors.primary,
-                      ),
-                      title: const Text(
-                        '标记为已读',
-                        style: TextStyle(color: AppColors.onBackground),
-                      ),
-                      trailing: savingAction == 'read'
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : null,
-                      enabled: savingAction == null,
-                      onTap: () => _runRoomListAction(
+      child: StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          sheetContextRef = sheetContext;
+          final colors = sheetContext.neu;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              NeuSheetItem(
+                icon: Icons.done_all_rounded,
+                label: '标记为已读',
+                color: savingAction == null ? null : colors.textTertiary,
+                trailing: savingAction == 'read'
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
+                onTap: savingAction != null
+                    ? () {}
+                    : () => _runRoomListAction(
                         context,
                         sheetContext,
                         ref,
@@ -350,25 +320,22 @@ class ChatListItem extends ConsumerWidget {
                         onStart: () =>
                             setSheetState(() => savingAction = 'read'),
                       ),
-                    ),
-                    ListTile(
-                      leading: const Icon(
-                        Icons.mark_unread_chat_alt_rounded,
-                        color: AppColors.primary,
-                      ),
-                      title: const Text(
-                        '标记为未读',
-                        style: TextStyle(color: AppColors.onBackground),
-                      ),
-                      trailing: savingAction == 'unread'
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : null,
-                      enabled: savingAction == null,
-                      onTap: () => _runRoomListAction(
+              ),
+              const NeuSheetDivider(),
+              NeuSheetItem(
+                icon: Icons.mark_unread_chat_alt_rounded,
+                label: '标记为未读',
+                color: savingAction == null ? null : colors.textTertiary,
+                trailing: savingAction == 'unread'
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
+                onTap: savingAction != null
+                    ? () {}
+                    : () => _runRoomListAction(
                         context,
                         sheetContext,
                         ref,
@@ -382,14 +349,11 @@ class ChatListItem extends ConsumerWidget {
                         onStart: () =>
                             setSheetState(() => savingAction = 'unread'),
                       ),
-                    ),
-                  ],
-                ),
               ),
-            ),
-          ),
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
     // An account switch dismisses the sheet (same discipline as the
     // management and space pages): its actions write under the account the
@@ -409,7 +373,7 @@ class ChatListItem extends ConsumerWidget {
         Navigator.of(sheet).pop();
       }
     });
-    sheetRoute.whenComplete(switchSub.close);
+    sheetFuture.whenComplete(switchSub.close);
   }
 
   Future<void> _runRoomListAction(
@@ -484,9 +448,7 @@ class ChatListItem extends ConsumerWidget {
       if (ref.read(activeUserIdProvider) != suppressionToken.accountId) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(successMessage)));
+      neuToast(context, successMessage);
     } catch (error) {
       // Restore the suppression (and the optimistic marker) only while this
       // action still owns them.
@@ -556,9 +518,7 @@ class ChatListItem extends ConsumerWidget {
       }
       // Shared wording: timeout mapping and partial-success passthrough
       // come from the single `actionFailureMessage` source.
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(actionFailureMessage(error))));
+      neuToast(context, actionFailureMessage(error));
     }
   }
 }
@@ -587,58 +547,65 @@ class _PendingRoomActionsState extends ConsumerState<_PendingRoomActions> {
     if (room.roomState == 'invited') {
       return Row(
         children: [
-          _ActionButton(
-            icon: Icons.check_rounded,
-            label: '接受',
-            onPressed: _pendingAction
-                ? null
-                : () => _runAction(
-                    context,
-                    ref,
-                    () => acceptRoomInvite(
-                      accountUserId: ref.read(activeUserIdProvider) ?? '',
-                      roomId: room.id,
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.check_rounded,
+              label: '接受',
+              accent: true,
+              onPressed: _pendingAction
+                  ? null
+                  : () => _runAction(
+                      context,
+                      ref,
+                      () => acceptRoomInvite(
+                        accountUserId: ref.read(activeUserIdProvider) ?? '',
+                        roomId: room.id,
+                      ),
+                      successMessage: '已接受邀请',
                     ),
-                    successMessage: '已接受邀请',
-                  ),
+            ),
           ),
-          const SizedBox(width: 8),
-          _ActionButton(
-            icon: Icons.close_rounded,
-            label: '拒绝',
-            destructive: true,
-            onPressed: _pendingAction
-                ? null
-                : () => _runAction(
-                    context,
-                    ref,
-                    () => rejectRoomInvite(
-                      accountUserId: ref.read(activeUserIdProvider) ?? '',
-                      roomId: room.id,
+          const SizedBox(width: 10),
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.close_rounded,
+              label: '拒绝',
+              destructive: true,
+              onPressed: _pendingAction
+                  ? null
+                  : () => _runAction(
+                      context,
+                      ref,
+                      () => rejectRoomInvite(
+                        accountUserId: ref.read(activeUserIdProvider) ?? '',
+                        roomId: room.id,
+                      ),
+                      successMessage: '已拒绝邀请',
                     ),
-                    successMessage: '已拒绝邀请',
-                  ),
+            ),
           ),
         ],
       );
     }
     return Row(
       children: [
-        _ActionButton(
-          icon: Icons.undo_rounded,
-          label: '撤回',
-          destructive: true,
-          onPressed: _pendingAction
-              ? null
-              : () => _runAction(
-                  context,
-                  ref,
-                  () => withdrawRoomKnock(
-                    accountUserId: ref.read(activeUserIdProvider) ?? '',
-                    roomId: room.id,
+        Expanded(
+          child: _ActionButton(
+            icon: Icons.undo_rounded,
+            label: '撤回',
+            destructive: true,
+            onPressed: _pendingAction
+                ? null
+                : () => _runAction(
+                    context,
+                    ref,
+                    () => withdrawRoomKnock(
+                      accountUserId: ref.read(activeUserIdProvider) ?? '',
+                      roomId: room.id,
+                    ),
+                    successMessage: '已撤回请求',
                   ),
-                  successMessage: '已撤回请求',
-                ),
+          ),
         ),
       ],
     );
@@ -663,18 +630,14 @@ class _PendingRoomActionsState extends ConsumerState<_PendingRoomActions> {
       if (ref.read(activeUserIdProvider) != accountUserId) return;
       ref.invalidate(chatRoomsProvider);
       ref.invalidate(ungroupedRoomsProvider);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(successMessage)));
+      neuToast(context, successMessage);
     } catch (error) {
       if (!context.mounted) return;
       // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
       if (ref.read(activeUserIdProvider) != accountUserId) return;
       // Shared wording: timeout mapping and partial-success passthrough
       // come from the single `actionFailureMessage` source.
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(actionFailureMessage(error))));
+      neuToast(context, actionFailureMessage(error));
     } finally {
       if (mounted) setState(() => _pendingAction = false);
     }
@@ -685,6 +648,7 @@ class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool destructive;
+  final bool accent;
   final VoidCallback? onPressed;
 
   const _ActionButton({
@@ -692,23 +656,25 @@ class _ActionButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.destructive = false,
+    this.accent = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = destructive ? AppColors.error : AppColors.primary;
-    return OutlinedButton.icon(
+    final colors = context.neu;
+    final color = destructive
+        ? colors.error
+        : accent
+        ? colors.onAccent
+        : colors.text;
+    return NeuButton(
       onPressed: onPressed,
-      icon: Icon(icon, size: 16),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: color,
-        side: BorderSide(color: color.withValues(alpha: 0.55)),
-        visualDensity: VisualDensity.compact,
-        minimumSize: const Size(0, 34),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-      ),
+      accent: accent,
+      radius: NeuRadius.button,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      intensity: .7,
+      icon: Icon(icon, size: 16, color: color),
+      child: Text(label, style: TextStyle(color: color)),
     );
   }
 }

@@ -15,6 +15,7 @@ class NeuTextField extends StatelessWidget {
     this.obscureText = false,
     this.onChanged,
     this.onSubmitted,
+    this.textInputAction,
     this.maxLines = 1,
     this.radius = NeuRadius.content,
     this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -29,6 +30,7 @@ class NeuTextField extends StatelessWidget {
   final bool obscureText;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
+  final TextInputAction? textInputAction;
   final int maxLines;
   final double radius;
   final EdgeInsetsGeometry padding;
@@ -71,6 +73,7 @@ class NeuTextField extends StatelessWidget {
                     obscureText: obscureText,
                     maxLines: maxLines,
                     autofocus: autofocus,
+                    textInputAction: textInputAction,
                     onChanged: onChanged,
                     onSubmitted: onSubmitted,
                     style: Theme.of(context).textTheme.bodyLarge,

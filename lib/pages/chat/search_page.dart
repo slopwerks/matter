@@ -6,8 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/neu_action.dart';
+import '../../widgets/neu_field.dart';
+import '../../widgets/neu_surface.dart';
 import 'chat_detail_page.dart';
 import 'chat_list_item.dart';
 import 'chat_timestamp.dart';
@@ -128,62 +131,45 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage>
 
   @override
   Widget build(BuildContext context) {
-    final appBar = AppBar(
-      backgroundColor: AppColors.background,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      titleSpacing: 0,
-      title: Container(
-        height: 40,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceVariant,
-          borderRadius: BorderRadius.circular(AppRadii.surface),
-        ),
-        child: TextField(
-          key: const ValueKey('chat-search-field'),
-          controller: _controller,
-          focusNode: _focusNode,
-          onChanged: _onQueryChanged,
-          onSubmitted: _onQuerySubmitted,
-          textInputAction: TextInputAction.search,
-          style: const TextStyle(color: AppColors.onBackground, fontSize: 15),
-          decoration: InputDecoration(
-            hintText: _isRoomSearch ? '搜索此聊天的消息' : '搜索消息或聊天',
-            hintStyle: const TextStyle(
-              color: AppColors.onSurfaceVariant,
-              fontSize: 15,
-            ),
-            prefixIcon: const Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: AppColors.onSurfaceVariant,
-            ),
-            suffixIcon: _query.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: '清除',
-                    onPressed: _clearQuery,
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                  ),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-          ),
-        ),
+    final colors = context.neu;
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(
+        NeuSpacing.sm,
+        NeuSpacing.sm,
+        NeuSpacing.lg,
+        NeuSpacing.xs,
       ),
-      bottom: _isRoomSearch
-          ? null
-          : TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: '消息'),
-                Tab(text: '聊天'),
-              ],
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.onSurfaceVariant,
-              indicatorColor: AppColors.primary,
-              dividerColor: AppColors.surfaceVariant,
+      child: Row(
+        children: [
+          NeuIconButton(
+            icon: Icons.arrow_back_ios_new_rounded,
+            size: 40,
+            tooltip: '返回',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: NeuSpacing.sm),
+          Expanded(
+            child: NeuTextField(
+              key: const ValueKey('chat-search-field'),
+              controller: _controller,
+              focusNode: _focusNode,
+              hint: _isRoomSearch ? '搜索此聊天的消息' : '搜索消息或聊天',
+              leading: const Icon(Icons.search_rounded),
+              textInputAction: TextInputAction.search,
+              autofocus: false,
+              trailing: _query.isEmpty
+                  ? null
+                  : GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _clearQuery,
+                      child: const Icon(Icons.close_rounded),
+                    ),
+              onChanged: _onQueryChanged,
+              onSubmitted: _onQuerySubmitted,
             ),
+          ),
+        ],
+      ),
     );
 
     final messageSearchKey = ValueKey(
@@ -212,9 +198,28 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage>
           );
 
     final scaffold = Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: appBar,
-      body: body,
+      backgroundColor: colors.base,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            if (!_isRoomSearch)
+              TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: '消息'),
+                  Tab(text: '聊天'),
+                ],
+                labelColor: colors.accent,
+                unselectedLabelColor: colors.textTertiary,
+                indicatorColor: colors.accent,
+                dividerColor: colors.hairline,
+              ),
+            Expanded(child: body),
+          ],
+        ),
+      ),
     );
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
@@ -381,10 +386,10 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Center(
-          child: TextButton.icon(
+          child: NeuButton(
+            icon: const Icon(Icons.refresh_rounded),
             onPressed: () => ref.invalidate(messageSearchProvider(request)),
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('加载失败，点击重试'),
+            child: const Text('加载失败，点击重试'),
           ),
         ),
       );
@@ -393,10 +398,10 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Center(
-          child: TextButton.icon(
+          child: NeuButton(
+            icon: const Icon(Icons.expand_more_rounded),
             onPressed: page == null ? null : () => _loadMore(page, request),
-            icon: const Icon(Icons.expand_more_rounded, size: 18),
-            label: const Text('加载更多'),
+            child: const Text('加载更多'),
           ),
         ),
       );
@@ -406,6 +411,7 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     if (!widget.active || widget.query.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -420,14 +426,16 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
         return _SearchStatus(
           icon: Icons.error_outline_rounded,
           text: '搜索暂时不可用，请重试',
-          action: IconButton(
+          action: NeuIconButton(
+            icon: Icons.refresh_rounded,
             tooltip: '重试',
             onPressed: () => ref.invalidate(messageSearchProvider(request)),
-            icon: const Icon(Icons.refresh_rounded),
           ),
         );
       }
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+      return Center(
+        child: CircularProgressIndicator(color: colors.accent, strokeWidth: 2),
+      );
     }
 
     final resultsById = Map<String, rust.MessageSearchResult>.of(
@@ -444,14 +452,16 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
         return _SearchStatus(
           icon: Icons.error_outline_rounded,
           text: '搜索较早消息失败，请重试',
-          action: IconButton(
+          action: NeuIconButton(
+            icon: Icons.refresh_rounded,
             tooltip: '重试',
             onPressed: _retryHistoryBackfill,
-            icon: const Icon(Icons.refresh_rounded),
           ),
         );
       }
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+      return Center(
+        child: CircularProgressIndicator(color: colors.accent, strokeWidth: 2),
+      );
     }
     if (results.isEmpty && page != null) {
       return const _SearchStatus(
@@ -467,17 +477,18 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
         request.offset + request.limit < _maxSearchResults;
     final historyIncomplete = page != null && !page.historyComplete;
     final showPageAction = loadingMore || loadMoreError != null || canLoadMore;
-    return ListView.separated(
+    return ListView.builder(
       key: PageStorageKey(
         Object.hash('message-search-results', widget.roomId, widget.query),
       ),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      itemCount: results.length + (showPageAction || historyIncomplete ? 1 : 0),
-      separatorBuilder: (_, _) => const Divider(
-        height: 0.5,
-        thickness: 0.5,
-        color: AppColors.surfaceVariant,
+      padding: const EdgeInsets.fromLTRB(
+        NeuSpacing.lg,
+        NeuSpacing.sm,
+        NeuSpacing.lg,
+        NeuSpacing.xl,
       ),
+      itemCount: results.length + (showPageAction || historyIncomplete ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == results.length) {
           if (historyIncomplete) {
@@ -485,10 +496,10 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Center(
-                  child: IconButton(
+                  child: NeuIconButton(
+                    icon: Icons.refresh_rounded,
                     tooltip: '重新搜索较早消息',
                     onPressed: _retryHistoryBackfill,
-                    icon: const Icon(Icons.refresh_rounded),
                   ),
                 ),
               );
@@ -534,69 +545,66 @@ class _MessageSearchTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return InkWell(
-      key: ValueKey('message-search-result-${result.eventId}'),
-      onTap: () => _openResult(context, ref),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppAvatar(
-              fallback: roomScoped ? result.senderName : result.roomName,
-              size: 40,
-              radius: AppRadii.content,
-              url: roomScoped ? null : result.roomAvatarUrl,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          roomScoped ? result.senderName : result.roomName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.onBackground,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+    final colors = context.neu;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: NeuSpacing.md),
+      child: NeuAction(
+        key: ValueKey('message-search-result-${result.eventId}'),
+        radius: NeuRadius.content,
+        onTap: () => _openResult(context, ref),
+        child: NeuSurface(
+          color: colors.card,
+          radius: NeuRadius.content,
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppAvatar(
+                fallback: roomScoped ? result.senderName : result.roomName,
+                size: 40,
+                radius: NeuRadius.content,
+                url: roomScoped ? null : result.roomAvatarUrl,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            roomScoped ? result.senderName : result.roomName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        formatChatListTime(result.timestamp),
-                        style: const TextStyle(
-                          color: AppColors.onSurfaceVariant,
-                          fontSize: 11,
+                        const SizedBox(width: 8),
+                        Text(
+                          formatChatListTime(result.timestamp),
+                          style: Theme.of(context).textTheme.labelSmall,
                         ),
+                      ],
+                    ),
+                    if (!roomScoped) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        result.isEdited
+                            ? '${result.senderName} · 已编辑'
+                            : result.senderName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
-                  ),
-                  if (!roomScoped) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      result.isEdited
-                          ? '${result.senderName} · 已编辑'
-                          : result.senderName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
-                    ),
+                    const SizedBox(height: 5),
+                    _HighlightedMessageText(text: result.body, terms: terms),
                   ],
-                  const SizedBox(height: 5),
-                  _HighlightedMessageText(text: result.body, terms: terms),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -706,12 +714,9 @@ class _HighlightedMessageText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final ranges = messageHighlightRanges(text, terms);
-    const normalStyle = TextStyle(
-      color: AppColors.onBackground,
-      fontSize: 14,
-      height: 1.35,
-    );
+    final normalStyle = Theme.of(context).textTheme.bodyMedium;
     if (ranges.isEmpty) {
       return Text(
         text,
@@ -729,10 +734,7 @@ class _HighlightedMessageText extends StatelessWidget {
       spans.add(
         TextSpan(
           text: text.substring(range.start, range.end),
-          style: const TextStyle(
-            color: AppColors.primary,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: colors.accent, fontWeight: FontWeight.w700),
         ),
       );
       offset = range.end;
@@ -756,12 +758,17 @@ class _RoomSearchResults extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.neu;
     if (!active || query.trim().isEmpty) return const SizedBox.shrink();
     return ref
         .watch(chatRoomsProvider)
         .when(
-          loading: () =>
-              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          loading: () => Center(
+            child: CircularProgressIndicator(
+              color: colors.accent,
+              strokeWidth: 2,
+            ),
+          ),
           error: (error, _) => _SearchStatus(
             icon: Icons.error_outline_rounded,
             text: '加载聊天失败: $error',
@@ -777,12 +784,14 @@ class _RoomSearchResults extends ConsumerWidget {
             return ListView.separated(
               key: PageStorageKey(Object.hash('room-search-results', query)),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              itemCount: results.length,
-              separatorBuilder: (_, _) => const Divider(
-                height: 0.5,
-                thickness: 0.5,
-                color: AppColors.surfaceVariant,
+              padding: const EdgeInsets.fromLTRB(
+                NeuSpacing.lg,
+                NeuSpacing.sm,
+                NeuSpacing.lg,
+                NeuSpacing.xl,
               ),
+              itemCount: results.length,
+              separatorBuilder: (_, _) => const SizedBox(height: NeuSpacing.md),
               itemBuilder: (_, index) => ChatListItem(room: results[index]),
             );
           },
@@ -801,18 +810,21 @@ class _SearchStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(NeuSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: AppColors.onSurfaceVariant, size: 28),
-            const SizedBox(height: 10),
+            NeuIconButton(icon: icon, size: 84, onPressed: null),
+            const SizedBox(height: NeuSpacing.lg),
             Text(
               text,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            if (action != null) ...[const SizedBox(height: 8), action!],
+            if (action != null) ...[
+              const SizedBox(height: NeuSpacing.sm),
+              action!,
+            ],
           ],
         ),
       ),

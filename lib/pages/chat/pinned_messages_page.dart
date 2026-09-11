@@ -7,7 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
-import '../../theme/app_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/app_avatar.dart';
+import '../../widgets/neu_action.dart';
+import '../../widgets/neu_surface.dart';
+import '../../widgets/sheets.dart';
 import 'action_failure_message.dart';
 import 'chat_timestamp.dart';
 
@@ -354,51 +358,67 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.neu;
     final ignoredUserIdsAsync = ref.watch(ignoredUserIdsProvider);
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: const Text(
-          '置顶消息',
-          style: TextStyle(
-            color: AppColors.onBackground,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
+      backgroundColor: colors.base,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                NeuSpacing.sm,
+                NeuSpacing.sm,
+                NeuSpacing.lg,
+                NeuSpacing.xs,
+              ),
+              child: Row(
+                children: [
+                  NeuIconButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    size: 40,
+                    tooltip: '返回',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: NeuSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      '置顶消息',
+                      style: Theme.of(context).textTheme.titleLarge,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: _buildBody(ignoredUserIdsAsync)),
+          ],
         ),
       ),
-      body: _buildBody(ignoredUserIdsAsync),
     );
   }
 
   Widget _buildBody(AsyncValue<Set<String>> ignoredUserIdsAsync) {
+    final colors = context.neu;
     if (_loading && _messages == null) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-          strokeWidth: 2,
-        ),
+      return Center(
+        child: CircularProgressIndicator(color: colors.accent, strokeWidth: 2),
       );
     }
     if (_messages == null) {
       if (_accountSwitched) {
-        return const Center(
-          child: Text(
-            '账号已切换',
-            style: TextStyle(color: AppColors.onSurfaceVariant),
-          ),
+        return Center(
+          child: Text('账号已切换', style: Theme.of(context).textTheme.bodyMedium),
         );
       }
       return Center(
-        child: TextButton.icon(
+        child: NeuButton(
+          icon: const Icon(Icons.refresh_rounded),
           onPressed: () {
             unawaited(_reload(showLoading: true));
           },
-          icon: const Icon(Icons.refresh_rounded),
-          label: Text('加载失败: $_loadError'),
+          child: Text('加载失败: $_loadError'),
         ),
       );
     }
@@ -407,18 +427,15 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
     if (ignoredUserIds == null) {
       if (ignoredUserIdsAsync.hasError) {
         return Center(
-          child: TextButton.icon(
-            onPressed: () => ref.invalidate(ignoredUserIdsProvider),
+          child: NeuButton(
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('无法加载忽略列表，消息已隐藏'),
+            onPressed: () => ref.invalidate(ignoredUserIdsProvider),
+            child: const Text('无法加载忽略列表，消息已隐藏'),
           ),
         );
       }
-      return const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-          strokeWidth: 2,
-        ),
+      return Center(
+        child: CircularProgressIndicator(color: colors.accent, strokeWidth: 2),
       );
     }
     // Ignored senders' rows are KEPT (with hidden content): the row's
@@ -427,7 +444,7 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
     final messages = _messages!;
     if (messages.isEmpty) {
       return RefreshIndicator(
-        color: AppColors.primary,
+        color: colors.accent,
         onRefresh: _reload,
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -436,9 +453,20 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
               hasScrollBody: false,
               child: Center(
                 child: _loadError == null
-                    ? const Text(
-                        '暂无置顶消息',
-                        style: TextStyle(color: AppColors.onSurfaceVariant),
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const NeuIconButton(
+                            icon: Icons.push_pin_outlined,
+                            size: 84,
+                            onPressed: null,
+                          ),
+                          const SizedBox(height: NeuSpacing.lg),
+                          Text(
+                            '暂无置顶消息',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
                       )
                     : _refreshErrorTile(),
               ),
@@ -448,14 +476,17 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
       );
     }
     return RefreshIndicator(
-      color: AppColors.primary,
+      color: colors.accent,
       onRefresh: _reload,
-      child: ListView.separated(
+      child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(
+          NeuSpacing.lg,
+          NeuSpacing.md,
+          NeuSpacing.lg,
+          NeuSpacing.xl,
+        ),
         itemCount: messages.length + (_loadError == null ? 0 : 1),
-        separatorBuilder: (_, _) =>
-            const Divider(color: AppColors.surfaceVariant, height: 1),
         itemBuilder: (context, index) {
           if (_loadError != null && index == 0) return _refreshErrorTile();
           final message = messages[index - (_loadError == null ? 0 : 1)];
@@ -466,60 +497,71 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
               : message.content.trim().isEmpty
               ? (message.filename ?? '媒体消息')
               : message.content;
-          return ListTile(
+          final locked =
+              _unpinLocked(message.id) ||
+              _inflightUnpinIds.contains(message.id);
+          return Padding(
             key: ValueKey('pinned-message:${message.id}'),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 4,
-              vertical: 6,
-            ),
-            onTap: ignoredSender
-                ? null
-                : () => Navigator.of(context).pop(message.id),
-            leading: const Icon(
-              Icons.push_pin_rounded,
-              color: AppColors.primary,
-            ),
-            title: Text(
-              message.senderName,
-              style: const TextStyle(
-                color: AppColors.onBackground,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            subtitle: Text(
-              content,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.onSurfaceVariant,
-                height: 1.35,
-              ),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  formatChatListTime(message.timestamp),
-                  style: const TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontSize: 12,
-                  ),
+            padding: const EdgeInsets.only(bottom: NeuSpacing.md),
+            child: NeuAction(
+              radius: NeuRadius.content,
+              onTap: ignoredSender
+                  ? null
+                  : () => Navigator.of(context).pop(message.id),
+              child: NeuSurface(
+                color: colors.card,
+                radius: NeuRadius.content,
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        AppAvatar(
+                          fallback: message.senderName,
+                          size: 34,
+                          radius: NeuRadius.content,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                message.senderName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              Text(
+                                formatChatListTime(message.timestamp),
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        NeuIconButton(
+                          icon: Icons.push_pin_outlined,
+                          size: 36,
+                          tooltip: '取消置顶',
+                          onPressed: locked
+                              ? null
+                              : () => unawaited(_unpin(message)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: NeuSpacing.sm),
+                    Text(
+                      content,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(height: 1.35),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: '取消置顶',
-                  icon: const Icon(
-                    Icons.push_pin_outlined,
-                    color: AppColors.onSurfaceVariant,
-                    size: 18,
-                  ),
-                  onPressed:
-                      _unpinLocked(message.id) ||
-                          _inflightUnpinIds.contains(message.id)
-                      ? null
-                      : () => unawaited(_unpin(message)),
-                ),
-              ],
+              ),
             ),
           );
         },
@@ -565,11 +607,7 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
         _inflightUnpinIds.remove(message.id);
         _scheduleUnpinLockExpiry();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        // Long enough to be noticed: the row was optimistically removed, so
-        // there is no on-screen confirmation left (failure paths use 2s).
-        const SnackBar(content: Text('已取消置顶'), duration: Duration(seconds: 2)),
-      );
+      neuToast(context, '已取消置顶');
       // Refresh towards the server state: after a removal the row stays
       // gone.
       unawaited(_reload());
@@ -607,7 +645,8 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
           _messages = List.of(_messages!)..insert(insertAt, message);
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      neuToast(
+        context,
         // A timeout may still land server-side, so its wording advises a
         // refresh to confirm and points at the restored row's button for a
         // retry — that advice must not go through the failure prefix (the
@@ -615,14 +654,9 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
         // the retry hint in the same sentence). Plain failures share the
         // single `actionFailureMessage` mapping (timeout-worded errors map
         // to the "操作超时" line, partial-success passthrough stays intact).
-        SnackBar(
-          content: Text(
-            timedOut
-                ? '取消置顶超时，请稍后刷新确认；若未生效请重试'
-                : '取消置顶失败: ${actionFailureMessage(error)}',
-          ),
-          duration: const Duration(seconds: 2),
-        ),
+        timedOut
+            ? '取消置顶超时，请稍后刷新确认；若未生效请重试'
+            : '取消置顶失败: ${actionFailureMessage(error)}',
       );
       // Reconcile against the server: the write may have partially landed
       // (request reached the server, response lost), so re-read the list
@@ -632,22 +666,44 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
   }
 
   Widget _refreshErrorTile() {
-    return ListTile(
-      leading: const Icon(Icons.sync_problem_rounded, color: AppColors.error),
-      title: const Text(
-        '刷新失败，当前显示上次结果',
-        style: TextStyle(color: AppColors.onBackground),
-      ),
-      subtitle: Text(
-        '$_loadError',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: AppColors.onSurfaceVariant),
-      ),
-      trailing: IconButton(
-        tooltip: '重试刷新',
-        onPressed: () => unawaited(_reload()),
-        icon: const Icon(Icons.refresh_rounded),
+    final colors = context.neu;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: NeuSpacing.md),
+      child: NeuSurface(
+        color: colors.surfaceStrong,
+        radius: NeuRadius.content,
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        child: Row(
+          children: [
+            Icon(Icons.sync_problem_rounded, color: colors.error, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '刷新失败，当前显示上次结果',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: colors.text),
+                  ),
+                  Text(
+                    '$_loadError',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            NeuIconButton(
+              icon: Icons.refresh_rounded,
+              size: 36,
+              tooltip: '重试刷新',
+              onPressed: () => unawaited(_reload()),
+            ),
+          ],
+        ),
       ),
     );
   }

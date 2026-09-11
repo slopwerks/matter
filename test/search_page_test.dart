@@ -9,6 +9,7 @@ import 'package:matter/pages/chat/search_page.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart' show RustLib, RustLibApi;
+import 'helpers/neu_test_theme.dart';
 
 rust.ChatRoom _room({
   required String id,
@@ -76,8 +77,11 @@ class _FakeRustApi implements RustLibApi {
 void main() {
   testWidgets('chat search bar opens the global search page', (tester) async {
     await tester.pumpWidget(
-      const ProviderScope(
-        child: MaterialApp(home: Scaffold(body: ChatSearchBar())),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: Scaffold(body: ChatSearchBar()),
+        ),
       ),
     );
 
@@ -143,7 +147,8 @@ void main() {
               );
             }),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: ChatSearchPage(roomId: '!room:example.org'),
           ),
         ),
@@ -212,7 +217,8 @@ void main() {
               );
             }),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: ChatSearchPage(roomId: '!room:example.org'),
           ),
         ),
@@ -250,6 +256,7 @@ void main() {
           ),
         ],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -316,7 +323,8 @@ void main() {
               );
             }),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: ChatSearchPage(roomId: '!room:example.org'),
           ),
         ),
@@ -369,7 +377,7 @@ void main() {
             );
           }),
         ],
-        child: const MaterialApp(home: ChatSearchPage()),
+        child: MaterialApp(theme: neuTestTheme(), home: ChatSearchPage()),
       ),
     );
 
@@ -406,7 +414,8 @@ void main() {
             return nextPage.future;
           }),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: ChatSearchPage(roomId: '!room:example.org'),
         ),
       ),
@@ -478,7 +487,7 @@ void main() {
           ),
           chatRoomsProvider.overrideWith((ref) => rooms.future),
         ],
-        child: const MaterialApp(home: ChatSearchPage()),
+        child: MaterialApp(theme: neuTestTheme(), home: ChatSearchPage()),
       ),
     );
     await tester.enterText(
@@ -533,7 +542,7 @@ void main() {
             (ref) async => [_room(id: '!room:example.org', name: '产品讨论')],
           ),
         ],
-        child: const MaterialApp(home: ChatSearchPage()),
+        child: MaterialApp(theme: neuTestTheme(), home: ChatSearchPage()),
       ),
     );
 
@@ -570,6 +579,7 @@ void main() {
           }),
         ],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => TextButton(
               onPressed: () => Navigator.of(
@@ -588,7 +598,7 @@ void main() {
       find.byKey(const ValueKey('chat-search-field')),
       '尚未执行',
     );
-    await tester.pageBack();
+    await tester.tap(find.byTooltip('返回'));
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(searchCalls, 0);
@@ -611,7 +621,8 @@ void main() {
             );
           }),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: ChatSearchPage(roomId: '!room:example.org'),
         ),
       ),
@@ -644,7 +655,7 @@ void main() {
             );
           }),
         ],
-        child: const MaterialApp(home: ChatSearchPage()),
+        child: MaterialApp(theme: neuTestTheme(), home: ChatSearchPage()),
       ),
     );
 
@@ -676,7 +687,8 @@ void main() {
             );
           }),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: ChatSearchPage(roomId: '!room:example.org'),
         ),
       ),

@@ -115,10 +115,13 @@ Future<bool> showNeuConfirm(
   required String title,
   required String message,
   String confirmLabel = '确认',
+  String cancelLabel = '取消',
   bool danger = false,
+  bool barrierDismissible = true,
 }) async {
   final confirmed = await showDialog<bool>(
     context: context,
+    barrierDismissible: barrierDismissible,
     builder: (ctx) => Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -141,7 +144,7 @@ Future<bool> showNeuConfirm(
                     child: NeuButton(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       onPressed: () => Navigator.of(ctx).pop(false),
-                      child: const Center(child: Text('取消')),
+                      child: Center(child: Text(cancelLabel)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -180,6 +183,7 @@ Future<String?> showNeuPrompt(
   String confirmLabel = '确定',
   int maxLines = 1,
   bool multiline = false,
+  bool obscureText = false,
 }) {
   final controller = TextEditingController(text: initial);
   return showDialog<String>(
@@ -207,6 +211,7 @@ Future<String?> showNeuPrompt(
                   controller: controller,
                   hint: hint,
                   maxLines: multiline ? 3 : maxLines,
+                  obscureText: obscureText,
                   autofocus: true,
                   onSubmitted: (v) => Navigator.of(ctx).pop(v),
                 ),

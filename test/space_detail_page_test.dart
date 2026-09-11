@@ -6,6 +6,9 @@ import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/widgets/neu_surface.dart';
+
+import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
   @override
@@ -60,8 +63,9 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: SpaceDetailPage(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const SpaceDetailPage(
             space: rust.Space(id: spaceId, name: '旧名称'),
           ),
         ),
@@ -77,16 +81,13 @@ void main() {
 
     detailsName = '新名称';
     await tester.enterText(find.byType(TextField).first, detailsName);
-    await tester.tap(find.widgetWithText(TextButton, '保存'));
+    await tester.tap(find.widgetWithText(NeuButton, '保存'));
     await tester.pumpAndSettle();
 
     expect(detailsCalls, 2);
     expect(
       find.byWidgetPredicate(
-        (widget) =>
-            widget is Text &&
-            widget.data == detailsName &&
-            widget.style?.fontSize == 18,
+        (widget) => widget is Text && widget.data == detailsName,
       ),
       findsOneWidget,
     );

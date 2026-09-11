@@ -9,6 +9,8 @@ import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/providers/mutable_state.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+import '../helpers/neu_test_theme.dart';
+import 'package:matter/widgets/neu_surface.dart';
 
 class _FakeRustApi implements RustLibApi {
   final List<Future<List<rust.ChatMessage>> Function()> _responses = [];
@@ -128,7 +130,8 @@ void main() {
             (ref) async => {'@blocked:example.org'},
           ),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -154,6 +157,7 @@ void main() {
           ignoredUserIdsProvider.overrideWith((ref) async => const <String>{}),
         ],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -197,7 +201,8 @@ void main() {
             (ref) async => {'@blocked:example.org'},
           ),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -225,7 +230,8 @@ void main() {
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           activeUserIdProvider.overrideWith(() => accountState),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -262,7 +268,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -301,7 +308,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -330,7 +338,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -369,7 +378,8 @@ void main() {
           overrides: [
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: PinnedMessagesPage(roomId: '!room:example.org'),
           ),
         ),
@@ -427,7 +437,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -464,7 +475,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -497,7 +509,8 @@ void main() {
           overrides: [
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: PinnedMessagesPage(roomId: '!room:example.org'),
           ),
         ),
@@ -538,7 +551,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -576,7 +590,8 @@ void main() {
           overrides: [
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: PinnedMessagesPage(roomId: '!room:example.org'),
           ),
         ),
@@ -615,7 +630,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -634,8 +650,8 @@ void main() {
     // write is still landing server-side.
     expect(find.textContaining('取消置顶超时'), findsOneWidget);
     expect(find.text('Pinned'), findsOneWidget);
-    final button = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.push_pin_outlined),
+    final button = tester.widget<NeuIconButton>(
+      find.widgetWithIcon(NeuIconButton, Icons.push_pin_outlined),
     );
     expect(button.onPressed, isNotNull);
     expect(api.callCount, 2);
@@ -660,7 +676,8 @@ void main() {
           overrides: [
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: PinnedMessagesPage(roomId: '!room:example.org'),
           ),
         ),
@@ -676,8 +693,8 @@ void main() {
       expect(find.textContaining('取消置顶超时'), findsOneWidget);
       expect(find.text('Pinned'), findsOneWidget);
       expect(find.text('刷新失败，当前显示上次结果'), findsOneWidget);
-      var button = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.push_pin_outlined),
+      var button = tester.widget<NeuIconButton>(
+        find.widgetWithIcon(NeuIconButton, Icons.push_pin_outlined),
       );
       expect(button.onPressed, isNotNull);
 
@@ -715,7 +732,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -754,7 +772,8 @@ void main() {
           overrides: [
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: PinnedMessagesPage(roomId: '!room:example.org'),
           ),
         ),
@@ -769,8 +788,8 @@ void main() {
       // The stale snapshot restored the row, but the lock must survive it:
       // tapping again would re-pin the message.
       expect(find.text('Pinned'), findsOneWidget);
-      final button = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.push_pin_outlined),
+      final button = tester.widget<NeuIconButton>(
+        find.widgetWithIcon(NeuIconButton, Icons.push_pin_outlined),
       );
       expect(button.onPressed, isNull);
 
@@ -803,7 +822,8 @@ void main() {
         overrides: [
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: PinnedMessagesPage(roomId: '!room:example.org'),
         ),
       ),
@@ -816,8 +836,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Pinned'), findsOneWidget);
-    var button = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.push_pin_outlined),
+    var button = tester.widget<NeuIconButton>(
+      find.widgetWithIcon(NeuIconButton, Icons.push_pin_outlined),
     );
     expect(button.onPressed, isNull);
 
@@ -826,8 +846,8 @@ void main() {
     await tester.pump(const Duration(seconds: 31));
     await tester.pump();
 
-    button = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.push_pin_outlined),
+    button = tester.widget<NeuIconButton>(
+      find.widgetWithIcon(NeuIconButton, Icons.push_pin_outlined),
     );
     expect(button.onPressed, isNotNull);
   });

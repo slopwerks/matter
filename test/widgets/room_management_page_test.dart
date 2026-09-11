@@ -11,6 +11,8 @@ import 'package:matter/providers/mutable_state.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../helpers/neu_test_theme.dart';
+import 'package:matter/widgets/neu_surface.dart';
 
 /// The knock-requests provider is gated on an active session; tests pump the
 /// management page without one, so force the session ready.
@@ -315,6 +317,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -342,6 +345,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -376,7 +380,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -421,7 +426,8 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [_sessionReadyOverride],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: RoomManagementPage(
               roomId: '!room:example.org',
               roomName: 'Project room',
@@ -490,7 +496,8 @@ void main() {
             () => MutableState<String?>('@remote-ignore-test:example.org'),
           ),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -546,7 +553,8 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -593,7 +601,8 @@ void main() {
             () => MutableState<String?>(userId),
           ),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -626,6 +635,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -664,6 +674,7 @@ void main() {
             ),
           ],
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: RoomManagementPage(
               roomId: '!room:example.org',
               roomName: 'Project room',
@@ -712,7 +723,8 @@ void main() {
             () => MutableState<String?>('@carol:example.org'),
           ),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -747,6 +759,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -809,7 +822,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -862,7 +876,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -892,6 +907,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -927,6 +943,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -971,6 +988,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1004,7 +1022,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1046,7 +1065,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1100,7 +1120,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1144,7 +1165,8 @@ void main() {
           _sessionReadyOverride,
           activeUserIdProvider.overrideWith(() => accountState),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1183,7 +1205,8 @@ void main() {
           _sessionReadyOverride,
           activeUserIdProvider.overrideWith(() => accountState),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1227,7 +1250,8 @@ void main() {
           _sessionReadyOverride,
           activeUserIdProvider.overrideWith(() => accountState),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1263,7 +1287,8 @@ void main() {
             _sessionReadyOverride,
             activeUserIdProvider.overrideWith(() => accountState),
           ],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: RoomManagementPage(
               roomId: '!room:example.org',
               roomName: 'Project room',
@@ -1301,6 +1326,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -1350,6 +1376,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -1410,6 +1437,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -1476,6 +1504,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -1532,6 +1561,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            theme: neuTestTheme(),
             home: Builder(
               builder: (context) => Scaffold(
                 body: TextButton(
@@ -1586,6 +1616,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (rootContext) => Scaffold(
               body: TextButton(
@@ -1653,7 +1684,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1696,7 +1728,8 @@ void main() {
             () => MutableState<String?>('@alice:example.org'),
           ),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1735,7 +1768,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1762,9 +1796,7 @@ void main() {
     // disabled, so a second tap cannot send a duplicate invite.
     expect(rustApi.inviteCalls, 1);
     expect(
-      tester
-          .widget<TextButton>(find.widgetWithText(TextButton, '邀请'))
-          .onPressed,
+      tester.widget<NeuButton>(find.widgetWithText(NeuButton, '邀请')).onPressed,
       isNull,
     );
     await tester.tap(find.text('邀请'), warnIfMissed: false);
@@ -1791,7 +1823,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1834,7 +1867,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1886,7 +1920,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -1925,6 +1960,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (rootContext) => Scaffold(
               body: TextButton(
@@ -1971,7 +2007,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2005,7 +2042,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2044,6 +2082,7 @@ void main() {
       ProviderScope(
         overrides: [_sessionReadyOverride],
         child: MaterialApp(
+          theme: neuTestTheme(),
           home: Builder(
             builder: (rootContext) => Scaffold(
               body: TextButton(
@@ -2106,7 +2145,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2154,7 +2194,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2189,7 +2230,8 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [_sessionReadyOverride],
-          child: const MaterialApp(
+          child: MaterialApp(
+            theme: neuTestTheme(),
             home: RoomManagementPage(
               roomId: '!room:example.org',
               roomName: 'Project room',
@@ -2244,7 +2286,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2280,7 +2323,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2338,7 +2382,8 @@ void main() {
             () => MutableState<String?>('@carol:example.org'),
           ),
         ],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2371,7 +2416,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
@@ -2400,7 +2446,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_sessionReadyOverride],
-        child: const MaterialApp(
+        child: MaterialApp(
+          theme: neuTestTheme(),
           home: RoomManagementPage(
             roomId: '!room:example.org',
             roomName: 'Project room',
