@@ -72,6 +72,9 @@ set_target_properties(${BINARY_NAME}
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
+# package:jni's bundled dartjni.c passes JNIEnv** where void** is expected,
+# which Clang >= 16 treats as an error. Suppress it until upstream ships a fix.
+add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wno-incompatible-pointer-types>")
 include(flutter/generated_plugins.cmake)
 
 
