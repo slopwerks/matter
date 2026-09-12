@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -270,7 +269,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   static const double _headerChromeHeight =
       _headerTopGap + _headerPanelHeight + _headerBottomGap;
   static const double _headerCompactBreakpoint = 480.0;
-  static const double _pinnedStackFadeHeight = 40.0;
   static const int _maxMessagesPerRenderGroup = 12;
   static const Duration _sentNoticeDuration = Duration(milliseconds: 2800);
   static const Duration _forwardNoticeDuration = Duration(seconds: 4);
@@ -1935,12 +1933,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
     final pinnedStackHeight =
         kPinnedMessageRowHeight * _pinnedStackVisibleCount;
-    // With a visible pinned stack the timeline viewport starts below it;
-    // otherwise it runs under the floating glass header (like the prototype)
-    // and only clears the status-bar strip above the header's top gap.
-    final timelineTopInset = _pinnedStackVisibleCount > 0
-        ? headerInset + pinnedStackHeight
-        : mediaQuery.padding.top + _headerTopGap;
+    // The timeline always runs under the floating glass header (like the
+    // prototype) and only clears the status-bar strip above its top gap. The
+    // pinned stack is a floating glass layer as well, so messages scroll
+    // under it the same way instead of being clipped at its bottom edge.
+    final timelineTopInset = mediaQuery.padding.top + _headerTopGap;
 
     if (_keepPickerDuringKeyboardOpen &&
         keyboardHeight >= pickerFullHeight - 1) {
@@ -2139,12 +2136,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                   ),
                               SliverPadding(
                                 padding: EdgeInsets.only(
-                                  // With no pinned stack the timeline runs
-                                  // under the floating header; keep the
-                                  // oldest end clear of the glass.
-                                  top: _pinnedStackVisibleCount > 0
-                                      ? 8
-                                      : headerInset + 4,
+                                  // The timeline runs under the floating
+                                  // header and the pinned stack; keep the
+                                  // oldest end clear of both layers.
+                                  top: headerInset + pinnedStackHeight + 4,
                                 ),
                               ),
                             ],
@@ -2199,18 +2194,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 },
               ),
             ),
-            // Progressive blur below the pinned stack: the timeline viewport
-            // starts right at its bottom edge, and a hard clip there reads
-            // as the content being sliced off. Fade blur+background out over
-            // a short strip so messages dissolve instead.
-            if (_pinnedStackVisibleCount > 0)
-              Positioned(
-                left: 0,
-                right: 0,
-                top: headerInset + pinnedStackHeight,
-                height: _pinnedStackFadeHeight,
-                child: const _TimelineTopFade(),
-              ),
             // Telegram-style floating date that tracks the day at the top edge
             // of the viewport while scrolling, then fades out.
             if (_hasTimelineGroups)
@@ -2682,35 +2665,6 @@ class _TimelineEntry {
       type: _TimelineEntryType.date,
       dateLabel: label,
       separatorKey: key,
-    );
-  }
-}
-
-/// Progressive blur strip directly below the pinned-message stack: strongest
-/// (and closest to the background color) at the top, fully clear at the
-/// bottom, so messages scrolled under the stack dissolve instead of being
-/// clipped at a hard edge.
-class _TimelineTopFade extends StatelessWidget {
-  const _TimelineTopFade();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.neu;
-    return IgnorePointer(
-      child: ClipRect(
-        child: ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (rect) => const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.white, Colors.transparent],
-          ).createShader(rect),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: ColoredBox(color: colors.base.withValues(alpha: 0.55)),
-          ),
-        ),
-      ),
     );
   }
 }

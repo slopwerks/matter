@@ -316,6 +316,60 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets(
+    'the timeline runs under the pinned stack instead of beneath it',
+    (tester) async {
+      const roomId = '!pinned-underlay:example.org';
+      const userId = '@me:example.org';
+      rustApi.pinnedMessages = [_message(r'$pinned')];
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => const <String>{}),
+          roomMembersProvider(roomId).overrideWith((ref) async => const []),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value = userId;
+      await container.read(roomMembersProvider(roomId).future);
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        _ownMessage(r'$own', content: 'hi', timestamp: '10'),
+      ];
+      container.read(messageCacheOwnerProvider(roomId).notifier).value = userId;
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: ChatDetailPage(roomId: roomId, roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey(r'pinned-message:$pinned')),
+        findsOneWidget,
+      );
+
+      // The pinned stack is a floating glass layer: the timeline viewport must
+      // start above its bottom edge so messages scroll under it. Clipping the
+      // viewport exactly at that edge is what cut the background off at a hard
+      // line below the stack.
+      final viewport = tester.getRect(
+        find.byKey(const ValueKey('pinned-messages-stack')),
+      );
+      final timeline = tester.getRect(find.byType(CustomScrollView));
+      expect(timeline.top, lessThan(viewport.bottom));
+      expect(timeline.top, lessThanOrEqualTo(viewport.top));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
   testWidgets('switching away and back restores live room view ownership', (
     tester,
   ) async {
