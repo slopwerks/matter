@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 主题风格：经典深色（既有配色）或新拟物明/暗/跟随系统。
-enum AppThemeStyle { classic, neuLight, neuDark, neuSystem }
+/// 主题风格：新拟物明/暗/跟随系统。
+enum AppThemeStyle { neuLight, neuDark, neuSystem }
 
 class AppThemeStyleNotifier extends Notifier<AppThemeStyle> {
   static const _prefsKey = 'app_theme_style';

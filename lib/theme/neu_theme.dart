@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'app_theme.dart';
 import 'neu_colors.dart';
 
 /// 新拟物主题的 ThemeData 构建（移植自原型 app.dart）。
@@ -50,7 +49,7 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
     dividerColor: neu.hairline,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: NeuPageTransitionsBuilder(),
+        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
         TargetPlatform.iOS: NeuPageTransitionsBuilder(),
         TargetPlatform.linux: NeuPageTransitionsBuilder(),
         TargetPlatform.macOS: NeuPageTransitionsBuilder(),
@@ -59,38 +58,6 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
     ),
     extensions: [neu],
   );
-}
-
-/// 经典深色配色映射为 [NeuColors]：阴影透明、无凸起高光，neu 组件
-/// 在此 palette 下呈现为近似原有扁平深色的观感。
-NeuColors classicNeuColors() {
-  return NeuColors(
-    base: AppColors.background,
-    surface: AppColors.surface,
-    surfaceStrong: AppColors.surfaceElevated,
-    card: AppColors.surfaceVariant,
-    shadowLight: Colors.transparent,
-    shadowDark: Colors.transparent,
-    text: AppColors.onBackground,
-    textSecondary: AppColors.onSurface,
-    textTertiary: AppColors.onSurfaceVariant,
-    accent: AppColors.primary,
-    accentPressed: Color.lerp(AppColors.primary, Colors.black, .15)!,
-    onAccent: Colors.white,
-    accentSoft: Color.lerp(AppColors.primary, AppColors.background, .8)!,
-    success: AppColors.success,
-    warning: AppColors.warning,
-    error: AppColors.error,
-    glassFill: AppColors.glassBackground,
-    glassBorder: AppColors.glassBorder,
-    hairline: AppColors.surfaceVariant,
-    highlightAlpha: 0,
-  );
-}
-
-/// 经典主题（现有深色）注册 [NeuColors] 扩展，供迁移后的页面取色。
-ThemeData buildClassicTheme() {
-  return AppTheme.darkTheme.copyWith(extensions: [classicNeuColors()]);
 }
 
 /// 统一路由过渡：轻淡入 + 微上滑（替代桌面/网页端默认的硬切）。

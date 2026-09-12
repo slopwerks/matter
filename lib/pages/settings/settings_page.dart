@@ -919,7 +919,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   String _themeStyleLabel(AppThemeStyle style) => switch (style) {
-    AppThemeStyle.classic => '经典深色',
     AppThemeStyle.neuLight => '新拟物 · 浅色',
     AppThemeStyle.neuDark => '新拟物 · 深色',
     AppThemeStyle.neuSystem => '新拟物 · 跟随系统',
