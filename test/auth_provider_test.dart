@@ -40,6 +40,9 @@ class _FakeRustApi implements RustLibApi {
   }
 
   @override
+  String crateApiMatrixGetDeviceHostname() => "Test Device";
+
+  @override
   Future<rust.StoredSession?> crateApiMatrixGetSession() async =>
       currentSession;
 

@@ -102,6 +102,10 @@ Future<AuthResult> registerCompleteUiaa({
   session: session,
 );
 
+/// Acquire device hostname, to be appended to device name when logging in.
+Future<String> getDeviceHostname() =>
+    RustLib.instance.api.crateApiMatrixGetDeviceHostname();
+
 /// Login with username and password.
 Future<AuthResult> loginWithPassword({
   required String username,
