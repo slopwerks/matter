@@ -413,6 +413,8 @@ class MessageGroupWidget extends ConsumerWidget {
               (message.imageUrl != null || message.mediaSourceJson != null)
         ? ImageMessageBubble(
             key: ValueKey('image-bubble:$visualMessageId'),
+            roomId: roomId,
+            messageId: message.id,
             imageUrl: message.imageUrl,
             mediaSourceJson: message.mediaSourceJson,
             imageWidth: message.imageWidth,

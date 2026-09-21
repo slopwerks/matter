@@ -7,10 +7,68 @@ import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/chat_provider.dart';
+import 'package:matter/providers/mutable_state.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 import 'helpers/neu_test_theme.dart';
 
 void main() {
+  testWidgets('preview double-tap zooms in twice then resets', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: Scaffold(
+            body: ImageMessageBubble(
+              roomId: 'test-room',
+              messageId: 'msg-1',
+              imageUrl: 'https://example.org/photo.png',
+              imageWidth: 640,
+              imageHeight: 480,
+              isMe: false,
+              heroTag: 'zoom-test',
+              metadata: SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('msg-image:zoom-test')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final viewer = find.byType(InteractiveViewer);
+    expect(viewer, findsOneWidget);
+
+    double scale() => tester
+        .widget<InteractiveViewer>(viewer)
+        .transformationController!
+        .value
+        .getMaxScaleOnAxis();
+
+    Future<void> doubleTapViewer() async {
+      final center = tester.getCenter(viewer);
+      await tester.tapAt(center);
+      // 超过 kDoubleTapMinTime,但仍在 double-tap 超时期限内。
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.tapAt(center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    expect(scale(), closeTo(1, 0.01));
+
+    await doubleTapViewer();
+    expect(scale(), closeTo(2, 0.01));
+
+    await doubleTapViewer();
+    expect(scale(), closeTo(4, 0.01));
+
+    await doubleTapViewer();
+    expect(scale(), closeTo(1, 0.01));
+  });
+
   testWidgets('sticker uses a small repaint-isolated bubble without Hero', (
     tester,
   ) async {
@@ -20,6 +78,8 @@ void main() {
           theme: neuTestTheme(),
           home: Scaffold(
             body: ImageMessageBubble(
+              roomId: 'test-room',
+              messageId: 'msg-1',
               imageUrl: 'https://example.org/sticker.png',
               imageWidth: 512,
               imageHeight: 512,
@@ -154,6 +214,8 @@ void main() {
           theme: neuTestTheme(),
           home: Scaffold(
             body: ImageMessageBubble(
+              roomId: 'test-room',
+              messageId: 'msg-1',
               imageUrl: 'https://example.org/photo.png',
               imageWidth: 640,
               imageHeight: 480,
@@ -250,6 +312,8 @@ void main() {
           theme: neuTestTheme(),
           home: Scaffold(
             body: ImageMessageBubble(
+              roomId: 'test-room',
+              messageId: 'msg-1',
               imageUrl: 'https://example.org/photo.png',
               imageWidth: 640,
               imageHeight: 480,
@@ -1008,5 +1072,113 @@ void main() {
 
     expect(endRect.bottom, lessThanOrEqualTo(bubbleRect.bottom - 10));
     expect(endRect.overlaps(metadataRect), isFalse);
+  });
+
+  testWidgets('vertical drag past the threshold dismisses the preview', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: Scaffold(
+            body: ImageMessageBubble(
+              roomId: 'test-room',
+              messageId: 'msg-1',
+              imageUrl: 'https://example.org/photo.png',
+              imageWidth: 640,
+              imageHeight: 480,
+              isMe: false,
+              heroTag: 'dismiss-test',
+              metadata: SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('msg-image:dismiss-test')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+
+    await tester.drag(find.byType(InteractiveViewer), const Offset(0, 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(InteractiveViewer), findsNothing);
+  });
+
+  testWidgets('horizontal swipe switches between the room images', (
+    tester,
+  ) async {
+    ChatMessage imageMessage(String id, String url, String timestamp) =>
+        ChatMessage(
+          id: id,
+          senderId: '@me:example.org',
+          senderName: '我',
+          content: 'image',
+          mentionedUserIds: const [],
+          mentionsRoom: false,
+          timestamp: timestamp,
+          isMe: true,
+          msgType: MessageType.image,
+          imageUrl: url,
+          imageWidth: 640,
+          imageHeight: 480,
+          isEdited: false,
+          editHistory: const [],
+          reactions: const [],
+          readers: const [],
+          totalMembers: 2,
+        );
+    final first = imageMessage(r'$first', 'https://example.org/1.png', '100');
+    final second = imageMessage(r'$second', 'https://example.org/2.png', '101');
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          messageCacheProvider(
+            '!room:example.org',
+          ).overrideWith(() => MutableState([first, second])),
+        ],
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: Scaffold(
+            body: MessageGroupWidget(
+              group: MessageGroup(
+                senderId: first.senderId,
+                senderName: first.senderName,
+                isMe: true,
+                messages: [first],
+              ),
+              roomId: '!room:example.org',
+              messageIndex: {first.id: first},
+              showAvatar: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey(r'msg-image:image-preview:$first')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final pageView = find.byType(PageView);
+    expect(pageView, findsOneWidget);
+    double page() => tester.widget<PageView>(pageView).controller!.page!;
+    expect(page(), closeTo(0, 0.01));
+
+    await tester.fling(pageView, const Offset(-300, 0), 800);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(page(), closeTo(1, 0.01));
+    expect(find.byKey(const ValueKey(r'$second')), findsOneWidget);
   });
 }
