@@ -75,7 +75,10 @@ class _NeuPainter extends BoxPainter {
 
   final NeuDecoration decoration;
   Size? _size;
+  static const double _borderWidth = 1.2;
+
   late RSuperellipse _shape;
+  late RSuperellipse _fillShape;
   late RSuperellipse _darkOuterShadow;
   late RSuperellipse _lightOuterShadow;
   late Path _darkShadow;
@@ -111,13 +114,13 @@ class _NeuPainter extends BoxPainter {
             sigma * .65,
           ),
         );
-        canvas.drawRSuperellipse(_shape, _fillPaint);
+        _paintBody(canvas);
       case NeuDepth.flat:
-        canvas.drawRSuperellipse(_shape, _fillPaint);
+        _paintBody(canvas);
       case NeuDepth.pressed:
-        canvas.drawRSuperellipse(_shape, _fillPaint);
+        _paintBody(canvas);
         canvas.save();
-        canvas.clipRSuperellipse(_shape);
+        canvas.clipRSuperellipse(_fillShape);
         _shadow(
           canvas,
           _darkShadow,
@@ -133,16 +136,18 @@ class _NeuPainter extends BoxPainter {
         canvas.restore();
     }
 
-    if (decoration.borderColor != null) {
-      canvas.drawRSuperellipse(
-        _shape,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2
-          ..color = decoration.borderColor!,
-      );
-    }
     canvas.restore();
+  }
+
+  void _paintBody(Canvas canvas) {
+    final borderColor = decoration.borderColor;
+    if (borderColor != null) {
+      // Impeller does not anti-alias RSuperellipse strokes on some platforms
+      // (e.g. desktop GLES without MSAA), but fills are smooth everywhere —
+      // paint the border as a full-size fill covered by the deflated body.
+      canvas.drawRSuperellipse(_shape, Paint()..color = borderColor);
+    }
+    canvas.drawRSuperellipse(_fillShape, _fillPaint);
   }
 
   void _prepare(Size size, Rect rect, NeuColors c, double d, double sigma) {
@@ -153,6 +158,12 @@ class _NeuPainter extends BoxPainter {
     // Preserve the primitive: converting it to a Path prevents Impeller
     // from using its specialized superellipse blur shader for the shadows.
     _shape = RSuperellipse.fromRectAndRadius(rect, Radius.circular(radius));
+    _fillShape = decoration.borderColor != null
+        ? RSuperellipse.fromRectAndRadius(
+            rect.deflate(_borderWidth),
+            Radius.circular(radius),
+          )
+        : _shape;
 
     final base = decoration.color ?? c.surface;
 
