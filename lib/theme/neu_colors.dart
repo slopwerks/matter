@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 /// 全局兜底变体:从 cmap 排除了 #/*/0-9,防止普通计数被空白占位字形接管。
-const kEmojiFallbackFontFamily = 'Twemoji Mozilla Fallback';
-const kEmojiFontFallback = [kEmojiFallbackFontFamily];
+/// macOS/iOS environments seem to have some issues with the
+/// Twemoji fonts. Both should have a decent enough system fallback
+/// so we de-override it here. The bundled font files are unused on
+/// these platforms as a result.
+final kEmojiFontFallback =
+    defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.iOS
+    ? null
+    : ['Twemoji Mozilla Fallback'];
 
 /// 新拟物设计 tokens。所有页面统一从这里取色,保证明暗两套主题一致切换。
 class NeuColors extends ThemeExtension<NeuColors> {

@@ -1053,7 +1053,7 @@ class AppLogEntry {
   /// Milliseconds since Unix epoch
   final PlatformInt64 timestamp;
 
-  /// log / warn / error
+  /// info / warn / error / debug
   final String level;
 
   /// What subsystem: sync, auth, rooms, media, etc.

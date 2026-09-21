@@ -16,10 +16,6 @@ If you are building a release build on a macOS 27 host:
 - <del>Flutter 3.47.0 or higher is required due to [this Flutter issue](https://github.com/flutter/flutter/issues/188461).</del> No longer an extra requirement since the project's own Flutter dependency is now higher.
 - Rust 1.98.0 or higher might be required due to [this Rust issue](https://github.com/rust-lang/rust/issues/157750). The primary indicator is if you run into Rust errors on `*_derive` libraries, and a second build reports errors involving `LINKEDIT` misalignments.
 
-When building for iOS, simulator builds (inherently Debug) are broken due to [#56](https://github.com/slopwerks/matter/issues/56). Release build should work provided that you configure your own provisioning.
+When building for iOS, you most likely need to set up your own provisioning for any form of deployment beyond a simulator. A free Developer ID would suffice for deploying to your physical device, but requires rebuilding once a week.
 
 Note that currently the Rust component is only built for the current arch while the Xcode build is universal for release. This results in a supposedly universal app but with a framework that only runs on the same arch it is built on.
-
-### Windows specific notes
-
-As stated in a TODO under rust/src/api/matrix.rs#2838, the login can fail due to an "Access Denied" error on Windows (reports a generic error on GUI, only visible in logs). This appears to be a race condition that can be worked around by making the `sleep` longer. The correct value (without making the wait too long) is most likely hardware dependent, and more testing is needed.
