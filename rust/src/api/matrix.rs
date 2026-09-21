@@ -4461,7 +4461,7 @@ pub async fn register_get_uiaa_session(
     let mut request = RegistrationRequest::new();
     request.username = Some(username);
     request.password = Some(password);
-    request.initial_device_display_name = Some("Matter".to_owned());
+    request.initial_device_display_name = Some(get_initial_device_name());
     request.refresh_token = true;
     request.auth = Some(AuthData::Dummy(Dummy::new()));
 
@@ -4531,7 +4531,7 @@ pub async fn register_complete_uiaa(
     let mut request = RegistrationRequest::new();
     request.username = Some(username);
     request.password = Some(password);
-    request.initial_device_display_name = Some("Matter".to_owned());
+    request.initial_device_display_name = Some(get_initial_device_name());
     request.refresh_token = true;
 
     let mut reg_token = RegistrationToken::new(registration_token);
@@ -4589,8 +4589,9 @@ pub async fn register_complete_uiaa(
 }
 
 /// Acquire device hostname, to be appended to device name when logging in.
+/// Falls back to "Matter" on error.
 #[frb]
-pub fn get_device_hostname() -> String {
+pub fn get_initial_device_name() -> String {
     return match whoami::hostname() {
         Ok(hostname) => {
             format!("Matter @ {}", hostname)
@@ -4622,7 +4623,7 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
         .matrix_auth()
         .login_username(&username, &password)
         .request_refresh_token()
-        .initial_device_display_name(&get_device_hostname())
+        .initial_device_display_name(&get_initial_device_name())
         .await;
     match login_result {
         Ok(response) => {
