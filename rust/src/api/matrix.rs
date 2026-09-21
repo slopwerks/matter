@@ -4603,12 +4603,17 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
         )
     })?;
 
+    let initial_device_name = match whoami::hostname() {
+        Ok(device_name) => {format!("Matter @ {}", device_name)},
+        Err(_) => {"Matter".to_string()},
+    };
+
     let started = std::time::Instant::now();
     let login_result = client
         .matrix_auth()
         .login_username(&username, &password)
         .request_refresh_token()
-        .initial_device_display_name("Matter")
+        .initial_device_display_name(&initial_device_name)
         .await;
     match login_result {
         Ok(response) => {
