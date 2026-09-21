@@ -47,8 +47,13 @@ class _MobilePageState extends ConsumerState<_MobilePage>
   Widget build(BuildContext context) {
     super.build(context);
     return TickerMode(
-      enabled: ref.watch(navigationIndexProvider) == widget.index,
-      child: widget.child,
+      enabled: ref.watch(
+        navigationIndexProvider.select((index) => index == widget.index),
+      ),
+      // Isolate the tab's painting: during a PageView swipe both pages are
+      // composited every frame, and without a boundary each page's display
+      // list is re-recorded and re-rasterized per frame.
+      child: RepaintBoundary(child: widget.child),
     );
   }
 }
@@ -504,51 +509,53 @@ class _MatterAppState extends ConsumerState<MatterApp> {
           }
         },
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-        child: GlassPanel(
-          radius: NeuRadius.nav,
-          padding: const EdgeInsets.all(6),
-          child: Row(
-            children: [
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  activeIcon: Icons.chat_bubble_rounded,
-                  label: '聊天',
-                  isActive: ref.watch(navigationIndexProvider) == 0,
-                  onTap: () => _onItemTapped(0),
+      bottomNavigationBar: Consumer(
+        builder: (context, ref, _) => SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+          child: GlassPanel(
+            radius: NeuRadius.nav,
+            padding: const EdgeInsets.all(6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _NavItem(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    activeIcon: Icons.chat_bubble_rounded,
+                    label: '聊天',
+                    isActive: ref.watch(navigationIndexProvider) == 0,
+                    onTap: () => _onItemTapped(0),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.account_tree_outlined,
-                  activeIcon: Icons.account_tree_rounded,
-                  label: '空间',
-                  isActive: ref.watch(navigationIndexProvider) == 1,
-                  onTap: () => _onItemTapped(1),
+                Expanded(
+                  child: _NavItem(
+                    icon: Icons.account_tree_outlined,
+                    activeIcon: Icons.account_tree_rounded,
+                    label: '空间',
+                    isActive: ref.watch(navigationIndexProvider) == 1,
+                    onTap: () => _onItemTapped(1),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.people_outline_rounded,
-                  activeIcon: Icons.people_rounded,
-                  label: '通讯录',
-                  isActive: ref.watch(navigationIndexProvider) == 2,
-                  onTap: () => _onItemTapped(2),
+                Expanded(
+                  child: _NavItem(
+                    icon: Icons.people_outline_rounded,
+                    activeIcon: Icons.people_rounded,
+                    label: '通讯录',
+                    isActive: ref.watch(navigationIndexProvider) == 2,
+                    onTap: () => _onItemTapped(2),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.settings_outlined,
-                  activeIcon: Icons.settings_rounded,
-                  label: '设置',
-                  isActive: ref.watch(navigationIndexProvider) == 3,
-                  onTap: () => _onItemTapped(3),
+                Expanded(
+                  child: _NavItem(
+                    icon: Icons.settings_outlined,
+                    activeIcon: Icons.settings_rounded,
+                    label: '设置',
+                    isActive: ref.watch(navigationIndexProvider) == 3,
+                    onTap: () => _onItemTapped(3),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

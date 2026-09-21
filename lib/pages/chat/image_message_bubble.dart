@@ -263,7 +263,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
     return GestureDetector(
       onTap: () => _openPreview(url, bytes),
-      child: _withCaption(bubble, caption, hasCaption),
+      child: RepaintBoundary(child: _withCaption(bubble, caption, hasCaption)),
     );
   }
 
@@ -1051,15 +1051,9 @@ class _PreviewImageFrameState extends State<_PreviewImageFrame>
     }
 
     _zoomAnimation =
-        Matrix4Tween(
-          begin: _transformationController.value,
-          end: target,
-        ).animate(
-          CurvedAnimation(
-            parent: _zoomAnimController,
-            curve: Curves.easeOutCubic,
-          ),
-        );
+        Matrix4Tween(begin: _transformationController.value, end: target)
+            .chain(CurveTween(curve: Curves.easeOutCubic))
+            .animate(_zoomAnimController);
     _zoomAnimController.forward(from: 0);
   }
 
@@ -1074,12 +1068,15 @@ class _PreviewImageFrameState extends State<_PreviewImageFrame>
 
         final media = _HeroImageClip(
           borderRadius: BorderRadius.zero,
-          child: _MediaImage(
-            imageUrl: widget.imageUrl,
-            imageBytes: widget.imageBytes,
-            fit: BoxFit.contain,
-            onLoaded: widget.onLoaded,
-            onError: widget.onError,
+          // Cache the image display list below the changing zoom transform.
+          child: RepaintBoundary(
+            child: _MediaImage(
+              imageUrl: widget.imageUrl,
+              imageBytes: widget.imageBytes,
+              fit: BoxFit.contain,
+              onLoaded: widget.onLoaded,
+              onError: widget.onError,
+            ),
           ),
         );
         final heroTag = widget.heroTag;
@@ -1090,9 +1087,10 @@ class _PreviewImageFrameState extends State<_PreviewImageFrame>
           onDoubleTap: _onDoubleTap,
           child: InteractiveViewer(
             transformationController: _transformationController,
+            onInteractionStart: (_) => _zoomAnimController.stop(),
             minScale: 1.0,
             maxScale: _zoomLevels.last,
-            clipBehavior: Clip.none,
+            clipBehavior: Clip.hardEdge,
             panEnabled: _isZoomed,
             child: SizedBox(
               width: constraints.maxWidth,

@@ -67,6 +67,23 @@ void main() {
 
     await doubleTapViewer();
     expect(scale(), closeTo(1, 0.01));
+
+    // A drag begun during the double-tap animation must take over immediately.
+    final center = tester.getCenter(viewer);
+    await tester.tapAt(center);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tapAt(center);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 70));
+    final drag = await tester.startGesture(center);
+    await drag.moveBy(const Offset(30, 0));
+    await tester.pump();
+    final interruptedScale = scale();
+    expect(interruptedScale, greaterThan(1));
+    expect(interruptedScale, lessThan(2));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(scale(), closeTo(interruptedScale, 0.001));
+    await drag.up();
   });
 
   testWidgets('sticker uses a small repaint-isolated bubble without Hero', (

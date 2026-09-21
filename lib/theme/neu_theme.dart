@@ -49,7 +49,7 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
     dividerColor: neu.hairline,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.android: _NeuPredictiveBackPageTransitionsBuilder(),
         TargetPlatform.iOS: NeuPageTransitionsBuilder(),
         TargetPlatform.linux: NeuPageTransitionsBuilder(),
         TargetPlatform.macOS: NeuPageTransitionsBuilder(),
@@ -57,6 +57,28 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
       },
     ),
     extensions: [neu],
+  );
+}
+
+// Retain the platform transition and predictive-back gestures while isolating
+// page painting from the transform/opacity animation above it.
+class _NeuPredictiveBackPageTransitionsBuilder
+    extends PredictiveBackPageTransitionsBuilder {
+  const _NeuPredictiveBackPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => super.buildTransitions(
+    route,
+    context,
+    animation,
+    secondaryAnimation,
+    RepaintBoundary(child: child),
   );
 }
 
@@ -84,7 +106,7 @@ class NeuPageTransitionsBuilder extends PageTransitionsBuilder {
           begin: const Offset(0, .03),
           end: Offset.zero,
         ).animate(curved),
-        child: child,
+        child: RepaintBoundary(child: child),
       ),
     );
   }

@@ -24,6 +24,7 @@ import 'forward_message_sheet.dart';
 import 'latest_message_control.dart';
 import 'local_outgoing_matcher.dart';
 import 'message_group.dart';
+import 'message_timeline_inset.dart';
 import 'message_input.dart';
 import 'pinned_messages_page.dart';
 import 'pinned_messages_stack.dart';
@@ -1750,7 +1751,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     Map<String, String?> avatarMap,
     Map<String, Contact> membersById,
     Map<String, ChatMessage> messageIndex,
-    double stickyBottomInset,
   ) {
     switch (entry.type) {
       case _TimelineEntryType.group:
@@ -1770,7 +1770,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           senderAvatarUrl: avatarMap[group.senderId],
           scrollController: _scrollController,
           scrollViewportKey: _scrollViewportKey,
-          stickyBottomInset: stickyBottomInset,
           onImageLoaded: null,
           onReplyRequested: () => _setInputPanelMode(InputPanelMode.keyboard),
           onMentionRequested: _mentionUser,
@@ -1872,82 +1871,150 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final localOutgoingMessages = ref.watch(
       localOutgoingMessagesProvider(roomAccountKey),
     );
-    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
-    if (keyboardHeight > 0 && keyboardHeight > _panelBaselineHeight) {
-      _panelBaselineHeight = keyboardHeight;
-    }
-    final keyboardVisible = keyboardHeight > 0;
-    if (keyboardVisible) {
-      _keyboardWasVisible = true;
-    } else if (_keyboardWasVisible &&
-        _inputPanelMode == InputPanelMode.keyboard &&
-        !_keepPickerDuringKeyboardOpen) {
-      _keyboardWasVisible = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _inputPanelMode != InputPanelMode.keyboard) return;
-        setState(() => _inputPanelMode = InputPanelMode.none);
-      });
-    }
-    final keepsStablePicker =
-        _inputPanelMode == InputPanelMode.emoji ||
-        _inputPanelMode == InputPanelMode.attachment ||
-        _keepPickerDuringKeyboardOpen;
-    final pickerBaseHeight = _panelBaselineHeight > 0
-        ? _panelBaselineHeight
-        : ComposerPickerPanel.baseHeight;
-    final pickerFullHeight = keepsStablePicker
-        ? math.max(pickerBaseHeight, _expandedPickerHeight)
-        : pickerBaseHeight;
-    final mediaQuery = MediaQuery.of(context);
     final colors = context.neu;
-    // The floating header hangs below the status bar; the pinned stack and
-    // the timeline's oldest-end clearance are measured from its bottom edge.
-    // Prefer the measured panel height (CJK title metrics can exceed the
-    // estimate and would otherwise eat the gap above the pinned stack).
+    final timelineContent = () {
+      final messages = messageCacheOwner == activeUserId
+          ? cachedMessages
+          : const <ChatMessage>[];
+      // The account switched while this page stayed mounted:
+      // the old account's messages must not render (the gate
+      // above) and the empty timeline must not mislead with its
+      // retry affordances — show a neutral placeholder instead
+      // (same discipline as the sibling pages).
+      if (messageCacheOwner != activeUserId && messageCacheOwner != null) {
+        return Center(
+          child: Text('账号已切换', style: TextStyle(color: colors.textTertiary)),
+        );
+      }
+      final ignoredUserIds = ignoredUserIdsAsync.value;
+      // An unknown ignore list (first load, or a failed load
+      // without any snapshot) must not degrade into "nobody is
+      // ignored" and re-expose messages from ignored senders.
+      if (ignoredUserIds == null) {
+        if (ignoredUserIdsAsync.hasError) {
+          return Center(
+            child: TextButton.icon(
+              onPressed: () => ref.invalidate(ignoredUserIdsProvider),
+              icon: Icon(Icons.refresh_rounded, color: colors.accent),
+              label: Text(
+                '无法加载忽略列表，消息已隐藏',
+                style: TextStyle(color: colors.textSecondary),
+              ),
+            ),
+          );
+        }
+        return Center(
+          child: CircularProgressIndicator(
+            color: colors.accent,
+            strokeWidth: 2,
+          ),
+        );
+      }
+      // Do not expose the timeline until its initial insets and
+      // member-dependent labels are stable enough for layout.
+      if ((!messageCachePrimed &&
+              messages.isEmpty &&
+              localOutgoingMessages.isEmpty) ||
+          _inputChromeHeight == null ||
+          (membersAsync.isLoading && !membersAsync.hasValue)) {
+        return Center(
+          child: CircularProgressIndicator(
+            color: colors.accent,
+            strokeWidth: 2,
+          ),
+        );
+      }
+      final visibleMessages = ignoredUserIds.isEmpty
+          ? messages
+          : messages
+                .where(
+                  (message) =>
+                      message.isMe ||
+                      !ignoredUserIds.contains(message.senderId),
+                )
+                .toList();
+      final timelineMessages = _timelineMessagesFor(
+        visibleMessages,
+        localOutgoingMessages,
+        roomAccountKey,
+      );
+      _rebuildDerivedMessages(timelineMessages, ignoredUserIds);
+      if (_displayedMessages.isEmpty &&
+          !_initialMessageJumpPending &&
+          !_automaticOlderLoadBlocked &&
+          !_isLoadingOlder &&
+          _hasMoreMessages &&
+          _paginationAnchorId() != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_loadOlderMessages());
+        });
+      }
+      final timelineEntries = _timelineEntries;
+      final messageIndex = _messageIndex;
+      final avatarMap = membersAsync.maybeWhen(
+        data: _buildAvatarMap,
+        orElse: () => const <String, String?>{},
+      );
+      final membersById = <String, Contact>{
+        for (final member in membersAsync.asData?.value ?? const <Contact>[])
+          member.id: member,
+      };
+      return SliverMainAxisGroup(
+        slivers: [
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildTimelineEntry(
+                timelineEntries[index],
+                avatarMap,
+                membersById,
+                messageIndex,
+              ),
+              childCount: timelineEntries.length,
+              findChildIndexCallback: _findTimelineEntryIndex,
+            ),
+          ),
+          if (_automaticOlderLoadBlocked && _hasMoreMessages)
+            if (timelineEntries.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: TextButton.icon(
+                    onPressed: _retryOlderMessages,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('重试加载更早消息'),
+                  ),
+                ),
+              )
+            else
+              SliverToBoxAdapter(
+                child: Center(
+                  child: TextButton.icon(
+                    onPressed: _retryOlderMessages,
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text('加载更早消息'),
+                  ),
+                ),
+              ),
+        ],
+      );
+    }();
+
+    // Static chrome (base layer, fade blur, floating header, pinned stack,
+    // floating date header) does not depend on keyboard frames. Build it once
+    // per state change and reuse the identical instances inside the keyboard
+    // follower below: Element.updateChild short-circuits identical widgets, so
+    // a keyboard frame rebuilds only the timeline padding and the input panel
+    // position instead of the whole page. Read MediaQuery through the aspect
+    // accessors (padding/size), not of(): a keyboard frame would otherwise
+    // re-run this whole build, providers and timeline grouping included.
     final headerInset = _measuredHeaderHeight != null
         ? _measuredHeaderHeight! + _headerBottomGap
-        : mediaQuery.padding.top + _headerChromeHeight;
+        : MediaQuery.paddingOf(context).top + _headerChromeHeight;
     final inputChromeHeight =
         _inputChromeHeight ??
-        _baseInputChromeHeight + mediaQuery.padding.bottom;
-    final pickerMaxHeight = math.max(
-      pickerBaseHeight,
-      mediaQuery.size.height -
-          mediaQuery.padding.top -
-          mediaQuery.padding.bottom -
-          _headerChromeHeight -
-          inputChromeHeight -
-          8,
-    );
-    final pickerHeight = keepsStablePicker
-        ? math.max(0.0, pickerFullHeight - keyboardHeight)
-        : 0.0;
-    final bottomOffset =
-        (_inputPanelMode == InputPanelMode.keyboard || keepsStablePicker)
-        ? keyboardHeight
-        : 0.0;
-    final panelReservedHeight = keepsStablePicker
-        ? pickerFullHeight
-        : (_inputPanelMode == InputPanelMode.keyboard ? keyboardHeight : 0.0);
-    final messageBottomPadding = inputChromeHeight + panelReservedHeight;
-    final animatePanelChange = !keyboardVisible && !_isPickerResizing;
+        _baseInputChromeHeight + MediaQuery.paddingOf(context).bottom;
     final pinnedStackHeight =
         kPinnedMessageRowHeight * _pinnedStackVisibleCount;
-    // The timeline fills the whole screen and runs under the floating glass
-    // header (like the prototype); its clip edge sits at the screen edge
-    // where the gradient-blur layer is nearly opaque, so no hard clip line
-    // shows inside the header gap. The pinned stack is a floating glass
-    // layer as well, so messages scroll under it the same way instead of
-    // being clipped at its bottom edge.
-
-    if (_keepPickerDuringKeyboardOpen &&
-        keyboardHeight >= pickerFullHeight - 1) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_keepPickerDuringKeyboardOpen) return;
-        setState(() => _keepPickerDuringKeyboardOpen = false);
-      });
-    }
-
     // Live unread state (override-aware, matching the room list), not the
     // push-time snapshot: the snapshot would stay stale (e.g. "3 条未读消息")
     // after the auto-read fired or the user marked the room read/unread.
@@ -1958,345 +2025,296 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               ? '${syncedRoom.unreadCount} 条未读消息'
               : '已标记未读')
         : '在线';
+    final baseLayer = Positioned.fill(child: ColoredBox(color: colors.base));
+    final fadeBlurLayer = Positioned(
+      left: 0,
+      top: 0,
+      right: 0,
+      height: headerInset,
+      child: const TopFadeBlur(useShader: true),
+    );
+    final headerLayer = Positioned(
+      left: 0,
+      top: 0,
+      right: 0,
+      child: _MeasuredSize(
+        onChanged: (size) {
+          if (_measuredHeaderHeight == size.height) return;
+          setState(() => _measuredHeaderHeight = size.height);
+        },
+        child: _buildTopBar(headerSubtitle),
+      ),
+    );
+    final pinnedStackLayer = Positioned(
+      left: 12,
+      top: headerInset,
+      right: 12,
+      child: PinnedMessagesStack(
+        roomId: widget.roomId,
+        onMessageTap: (messageId) => unawaited(_jumpToMessage(messageId)),
+        onVisibleCountChanged: (count) {
+          if (mounted && _pinnedStackVisibleCount != count) {
+            setState(() => _pinnedStackVisibleCount = count);
+          }
+        },
+      ),
+    );
+    final floatingDateLayer = _hasTimelineGroups
+        ? FloatingDateHeader(
+            scrollController: _scrollController,
+            scrollViewportKey: _scrollViewportKey,
+            boundaries: _floatingDateBoundariesCache,
+            separatorKeys: _floatingDateSeparatorKeysCache,
+            topInset: headerInset + pinnedStackHeight,
+          )
+        : null;
 
-    return PopScope(
-      canPop:
-          !widget.embedded &&
-          _inputPanelMode == InputPanelMode.none &&
-          !keyboardVisible,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-        _setInputPanelMode(InputPanelMode.none);
-      },
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: colors.base,
-        body: Stack(
-          children: [
-            Positioned.fill(child: ColoredBox(color: colors.base)),
-            Positioned.fill(
-              child: Builder(
-                builder: (context) {
-                  final messages = messageCacheOwner == activeUserId
-                      ? cachedMessages
-                      : const <ChatMessage>[];
-                  // The account switched while this page stayed mounted:
-                  // the old account's messages must not render (the gate
-                  // above) and the empty timeline must not mislead with its
-                  // retry affordances — show a neutral placeholder instead
-                  // (same discipline as the sibling pages).
-                  if (messageCacheOwner != activeUserId &&
-                      messageCacheOwner != null) {
-                    return Center(
-                      child: Text(
-                        '账号已切换',
-                        style: TextStyle(color: colors.textTertiary),
-                      ),
-                    );
-                  }
-                  final ignoredUserIds = ignoredUserIdsAsync.value;
-                  // An unknown ignore list (first load, or a failed load
-                  // without any snapshot) must not degrade into "nobody is
-                  // ignored" and re-expose messages from ignored senders.
-                  if (ignoredUserIds == null) {
-                    if (ignoredUserIdsAsync.hasError) {
-                      return Center(
-                        child: TextButton.icon(
-                          onPressed: () =>
-                              ref.invalidate(ignoredUserIdsProvider),
-                          icon: Icon(
-                            Icons.refresh_rounded,
-                            color: colors.accent,
-                          ),
-                          label: Text(
-                            '无法加载忽略列表，消息已隐藏',
-                            style: TextStyle(color: colors.textSecondary),
-                          ),
-                        ),
+    // Only chrome and viewport insets follow keyboard frames. Keep the lazy
+    // message delegate identical so its mounted rows do not rebuild per frame.
+    return Builder(
+      builder: (context) {
+        final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+        if (keyboardHeight > 0 && keyboardHeight > _panelBaselineHeight) {
+          _panelBaselineHeight = keyboardHeight;
+        }
+        final keyboardVisible = keyboardHeight > 0;
+        if (keyboardVisible) {
+          _keyboardWasVisible = true;
+        } else if (_keyboardWasVisible &&
+            _inputPanelMode == InputPanelMode.keyboard &&
+            !_keepPickerDuringKeyboardOpen) {
+          _keyboardWasVisible = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _inputPanelMode != InputPanelMode.keyboard) return;
+            setState(() => _inputPanelMode = InputPanelMode.none);
+          });
+        }
+        final keepsStablePicker =
+            _inputPanelMode == InputPanelMode.emoji ||
+            _inputPanelMode == InputPanelMode.attachment ||
+            _keepPickerDuringKeyboardOpen;
+        final pickerBaseHeight = _panelBaselineHeight > 0
+            ? _panelBaselineHeight
+            : ComposerPickerPanel.baseHeight;
+        final pickerFullHeight = keepsStablePicker
+            ? math.max(pickerBaseHeight, _expandedPickerHeight)
+            : pickerBaseHeight;
+        final pickerMaxHeight = math.max(
+          pickerBaseHeight,
+          MediaQuery.sizeOf(context).height -
+              MediaQuery.paddingOf(context).top -
+              MediaQuery.paddingOf(context).bottom -
+              _headerChromeHeight -
+              inputChromeHeight -
+              8,
+        );
+        final pickerHeight = keepsStablePicker
+            ? math.max(0.0, pickerFullHeight - keyboardHeight)
+            : 0.0;
+        final bottomOffset =
+            (_inputPanelMode == InputPanelMode.keyboard || keepsStablePicker)
+            ? keyboardHeight
+            : 0.0;
+        final panelReservedHeight = keepsStablePicker
+            ? pickerFullHeight
+            : (_inputPanelMode == InputPanelMode.keyboard
+                  ? keyboardHeight
+                  : 0.0);
+        final messageBottomPadding = inputChromeHeight + panelReservedHeight;
+        final animatePanelChange = !keyboardVisible && !_isPickerResizing;
+        // The timeline fills the whole screen and runs under the floating glass
+        // header (like the prototype); its clip edge sits at the screen edge
+        // where the gradient-blur layer is nearly opaque, so no hard clip line
+        // shows inside the header gap. The pinned stack is a floating glass
+        // layer as well, so messages scroll under it the same way instead of
+        // being clipped at its bottom edge.
+
+        if (_keepPickerDuringKeyboardOpen &&
+            keyboardHeight >= pickerFullHeight - 1) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_keepPickerDuringKeyboardOpen) return;
+            setState(() => _keepPickerDuringKeyboardOpen = false);
+          });
+        }
+
+        return PopScope(
+          canPop:
+              !widget.embedded &&
+              _inputPanelMode == InputPanelMode.none &&
+              !keyboardVisible,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+            _setInputPanelMode(InputPanelMode.none);
+          },
+          child: Scaffold(
+            resizeToAvoidBottomInset: false,
+            backgroundColor: colors.base,
+            body: Stack(
+              children: [
+                baseLayer,
+                Positioned.fill(
+                  child: Builder(
+                    builder: (context) {
+                      if (timelineContent is! SliverMainAxisGroup) {
+                        return timelineContent;
+                      }
+                      final timeline = TweenAnimationBuilder<double>(
+                        tween: Tween<double>(end: messageBottomPadding),
+                        duration: animatePanelChange
+                            ? const Duration(milliseconds: 180)
+                            : Duration.zero,
+                        curve: Curves.easeOutCubic,
+                        builder: (context, animatedBottomPadding, child) {
+                          return NotificationListener<
+                            ScrollMetricsNotification
+                          >(
+                            onNotification: _handleScrollMetricsNotification,
+                            child: NotificationListener<ScrollNotification>(
+                              onNotification: _handleScrollNotification,
+                              child: CustomScrollView(
+                                key: _scrollViewportKey,
+                                reverse: true,
+                                controller: _scrollController,
+                                slivers: [
+                                  SliverPadding(
+                                    padding: EdgeInsets.only(
+                                      bottom: 8 + animatedBottomPadding,
+                                    ),
+                                  ),
+                                  MessageTimelineInset(
+                                    bottom: 8 + animatedBottomPadding,
+                                    child: child!,
+                                  ),
+                                  SliverPadding(
+                                    padding: EdgeInsets.only(
+                                      // The timeline runs under the floating
+                                      // header and the pinned stack; keep the
+                                      // oldest end clear of both layers.
+                                      top: headerInset + pinnedStackHeight + 4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: timelineContent,
                       );
-                    }
-                    return Center(
-                      child: CircularProgressIndicator(
-                        color: colors.accent,
-                        strokeWidth: 2,
-                      ),
-                    );
-                  }
-                  // Do not expose the timeline until its initial insets and
-                  // member-dependent labels are stable enough for layout.
-                  if ((!messageCachePrimed &&
-                          messages.isEmpty &&
-                          localOutgoingMessages.isEmpty) ||
-                      _inputChromeHeight == null ||
-                      (membersAsync.isLoading && !membersAsync.hasValue)) {
-                    return Center(
-                      child: CircularProgressIndicator(
-                        color: colors.accent,
-                        strokeWidth: 2,
-                      ),
-                    );
-                  }
-                  final visibleMessages = ignoredUserIds.isEmpty
-                      ? messages
-                      : messages
-                            .where(
-                              (message) =>
-                                  message.isMe ||
-                                  !ignoredUserIds.contains(message.senderId),
-                            )
-                            .toList();
-                  final timelineMessages = _timelineMessagesFor(
-                    visibleMessages,
-                    localOutgoingMessages,
-                    roomAccountKey,
-                  );
-                  _rebuildDerivedMessages(timelineMessages, ignoredUserIds);
-                  if (_displayedMessages.isEmpty &&
-                      !_initialMessageJumpPending &&
-                      !_automaticOlderLoadBlocked &&
-                      !_isLoadingOlder &&
-                      _hasMoreMessages &&
-                      _paginationAnchorId() != null) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) unawaited(_loadOlderMessages());
-                    });
-                  }
-                  final timelineEntries = _timelineEntries;
-                  final messageIndex = _messageIndex;
-                  final avatarMap = membersAsync.maybeWhen(
-                    data: _buildAvatarMap,
-                    orElse: () => const <String, String?>{},
-                  );
-                  final membersById = <String, Contact>{
-                    for (final member
-                        in membersAsync.asData?.value ?? const <Contact>[])
-                      member.id: member,
-                  };
-                  final timeline = TweenAnimationBuilder<double>(
-                    tween: Tween<double>(end: messageBottomPadding),
-                    duration: animatePanelChange
-                        ? const Duration(milliseconds: 180)
-                        : Duration.zero,
-                    curve: Curves.easeOutCubic,
-                    builder: (context, animatedBottomPadding, _) {
-                      return NotificationListener<ScrollMetricsNotification>(
-                        onNotification: _handleScrollMetricsNotification,
-                        child: NotificationListener<ScrollNotification>(
-                          onNotification: _handleScrollNotification,
-                          child: CustomScrollView(
-                            key: _scrollViewportKey,
-                            reverse: true,
-                            controller: _scrollController,
-                            slivers: [
-                              SliverPadding(
-                                padding: EdgeInsets.only(
-                                  bottom: 8 + animatedBottomPadding,
-                                ),
-                              ),
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate(
-                                  (context, index) => _buildTimelineEntry(
-                                    timelineEntries[index],
-                                    avatarMap,
-                                    membersById,
-                                    messageIndex,
-                                    8 + animatedBottomPadding,
-                                  ),
-                                  childCount: timelineEntries.length,
-                                  findChildIndexCallback:
-                                      _findTimelineEntryIndex,
-                                ),
-                              ),
-                              if (_automaticOlderLoadBlocked &&
-                                  _hasMoreMessages)
-                                if (timelineEntries.isEmpty)
-                                  SliverFillRemaining(
-                                    hasScrollBody: false,
-                                    child: Center(
-                                      child: TextButton.icon(
-                                        onPressed: _retryOlderMessages,
-                                        icon: const Icon(Icons.refresh_rounded),
-                                        label: const Text('重试加载更早消息'),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  SliverToBoxAdapter(
-                                    child: Center(
-                                      child: TextButton.icon(
-                                        onPressed: _retryOlderMessages,
-                                        icon: const Icon(
-                                          Icons.refresh_rounded,
-                                          size: 16,
-                                        ),
-                                        label: const Text('加载更早消息'),
-                                      ),
-                                    ),
-                                  ),
-                              SliverPadding(
-                                padding: EdgeInsets.only(
-                                  // The timeline runs under the floating
-                                  // header and the pinned stack; keep the
-                                  // oldest end clear of both layers.
-                                  top: headerInset + pinnedStackHeight + 4,
-                                ),
-                              ),
-                            ],
+                      if (!_initialMessageJumpPending) return timeline;
+                      return Stack(
+                        children: [
+                          Positioned.fill(
+                            child: Opacity(opacity: 0, child: timeline),
                           ),
-                        ),
+                          Center(
+                            child: CircularProgressIndicator(
+                              color: colors.accent,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ],
                       );
                     },
-                    child: const SizedBox.shrink(),
-                  );
-                  if (!_initialMessageJumpPending) return timeline;
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: Opacity(opacity: 0, child: timeline),
-                      ),
-                      Center(
-                        child: CircularProgressIndicator(
-                          color: colors.accent,
-                          strokeWidth: 2,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            // 渐变模糊层:柔和过渡从浮动顶栏下方滚过的消息,
-            // 避免在视口上缘被硬裁切。
-            Positioned(
-              left: 0,
-              top: 0,
-              right: 0,
-              height: headerInset,
-              child: const TopFadeBlur(useShader: true),
-            ),
-            // Floating glass header — the only persistent glass layer.
-            Positioned(
-              left: 0,
-              top: 0,
-              right: 0,
-              child: _MeasuredSize(
-                onChanged: (size) {
-                  if (_measuredHeaderHeight == size.height) return;
-                  setState(() => _measuredHeaderHeight = size.height);
-                },
-                child: _buildTopBar(headerSubtitle),
-              ),
-            ),
-            Positioned(
-              left: 12,
-              top: headerInset,
-              right: 12,
-              child: PinnedMessagesStack(
-                roomId: widget.roomId,
-                onMessageTap: (messageId) =>
-                    unawaited(_jumpToMessage(messageId)),
-                onVisibleCountChanged: (count) {
-                  if (mounted && _pinnedStackVisibleCount != count) {
-                    setState(() => _pinnedStackVisibleCount = count);
-                  }
-                },
-              ),
-            ),
-            // Telegram-style floating date that tracks the day at the top edge
-            // of the viewport while scrolling, then fades out.
-            if (_hasTimelineGroups)
-              FloatingDateHeader(
-                scrollController: _scrollController,
-                scrollViewportKey: _scrollViewportKey,
-                boundaries: _floatingDateBoundariesCache,
-                separatorKeys: _floatingDateSeparatorKeysCache,
-                topInset: headerInset + pinnedStackHeight,
-              ),
-            AnimatedPositioned(
-              right: 16,
-              bottom: messageBottomPadding + 12,
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              child: LatestMessageControl(
-                visible:
-                    !_initialMessageJumpPending &&
-                    (_showLatestMessageControl || _focusedBrowsing) &&
-                    _forwardNoticeRoom == null,
-                showSentNotice: _showSentNotice,
-                onPressed: _focusedBrowsing
-                    ? () => _exitFocusedBrowsing()
-                    : _scrollToLatest,
-              ),
-            ),
-            if (_forwardNoticeRoom case final room?)
-              ForwardSuccessNoticeOverlay(
-                key: const ValueKey('forward-success-position'),
-                bottomInset: messageBottomPadding,
-                roomName: room.name,
-                onRoomTap: _openForwardNoticeRoom,
-              ),
-            AnimatedPositioned(
-              left: 0,
-              right: 0,
-              bottom: bottomOffset,
-              duration: Duration.zero,
-              curve: Curves.easeOutCubic,
-              child: _MeasuredSize(
-                onChanged: (size) {
-                  final chromeHeight = math.max(
-                    0.0,
-                    size.height - pickerHeight,
-                  );
-                  if (_inputChromeHeight == null) {
-                    setState(() => _inputChromeHeight = chromeHeight);
-                    return;
-                  }
-                  if ((inputChromeHeight - chromeHeight).abs() < 0.5) {
-                    return;
-                  }
-                  setState(() => _inputChromeHeight = chromeHeight);
-                },
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildTypingIndicator(),
-                    // The input panel belongs to the account the page was
-                    // opened under. After a switch-away the timeline is
-                    // cleared (messageCacheOwner mismatch) and subscriptions
-                    // are torn down, but the panel itself would remain
-                    // usable — typing or sending then would act as the new
-                    // account. Hide it until the switch-back listener
-                    // re-activates the page.
-                    if (_subscriptionsAccount == null ||
-                        activeUserId == _subscriptionsAccount)
-                      MessageInput(
-                        key: _messageInputKey,
-                        roomId: widget.roomId,
-                        totalMembers: totalMembers,
-                        panelMode: _inputPanelMode,
-                        pickerHeight: pickerHeight,
-                        pickerFullHeight: pickerFullHeight,
-                        pickerBaseHeight: pickerBaseHeight,
-                        pickerMaxHeight: pickerMaxHeight,
-                        animatePickerHeight: animatePanelChange,
-                        onPanelModeChanged: _setInputPanelMode,
-                        onPickerHeightChanged: (height) =>
-                            _handlePickerHeightChanged(
-                              height,
-                              pickerBaseHeight,
-                            ),
-                        resolveSendPresentation: _resolveSendPresentation,
-                        onMessageQueued: _handleMessageQueued,
-                        onMessageSent: _handleMessageSent,
-                      ),
-                  ],
+                  ),
                 ),
-              ),
+                // 渐变模糊层:柔和过渡从浮动顶栏下方滚过的消息,
+                // 避免在视口上缘被硬裁切。
+                fadeBlurLayer,
+                // Floating glass header — the only persistent glass layer.
+                headerLayer,
+                pinnedStackLayer,
+                // Telegram-style floating date that tracks the day at the top edge
+                // of the viewport while scrolling, then fades out.
+                ?floatingDateLayer,
+                AnimatedPositioned(
+                  right: 16,
+                  bottom: messageBottomPadding + 12,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: LatestMessageControl(
+                    visible:
+                        !_initialMessageJumpPending &&
+                        (_showLatestMessageControl || _focusedBrowsing) &&
+                        _forwardNoticeRoom == null,
+                    showSentNotice: _showSentNotice,
+                    onPressed: _focusedBrowsing
+                        ? () => _exitFocusedBrowsing()
+                        : _scrollToLatest,
+                  ),
+                ),
+                if (_forwardNoticeRoom case final room?)
+                  ForwardSuccessNoticeOverlay(
+                    key: const ValueKey('forward-success-position'),
+                    bottomInset: messageBottomPadding,
+                    roomName: room.name,
+                    onRoomTap: _openForwardNoticeRoom,
+                  ),
+                // Plain Positioned, not AnimatedPositioned(zero): an implicit
+                // animation completes through the ticker one frame late, so the
+                // panel would trail the keyboard by a frame on every keyboard
+                // frame. The panel must track the keyboard exactly.
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottomOffset,
+                  child: _MeasuredSize(
+                    onChanged: (size) {
+                      final chromeHeight = math.max(
+                        0.0,
+                        size.height - pickerHeight,
+                      );
+                      if (_inputChromeHeight == null) {
+                        setState(() => _inputChromeHeight = chromeHeight);
+                        return;
+                      }
+                      if ((inputChromeHeight - chromeHeight).abs() < 0.5) {
+                        return;
+                      }
+                      setState(() => _inputChromeHeight = chromeHeight);
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildTypingIndicator(),
+                        // The input panel belongs to the account the page was
+                        // opened under. After a switch-away the timeline is
+                        // cleared (messageCacheOwner mismatch) and subscriptions
+                        // are torn down, but the panel itself would remain
+                        // usable — typing or sending then would act as the new
+                        // account. Hide it until the switch-back listener
+                        // re-activates the page.
+                        if (_subscriptionsAccount == null ||
+                            activeUserId == _subscriptionsAccount)
+                          MessageInput(
+                            key: _messageInputKey,
+                            roomId: widget.roomId,
+                            totalMembers: totalMembers,
+                            panelMode: _inputPanelMode,
+                            pickerHeight: pickerHeight,
+                            pickerFullHeight: pickerFullHeight,
+                            pickerBaseHeight: pickerBaseHeight,
+                            pickerMaxHeight: pickerMaxHeight,
+                            animatePickerHeight: animatePanelChange,
+                            onPanelModeChanged: _setInputPanelMode,
+                            onPickerHeightChanged: (height) =>
+                                _handlePickerHeightChanged(
+                                  height,
+                                  pickerBaseHeight,
+                                ),
+                            resolveSendPresentation: _resolveSendPresentation,
+                            onMessageQueued: _handleMessageQueued,
+                            onMessageSent: _handleMessageSent,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -2471,34 +2489,36 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       text = '${names.length} 人正在输入…';
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.5,
-              color: context.neu.textTertiary.withValues(alpha: 0.6),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: context.neu.textTertiary,
-                fontSize: 12.5,
-                fontStyle: FontStyle.italic,
+    return RepaintBoundary(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: context.neu.textTertiary.withValues(alpha: 0.6),
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: context.neu.textTertiary,
+                  fontSize: 12.5,
+                  fontStyle: FontStyle.italic,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

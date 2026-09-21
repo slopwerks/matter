@@ -7,6 +7,7 @@ import 'package:matter/pages/chat/chat_detail_page.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_insert_animation.dart';
+import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/pages/chat/pinned_messages_page.dart';
 import 'package:matter/pages/chat/room_metadata_patch.dart';
 import 'package:matter/pages/chat/room_management_page.dart';
@@ -2333,6 +2334,71 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  for (final width in [400.0, 1000.0]) {
+    testWidgets('keyboard frames preserve messages at width $width', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const roomId = '!keyboard-performance:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          roomMembersProvider(roomId).overrideWith((ref) async => const []),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(tester.view.resetViewInsets);
+      await container.read(roomMembersProvider(roomId).future);
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        _message(r'$keyboard'),
+      ];
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          'anonymous';
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: ChatDetailPage(roomId: roomId, roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(TextField).first);
+      await tester.pumpAndSettle();
+      final group = tester.widget<MessageGroupWidget>(
+        find.byType(MessageGroupWidget).first,
+      );
+      final bubble = find.byKey(const ValueKey(r'text-bubble:$keyboard'));
+      final initialY = tester.getTopLeft(bubble).dy;
+      var messageBuilds = 0;
+      final previousBuildObserver = debugOnRebuildDirtyWidget;
+      addTearDown(() => debugOnRebuildDirtyWidget = previousBuildObserver);
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        if (element.widget is MessageGroupWidget) messageBuilds++;
+        previousBuildObserver?.call(element, builtOnce);
+      };
+      for (final height in [60.0, 120.0, 180.0, 120.0, 60.0]) {
+        tester.view.viewInsets = FakeViewPadding(
+          bottom: height * tester.view.devicePixelRatio,
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(
+          tester.widget<MessageGroupWidget>(
+            find.byType(MessageGroupWidget).first,
+          ),
+          same(group),
+        );
+        expect(tester.getTopLeft(bubble).dy, closeTo(initialY - height, 1));
+      }
+      expect(messageBuilds, 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+  }
 
   testWidgets('cached messages keep their first-frame vertical position', (
     tester,

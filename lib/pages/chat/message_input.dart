@@ -1921,13 +1921,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
       ),
     );
 
-    return ClipRect(
-      child: Stack(
-        alignment: Alignment.bottomCenter,
-        children: [
-          const Positioned.fill(child: BottomFadeBlur(useShader: true)),
-          input,
-        ],
+    return RepaintBoundary(
+      child: ClipRect(
+        child: Stack(
+          alignment: Alignment.bottomCenter,
+          children: [
+            const Positioned.fill(child: BottomFadeBlur(useShader: true)),
+            input,
+          ],
+        ),
       ),
     );
   }

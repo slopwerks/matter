@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
+import 'message_timeline_inset.dart';
 
 enum SendFlightKind { text, sticker }
 
@@ -182,6 +183,15 @@ class _SendFlightTargetState extends State<SendFlightTarget> {
   Completer<void>? _targetReadyCompleter;
   String? _scheduledFlightId;
 
+  double? _timelineBottomInset;
+  double get _bottomInset => _timelineBottomInset ?? widget.bottomInset;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _timelineBottomInset = MessageTimelineInset.maybeOf(context);
+  }
+
   String get _flightId => widget.flightId ?? sendFlightId(widget.messageId);
 
   @override
@@ -317,13 +327,13 @@ class _SendFlightTargetState extends State<SendFlightTarget> {
 
     final lockedEnd = lockedTargetRect();
     final end = lockedEnd ?? inOverlay(spec.sourceRect);
-    final initialBottomInset = widget.bottomInset;
+    final initialBottomInset = _bottomInset;
 
     Rect? resolveEnd() {
       if (!widget.lockEndAtLatest) return targetRect();
       if (lockedEnd == null) return null;
       // Follow composer reflow without chasing a row moved by newer messages.
-      return lockedEnd.translate(0, initialBottomInset - widget.bottomInset);
+      return lockedEnd.translate(0, initialBottomInset - _bottomInset);
     }
 
     final overlayCompleter = Completer<void>();

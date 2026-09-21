@@ -31,6 +31,7 @@ import 'location_message_bubble.dart';
 import 'message_insert_animation.dart';
 import 'message_reader_page.dart';
 import 'message_text.dart';
+import 'message_timeline_inset.dart';
 import 'poll_message_bubble.dart';
 import 'video_message_bubble.dart';
 import 'send_flight.dart';
@@ -610,9 +611,13 @@ class MessageGroupWidget extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: SizedBox.square(
         dimension: 12,
-        child: CircularProgressIndicator(
-          strokeWidth: 1.6,
-          color: colors.textTertiary.withValues(alpha: 0.72),
+        // Isolate the indefinite animation: its per-frame repaint would
+        // otherwise re-rasterize the whole message group every frame.
+        child: RepaintBoundary(
+          child: CircularProgressIndicator(
+            strokeWidth: 1.6,
+            color: colors.textTertiary.withValues(alpha: 0.72),
+          ),
         ),
       ),
     );
@@ -758,7 +763,7 @@ class MessageGroupWidget extends ConsumerWidget {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
     final maxBubbleWidth = math.min(
-      MediaQuery.of(context).size.width * 0.68,
+      MediaQuery.sizeOf(context).width * 0.68,
       520.0,
     );
     final textStyle = textTheme.bodyLarge!.copyWith(
@@ -1062,7 +1067,7 @@ class MessageGroupWidget extends ConsumerWidget {
       child: Center(
         child: Container(
           constraints: BoxConstraints(
-            maxWidth: math.min(MediaQuery.of(context).size.width * 0.82, 640.0),
+            maxWidth: math.min(MediaQuery.sizeOf(context).width * 0.82, 640.0),
             minHeight: 24,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -2392,15 +2397,21 @@ class _StickyGroupAvatar extends SingleChildRenderObjectWidget {
     required this.swipeOffset,
     required this.onLongPress,
   }) : super(
-         child: GestureDetector(
-           key: const ValueKey('message-sender-avatar'),
-           behavior: HitTestBehavior.opaque,
-           onLongPress: onLongPress,
-           child: AppAvatar(
-             fallback: fallback,
-             size: avatarSize,
-             radius: NeuRadius.content,
-             url: avatarUrl,
+         // The render object repaints on every scroll frame to follow the
+         // group; without its own boundary that repaint re-rasterizes the
+         // whole message group (images, shadows, blur backdrops) each frame.
+         child: RepaintBoundary(
+           key: const ValueKey('sticky-group-avatar-layer'),
+           child: GestureDetector(
+             key: const ValueKey('message-sender-avatar'),
+             behavior: HitTestBehavior.opaque,
+             onLongPress: onLongPress,
+             child: AppAvatar(
+               fallback: fallback,
+               size: avatarSize,
+               radius: NeuRadius.content,
+               url: avatarUrl,
+             ),
            ),
          ),
        );
@@ -2411,7 +2422,7 @@ class _StickyGroupAvatar extends SingleChildRenderObjectWidget {
       scrollController: scrollController,
       scrollViewportKey: scrollViewportKey,
       avatarSize: avatarSize,
-      bottomInset: bottomInset,
+      bottomInset: MessageTimelineInset.maybeOf(context) ?? bottomInset,
       swipeOffset: swipeOffset,
     );
   }
@@ -2425,7 +2436,7 @@ class _StickyGroupAvatar extends SingleChildRenderObjectWidget {
       ..scrollController = scrollController
       ..scrollViewportKey = scrollViewportKey
       ..avatarSize = avatarSize
-      ..bottomInset = bottomInset
+      ..bottomInset = MessageTimelineInset.maybeOf(context) ?? bottomInset
       ..swipeOffset = swipeOffset;
   }
 }

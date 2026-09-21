@@ -43,12 +43,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     final initialState = tester.state(find.byType(ChatPage));
+    final initialPager = tester.widget<PageView>(find.byType(PageView));
     final controller = tester
         .widget<PageView>(find.byType(PageView))
         .controller!;
     controller.jumpToPage(2);
     await tester.pumpAndSettle();
     expect(initialState.mounted, isTrue);
+    expect(tester.widget<PageView>(find.byType(PageView)), same(initialPager));
     expect(
       TickerMode.valuesOf(
         tester.element(find.byType(ChatPage, skipOffstage: false)),
