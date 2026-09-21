@@ -4590,15 +4590,16 @@ pub async fn register_complete_uiaa(
 
 /// Acquire device hostname, to be appended to device name when logging in.
 /// Falls back to "Matter" on error.
+/// Separate function for easier mocking in tests.
 #[frb]
 pub fn get_initial_device_name() -> String {
-    return match whoami::hostname() {
+    match whoami::hostname() {
         Ok(hostname) => {
-            format!("Matter @ {}", hostname)
+            return format!("Matter @ {}", hostname)
         },
         Err(e) => {
             app_log("warning", "auth", format!("Unable to acquire hostname: {}", e));
-            "Matter".to_string()
+            return "Matter".to_string()
         },
     };
 }

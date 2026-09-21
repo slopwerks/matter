@@ -40,9 +40,6 @@ class _FakeRustApi implements RustLibApi {
   }
 
   @override
-  Future<String> crateApiMatrixGetInitialDeviceName() async => "Test Device";
-
-  @override
   Future<rust.StoredSession?> crateApiMatrixGetSession() async =>
       currentSession;
 
@@ -155,6 +152,7 @@ void main() {
     },
   );
 
+  // TODO: Figure out both tests
   group('device name is appended with hostname if possible and falls back gracefully', () {
     test('device name is appended with hostname', () {
 
