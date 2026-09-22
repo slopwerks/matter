@@ -150,7 +150,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    // 标准预测性返回构建器沿用 Zoom 过渡:转场期间两个路由都在树中。
+    // 标准预测性返回构建器沿用平台过渡:转场期间两个路由都在树中。
     expect(find.text('Rooms'), findsOneWidget);
     expect(find.text('Chat'), findsOneWidget);
     await tester.pumpAndSettle();

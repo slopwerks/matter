@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -150,6 +151,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   final _scrollController = ScrollController();
   final _scrollViewportKey = GlobalKey();
   final _messageInputKey = GlobalKey<MessageInputState>();
+  // Keep identical glass filters separate from the two different edge filters:
+  // Impeller can reuse the glass filter result while the fades share only their
+  // backdrop input. One key for all four prevents that filter-result reuse.
+  final _glassBackdropKey = BackdropKey();
+  final _fadeBackdropKey = BackdropKey();
   final Map<String, GlobalKey> _messageAnchorKeys = {};
   final Map<String, GlobalKey> _stableMessageAnchorKeys = {};
   late final MutableState<String?> _currentRoomIdNotifier;
@@ -2015,6 +2021,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         _baseInputChromeHeight + MediaQuery.paddingOf(context).bottom;
     final pinnedStackHeight =
         kPinnedMessageRowHeight * _pinnedStackVisibleCount;
+    final glassBackdropKey = ui.ImageFilter.isShaderFilterSupported
+        ? _glassBackdropKey
+        : null;
+    final fadeBackdropKey = ui.ImageFilter.isShaderFilterSupported
+        ? _fadeBackdropKey
+        : null;
     // Live unread state (override-aware, matching the room list), not the
     // push-time snapshot: the snapshot would stay stale (e.g. "3 条未读消息")
     // after the auto-read fired or the user marked the room read/unread.
@@ -2031,7 +2043,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       top: 0,
       right: 0,
       height: headerInset,
-      child: const TopFadeBlur(useShader: true),
+      child: TopFadeBlur(useShader: true, backdropGroupKey: fadeBackdropKey),
     );
     final headerLayer = Positioned(
       left: 0,
@@ -2042,7 +2054,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           if (_measuredHeaderHeight == size.height) return;
           setState(() => _measuredHeaderHeight = size.height);
         },
-        child: _buildTopBar(headerSubtitle),
+        child: _buildTopBar(headerSubtitle, glassBackdropKey),
       ),
     );
     final pinnedStackLayer = Positioned(
@@ -2296,6 +2308,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                             pickerBaseHeight: pickerBaseHeight,
                             pickerMaxHeight: pickerMaxHeight,
                             animatePickerHeight: animatePanelChange,
+                            glassBackdropGroupKey: glassBackdropKey,
+                            fadeBackdropGroupKey: fadeBackdropKey,
                             onPanelModeChanged: _setInputPanelMode,
                             onPickerHeightChanged: (height) =>
                                 _handlePickerHeightChanged(
@@ -2355,7 +2369,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   /// Floating glass top bar: back/avatar/title plus the room actions. The
   /// only persistent glass layer on this page (see GlassPanel discipline).
-  Widget _buildTopBar(String subtitle) {
+  Widget _buildTopBar(String subtitle, BackdropKey? backdropGroupKey) {
     final colors = context.neu;
     return SafeArea(
       bottom: false,
@@ -2363,6 +2377,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         padding: const EdgeInsets.fromLTRB(12, _headerTopGap, 12, 0),
         child: GlassPanel(
           radius: NeuRadius.surface,
+          backdropGroupKey: backdropGroupKey,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: LayoutBuilder(
             builder: (context, constraints) {

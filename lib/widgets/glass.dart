@@ -2,7 +2,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:inspire_blur/inspire_blur.dart';
+import 'progressive_blur.dart';
 
 import '../theme/neu_colors.dart';
 
@@ -20,6 +20,7 @@ class GlassPanel extends StatelessWidget {
     this.opacity = 1,
     this.width,
     this.height,
+    this.backdropGroupKey,
     required this.child,
   });
 
@@ -33,6 +34,9 @@ class GlassPanel extends StatelessWidget {
   final double opacity;
   final double? width;
   final double? height;
+
+  /// Shares the captured backdrop with other non-overlapping glass panels.
+  final BackdropKey? backdropGroupKey;
   final Widget child;
 
   @override
@@ -46,6 +50,7 @@ class GlassPanel extends StatelessWidget {
       shape: shape,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        backdropGroupKey: backdropGroupKey,
         child: Container(
           width: width,
           height: height,
@@ -66,13 +71,19 @@ class GlassPanel extends StatelessWidget {
 /// 顶部渐变模糊层:滚入屏幕上缘的内容先被底色盖住、再随渐变柔和消失,
 /// 避免在视口边缘被硬裁切。用于聊天列表头部与聊天室浮动顶栏的后方。
 class TopFadeBlur extends StatelessWidget {
-  const TopFadeBlur({super.key, this.blur = 20, this.useShader = false});
+  const TopFadeBlur({
+    super.key,
+    this.blur = 20,
+    this.useShader = false,
+    this.backdropGroupKey,
+  });
 
-  /// 连续模糊;不支持 Shader 滤镜的后端沿用条带实现。
+  /// 连续半径模糊;不支持 Shader 滤镜的后端沿用条带实现。
   final bool useShader;
 
   /// 模糊半径。配合 [GlassPanel] 的 16~22 区间取值。
   final double blur;
+  final BackdropKey? backdropGroupKey;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +92,7 @@ class TopFadeBlur extends StatelessWidget {
       edge: _Edge.top,
       blur: blur,
       useShader: useShader,
+      backdropGroupKey: backdropGroupKey,
       // 覆盖率按平方曲线渐出:靠近内容侧几乎透明,
       // 配合模糊条带实现"从无到有"的柔和过渡。
       colors: [
@@ -103,6 +115,7 @@ class BottomFadeBlur extends StatelessWidget {
     this.blur = 12,
     this.fadeStart = 32,
     this.useShader = false,
+    this.backdropGroupKey,
   });
 
   /// 模糊半径。底部浮层比顶部条带矮,取值偏小。
@@ -111,8 +124,9 @@ class BottomFadeBlur extends StatelessWidget {
   /// 从上缘算起不施加模糊的距离(逻辑像素),让出内容阅读区。
   final double fadeStart;
 
-  /// 连续模糊;不支持 Shader 滤镜的后端沿用条带实现。
+  /// 连续半径模糊;不支持 Shader 滤镜的后端沿用条带实现。
   final bool useShader;
+  final BackdropKey? backdropGroupKey;
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +140,7 @@ class BottomFadeBlur extends StatelessWidget {
           blur: blur,
           inactiveFraction: fadeStop,
           useShader: useShader,
+          backdropGroupKey: backdropGroupKey,
           colors: [
             Colors.transparent,
             Colors.transparent,
@@ -141,16 +156,16 @@ class BottomFadeBlur extends StatelessWidget {
 
 enum _Edge { top, bottom }
 
-/// 渐进式边缘模糊:多层模糊半径递减的 [BackdropFilter] 条带叠加底色渐变,
+/// 渐进式边缘模糊:降采样渐变半径 shader (不支持时使用条带)叠加底色渐变,
 /// 越靠近边缘模糊越强,靠近内容侧衰减为零,静止时内容不被模糊。
 ///
 /// 不用 ShaderMask + BackdropFilter 的组合:该组合在 Android (Impeller)
 /// 上模糊层完全不生效(flutter/flutter#164079),条带叠加则各端一致。
 ///
 /// TODO(neu): 发行目标只有 Android arm64,Impeller 默认开启且清单未关闭,
-/// 因此所有调用点实际都走 [useShader] 的 shader 路径,这条 16 层条带兜底
-/// 在已支持的平台上不可达,只是为 web/CanvasKit 等非 Impeller 后端保留的
-/// 降级。等非 Impeller 后端有了明确的边缘渐隐方案(或确认不再支持这些
+/// 所有调用点默认选择 [useShader] 的降采样渐变半径 shader 路径;16 层条带
+/// 用于 shader 加载期间及 web/CanvasKit 等非 Impeller 后端的降级。
+/// 等非 Impeller 后端有了明确的边缘渐隐方案(或确认不再支持这些
 /// 平台)后再删,届时 `useShader`、`_strips`、`_strip` 与 `dart:math` 的
 /// `pow` 依赖可一并移除。
 class _ProgressiveEdgeBlur extends StatelessWidget {
@@ -161,6 +176,7 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
     required this.stops,
     this.inactiveFraction = 0,
     this.useShader = false,
+    this.backdropGroupKey,
   });
 
   static const _strips = 16;
@@ -177,6 +193,7 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
   /// 从内容侧算起不施加模糊的比例。
   final double inactiveFraction;
   final bool useShader;
+  final BackdropKey? backdropGroupKey;
 
   @override
   Widget build(BuildContext context) {
@@ -189,23 +206,19 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
             return Stack(
               fit: StackFit.expand,
               children: [
-                if (useShader && ImageFilter.isShaderFilterSupported)
-                  Inspire.backdropBlur(
-                    config: edge == _Edge.top
-                        ? InspireBlurConfig.topToBottom(
-                            // 依赖按纹理像素采样,原生 blur 的 sigma 是逻辑像素。
-                            sigma:
-                                blur * MediaQuery.devicePixelRatioOf(context),
-                            fadeCurve: Curves.easeInCubic,
-                          )
-                        : InspireBlurConfig.bottomToTop(
-                            sigma:
-                                blur * MediaQuery.devicePixelRatioOf(context),
-                            // 阅读区(内容侧 inactiveFraction)不施加模糊。
-                            extent: 1 - inactiveFraction,
-                            fadeCurve: Curves.easeInCubic,
-                          ),
-                    clipBehavior: Clip.hardEdge,
+                if (useShader)
+                  ProgressiveBlur(
+                    sigma: blur,
+                    bottom: edge == _Edge.bottom,
+                    inactiveFraction: inactiveFraction,
+                    backdropGroupKey: backdropGroupKey,
+                    fallback: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        for (var i = 0; i < _strips; i++)
+                          _strip(i, stripHeight),
+                      ],
+                    ),
                   )
                 else
                   for (var i = 0; i < _strips; i++) _strip(i, stripHeight),

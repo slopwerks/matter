@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/attachment_picker.dart';
@@ -80,13 +81,32 @@ void main() {
     expect(surfaceMargin.padding, const EdgeInsets.fromLTRB(10, 4, 10, 12));
     expect(find.byType(BottomFadeBlur), findsOneWidget);
 
-    final backdropFilters = find.descendant(
-      of: find.byType(MessageInput),
-      matching: find.byType(BackdropFilter),
+    // GlassPanel plus the progressive blur's render layer. The shader path
+    // uses a composed filter instead of multiple BackdropFilter widgets.
+    expect(
+      tester.layers.whereType<BackdropFilterLayer>().length,
+      greaterThanOrEqualTo(2),
     );
-    // GlassPanel 一层 + BottomFadeBlur 的渐进模糊条带。
-    expect(backdropFilters, findsAtLeastNWidgets(3));
-    expect(tester.getBottomLeft(backdropFilters.first).dy, 800);
+    expect(tester.getBottomLeft(find.byType(BottomFadeBlur)).dy, 800);
+  });
+
+  testWidgets('input glass joins the requested backdrop group', (tester) async {
+    final backdropKey = BackdropKey();
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: _MessageInputHarness(glassBackdropGroupKey: backdropKey),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final layers = tester.layers.whereType<BackdropFilterLayer>().toList();
+    expect(
+      layers.where((layer) => layer.backdropKey == backdropKey),
+      hasLength(1),
+    );
   });
 
   testWidgets('plus toggles an inline attachment panel at picker height', (
@@ -146,10 +166,12 @@ void main() {
 class _MessageInputHarness extends StatefulWidget {
   final InputPanelMode initialPanelMode;
   final bool keepPickerWhileKeyboard;
+  final BackdropKey? glassBackdropGroupKey;
 
   const _MessageInputHarness({
     this.initialPanelMode = InputPanelMode.emoji,
     this.keepPickerWhileKeyboard = false,
+    this.glassBackdropGroupKey,
   });
 
   @override
@@ -185,6 +207,7 @@ class _MessageInputHarnessState extends State<_MessageInputHarness> {
           pickerBaseHeight: pickerHeight,
           pickerMaxHeight: 500,
           animatePickerHeight: false,
+          glassBackdropGroupKey: widget.glassBackdropGroupKey,
           onPanelModeChanged: (mode) => setState(() => _panelMode = mode),
           onPickerHeightChanged: (_) {},
           resolveSendPresentation: () => MessageSendPresentation.flight,

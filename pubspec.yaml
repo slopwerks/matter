@@ -69,7 +69,6 @@ dependencies:
   archive: ^4.0.7
   flutter_math_fork: ^0.7.4
   re_highlight: ^0.0.3
-  inspire_blur: ^0.4.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -98,6 +97,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  shaders:
+    - shaders/progressive_blur.frag
 
   # To add assets to your application, add an assets section, like this:
   assets:

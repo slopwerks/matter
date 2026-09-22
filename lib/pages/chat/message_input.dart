@@ -412,6 +412,8 @@ class MessageInput extends ConsumerStatefulWidget {
   final double pickerBaseHeight;
   final double pickerMaxHeight;
   final bool animatePickerHeight;
+  final BackdropKey? glassBackdropGroupKey;
+  final BackdropKey? fadeBackdropGroupKey;
   final ValueChanged<InputPanelMode> onPanelModeChanged;
   final ValueChanged<double> onPickerHeightChanged;
   final MessageSendPresentation Function() resolveSendPresentation;
@@ -436,6 +438,8 @@ class MessageInput extends ConsumerStatefulWidget {
     required this.pickerBaseHeight,
     required this.pickerMaxHeight,
     required this.animatePickerHeight,
+    this.glassBackdropGroupKey,
+    this.fadeBackdropGroupKey,
     required this.onPanelModeChanged,
     required this.onPickerHeightChanged,
     required this.resolveSendPresentation,
@@ -1720,6 +1724,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 key: const ValueKey('message-input-surface'),
                 radius: NeuRadius.nav,
                 blur: 18,
+                backdropGroupKey: widget.glassBackdropGroupKey,
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -1926,7 +1931,12 @@ class MessageInputState extends ConsumerState<MessageInput> {
         child: Stack(
           alignment: Alignment.bottomCenter,
           children: [
-            const Positioned.fill(child: BottomFadeBlur(useShader: true)),
+            Positioned.fill(
+              child: BottomFadeBlur(
+                useShader: true,
+                backdropGroupKey: widget.fadeBackdropGroupKey,
+              ),
+            ),
             input,
           ],
         ),

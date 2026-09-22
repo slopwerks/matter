@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/page_snapshot.dart';
 import 'neu_colors.dart';
 
 /// 新拟物主题的 ThemeData 构建（移植自原型 app.dart）。
@@ -60,8 +61,8 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
   );
 }
 
-// Retain the platform transition and predictive-back gestures while isolating
-// page painting from the transform/opacity animation above it.
+// Retain platform transitions and predictive-back gestures, but animate a
+// completed page image instead of re-running its backdrop filters every frame.
 class _NeuPredictiveBackPageTransitionsBuilder
     extends PredictiveBackPageTransitionsBuilder {
   const _NeuPredictiveBackPageTransitionsBuilder();
@@ -78,7 +79,12 @@ class _NeuPredictiveBackPageTransitionsBuilder
     context,
     animation,
     secondaryAnimation,
-    RepaintBoundary(child: child),
+    RouteSnapshot(
+      animation: animation,
+      secondaryAnimation: secondaryAnimation,
+      enabled: route.allowSnapshotting,
+      child: child,
+    ),
   );
 }
 
@@ -106,7 +112,12 @@ class NeuPageTransitionsBuilder extends PageTransitionsBuilder {
           begin: const Offset(0, .03),
           end: Offset.zero,
         ).animate(curved),
-        child: RepaintBoundary(child: child),
+        child: RouteSnapshot(
+          animation: animation,
+          secondaryAnimation: secondaryAnimation,
+          enabled: route.allowSnapshotting,
+          child: child,
+        ),
       ),
     );
   }
