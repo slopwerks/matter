@@ -22,6 +22,7 @@ import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'encryption_page.dart';
+import 'blur_settings_page.dart';
 import 'log_viewer_page.dart';
 import 'profile_edit_page.dart';
 
@@ -692,16 +693,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     _buildGroup(
                       title: '聊天性能',
                       items: [
-                        _buildChatVisualSwitch(
+                        _SettingItem(
                           icon: Icons.blur_on_rounded,
-                          title: '聊天模糊',
-                          subtitle: '启用聊天界面的玻璃模糊效果',
-                          value: ref
-                              .watch(chatVisualSettingsProvider)
-                              .chatBlurEnabled,
-                          onChanged: (value) => ref
-                              .read(chatVisualSettingsProvider.notifier)
-                              .setChatBlurEnabled(value),
+                          title: '模糊效果设置',
+                          subtitle: '配置渐进式模糊、图片背景与阴影优化',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const BlurSettingsPage(),
+                            ),
+                          ),
                         ),
                         _buildChatVisualSwitch(
                           icon: Icons.shield_moon_rounded,

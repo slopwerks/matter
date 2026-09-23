@@ -39,8 +39,8 @@ class GlassPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final blurEnabled =
-        ChatVisualSettingsScope.maybeOf(context)?.chatBlurEnabled ?? true;
+    final settings = ChatVisualSettingsScope.maybeOf(context);
+    final blurEnabled = settings?.chatBlurEnabled ?? true;
     final shape = RoundedSuperellipseBorder(
       borderRadius: BorderRadius.circular(radius),
       side: BorderSide(color: colors.glassBorder, width: 1),
@@ -49,11 +49,22 @@ class GlassPanel extends StatelessWidget {
       shape: shape,
       child: blurEnabled
           ? BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              filter: ImageFilter.blur(
+                sigmaX: _effectiveGlassSigma(context, blur),
+                sigmaY: _effectiveGlassSigma(context, blur),
+              ),
               child: _glassContent(context, shape, colors),
             )
           : _glassContent(context, shape, colors),
     );
+  }
+
+  double _effectiveGlassSigma(BuildContext context, double value) {
+    final settings = ChatVisualSettingsScope.maybeOf(context);
+    if (settings?.progressiveBlurSigmaCapEnabled ?? false) {
+      return value.clamp(0, 24).toDouble();
+    }
+    return value;
   }
 
   Widget _glassContent(
@@ -90,7 +101,8 @@ class TopFadeBlur extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    if (!(ChatVisualSettingsScope.maybeOf(context)?.chatBlurEnabled ?? true)) {
+    final settings = ChatVisualSettingsScope.maybeOf(context);
+    if (!(settings?.chatBlurEnabled ?? true)) {
       return DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -211,7 +223,8 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!(ChatVisualSettingsScope.maybeOf(context)?.chatBlurEnabled ?? true)) {
+    final settings = ChatVisualSettingsScope.maybeOf(context);
+    if (!(settings?.chatBlurEnabled ?? true)) {
       return DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -232,26 +245,32 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
             return Stack(
               fit: StackFit.expand,
               children: [
-                if (useShader && ImageFilter.isShaderFilterSupported)
+                if (useShader &&
+                    (settings?.progressiveBlurShaderEnabled ?? true) &&
+                    ImageFilter.isShaderFilterSupported)
                   Inspire.backdropBlur(
-                    config: edge == _Edge.top
-                        ? InspireBlurConfig.topToBottom(
-                            // 依赖按纹理像素采样,原生 blur 的 sigma 是逻辑像素。
-                            sigma:
-                                blur * MediaQuery.devicePixelRatioOf(context),
-                            fadeCurve: Curves.easeInCubic,
-                          )
-                        : InspireBlurConfig.bottomToTop(
-                            sigma:
-                                blur * MediaQuery.devicePixelRatioOf(context),
-                            // 阅读区(内容侧 inactiveFraction)不施加模糊。
-                            extent: 1 - inactiveFraction,
-                            fadeCurve: Curves.easeInCubic,
-                          ),
+                    config: _shaderConfig(context),
                     clipBehavior: Clip.hardEdge,
                   )
                 else
-                  for (var i = 0; i < _strips; i++) _strip(i, stripHeight),
+                  for (var i = 0;
+                      i <
+                          ((settings?.progressiveBlurReducedFallbackEnabled ??
+                                  true)
+                              ? 6
+                              : _strips);
+                      i++)
+                    _strip(
+                      context,
+                      i,
+                      stripHeight *
+                          (_strips /
+                              ((settings
+                                      ?.progressiveBlurReducedFallbackEnabled ??
+                                  true)
+                              ? 6
+                              : _strips)),
+                    ),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -270,10 +289,47 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
     );
   }
 
-  Widget _strip(int i, double stripHeight) {
+  InspireBlurConfig _shaderConfig(BuildContext context) {
+    final settings = ChatVisualSettingsScope.maybeOf(context);
+    final anisotropic =
+        settings?.progressiveBlurAnisotropicEnabled ?? false;
+    final sigma = _shaderSigma(context, blur);
+    final sigmaX = anisotropic ? _shaderSigma(context, blur * .55) : sigma;
+    final sigmaY = anisotropic ? sigma : null;
+    final extent = 1 - inactiveFraction;
+    return edge == _Edge.top
+        ? InspireBlurConfig.topToBottom(
+            sigma: anisotropic ? null : sigma,
+            sigmaX: anisotropic ? sigmaX : null,
+            sigmaY: anisotropic ? sigmaY : null,
+            fadeCurve: Curves.easeInCubic,
+          )
+        : InspireBlurConfig.bottomToTop(
+            sigma: anisotropic ? null : sigma,
+            sigmaX: anisotropic ? sigmaX : null,
+            sigmaY: anisotropic ? sigmaY : null,
+            extent: extent,
+            fadeCurve: Curves.easeInCubic,
+          );
+  }
+
+  double _shaderSigma(BuildContext context, double value) {
+    final settings = ChatVisualSettingsScope.maybeOf(context);
+    final physical = value * MediaQuery.devicePixelRatioOf(context);
+    if (settings?.progressiveBlurSigmaCapEnabled ?? true) {
+      return physical.clamp(0, 40).toDouble();
+    }
+    return physical;
+  }
+
+  Widget _strip(BuildContext context, int i, double stripHeight) {
     // 模糊半径按立方曲线从边缘侧的峰值衰减到内容侧的零:
     // 起步足够平缓,16 层使相邻层的半径差缩到感知阈值以下。
-    final sigma = blur * pow(1 - i / (_strips - 1), 3);
+    final settings = ChatVisualSettingsScope.maybeOf(context);
+    final uncappedSigma = blur * pow(1 - i / (_strips - 1), 3);
+    final sigma = (settings?.progressiveBlurSigmaCapEnabled ?? true)
+        ? uncappedSigma.clamp(0, 14).toDouble()
+        : uncappedSigma;
     if (sigma < .5) return const SizedBox.shrink();
     final offset = i * stripHeight;
     return Positioned(
