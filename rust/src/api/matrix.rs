@@ -3968,6 +3968,19 @@ pub struct VerificationDevice {
     pub is_verified: bool,
 }
 
+/// A device session straight from the homeserver, together with the activity
+/// metadata that the encryption-side device list does not carry.
+#[frb]
+#[derive(Clone, Debug)]
+pub struct AccountDevice {
+    pub device_id: String,
+    pub display_name: Option<String>,
+    pub last_seen_ip: Option<String>,
+    /// Milliseconds since the Unix epoch, absent for sessions that never reported activity.
+    pub last_seen_ts: Option<i64>,
+    pub is_current: bool,
+}
+
 #[frb]
 #[derive(Clone, Debug)]
 pub struct VerificationEmoji {
@@ -5479,6 +5492,100 @@ pub async fn list_own_devices() -> Result<Vec<VerificationDevice>, String> {
         .collect::<Vec<_>>();
     result.sort_by_key(|device| (!device.is_current, device.display_name.to_lowercase()));
     Ok(result)
+}
+
+/// List the account's device sessions. This is the homeserver's own list, so it
+/// carries last-seen metadata and reflects what the account really has logged
+/// in; unlike `list_own_devices` it needs connectivity instead of local state.
+#[frb]
+pub async fn list_account_devices() -> Result<Vec<AccountDevice>, String> {
+    let client = get_client()
+        .await
+        .ok_or_else(|| api_err("devices", "No active client".to_string()))?;
+    let (_, current_device_id) = active_session_meta(&client)?;
+    let response = client
+        .devices()
+        .await
+        .map_err(|e| api_err("devices", format!("Failed to load device sessions: {e}")))?;
+
+    let mut devices = response
+        .devices
+        .into_iter()
+        .map(|device| AccountDevice {
+            device_id: device.device_id.to_string(),
+            display_name: device.display_name,
+            last_seen_ip: device.last_seen_ip,
+            last_seen_ts: device.last_seen_ts.map(|ts| i64::from(ts.get())),
+            is_current: device.device_id.as_str() == current_device_id,
+        })
+        .collect::<Vec<_>>();
+    sort_account_devices(&mut devices);
+    Ok(devices)
+}
+
+/// Rename a device session. An empty name clears the display name.
+#[frb]
+pub async fn rename_account_device(device_id: String, display_name: String) -> Result<(), String> {
+    let client = get_client()
+        .await
+        .ok_or_else(|| api_err("devices", "No active client".to_string()))?;
+    let device_id = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
+    client
+        .rename_device(&device_id, display_name.trim())
+        .await
+        .map_err(|e| api_err("devices", format!("Failed to rename device: {e}")))?;
+    Ok(())
+}
+
+/// The current device first, then the most recently active sessions.
+fn sort_account_devices(devices: &mut [AccountDevice]) {
+    devices.sort_by(|a, b| {
+        b.is_current.cmp(&a.is_current).then(
+            b.last_seen_ts
+                .unwrap_or_default()
+                .cmp(&a.last_seen_ts.unwrap_or_default()),
+        )
+    });
+}
+
+#[cfg(test)]
+mod account_device_tests {
+    use super::{sort_account_devices, AccountDevice};
+
+    fn device(device_id: &str, is_current: bool, last_seen_ts: Option<i64>) -> AccountDevice {
+        AccountDevice {
+            device_id: device_id.to_owned(),
+            display_name: None,
+            last_seen_ip: None,
+            last_seen_ts,
+            is_current,
+        }
+    }
+
+    fn order(devices: &[AccountDevice]) -> Vec<&str> {
+        devices
+            .iter()
+            .map(|device| device.device_id.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn current_device_comes_first_then_recent_activity() {
+        let mut devices = vec![
+            device("OLD", false, Some(100)),
+            device("NEW", false, Some(300)),
+            device("CURRENT", true, Some(1)),
+        ];
+        sort_account_devices(&mut devices);
+        assert_eq!(order(&devices), ["CURRENT", "NEW", "OLD"]);
+    }
+
+    #[test]
+    fn sessions_without_activity_sort_last() {
+        let mut devices = vec![device("NEVER", false, None), device("SEEN", false, Some(5))];
+        sort_account_devices(&mut devices);
+        assert_eq!(order(&devices), ["SEEN", "NEVER"]);
+    }
 }
 
 #[frb]
