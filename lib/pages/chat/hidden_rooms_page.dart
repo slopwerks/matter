@@ -109,10 +109,10 @@ class _HiddenRoomsPageState extends ConsumerState<HiddenRoomsPage> {
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
-                      if (selected)
-                        Icon(
-                          Icons.check_circle_rounded,
-                          color: context.neu.accent,
+                      if (_selectionMode)
+                        Checkbox(
+                          value: selected,
+                          onChanged: (_) => _toggleSelection(room.id),
                         )
                       else
                         IconButton(
