@@ -4474,7 +4474,7 @@ pub async fn register_get_uiaa_session(
     let mut request = RegistrationRequest::new();
     request.username = Some(username);
     request.password = Some(password);
-    request.initial_device_display_name = Some("Matter".to_owned());
+    request.initial_device_display_name = Some(get_initial_device_name());
     request.refresh_token = true;
     request.auth = Some(AuthData::Dummy(Dummy::new()));
 
@@ -4544,7 +4544,7 @@ pub async fn register_complete_uiaa(
     let mut request = RegistrationRequest::new();
     request.username = Some(username);
     request.password = Some(password);
-    request.initial_device_display_name = Some("Matter".to_owned());
+    request.initial_device_display_name = Some(get_initial_device_name());
     request.refresh_token = true;
 
     let mut reg_token = RegistrationToken::new(registration_token);
@@ -4601,6 +4601,44 @@ pub async fn register_complete_uiaa(
     }
 }
 
+/// Device name reported to the homeserver when logging in: `Matter <platform>`.
+/// Internal helper: kept out of the bridge so it does not widen the public API.
+fn get_initial_device_name() -> String {
+    device_name_for_platform(std::env::consts::OS)
+}
+
+/// Split from the environment lookup so the mapping is covered by unit tests.
+fn device_name_for_platform(os: &str) -> String {
+    let platform = match os {
+        "android" => "Android",
+        "ios" => "iOS",
+        "linux" => "Linux",
+        "macos" => "macOS",
+        "windows" => "Windows",
+        other => other,
+    };
+    format!("Matter {platform}")
+}
+
+#[cfg(test)]
+mod device_name_tests {
+    use super::device_name_for_platform;
+
+    #[test]
+    fn names_known_platforms() {
+        assert_eq!(device_name_for_platform("android"), "Matter Android");
+        assert_eq!(device_name_for_platform("ios"), "Matter iOS");
+        assert_eq!(device_name_for_platform("linux"), "Matter Linux");
+        assert_eq!(device_name_for_platform("macos"), "Matter macOS");
+        assert_eq!(device_name_for_platform("windows"), "Matter Windows");
+    }
+
+    #[test]
+    fn passes_unknown_platforms_through() {
+        assert_eq!(device_name_for_platform("freebsd"), "Matter freebsd");
+    }
+}
+
 /// Login with username and password.
 #[frb]
 pub async fn login_with_password(username: String, password: String) -> Result<AuthResult, String> {
@@ -4621,7 +4659,7 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
         .matrix_auth()
         .login_username(&username, &password)
         .request_refresh_token()
-        .initial_device_display_name("Matter")
+        .initial_device_display_name(&get_initial_device_name())
         .await;
     match login_result {
         Ok(response) => {
