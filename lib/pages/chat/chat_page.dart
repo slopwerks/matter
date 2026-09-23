@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../providers/connection_provider.dart';
 import '../../theme/neu_colors.dart';
@@ -11,6 +12,7 @@ import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import 'create_chat_page.dart';
 import 'chat_list_item.dart';
+import 'hidden_rooms_page.dart';
 import 'search_page.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -106,7 +108,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  Widget _buildHeader(String titleText) {
+  Widget _buildHeader(String titleText, {required bool hasHiddenRooms}) {
     return SafeArea(
       bottom: false,
       child: Padding(
@@ -136,6 +138,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     : const SizedBox.shrink(),
               ),
             ),
+            if (hasHiddenRooms)
+              NeuIconButton(
+                icon: Icons.visibility_off_outlined,
+                tooltip: '隐藏的聊天',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const HiddenRoomsPage(),
+                  ),
+                ),
+              ),
             NeuIconButton(
               icon: Icons.edit_square,
               tooltip: '新聊天',
@@ -320,6 +332,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       roomsAsync = ref.watch(inboxRoomsProvider);
     }
     final connectionLabel = ref.watch(connectionLabelProvider);
+    final allRooms = ref.watch(allChatRoomsProvider).asData?.value;
+    ref.watch(hiddenRoomsProvider);
+    final hiddenRooms = ref.read(hiddenRoomsProvider.notifier);
+    final hasHiddenRooms =
+        allRooms?.any(hiddenRooms.isHidden) ?? false;
 
     final titleText =
         widget.title ??
@@ -332,7 +349,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHeader(titleText),
+            _buildHeader(titleText, hasHiddenRooms: hasHiddenRooms),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 NeuSpacing.lg,
@@ -361,7 +378,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             height: topInset + _headerHeight,
             child: const TopFadeBlur(useShader: true),
           ),
-          Positioned(top: 0, left: 0, right: 0, child: _buildHeader(titleText)),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildHeader(titleText, hasHiddenRooms: hasHiddenRooms),
+          ),
         ],
       ),
     );

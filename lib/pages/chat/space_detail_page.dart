@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
@@ -121,6 +122,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     final detailsAsync = ref.watch(spaceDetailsProvider(space.id));
     final membersAsync = ref.watch(roomMembersProvider(space.id));
     final childrenAsync = ref.watch(spaceChildrenProvider(space.id));
+    final allChildrenAsync = ref.watch(allSpaceChildrenProvider(space.id));
     final fallbackDetails = SpaceDetails(
       id: space.id,
       name: space.name,
@@ -374,6 +376,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                           ref,
                           details,
                           detailsAsync.hasValue,
+                          allChildrenAsync.asData?.value,
                         ),
                       ),
                     ],
@@ -394,6 +397,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     WidgetRef ref,
     SpaceDetails details,
     bool detailsLoaded,
+    List<ChatRoom>? allChildren,
   ) {
     showNeuSheet<void>(
       context: context,
@@ -410,6 +414,24 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                   _showEditSpaceDialog(context, ref, details);
                 },
               ),
+            NeuSheetItem(
+              icon: Icons.visibility_off_outlined,
+              label: '隐藏此空间的所有房间',
+              onTap: allChildren == null
+                  ? null
+                  : () async {
+                      Navigator.of(sheetContext).pop();
+                      final roomIds = allChildren
+                          .where((room) => room.roomType != 'space')
+                          .map((room) => room.id);
+                      await ref
+                          .read(hiddenRoomsProvider.notifier)
+                          .hideRooms(roomIds);
+                      if (context.mounted) {
+                        neuToast(context, '已隐藏此空间的所有房间');
+                      }
+                    },
+            ),
             NeuSheetItem(
               icon: Icons.exit_to_app_rounded,
               label: '退出空间',
