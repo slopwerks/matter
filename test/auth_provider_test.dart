@@ -152,17 +152,6 @@ void main() {
     },
   );
 
-  // TODO: Figure out both tests
-  group('device name is appended with hostname if possible and falls back gracefully', () {
-    test('device name is appended with hostname', () {
-
-    });
-
-    test('device name falls back to "Matter" otherwise', () {
-
-    });
-  });
-
   group('active user id persistence', () {
     test('saveActiveUserId writes the active user key', () async {
       await saveActiveUserId('@alice:example.org');

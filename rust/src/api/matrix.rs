@@ -4588,20 +4588,43 @@ pub async fn register_complete_uiaa(
     }
 }
 
-/// Acquire device hostname, to be appended to device name when logging in.
-/// Falls back to "Matter" on error.
-/// Separate function for easier mocking in tests.
-#[frb]
-pub fn get_initial_device_name() -> String {
+/// Device name reported to the homeserver when logging in: `Matter @ <hostname>`,
+/// falling back to plain `Matter` when the hostname is unavailable.
+/// Internal helper: kept out of the bridge so it does not widen the public API.
+fn get_initial_device_name() -> String {
     match whoami::hostname() {
-        Ok(hostname) => {
-            return format!("Matter @ {}", hostname)
-        },
+        Ok(hostname) => device_name_from_hostname(Some(&hostname)),
         Err(e) => {
-            app_log("warning", "auth", format!("Unable to acquire hostname: {}", e));
-            return "Matter".to_string()
-        },
-    };
+            app_log("warn", "auth", format!("Unable to acquire hostname: {e}"));
+            device_name_from_hostname(None)
+        }
+    }
+}
+
+/// Split from the hostname lookup so both branches are covered by unit tests.
+fn device_name_from_hostname(hostname: Option<&str>) -> String {
+    match hostname {
+        Some(hostname) => format!("Matter @ {hostname}"),
+        None => "Matter".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod device_name_tests {
+    use super::device_name_from_hostname;
+
+    #[test]
+    fn appends_hostname_to_device_name() {
+        assert_eq!(
+            device_name_from_hostname(Some("shiro-laptop")),
+            "Matter @ shiro-laptop"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_plain_matter_without_hostname() {
+        assert_eq!(device_name_from_hostname(None), "Matter");
+    }
 }
 
 /// Login with username and password.
