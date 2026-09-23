@@ -11,12 +11,13 @@ import '../features/markdown/markdown_source_store.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'auth_provider.dart';
 import 'connection_provider.dart';
+import 'hidden_rooms_provider.dart';
 import 'ignored_users_persistence.dart';
 import 'message_cache_persistence.dart';
 import 'message_ordering.dart';
 import 'mutable_state.dart';
 
-final chatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
+final allChatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
   if (!ref.watch(sessionReadyProvider)) return [];
   final filter = await _previewIgnoreFilter(ref);
   final rooms = await rust.getChatRooms(
@@ -24,6 +25,13 @@ final chatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
     authoritative: filter.authoritative,
   );
   return rooms;
+});
+
+final chatRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
+  final rooms = await ref.watch(allChatRoomsProvider.future);
+  ref.watch(hiddenRoomsProvider);
+  final hidden = ref.read(hiddenRoomsProvider.notifier);
+  return rooms.where((room) => !hidden.isHidden(room)).toList();
 });
 
 final spacesProvider = FutureProvider<List<rust.Space>>((ref) async {
@@ -49,7 +57,8 @@ final inboxRoomsProvider = Provider<AsyncValue<List<rust.ChatRoom>>>((ref) {
       );
 });
 
-final ungroupedRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
+final allUngroupedRoomsProvider =
+    FutureProvider<List<rust.ChatRoom>>((ref) async {
   if (!ref.watch(sessionReadyProvider)) return [];
   final filter = await _previewIgnoreFilter(ref);
   return rust.getUngroupedRooms(
@@ -58,7 +67,14 @@ final ungroupedRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
   );
 });
 
-final spaceChildrenProvider =
+final ungroupedRoomsProvider = FutureProvider<List<rust.ChatRoom>>((ref) async {
+  final rooms = await ref.watch(allUngroupedRoomsProvider.future);
+  ref.watch(hiddenRoomsProvider);
+  final hidden = ref.read(hiddenRoomsProvider.notifier);
+  return rooms.where((room) => !hidden.isHidden(room)).toList();
+});
+
+final allSpaceChildrenProvider =
     FutureProvider.family<List<rust.ChatRoom>, String>((ref, spaceId) async {
       if (!ref.watch(sessionReadyProvider)) return [];
       final filter = await _previewIgnoreFilter(ref);
@@ -67,6 +83,14 @@ final spaceChildrenProvider =
         ignoredUserIds: filter.ids?.toList(),
         authoritative: filter.authoritative,
       );
+    });
+
+final spaceChildrenProvider =
+    FutureProvider.family<List<rust.ChatRoom>, String>((ref, spaceId) async {
+      final rooms = await ref.watch(allSpaceChildrenProvider(spaceId).future);
+      ref.watch(hiddenRoomsProvider);
+      final hidden = ref.read(hiddenRoomsProvider.notifier);
+      return rooms.where((room) => !hidden.isHidden(room)).toList();
     });
 
 final contactsProvider = FutureProvider<List<rust.Contact>>((ref) async {
@@ -846,10 +870,14 @@ class _ProviderAccess {
 }
 
 void _invalidateSessionCollections(_ProviderAccess ref) {
+  ref.invalidate(allChatRoomsProvider);
   ref.invalidate(chatRoomsProvider);
   ref.invalidate(spacesProvider);
+  ref.invalidate(allUngroupedRoomsProvider);
   ref.invalidate(ungroupedRoomsProvider);
+  ref.invalidate(allSpaceChildrenProvider);
   ref.invalidate(contactsProvider);
+  ref.invalidate(hiddenRoomsProvider);
   final ignoredNamespace = ref.read(activeUserIdProvider) ?? '';
   if (!_deferIgnoredListRevalidation(ignoredNamespace)) {
     ref.invalidate(ignoredUserIdsProvider);
@@ -2135,14 +2163,18 @@ final searchRoomsProvider = FutureProvider.family<List<rust.ChatRoom>, String>((
   ref,
   query,
 ) async {
-  if (!ref.watch(sessionReadyProvider)) return [];
   if (query.trim().isEmpty) return [];
-  final filter = await _previewIgnoreFilter(ref);
-  return rust.searchRooms(
-    query: query,
-    ignoredUserIds: filter.ids?.toList(),
-    authoritative: filter.authoritative,
-  );
+  final rooms = await ref.watch(allChatRoomsProvider.future);
+  ref.watch(hiddenRoomsProvider);
+  final hidden = ref.read(hiddenRoomsProvider.notifier);
+  final normalizedQuery = query.toLowerCase();
+  return rooms
+      .where(
+        (room) =>
+            !hidden.isHidden(room) &&
+            room.name.toLowerCase().contains(normalizedQuery),
+      )
+      .toList();
 });
 
 class MessageSearchRequest {
@@ -2282,9 +2314,14 @@ final syncStreamProvider =
         bool refreshMembersAndKnocks = false,
       }) {
         if (disposed || !ref.mounted) return;
-        if (refreshChatRooms) ref.invalidate(chatRoomsProvider);
+        if (refreshChatRooms) {
+          ref.invalidate(allChatRoomsProvider);
+          ref.invalidate(chatRoomsProvider);
+        }
         ref.invalidate(spacesProvider);
+        ref.invalidate(allUngroupedRoomsProvider);
         ref.invalidate(ungroupedRoomsProvider);
+        ref.invalidate(allSpaceChildrenProvider);
         ref.invalidate(spaceChildrenProvider);
         ref.invalidate(searchRoomsProvider);
         if (refreshMembersAndKnocks) {
