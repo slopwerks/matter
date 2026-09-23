@@ -41,8 +41,8 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     final nextPixelSize = _avatarPixelSize(context, widget.size);
     if (_targetPixelSize != nextPixelSize || _resolvedUrl == null) {
       _targetPixelSize = nextPixelSize;
-      _resolvedUrl = null;
-      _maybeResolve();
+      _resolvedUrl = _cachedOrDirectUrl();
+      if (_resolvedUrl == null) _maybeResolve();
     }
   }
 
@@ -53,9 +53,16 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     if (widget.url != oldWidget.url ||
         widget.size != oldWidget.size ||
         _resolvedUrl == null) {
-      _resolvedUrl = null;
-      _maybeResolve();
+      _resolvedUrl = _cachedOrDirectUrl();
+      if (_resolvedUrl == null) _maybeResolve();
     }
+  }
+
+  String? _cachedOrDirectUrl() {
+    final url = widget.url;
+    if (url == null || url.isEmpty) return null;
+    if (!url.startsWith('mxc://')) return url;
+    return cachedResolvedMxcUrl(ref, url, width: 96, height: 96);
   }
 
   Future<void> _maybeResolve() async {

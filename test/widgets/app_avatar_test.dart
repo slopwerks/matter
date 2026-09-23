@@ -1,6 +1,8 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/widgets/app_avatar.dart';
 
 import '../helpers/neu_test_theme.dart';
@@ -81,6 +83,33 @@ void main() {
 
       final size = tester.getSize(find.byType(AppAvatar));
       expect(size, const Size(64, 64));
+    });
+
+    testWidgets('uses a resolved MXC URL from memory on the first frame', (
+      tester,
+    ) async {
+      const mxcUrl = 'mxc://example.org/avatar';
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(mxcUrlCacheProvider.notifier).value = const {
+        'anonymous::mxc://example.org/avatar|96x96':
+            'https://example.org/avatar.png',
+      };
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: const Scaffold(
+              body: AppAvatar(url: mxcUrl, fallback: 'Alice'),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CachedNetworkImage), findsOneWidget);
+      expect(find.text('A'), findsNothing);
     });
   });
 }
