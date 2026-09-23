@@ -20,7 +20,6 @@ import '../../widgets/glass.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
-import 'devices_page.dart';
 import 'encryption_page.dart';
 import 'log_viewer_page.dart';
 import 'profile_edit_page.dart';
@@ -708,25 +707,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           subtitle: '自动管理，无手动配置项',
                         ),
                         _SettingItem(
-                          icon: Icons.security_rounded,
-                          title: '加密',
-                          subtitle: '设备验证与加密恢复',
+                          icon: Icons.devices_rounded,
+                          title: '设备与加密',
+                          subtitle: '登录设备、验证与加密恢复',
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder: (_) => const EncryptionPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _SettingItem(
-                          icon: Icons.devices_rounded,
-                          title: '设备与会话',
-                          subtitle: '登录设备详情与命名',
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const DevicesPage(),
                               ),
                             );
                           },

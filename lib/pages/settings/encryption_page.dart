@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
@@ -22,6 +23,8 @@ class EncryptionPage extends StatefulWidget {
 class _EncryptionPageState extends State<EncryptionPage> {
   final _recoveryController = TextEditingController();
   List<rust.VerificationDevice> _devices = [];
+  List<rust.AccountDevice>? _accountDevices;
+  String? _accountDevicesError;
   rust.EncryptionRecoveryInfo? _recoveryInfo;
   bool _loading = true;
   bool _busy = false;
@@ -32,6 +35,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   void initState() {
     super.initState();
     _loadAll();
+    _loadAccountDevices();
   }
 
   @override
@@ -65,6 +69,22 @@ class _EncryptionPageState extends State<EncryptionPage> {
       if (!mounted) return;
       setState(() => _loading = false);
       _showError(error);
+    }
+  }
+
+  Future<bool> _loadAccountDevices() async {
+    try {
+      final devices = await rust.listAccountDevices();
+      if (!mounted) return false;
+      setState(() {
+        _accountDevices = devices;
+        _accountDevicesError = null;
+      });
+      return true;
+    } catch (error) {
+      if (!mounted) return false;
+      setState(() => _accountDevicesError = error.toString());
+      return false;
     }
   }
 
@@ -125,7 +145,10 @@ class _EncryptionPageState extends State<EncryptionPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : RefreshIndicator(
-                    onRefresh: _loadAll,
+                    onRefresh: () async {
+                      await _loadAll();
+                      await _loadAccountDevices();
+                    },
                     // 悬浮标题栏让滚动视图从屏幕顶部开始,下拉指示器按标题栏
                     // 高度下移,否则会被标题栏挡住。
                     edgeOffset: viewPaddingTop + kToolbarHeight,
@@ -182,7 +205,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
                       const SizedBox(width: NeuSpacing.sm),
                       Expanded(
                         child: Text(
-                          '加密与验证',
+                          '设备与加密',
                           style: Theme.of(context).textTheme.titleLarge,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -238,113 +261,239 @@ class _EncryptionPageState extends State<EncryptionPage> {
   Widget _buildDevices() {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
+    final accountDevices = _accountDevices;
+    final verificationById = {
+      for (final device in _devices) device.deviceId: device,
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _SectionTitle('我的设备'),
-        if (_devices.isEmpty)
+        if (_accountDevicesError != null) ...[
+          NeuSurface(
+            color: colors.card,
+            radius: NeuRadius.surface,
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              accountDevices == null
+                  ? '登录设备信息暂不可用，显示已同步的验证设备'
+                  : '登录设备信息刷新失败，显示上次结果',
+              style: textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(height: NeuSpacing.md),
+        ],
+        if ((accountDevices?.isEmpty ?? _devices.isEmpty))
           NeuSurface(
             color: colors.card,
             radius: NeuRadius.surface,
             padding: const EdgeInsets.all(20),
-            child: Text('暂时没有读取到设备，请先完成一次同步', style: textTheme.bodyMedium),
+            child: Text(
+              accountDevices == null ? '暂时没有读取到设备，请先完成一次同步' : '暂无登录设备',
+              style: textTheme.bodyMedium,
+            ),
           )
         else
           Column(
             children: [
-              for (var index = 0; index < _devices.length; index++) ...[
-                if (index > 0) const SizedBox(height: NeuSpacing.md),
-                _buildDevice(_devices[index]),
-              ],
+              if (accountDevices != null)
+                for (var index = 0; index < accountDevices.length; index++) ...[
+                  if (index > 0) const SizedBox(height: NeuSpacing.md),
+                  _buildDevice(
+                    accountDevices[index],
+                    verificationById[accountDevices[index].deviceId],
+                  ),
+                ]
+              else
+                for (var index = 0; index < _devices.length; index++) ...[
+                  if (index > 0) const SizedBox(height: NeuSpacing.md),
+                  _buildDevice(null, _devices[index]),
+                ],
             ],
           ),
       ],
     );
   }
 
-  Widget _buildDevice(rust.VerificationDevice device) {
+  Widget _buildDevice(
+    rust.AccountDevice? account,
+    rust.VerificationDevice? device,
+  ) {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
-    return NeuSurface(
-      color: colors.card,
-      radius: NeuRadius.content,
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Icon(
-            device.isCurrent
-                ? Icons.phone_android_rounded
-                : Icons.devices_rounded,
-            size: 22,
-            color: device.isVerified ? colors.success : colors.textSecondary,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        device.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.titleSmall,
-                      ),
-                    ),
-                    if (device.isCurrent) ...[
-                      const SizedBox(width: 8),
-                      NeuSurface(
-                        depth: NeuDepth.flat,
-                        color: colors.accentSoft,
-                        radius: NeuRadius.tag,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
+    final deviceId = account?.deviceId ?? device!.deviceId;
+    final accountName = account?.displayName?.trim();
+    final name = accountName != null && accountName.isNotEmpty
+        ? accountName
+        : device?.displayName.trim().isNotEmpty == true
+        ? device!.displayName
+        : '未命名设备';
+    final isCurrent = account?.isCurrent ?? device?.isCurrent ?? false;
+    final isVerified = device?.isVerified ?? false;
+    return GestureDetector(
+      onTap: account == null ? null : () => _openDeviceDetails(account),
+      child: NeuSurface(
+        color: colors.card,
+        radius: NeuRadius.content,
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(
+              isCurrent ? Icons.phone_android_rounded : Icons.devices_rounded,
+              size: 22,
+              color: isVerified ? colors.success : colors.textSecondary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
                         child: Text(
-                          '本机',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.accent,
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.titleSmall,
+                        ),
+                      ),
+                      if (isCurrent) ...[
+                        const SizedBox(width: 8),
+                        NeuSurface(
+                          depth: NeuDepth.flat,
+                          color: colors.accentSoft,
+                          radius: NeuRadius.tag,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          child: Text(
+                            '本机',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colors.accent,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    deviceId,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (device != null)
+              if (isCurrent || isVerified)
+                Icon(
+                  isVerified ? Icons.verified_rounded : Icons.circle_outlined,
+                  size: 20,
+                  color: isVerified ? colors.success : colors.textTertiary,
+                )
+              else
+                NeuButton(
+                  accent: true,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  intensity: .7,
+                  onPressed: _busy ? null : () => _startVerification(deviceId),
+                  child: const Text('验证'),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  device.deviceId,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodySmall,
-                ),
-              ],
+            if (account != null) ...[
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: colors.textTertiary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatLastSeen(rust.AccountDevice device) {
+    final timestamp = device.lastSeenTs;
+    if (timestamp == null) return '无活动记录';
+    final time = DateTime.fromMillisecondsSinceEpoch(
+      timestamp.toInt(),
+    ).toLocal();
+    return DateFormat('yyyy-MM-dd HH:mm').format(time);
+  }
+
+  Future<void> _openDeviceDetails(rust.AccountDevice device) async {
+    await showNeuSheet<void>(
+      context: context,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            child: Text(
+              device.displayName?.trim().isNotEmpty == true
+                  ? device.displayName!
+                  : '未命名设备',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          const SizedBox(width: 8),
-          if (device.isCurrent || device.isVerified)
-            Icon(
-              device.isVerified
-                  ? Icons.verified_rounded
-                  : Icons.circle_outlined,
-              size: 20,
-              color: device.isVerified ? colors.success : colors.textTertiary,
-            )
-          else
-            NeuButton(
-              accent: true,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              intensity: .7,
-              onPressed: _busy
-                  ? null
-                  : () => _startVerification(device.deviceId),
-              child: const Text('验证'),
+          _DeviceDetailRow(label: 'Device ID', value: device.deviceId),
+          _DeviceDetailRow(label: 'IP 地址', value: device.lastSeenIp ?? '未知'),
+          _DeviceDetailRow(label: '上次活动', value: _formatLastSeen(device)),
+          if (device.isCurrent)
+            const _DeviceDetailRow(label: '状态', value: '当前设备'),
+          if (device.isCurrent) ...[
+            const SizedBox(height: 4),
+            NeuSheetItem(
+              icon: Icons.edit_rounded,
+              label: '重命名',
+              onTap: () async {
+                Navigator.of(context).pop();
+                await _renameDevice(device);
+              },
             ),
+          ],
+          const SizedBox(height: 8),
         ],
       ),
     );
+  }
+
+  Future<void> _renameDevice(rust.AccountDevice device) async {
+    if (_busy || !device.isCurrent) return;
+    final name = await showNeuPrompt(
+      context,
+      title: '重命名设备',
+      message: '该名称会显示在账号的设备列表中。',
+      hint: '设备名称',
+      initial: device.displayName ?? '',
+      confirmLabel: '保存',
+    );
+    if (name == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await rust.renameAccountDevice(
+        deviceId: device.deviceId,
+        displayName: name,
+      );
+      final refreshed = await _loadAccountDevices();
+      if (mounted) {
+        neuToast(context, refreshed ? '设备名称已更新' : '设备名称已更新，但列表刷新失败');
+      }
+    } catch (error) {
+      if (mounted) neuToast(context, '重命名失败：$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _startVerification(String deviceId) async {
@@ -804,6 +953,35 @@ class _SectionTitle extends StatelessWidget {
           fontWeight: FontWeight.w700,
           letterSpacing: 1.2,
         ),
+      ),
+    );
+  }
+}
+
+class _DeviceDetailRow extends StatelessWidget {
+  const _DeviceDetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 84,
+            child: Text(
+              label,
+              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+            ),
+          ),
+          Expanded(child: Text(value, style: textTheme.bodyMedium)),
+        ],
       ),
     );
   }

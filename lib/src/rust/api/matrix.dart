@@ -209,7 +209,7 @@ Future<List<VerificationDevice>> listOwnDevices() =>
 Future<List<AccountDevice>> listAccountDevices() =>
     RustLib.instance.api.crateApiMatrixListAccountDevices();
 
-/// Rename a device session. An empty name clears the display name.
+/// Rename the current device session. An empty name clears the display name.
 Future<void> renameAccountDevice({
   required String deviceId,
   required String displayName,
