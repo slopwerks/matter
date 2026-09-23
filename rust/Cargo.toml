@@ -45,7 +45,6 @@ log = "0.4"
 dirs = "6"
 futures-util = "0.3"
 mime = "0.3"
-whoami = "2.1.3"
 
 [dev-dependencies]
 tantivy = "0.26.1"

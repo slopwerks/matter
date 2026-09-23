@@ -4588,42 +4588,41 @@ pub async fn register_complete_uiaa(
     }
 }
 
-/// Device name reported to the homeserver when logging in: `Matter @ <hostname>`,
-/// falling back to plain `Matter` when the hostname is unavailable.
+/// Device name reported to the homeserver when logging in: `Matter <platform>`.
 /// Internal helper: kept out of the bridge so it does not widen the public API.
 fn get_initial_device_name() -> String {
-    match whoami::hostname() {
-        Ok(hostname) => device_name_from_hostname(Some(&hostname)),
-        Err(e) => {
-            app_log("warn", "auth", format!("Unable to acquire hostname: {e}"));
-            device_name_from_hostname(None)
-        }
-    }
+    device_name_for_platform(std::env::consts::OS)
 }
 
-/// Split from the hostname lookup so both branches are covered by unit tests.
-fn device_name_from_hostname(hostname: Option<&str>) -> String {
-    match hostname {
-        Some(hostname) => format!("Matter @ {hostname}"),
-        None => "Matter".to_owned(),
-    }
+/// Split from the environment lookup so the mapping is covered by unit tests.
+fn device_name_for_platform(os: &str) -> String {
+    let platform = match os {
+        "android" => "Android",
+        "ios" => "iOS",
+        "linux" => "Linux",
+        "macos" => "macOS",
+        "windows" => "Windows",
+        other => other,
+    };
+    format!("Matter {platform}")
 }
 
 #[cfg(test)]
 mod device_name_tests {
-    use super::device_name_from_hostname;
+    use super::device_name_for_platform;
 
     #[test]
-    fn appends_hostname_to_device_name() {
-        assert_eq!(
-            device_name_from_hostname(Some("shiro-laptop")),
-            "Matter @ shiro-laptop"
-        );
+    fn names_known_platforms() {
+        assert_eq!(device_name_for_platform("android"), "Matter Android");
+        assert_eq!(device_name_for_platform("ios"), "Matter iOS");
+        assert_eq!(device_name_for_platform("linux"), "Matter Linux");
+        assert_eq!(device_name_for_platform("macos"), "Matter macOS");
+        assert_eq!(device_name_for_platform("windows"), "Matter Windows");
     }
 
     #[test]
-    fn falls_back_to_plain_matter_without_hostname() {
-        assert_eq!(device_name_from_hostname(None), "Matter");
+    fn passes_unknown_platforms_through() {
+        assert_eq!(device_name_for_platform("freebsd"), "Matter freebsd");
     }
 }
 
