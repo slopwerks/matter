@@ -691,7 +691,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                     const SizedBox(height: NeuSpacing.xl),
                     _buildGroup(
-                      title: '聊天性能',
+                      title: '性能設置',
                       items: [
                         _SettingItem(
                           icon: Icons.blur_on_rounded,
@@ -717,7 +717,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         _buildChatVisualSwitch(
                           icon: Icons.rounded_corner,
                           title: '超椭圆边框',
-                          subtitle: '使用超椭圆消息气泡边框',
+                          subtitle: '全域使用超椭圆边框',
                           value: ref
                               .watch(chatVisualSettingsProvider)
                               .superellipseBorderEnabled,

@@ -14,6 +14,7 @@ import 'package:latlong2/latlong.dart' as ll;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../providers/chat_visual_settings_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
@@ -603,9 +604,17 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         child: Material(
           type: MaterialType.transparency,
           clipBehavior: Clip.antiAlias,
-          shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(NeuRadius.surface),
-          ),
+          shape:
+              (ChatVisualSettingsScope.maybeOf(
+                    context,
+                  )?.superellipseBorderEnabled ??
+                  true)
+              ? RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(NeuRadius.surface),
+                )
+              : RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(NeuRadius.surface),
+                ),
           child: Column(
             children: [
               GestureDetector(

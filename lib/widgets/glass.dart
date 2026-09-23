@@ -41,10 +41,17 @@ class GlassPanel extends StatelessWidget {
     final colors = context.neu;
     final settings = ChatVisualSettingsScope.maybeOf(context);
     final blurEnabled = settings?.chatBlurEnabled ?? true;
-    final shape = RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.circular(radius),
-      side: BorderSide(color: colors.glassBorder, width: 1),
-    );
+    final shape =
+        (ChatVisualSettingsScope.maybeOf(context)?.superellipseBorderEnabled ??
+            true)
+        ? RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(radius),
+            side: BorderSide(color: colors.glassBorder, width: 1),
+          )
+        : RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radius),
+            side: BorderSide(color: colors.glassBorder, width: 1),
+          );
     return ClipPath.shape(
       shape: shape,
       child: blurEnabled
@@ -253,23 +260,24 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
                     clipBehavior: Clip.hardEdge,
                   )
                 else
-                  for (var i = 0;
-                      i <
-                          ((settings?.progressiveBlurReducedFallbackEnabled ??
-                                  true)
-                              ? 6
-                              : _strips);
-                      i++)
+                  for (
+                    var i = 0;
+                    i <
+                        ((settings?.progressiveBlurReducedFallbackEnabled ??
+                                true)
+                            ? 6
+                            : _strips);
+                    i++
+                  )
                     _strip(
                       context,
                       i,
                       stripHeight *
                           (_strips /
-                              ((settings
-                                      ?.progressiveBlurReducedFallbackEnabled ??
-                                  true)
-                              ? 6
-                              : _strips)),
+                              ((settings?.progressiveBlurReducedFallbackEnabled ??
+                                      true)
+                                  ? 6
+                                  : _strips)),
                     ),
                 DecoratedBox(
                   decoration: BoxDecoration(
@@ -291,8 +299,7 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
 
   InspireBlurConfig _shaderConfig(BuildContext context) {
     final settings = ChatVisualSettingsScope.maybeOf(context);
-    final anisotropic =
-        settings?.progressiveBlurAnisotropicEnabled ?? false;
+    final anisotropic = settings?.progressiveBlurAnisotropicEnabled ?? false;
     final sigma = _shaderSigma(context, blur);
     final sigmaX = anisotropic ? _shaderSigma(context, blur * .55) : sigma;
     final sigmaY = anisotropic ? sigma : null;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../providers/chat_visual_settings_provider.dart';
 import '../theme/neu_colors.dart';
 
 /// 为自绘控件提供统一的键盘操作、焦点轮廓和读屏状态。
@@ -81,10 +82,25 @@ class _NeuActionState extends State<NeuAction> {
             constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             foregroundDecoration: enabled && _focusVisible
                 ? ShapeDecoration(
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(widget.radius),
-                      side: BorderSide(color: context.neu.accent, width: 2),
-                    ),
+                    shape:
+                        (ChatVisualSettingsScope.maybeOf(
+                              context,
+                            )?.superellipseBorderEnabled ??
+                            true)
+                        ? RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(widget.radius),
+                            side: BorderSide(
+                              color: context.neu.accent,
+                              width: 2,
+                            ),
+                          )
+                        : RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(widget.radius),
+                            side: BorderSide(
+                              color: context.neu.accent,
+                              width: 2,
+                            ),
+                          ),
                   )
                 : null,
             child: widget.child,
