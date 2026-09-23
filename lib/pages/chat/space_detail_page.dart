@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -417,20 +419,23 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
             NeuSheetItem(
               icon: Icons.visibility_off_outlined,
               label: '隐藏此空间的所有房间',
-              onTap: allChildren == null
-                  ? null
-                  : () async {
-                      Navigator.of(sheetContext).pop();
-                      final roomIds = allChildren
-                          .where((room) => room.roomType != 'space')
-                          .map((room) => room.id);
-                      await ref
-                          .read(hiddenRoomsProvider.notifier)
-                          .hideRooms(roomIds);
-                      if (context.mounted) {
-                        neuToast(context, '已隐藏此空间的所有房间');
-                      }
-                    },
+              onTap: () {
+                if (allChildren == null) return;
+                Navigator.of(sheetContext).pop();
+                final roomIds = allChildren
+                    .where((room) => room.roomType != 'space')
+                    .map((room) => room.id);
+                unawaited(
+                  ref
+                      .read(hiddenRoomsProvider.notifier)
+                      .hideRooms(roomIds)
+                      .then((_) {
+                        if (context.mounted) {
+                          neuToast(context, '已隐藏此空间的所有房间');
+                        }
+                      }),
+                );
+              },
             ),
             NeuSheetItem(
               icon: Icons.exit_to_app_rounded,
