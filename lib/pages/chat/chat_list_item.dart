@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'action_failure_message.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
@@ -383,6 +384,18 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
                         onStart: () =>
                             setSheetState(() => savingAction = 'unread'),
                       ),
+              ),
+              const NeuSheetDivider(),
+              NeuSheetItem(
+                icon: Icons.visibility_off_outlined,
+                label: '隐藏聊天',
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await ref
+                      .read(hiddenRoomsProvider.notifier)
+                      .hideRooms([room.id]);
+                  if (context.mounted) neuToast(context, '已隐藏聊天');
+                },
               ),
             ],
           );
