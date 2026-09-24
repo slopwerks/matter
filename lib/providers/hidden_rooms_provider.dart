@@ -8,23 +8,29 @@ import '../src/rust/api/matrix.dart' as rust;
 @immutable
 class HiddenRoomsState {
   final Set<String> manuallyHiddenRoomIds;
+  final Set<String> shownAutomaticRoomIds;
 
   const HiddenRoomsState({
     this.manuallyHiddenRoomIds = const <String>{},
+    this.shownAutomaticRoomIds = const <String>{},
   });
 
   HiddenRoomsState copyWith({
     Set<String>? manuallyHiddenRoomIds,
+    Set<String>? shownAutomaticRoomIds,
   }) {
     return HiddenRoomsState(
       manuallyHiddenRoomIds:
           manuallyHiddenRoomIds ?? this.manuallyHiddenRoomIds,
+      shownAutomaticRoomIds:
+          shownAutomaticRoomIds ?? this.shownAutomaticRoomIds,
     );
   }
 }
 
 class HiddenRoomsNotifier extends Notifier<HiddenRoomsState> {
   static const _manualPrefix = 'hidden_room_ids_';
+  static const _shownAutomaticPrefix = 'shown_automatic_room_ids_';
 
   String? _userId;
 
@@ -46,6 +52,9 @@ class HiddenRoomsNotifier extends Notifier<HiddenRoomsState> {
         manuallyHiddenRoomIds:
             (prefs.getStringList('$_manualPrefix$userId') ?? const [])
                 .toSet(),
+        shownAutomaticRoomIds:
+            (prefs.getStringList('$_shownAutomaticPrefix$userId') ?? const [])
+                .toSet(),
       );
     } catch (error) {
       debugPrint('restore hidden rooms failed: $error');
@@ -60,6 +69,10 @@ class HiddenRoomsNotifier extends Notifier<HiddenRoomsState> {
       await prefs.setStringList(
         '$_manualPrefix$userId',
         next.manuallyHiddenRoomIds.toList()..sort(),
+      );
+      await prefs.setStringList(
+        '$_shownAutomaticPrefix$userId',
+        next.shownAutomaticRoomIds.toList()..sort(),
       );
     } catch (error) {
       debugPrint('persist hidden rooms failed: $error');
@@ -82,13 +95,28 @@ class HiddenRoomsNotifier extends Notifier<HiddenRoomsState> {
     final next = state.copyWith(
       manuallyHiddenRoomIds:
           state.manuallyHiddenRoomIds.difference(ids),
+      shownAutomaticRoomIds: {
+        ...state.shownAutomaticRoomIds,
+        ...ids,
+      },
     );
     state = next;
     await _persist(next);
   }
 
+  Future<void> hideAutomaticRoom(String roomId) async {
+    await hideRooms([roomId]);
+  }
+
+  bool isAutomaticallyHidden(rust.ChatRoom room) {
+    final normalized = room.name.trim().toLowerCase();
+    return normalized.contains('stickers') &&
+        !state.shownAutomaticRoomIds.contains(room.id);
+  }
+
   bool isHidden(rust.ChatRoom room) =>
-      state.manuallyHiddenRoomIds.contains(room.id);
+      state.manuallyHiddenRoomIds.contains(room.id) ||
+      isAutomaticallyHidden(room);
 }
 
 final hiddenRoomsProvider =
