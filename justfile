@@ -17,6 +17,7 @@ shell: build-image
         --volume matter-pub-cache:/root/.pub-cache \
         --volume matter-cargo-cache:/opt/cargo \
         --volume matter-rustup-cache:/opt/rustup \
+        --volume /dev/bus/usb:/dev/bus/usb \
         --workdir /workspace \
         {{image}}
 
@@ -65,7 +66,7 @@ profile: build-image
         --volume matter-pub-cache:/root/.pub-cache \
         --volume matter-cargo-cache:/opt/cargo \
         --volume matter-rustup-cache:/opt/rustup \
-        --volume /dev/bus/usb/:/dev/bus/usb \
+        --volume /dev/bus/usb:/dev/bus/usb \
         --workdir /workspace \
         {{image}} \
         -lc 'flutter pub get && flutter_rust_bridge_codegen generate && flutter run --profile'
