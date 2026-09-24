@@ -451,7 +451,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
           _DeviceDetailRow(label: '上次活动', value: _formatLastSeen(device)),
           if (device.isCurrent)
             const _DeviceDetailRow(label: '状态', value: '当前设备'),
-          if (device.isCurrent) ...[
+          ...[
             const SizedBox(height: 4),
             NeuSheetItem(
               icon: Icons.edit_rounded,
@@ -461,6 +461,14 @@ class _EncryptionPageState extends State<EncryptionPage> {
                 await _renameDevice(device);
               },
             ),
+            if (!device.isCurrent) NeuSheetItem(
+              icon: Icons.shield_outlined,
+              label: '验证',
+              onTap: _busy ? () => {} : () async {
+                Navigator.of(context).pop();
+                await _startVerification(device.deviceId);
+              }
+            )
           ],
           const SizedBox(height: 8),
         ],
@@ -469,7 +477,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Future<void> _renameDevice(rust.AccountDevice device) async {
-    if (_busy || !device.isCurrent) return;
+    if (_busy) return;
     final name = await showNeuPrompt(
       context,
       title: '重命名设备',
