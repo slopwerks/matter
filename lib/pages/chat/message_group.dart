@@ -71,22 +71,30 @@ Decoration neuBubbleDecoration(
           )
         : null,
     shadows: settings.bubbleShadowsEnabled
-        ? neuBubbleShadows(colors, offset: offset)
+        ? neuBubbleShadows(
+            colors,
+            offset: offset,
+            reduced: settings.shadowBlurOptimizationEnabled,
+          )
         : const [],
   );
 }
 
 /// 与 [NeuDecoration] raised/intensity .7 观感一致的柔和小投影
 /// (BoxShadow 形式,供 BoxDecoration 的媒体气泡复用)。
-List<BoxShadow> neuBubbleShadows(NeuColors colors, {double offset = 2.66}) => [
+List<BoxShadow> neuBubbleShadows(
+  NeuColors colors, {
+  double offset = 2.66,
+  bool reduced = false,
+}) => [
   BoxShadow(
     color: colors.shadowDark.withValues(alpha: .72),
-    blurRadius: offset * 2.3,
+    blurRadius: offset * (reduced ? 1.45 : 2.3),
     offset: Offset(offset, offset),
   ),
   BoxShadow(
     color: colors.shadowLight.withValues(alpha: colors.highlightAlpha),
-    blurRadius: offset * 1.5,
+    blurRadius: offset * (reduced ? 1.0 : 1.5),
     offset: Offset(-offset, -offset),
   ),
 ];
@@ -103,7 +111,13 @@ List<BoxShadow> enabledNeuBubbleShadows(
   double offset = 2.66,
 }) {
   return ChatVisualSettingsScope.of(context).bubbleShadowsEnabled
-      ? neuBubbleShadows(colors, offset: offset)
+      ? neuBubbleShadows(
+          colors,
+          offset: offset,
+          reduced: ChatVisualSettingsScope.of(
+            context,
+          ).shadowBlurOptimizationEnabled,
+        )
       : const [];
 }
 

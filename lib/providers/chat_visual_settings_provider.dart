@@ -5,6 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 @immutable
 class ChatVisualSettings {
   final bool chatBlurEnabled;
+  final bool progressiveBlurShaderEnabled;
+  final bool progressiveBlurSigmaCapEnabled;
+  final bool progressiveBlurAnisotropicEnabled;
+  final bool progressiveBlurReducedFallbackEnabled;
+  final bool imageBlurOptimizationEnabled;
+  final bool shadowBlurOptimizationEnabled;
   final bool bubbleShadowsEnabled;
   final bool superellipseBorderEnabled;
   final bool bubbleGradientEnabled;
@@ -13,6 +19,12 @@ class ChatVisualSettings {
 
   const ChatVisualSettings({
     this.chatBlurEnabled = true,
+    this.progressiveBlurShaderEnabled = true,
+    this.progressiveBlurSigmaCapEnabled = true,
+    this.progressiveBlurAnisotropicEnabled = false,
+    this.progressiveBlurReducedFallbackEnabled = true,
+    this.imageBlurOptimizationEnabled = true,
+    this.shadowBlurOptimizationEnabled = false,
     this.bubbleShadowsEnabled = true,
     this.superellipseBorderEnabled = true,
     this.bubbleGradientEnabled = true,
@@ -22,6 +34,12 @@ class ChatVisualSettings {
 
   ChatVisualSettings copyWith({
     bool? chatBlurEnabled,
+    bool? progressiveBlurShaderEnabled,
+    bool? progressiveBlurSigmaCapEnabled,
+    bool? progressiveBlurAnisotropicEnabled,
+    bool? progressiveBlurReducedFallbackEnabled,
+    bool? imageBlurOptimizationEnabled,
+    bool? shadowBlurOptimizationEnabled,
     bool? bubbleShadowsEnabled,
     bool? superellipseBorderEnabled,
     bool? bubbleGradientEnabled,
@@ -30,6 +48,20 @@ class ChatVisualSettings {
   }) {
     return ChatVisualSettings(
       chatBlurEnabled: chatBlurEnabled ?? this.chatBlurEnabled,
+      progressiveBlurShaderEnabled:
+          progressiveBlurShaderEnabled ?? this.progressiveBlurShaderEnabled,
+      progressiveBlurSigmaCapEnabled:
+          progressiveBlurSigmaCapEnabled ?? this.progressiveBlurSigmaCapEnabled,
+      progressiveBlurAnisotropicEnabled:
+          progressiveBlurAnisotropicEnabled ??
+          this.progressiveBlurAnisotropicEnabled,
+      progressiveBlurReducedFallbackEnabled:
+          progressiveBlurReducedFallbackEnabled ??
+          this.progressiveBlurReducedFallbackEnabled,
+      imageBlurOptimizationEnabled:
+          imageBlurOptimizationEnabled ?? this.imageBlurOptimizationEnabled,
+      shadowBlurOptimizationEnabled:
+          shadowBlurOptimizationEnabled ?? this.shadowBlurOptimizationEnabled,
       bubbleShadowsEnabled: bubbleShadowsEnabled ?? this.bubbleShadowsEnabled,
       superellipseBorderEnabled:
           superellipseBorderEnabled ?? this.superellipseBorderEnabled,
@@ -46,6 +78,13 @@ class ChatVisualSettings {
 class ChatVisualSettingsNotifier extends Notifier<ChatVisualSettings> {
   static const _keys = {
     'chatBlurEnabled': 'chat_visual_chat_blur',
+    'progressiveBlurShaderEnabled': 'chat_visual_progressive_shader',
+    'progressiveBlurSigmaCapEnabled': 'chat_visual_progressive_sigma_cap',
+    'progressiveBlurAnisotropicEnabled': 'chat_visual_progressive_anisotropic',
+    'progressiveBlurReducedFallbackEnabled':
+        'chat_visual_progressive_reduced_fallback',
+    'imageBlurOptimizationEnabled': 'chat_visual_image_blur_optimization',
+    'shadowBlurOptimizationEnabled': 'chat_visual_shadow_blur_optimization',
     'bubbleShadowsEnabled': 'chat_visual_bubble_shadows',
     'superellipseBorderEnabled': 'chat_visual_superellipse_border',
     'bubbleGradientEnabled': 'chat_visual_bubble_gradient',
@@ -64,6 +103,18 @@ class ChatVisualSettingsNotifier extends Notifier<ChatVisualSettings> {
     final current = state;
     state = current.copyWith(
       chatBlurEnabled: prefs.getBool(_keys['chatBlurEnabled']!) ?? true,
+      progressiveBlurShaderEnabled:
+          prefs.getBool(_keys['progressiveBlurShaderEnabled']!) ?? true,
+      progressiveBlurSigmaCapEnabled:
+          prefs.getBool(_keys['progressiveBlurSigmaCapEnabled']!) ?? true,
+      progressiveBlurAnisotropicEnabled:
+          prefs.getBool(_keys['progressiveBlurAnisotropicEnabled']!) ?? false,
+      progressiveBlurReducedFallbackEnabled:
+          prefs.getBool(_keys['progressiveBlurReducedFallbackEnabled']!) ?? true,
+      imageBlurOptimizationEnabled:
+          prefs.getBool(_keys['imageBlurOptimizationEnabled']!) ?? true,
+      shadowBlurOptimizationEnabled:
+          prefs.getBool(_keys['shadowBlurOptimizationEnabled']!) ?? false,
       bubbleShadowsEnabled:
           prefs.getBool(_keys['bubbleShadowsEnabled']!) ?? true,
       superellipseBorderEnabled:
@@ -79,6 +130,30 @@ class ChatVisualSettingsNotifier extends Notifier<ChatVisualSettings> {
 
   Future<void> setChatBlurEnabled(bool value) =>
       _set((settings) => settings.copyWith(chatBlurEnabled: value));
+
+  Future<void> setProgressiveBlurShaderEnabled(bool value) => _set(
+    (settings) => settings.copyWith(progressiveBlurShaderEnabled: value),
+  );
+
+  Future<void> setProgressiveBlurSigmaCapEnabled(bool value) => _set(
+    (settings) => settings.copyWith(progressiveBlurSigmaCapEnabled: value),
+  );
+
+  Future<void> setProgressiveBlurAnisotropicEnabled(bool value) => _set(
+    (settings) => settings.copyWith(progressiveBlurAnisotropicEnabled: value),
+  );
+
+  Future<void> setProgressiveBlurReducedFallbackEnabled(bool value) => _set(
+    (settings) => settings.copyWith(progressiveBlurReducedFallbackEnabled: value),
+  );
+
+  Future<void> setImageBlurOptimizationEnabled(bool value) => _set(
+    (settings) => settings.copyWith(imageBlurOptimizationEnabled: value),
+  );
+
+  Future<void> setShadowBlurOptimizationEnabled(bool value) => _set(
+    (settings) => settings.copyWith(shadowBlurOptimizationEnabled: value),
+  );
 
   Future<void> setBubbleShadowsEnabled(bool value) =>
       _set((settings) => settings.copyWith(bubbleShadowsEnabled: value));
@@ -105,6 +180,16 @@ class ChatVisualSettingsNotifier extends Notifier<ChatVisualSettings> {
     for (final entry in _keys.entries) {
       final value = switch (entry.key) {
         'chatBlurEnabled' => next.chatBlurEnabled,
+        'progressiveBlurShaderEnabled' => next.progressiveBlurShaderEnabled,
+        'progressiveBlurSigmaCapEnabled' =>
+          next.progressiveBlurSigmaCapEnabled,
+        'progressiveBlurAnisotropicEnabled' =>
+          next.progressiveBlurAnisotropicEnabled,
+        'progressiveBlurReducedFallbackEnabled' =>
+          next.progressiveBlurReducedFallbackEnabled,
+        'imageBlurOptimizationEnabled' => next.imageBlurOptimizationEnabled,
+        'shadowBlurOptimizationEnabled' =>
+          next.shadowBlurOptimizationEnabled,
         'bubbleShadowsEnabled' => next.bubbleShadowsEnabled,
         'superellipseBorderEnabled' => next.superellipseBorderEnabled,
         'bubbleGradientEnabled' => next.bubbleGradientEnabled,
