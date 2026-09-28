@@ -9,16 +9,12 @@ import '../src/rust/api/matrix.dart' as rust;
 class HiddenRoomsState {
   final Set<String> manuallyHiddenRoomIds;
 
-  const HiddenRoomsState({
-    this.manuallyHiddenRoomIds = const <String>{},
-  });
+  const HiddenRoomsState({this.manuallyHiddenRoomIds = const <String>{}});
 
-  HiddenRoomsState copyWith({
-    Set<String>? manuallyHiddenRoomIds,
-  }) {
+  HiddenRoomsState copyWith({Set<String>? manuallyHiddenRoomIds}) {
     return HiddenRoomsState(
       manuallyHiddenRoomIds:
-      manuallyHiddenRoomIds ?? this.manuallyHiddenRoomIds,
+          manuallyHiddenRoomIds ?? this.manuallyHiddenRoomIds,
     );
   }
 }
@@ -44,8 +40,7 @@ class HiddenRoomsNotifier extends Notifier<HiddenRoomsState> {
       if (!ref.mounted || _userId != userId) return;
       state = HiddenRoomsState(
         manuallyHiddenRoomIds:
-        (prefs.getStringList('$_manualPrefix$userId') ?? const [])
-        .toSet(),
+            (prefs.getStringList('$_manualPrefix$userId') ?? const []).toSet(),
       );
     } catch (error) {
       debugPrint('restore hidden rooms failed: $error');
@@ -68,10 +63,7 @@ class HiddenRoomsNotifier extends Notifier<HiddenRoomsState> {
 
   Future<void> hideRooms(Iterable<String> roomIds) async {
     final next = state.copyWith(
-      manuallyHiddenRoomIds: {
-        ...state.manuallyHiddenRoomIds,
-        ...roomIds,
-      },
+      manuallyHiddenRoomIds: {...state.manuallyHiddenRoomIds, ...roomIds},
     );
     state = next;
     await _persist(next);
@@ -80,18 +72,17 @@ class HiddenRoomsNotifier extends Notifier<HiddenRoomsState> {
   Future<void> unhideRooms(Iterable<String> roomIds) async {
     final ids = roomIds.toSet();
     final next = state.copyWith(
-      manuallyHiddenRoomIds:
-      state.manuallyHiddenRoomIds.difference(ids),
+      manuallyHiddenRoomIds: state.manuallyHiddenRoomIds.difference(ids),
     );
     state = next;
     await _persist(next);
   }
 
   bool isHidden(rust.ChatRoom room) =>
-  state.manuallyHiddenRoomIds.contains(room.id);
+      state.manuallyHiddenRoomIds.contains(room.id);
 }
 
 final hiddenRoomsProvider =
-NotifierProvider<HiddenRoomsNotifier, HiddenRoomsState>(
-  HiddenRoomsNotifier.new,
-);
+    NotifierProvider<HiddenRoomsNotifier, HiddenRoomsState>(
+      HiddenRoomsNotifier.new,
+    );

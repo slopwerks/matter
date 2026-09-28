@@ -572,7 +572,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               }
                               ref.invalidate(spaceDetailsProvider(details.id));
                               ref.invalidate(spacesProvider);
-                              ref.invalidate(chatRoomsProvider);
+                              ref.invalidate(allChatRoomsProvider);
                               if (!context.mounted) return;
                               // `isCurrent` guard: the dialog may have been dismissed
                               // during its exit animation — popping then would pop the
@@ -603,7 +603,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // so the UI reflects the server's partial result.
                               ref.invalidate(spaceDetailsProvider(details.id));
                               ref.invalidate(spacesProvider);
-                              ref.invalidate(chatRoomsProvider);
+                              ref.invalidate(allChatRoomsProvider);
                               if (dialogContext.mounted) {
                                 // Render the failure inside the dialog: a page-level
                                 // toast would sit beneath the modal barrier and stay
@@ -693,7 +693,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                       horizontal: 18,
                       vertical: 10,
                     ),
-                    onPressed: () => ref.invalidate(ungroupedRoomsProvider),
+                    onPressed: () => ref.invalidate(allUngroupedRoomsProvider),
                     child: const Text('重试'),
                   ),
                 ],
@@ -767,9 +767,9 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // own `ref` would throw if the sheet was
                               // dismissed while the write was in flight.
                               container.invalidate(
-                                spaceChildrenProvider(widget.space.id),
+                                allSpaceChildrenProvider(widget.space.id),
                               );
-                              container.invalidate(ungroupedRoomsProvider);
+                              container.invalidate(allUngroupedRoomsProvider);
                               if (!pageContext.mounted) return;
                               if (sheetContext.mounted &&
                                   ModalRoute.of(sheetContext)?.isCurrent ==
@@ -905,9 +905,9 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // and the page popped while the write was in flight).
                               if (!context.mounted) return;
                               ref.invalidate(
-                                spaceChildrenProvider(widget.space.id),
+                                allSpaceChildrenProvider(widget.space.id),
                               );
-                              ref.invalidate(ungroupedRoomsProvider);
+                              ref.invalidate(allUngroupedRoomsProvider);
                               // `isCurrent` guard: the dialog may have been dismissed
                               // during its exit animation — popping then would pop the
                               // PAGE below it.
@@ -1065,8 +1065,8 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // and the page popped while the write was in flight).
                               if (!context.mounted) return;
                               ref.invalidate(spacesProvider);
-                              ref.invalidate(chatRoomsProvider);
-                              ref.invalidate(ungroupedRoomsProvider);
+                              ref.invalidate(allChatRoomsProvider);
+                              ref.invalidate(allUngroupedRoomsProvider);
                               // `isCurrent` guard: the dialog may have been dismissed
                               // during its exit animation — popping then would pop the
                               // PAGE below it.

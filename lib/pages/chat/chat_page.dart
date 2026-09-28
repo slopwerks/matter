@@ -143,9 +143,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 icon: Icons.visibility_off_outlined,
                 tooltip: '隐藏的聊天',
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const HiddenRoomsPage(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const HiddenRoomsPage()),
                 ),
               ),
             NeuIconButton(
@@ -335,8 +333,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final allRooms = ref.watch(allChatRoomsProvider).asData?.value;
     ref.watch(hiddenRoomsProvider);
     final hiddenRooms = ref.read(hiddenRoomsProvider.notifier);
-    final hasHiddenRooms =
-        allRooms?.any(hiddenRooms.isHidden) ?? false;
+    final hasHiddenRooms = allRooms?.any(hiddenRooms.isHidden) ?? false;
 
     final titleText =
         widget.title ??

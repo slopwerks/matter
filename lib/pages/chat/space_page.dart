@@ -326,7 +326,9 @@ class SpacePage extends ConsumerWidget {
                                         return;
                                       }
                                       container.invalidate(spacesProvider);
-                                      container.invalidate(chatRoomsProvider);
+                                      container.invalidate(
+                                        allChatRoomsProvider,
+                                      );
                                       if (!context.mounted) return;
                                       // `isCurrent` guards against popping
                                       // the page when the dialog was
@@ -513,9 +515,11 @@ class SpacePage extends ConsumerWidget {
                                       // would throw) once the dialog was
                                       // dismissed mid-request.
                                       container.invalidate(spacesProvider);
-                                      container.invalidate(chatRoomsProvider);
                                       container.invalidate(
-                                        ungroupedRoomsProvider,
+                                        allChatRoomsProvider,
+                                      );
+                                      container.invalidate(
+                                        allUngroupedRoomsProvider,
                                       );
                                       if (!context.mounted) return;
                                       // `isCurrent` guards against popping

@@ -893,9 +893,9 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
 
   void _invalidateRoom() {
     if (!mounted) return;
-    ref.invalidate(chatRoomsProvider);
-    ref.invalidate(ungroupedRoomsProvider);
-    ref.invalidate(spaceChildrenProvider);
+    ref.invalidate(allChatRoomsProvider);
+    ref.invalidate(allUngroupedRoomsProvider);
+    ref.invalidate(allSpaceChildrenProvider);
     ref.invalidate(searchRoomsProvider);
     ref.invalidate(roomMembersProvider(widget.roomId));
     ref.invalidate(roomKnockRequestsProvider(widget.roomId));

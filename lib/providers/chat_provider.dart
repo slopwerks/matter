@@ -57,8 +57,9 @@ final inboxRoomsProvider = Provider<AsyncValue<List<rust.ChatRoom>>>((ref) {
       );
 });
 
-final allUngroupedRoomsProvider =
-    FutureProvider<List<rust.ChatRoom>>((ref) async {
+final allUngroupedRoomsProvider = FutureProvider<List<rust.ChatRoom>>((
+  ref,
+) async {
   if (!ref.watch(sessionReadyProvider)) return [];
   final filter = await _previewIgnoreFilter(ref);
   return rust.getUngroupedRooms(
@@ -722,7 +723,7 @@ Future<void> _convergeTimedOutUnreadSuppressions(
   if (due.isEmpty) return;
   List<rust.ChatRoom> rooms;
   try {
-    rooms = await read(chatRoomsProvider.future) as List<rust.ChatRoom>;
+    rooms = await read(allChatRoomsProvider.future) as List<rust.ChatRoom>;
   } catch (_) {
     return; // Load failure: re-check on the next refresh.
   }
@@ -871,10 +872,8 @@ class _ProviderAccess {
 
 void _invalidateSessionCollections(_ProviderAccess ref) {
   ref.invalidate(allChatRoomsProvider);
-  ref.invalidate(chatRoomsProvider);
   ref.invalidate(spacesProvider);
   ref.invalidate(allUngroupedRoomsProvider);
-  ref.invalidate(ungroupedRoomsProvider);
   ref.invalidate(allSpaceChildrenProvider);
   ref.invalidate(contactsProvider);
   ref.invalidate(hiddenRoomsProvider);
@@ -2251,7 +2250,7 @@ Future<void> sendReply(
   );
   if (!ref.mounted || ref.read(activeUserIdProvider) != accountUserId) return;
   await refreshMessagesRef(ref, roomId);
-  ref.invalidate(chatRoomsProvider);
+  ref.invalidate(allChatRoomsProvider);
 }
 
 /// Redact (delete) a message
@@ -2263,7 +2262,7 @@ Future<void> redactMessage(
 }) async {
   await rust.redactMessage(roomId: roomId, eventId: eventId, reason: reason);
   await refreshMessages(ref, roomId);
-  ref.invalidate(chatRoomsProvider);
+  ref.invalidate(allChatRoomsProvider);
 }
 
 /// The sync event stream subscription. Stays active for the app's lifetime.
@@ -2316,13 +2315,10 @@ final syncStreamProvider =
         if (disposed || !ref.mounted) return;
         if (refreshChatRooms) {
           ref.invalidate(allChatRoomsProvider);
-          ref.invalidate(chatRoomsProvider);
         }
         ref.invalidate(spacesProvider);
         ref.invalidate(allUngroupedRoomsProvider);
-        ref.invalidate(ungroupedRoomsProvider);
         ref.invalidate(allSpaceChildrenProvider);
-        ref.invalidate(spaceChildrenProvider);
         ref.invalidate(searchRoomsProvider);
         if (refreshMembersAndKnocks) {
           // Member/knock lists are driven by member-state events (see the
@@ -2469,7 +2465,7 @@ final syncStreamProvider =
         }
         List<rust.ChatRoom> rooms;
         try {
-          rooms = await ref.read(chatRoomsProvider.future);
+          rooms = await ref.read(allChatRoomsProvider.future);
         } catch (_) {
           // The room list already surfaces the load error.
           return;
@@ -2582,7 +2578,7 @@ final syncStreamProvider =
               pendingRefreshChatRooms = false;
               var refreshedRoomList = false;
               try {
-                sharedRoomsFetch ??= ref.refresh(chatRoomsProvider.future);
+                sharedRoomsFetch ??= ref.refresh(allChatRoomsProvider.future);
                 final rooms = await sharedRoomsFetch!;
                 refreshedRoomList = true;
                 for (final room in rooms) {

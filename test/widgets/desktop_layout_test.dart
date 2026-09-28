@@ -131,7 +131,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => const []),
+        allChatRoomsProvider.overrideWith((ref) async => const []),
         spacesProvider.overrideWith(
           (ref) async => const [
             rust.Space(id: rootId, name: 'Root space', avatarUrl: null),
@@ -175,7 +175,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => [room]),
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -206,7 +206,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => [room]),
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -234,7 +234,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => [room]),
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -298,7 +298,7 @@ void main() {
     ];
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => rooms),
+        allChatRoomsProvider.overrideWith((ref) async => rooms),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -318,7 +318,7 @@ void main() {
         avatarEventId: r'$avatar-y',
       ),
     ];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
 
@@ -359,7 +359,7 @@ void main() {
     ];
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => rooms),
+        allChatRoomsProvider.overrideWith((ref) async => rooms),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -399,7 +399,7 @@ void main() {
         nameEventId: r'$name-a0',
       ),
     ];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(
@@ -422,7 +422,7 @@ void main() {
         nameEventId: r'$name-b',
       ),
     ];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(
@@ -444,7 +444,7 @@ void main() {
         nameEventId: r'$name-a2',
       ),
     ];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(
@@ -461,7 +461,7 @@ void main() {
         nameEventId: r'$name-b-remote',
       ),
     ];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(
@@ -492,7 +492,7 @@ void main() {
       ];
       final container = ProviderContainer(
         overrides: [
-          chatRoomsProvider.overrideWith((ref) async => rooms),
+          allChatRoomsProvider.overrideWith((ref) async => rooms),
           spacesProvider.overrideWith((ref) async => const []),
         ],
       );
@@ -533,7 +533,7 @@ void main() {
           nameEventId: r'$name-a0',
         ),
       ];
-      container.invalidate(chatRoomsProvider);
+      container.invalidate(allChatRoomsProvider);
       await tester.pump();
       await tester.pump();
 
@@ -562,7 +562,7 @@ void main() {
           nameEventId: r'$name-b',
         ),
       ];
-      container.invalidate(chatRoomsProvider);
+      container.invalidate(allChatRoomsProvider);
       await tester.pump();
       await tester.pump();
       expect(
@@ -587,7 +587,7 @@ void main() {
     ];
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => rooms),
+        allChatRoomsProvider.overrideWith((ref) async => rooms),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -600,7 +600,7 @@ void main() {
     rooms = [
       _room(id: '!room:example.org', name: 'Remote name', roomType: 'dm'),
     ];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
 
@@ -628,7 +628,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => [room]),
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -661,7 +661,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith((ref) async => [room]),
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
         spacesProvider.overrideWith((ref) async => const []),
       ],
     );
@@ -697,7 +697,7 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        chatRoomsProvider.overrideWith(
+        allChatRoomsProvider.overrideWith(
           (ref) async => ref.watch(activeUserIdProvider) == bobId
               ? [bobRoom]
               : [aliceRoom],
