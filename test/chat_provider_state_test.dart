@@ -12,6 +12,7 @@ import 'package:matter/features/markdown/markdown_source_store.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/providers/connection_provider.dart';
+import 'package:matter/providers/hidden_rooms_provider.dart';
 import 'package:matter/providers/message_cache_persistence.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
@@ -54,7 +55,6 @@ class _FakeRustApi implements RustLibApi {
   bool? chatRoomsAuthoritative;
   int ungroupedRoomsCalls = 0;
   int spaceChildrenCalls = 0;
-  int searchRoomsCalls = 0;
   int knockRequestsCalls = 0;
   int membersCalls = 0;
   int contactsCalls = 0;
@@ -135,16 +135,6 @@ class _FakeRustApi implements RustLibApi {
     required bool authoritative,
   }) async {
     spaceChildrenCalls++;
-    return const [];
-  }
-
-  @override
-  Future<List<rust.ChatRoom>> crateApiMatrixSearchRooms({
-    required String query,
-    List<String>? ignoredUserIds,
-    required bool authoritative,
-  }) async {
-    searchRoomsCalls++;
     return const [];
   }
 
@@ -230,9 +220,13 @@ rust.ChatMessage _message(String id, String timestamp) => rust.ChatMessage(
   totalMembers: 2,
 );
 
-rust.ChatRoom _room(String id, {bool isEncrypted = false}) => rust.ChatRoom(
+rust.ChatRoom _room(
+  String id, {
+  String name = 'Room',
+  bool isEncrypted = false,
+}) => rust.ChatRoom(
   id: id,
-  name: 'Room',
+  name: name,
   lastMessage: '',
   lastMessageTime: '0',
   lastEventId: '',
@@ -284,7 +278,6 @@ void main() {
     rustApi.chatRoomsAuthoritative = null;
     rustApi.ungroupedRoomsCalls = 0;
     rustApi.spaceChildrenCalls = 0;
-    rustApi.searchRoomsCalls = 0;
     rustApi.knockRequestsCalls = 0;
     rustApi.membersCalls = 0;
     rustApi.contactsCalls = 0;
@@ -1757,6 +1750,9 @@ void main() {
   });
 
   testWidgets('room-list events refresh every room collection', (tester) async {
+    rustApi.chatRooms = [
+      _room('!project-one:example.org', name: 'Project one'),
+    ];
     final container = ProviderContainer();
     container.read(sessionReadyProvider.notifier).value = true;
     container.read(activeUserIdProvider.notifier).value = '@alice:example.org';
@@ -1793,10 +1789,16 @@ void main() {
     expect(rustApi.chatRoomsCalls, 1);
     expect(rustApi.ungroupedRoomsCalls, 1);
     expect(rustApi.spaceChildrenCalls, 1);
-    expect(rustApi.searchRoomsCalls, 1);
+    expect(
+      (await container.read(searchRoomsProvider('project').future)).single.id,
+      '!project-one:example.org',
+    );
     expect(rustApi.knockRequestsCalls, 1);
     expect(rustApi.membersCalls, 1);
 
+    rustApi.chatRooms = [
+      _room('!project-two:example.org', name: 'Project two'),
+    ];
     rustApi.syncEvents.add(const rust.SyncEvent.roomListChanged());
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
@@ -1804,7 +1806,10 @@ void main() {
     expect(rustApi.chatRoomsCalls, 2);
     expect(rustApi.ungroupedRoomsCalls, 2);
     expect(rustApi.spaceChildrenCalls, 2);
-    expect(rustApi.searchRoomsCalls, 2);
+    expect(
+      (await container.read(searchRoomsProvider('project').future)).single.id,
+      '!project-two:example.org',
+    );
     // Member/knock lists are driven by member-state events, not generic
     // room-list activity: refetching them per sync burst would fire a
     // network /members request for every incoming message while the
@@ -1834,6 +1839,49 @@ void main() {
     container.dispose();
     await tester.pump(const Duration(seconds: 1));
   });
+
+  testWidgets(
+    'manual hiding filters cached rooms and persists for the account',
+    (tester) async {
+      rustApi.chatRooms = [
+        _room('!hidden:example.org'),
+        _room('!shown:example.org'),
+      ];
+      final container = ProviderContainer();
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      final subscription = container.listen(chatRoomsProvider, (_, _) {});
+
+      expect((await container.read(chatRoomsProvider.future)).length, 2);
+      await tester.pump();
+      await container.read(hiddenRoomsProvider.notifier).hideRooms([
+        '!hidden:example.org',
+      ]);
+      await tester.pump();
+
+      expect(
+        (await container.read(chatRoomsProvider.future)).map((room) => room.id),
+        ['!shown:example.org'],
+      );
+      expect((await container.read(allChatRoomsProvider.future)).length, 2);
+      expect(rustApi.chatRoomsCalls, 1);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('hidden_room_ids_@alice:example.org'), [
+        '!hidden:example.org',
+      ]);
+
+      await container.read(hiddenRoomsProvider.notifier).unhideRooms([
+        '!hidden:example.org',
+      ]);
+      await tester.pump();
+      expect((await container.read(chatRoomsProvider.future)).length, 2);
+
+      subscription.close();
+      container.dispose();
+      await tester.pump();
+    },
+  );
 
   testWidgets('marks a newly refreshed current-room message as read', (
     tester,

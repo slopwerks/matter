@@ -280,9 +280,9 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       if (cleared) {
         setRoomUnreadOverride(ref, room, unread: false);
       }
-      ref.invalidate(chatRoomsProvider);
-      ref.invalidate(ungroupedRoomsProvider);
-      ref.invalidate(spaceChildrenProvider);
+      ref.invalidate(allChatRoomsProvider);
+      ref.invalidate(allUngroupedRoomsProvider);
+      ref.invalidate(allSpaceChildrenProvider);
       ref.invalidate(searchRoomsProvider);
     } catch (error) {
       debugPrint('markRoomAsRead after room reselection failed: $error');

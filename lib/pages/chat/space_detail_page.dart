@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
@@ -121,6 +124,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     final detailsAsync = ref.watch(spaceDetailsProvider(space.id));
     final membersAsync = ref.watch(roomMembersProvider(space.id));
     final childrenAsync = ref.watch(spaceChildrenProvider(space.id));
+    final allChildrenAsync = ref.watch(allSpaceChildrenProvider(space.id));
     final fallbackDetails = SpaceDetails(
       id: space.id,
       name: space.name,
@@ -374,6 +378,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                           ref,
                           details,
                           detailsAsync.hasValue,
+                          allChildrenAsync.asData?.value,
                         ),
                       ),
                     ],
@@ -394,6 +399,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
     WidgetRef ref,
     SpaceDetails details,
     bool detailsLoaded,
+    List<ChatRoom>? allChildren,
   ) {
     showNeuSheet<void>(
       context: context,
@@ -410,6 +416,27 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                   _showEditSpaceDialog(context, ref, details);
                 },
               ),
+            NeuSheetItem(
+              icon: Icons.visibility_off_outlined,
+              label: '隐藏此空间的所有房间',
+              onTap: () {
+                if (allChildren == null) return;
+                Navigator.of(sheetContext).pop();
+                final roomIds = allChildren
+                    .where((room) => room.roomType != 'space')
+                    .map((room) => room.id);
+                unawaited(
+                  ref
+                      .read(hiddenRoomsProvider.notifier)
+                      .hideRooms(roomIds)
+                      .then((_) {
+                        if (context.mounted) {
+                          neuToast(context, '已隐藏此空间的所有房间');
+                        }
+                      }),
+                );
+              },
+            ),
             NeuSheetItem(
               icon: Icons.exit_to_app_rounded,
               label: '退出空间',
@@ -545,7 +572,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               }
                               ref.invalidate(spaceDetailsProvider(details.id));
                               ref.invalidate(spacesProvider);
-                              ref.invalidate(chatRoomsProvider);
+                              ref.invalidate(allChatRoomsProvider);
                               if (!context.mounted) return;
                               // `isCurrent` guard: the dialog may have been dismissed
                               // during its exit animation — popping then would pop the
@@ -576,7 +603,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // so the UI reflects the server's partial result.
                               ref.invalidate(spaceDetailsProvider(details.id));
                               ref.invalidate(spacesProvider);
-                              ref.invalidate(chatRoomsProvider);
+                              ref.invalidate(allChatRoomsProvider);
                               if (dialogContext.mounted) {
                                 // Render the failure inside the dialog: a page-level
                                 // toast would sit beneath the modal barrier and stay
@@ -666,7 +693,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                       horizontal: 18,
                       vertical: 10,
                     ),
-                    onPressed: () => ref.invalidate(ungroupedRoomsProvider),
+                    onPressed: () => ref.invalidate(allUngroupedRoomsProvider),
                     child: const Text('重试'),
                   ),
                 ],
@@ -740,9 +767,9 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // own `ref` would throw if the sheet was
                               // dismissed while the write was in flight.
                               container.invalidate(
-                                spaceChildrenProvider(widget.space.id),
+                                allSpaceChildrenProvider(widget.space.id),
                               );
-                              container.invalidate(ungroupedRoomsProvider);
+                              container.invalidate(allUngroupedRoomsProvider);
                               if (!pageContext.mounted) return;
                               if (sheetContext.mounted &&
                                   ModalRoute.of(sheetContext)?.isCurrent ==
@@ -878,9 +905,9 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // and the page popped while the write was in flight).
                               if (!context.mounted) return;
                               ref.invalidate(
-                                spaceChildrenProvider(widget.space.id),
+                                allSpaceChildrenProvider(widget.space.id),
                               );
-                              ref.invalidate(ungroupedRoomsProvider);
+                              ref.invalidate(allUngroupedRoomsProvider);
                               // `isCurrent` guard: the dialog may have been dismissed
                               // during its exit animation — popping then would pop the
                               // PAGE below it.
@@ -1038,8 +1065,8 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                               // and the page popped while the write was in flight).
                               if (!context.mounted) return;
                               ref.invalidate(spacesProvider);
-                              ref.invalidate(chatRoomsProvider);
-                              ref.invalidate(ungroupedRoomsProvider);
+                              ref.invalidate(allChatRoomsProvider);
+                              ref.invalidate(allUngroupedRoomsProvider);
                               // `isCurrent` guard: the dialog may have been dismissed
                               // during its exit animation — popping then would pop the
                               // PAGE below it.
