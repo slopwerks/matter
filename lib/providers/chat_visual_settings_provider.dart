@@ -110,7 +110,8 @@ class ChatVisualSettingsNotifier extends Notifier<ChatVisualSettings> {
       progressiveBlurAnisotropicEnabled:
           prefs.getBool(_keys['progressiveBlurAnisotropicEnabled']!) ?? false,
       progressiveBlurReducedFallbackEnabled:
-          prefs.getBool(_keys['progressiveBlurReducedFallbackEnabled']!) ?? true,
+          prefs.getBool(_keys['progressiveBlurReducedFallbackEnabled']!) ??
+          true,
       imageBlurOptimizationEnabled:
           prefs.getBool(_keys['imageBlurOptimizationEnabled']!) ?? true,
       shadowBlurOptimizationEnabled:
@@ -144,7 +145,8 @@ class ChatVisualSettingsNotifier extends Notifier<ChatVisualSettings> {
   );
 
   Future<void> setProgressiveBlurReducedFallbackEnabled(bool value) => _set(
-    (settings) => settings.copyWith(progressiveBlurReducedFallbackEnabled: value),
+    (settings) =>
+        settings.copyWith(progressiveBlurReducedFallbackEnabled: value),
   );
 
   Future<void> setImageBlurOptimizationEnabled(bool value) => _set(
@@ -181,15 +183,13 @@ class ChatVisualSettingsNotifier extends Notifier<ChatVisualSettings> {
       final value = switch (entry.key) {
         'chatBlurEnabled' => next.chatBlurEnabled,
         'progressiveBlurShaderEnabled' => next.progressiveBlurShaderEnabled,
-        'progressiveBlurSigmaCapEnabled' =>
-          next.progressiveBlurSigmaCapEnabled,
+        'progressiveBlurSigmaCapEnabled' => next.progressiveBlurSigmaCapEnabled,
         'progressiveBlurAnisotropicEnabled' =>
           next.progressiveBlurAnisotropicEnabled,
         'progressiveBlurReducedFallbackEnabled' =>
           next.progressiveBlurReducedFallbackEnabled,
         'imageBlurOptimizationEnabled' => next.imageBlurOptimizationEnabled,
-        'shadowBlurOptimizationEnabled' =>
-          next.shadowBlurOptimizationEnabled,
+        'shadowBlurOptimizationEnabled' => next.shadowBlurOptimizationEnabled,
         'bubbleShadowsEnabled' => next.bubbleShadowsEnabled,
         'superellipseBorderEnabled' => next.superellipseBorderEnabled,
         'bubbleGradientEnabled' => next.bubbleGradientEnabled,
@@ -207,6 +207,21 @@ final chatVisualSettingsProvider =
     NotifierProvider<ChatVisualSettingsNotifier, ChatVisualSettings>(
       ChatVisualSettingsNotifier.new,
     );
+
+/// Place above the Navigator so pushed routes and overlays share live settings.
+class ChatVisualSettingsRoot extends ConsumerWidget {
+  const ChatVisualSettingsRoot({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ChatVisualSettingsScope(
+      settings: ref.watch(chatVisualSettingsProvider),
+      child: child,
+    );
+  }
+}
 
 class ChatVisualSettingsScope extends InheritedWidget {
   final ChatVisualSettings settings;

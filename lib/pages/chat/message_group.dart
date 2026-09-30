@@ -2248,6 +2248,9 @@ class _ReactionChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: NeuDecoration(
           colors: colors,
+          superellipseEnabled: ChatVisualSettingsScope.of(
+            context,
+          ).superellipseBorderEnabled,
           depth: NeuDepth.pressed,
           radius: NeuRadius.nav,
           intensity: .6,

@@ -248,7 +248,11 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final activeHeight = constraints.maxHeight * (1 - inactiveFraction);
-            final stripHeight = activeHeight / _strips;
+            final stripCount =
+                (settings?.progressiveBlurReducedFallbackEnabled ?? true)
+                ? 6
+                : _strips;
+            final stripHeight = activeHeight / stripCount;
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -260,25 +264,8 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
                     clipBehavior: Clip.hardEdge,
                   )
                 else
-                  for (
-                    var i = 0;
-                    i <
-                        ((settings?.progressiveBlurReducedFallbackEnabled ??
-                                true)
-                            ? 6
-                            : _strips);
-                    i++
-                  )
-                    _strip(
-                      context,
-                      i,
-                      stripHeight *
-                          (_strips /
-                              ((settings?.progressiveBlurReducedFallbackEnabled ??
-                                      true)
-                                  ? 6
-                                  : _strips)),
-                    ),
+                  for (var i = 0; i < stripCount; i++)
+                    _strip(context, i, stripHeight, stripCount),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -329,11 +316,16 @@ class _ProgressiveEdgeBlur extends StatelessWidget {
     return physical;
   }
 
-  Widget _strip(BuildContext context, int i, double stripHeight) {
+  Widget _strip(
+    BuildContext context,
+    int i,
+    double stripHeight,
+    int stripCount,
+  ) {
     // 模糊半径按立方曲线从边缘侧的峰值衰减到内容侧的零:
-    // 起步足够平缓,16 层使相邻层的半径差缩到感知阈值以下。
+    // 按实际条带数量归一化,使内容侧的模糊半径衰减到零。
     final settings = ChatVisualSettingsScope.maybeOf(context);
-    final uncappedSigma = blur * pow(1 - i / (_strips - 1), 3);
+    final uncappedSigma = blur * pow(1 - i / (stripCount - 1), 3);
     final sigma = (settings?.progressiveBlurSigmaCapEnabled ?? true)
         ? uncappedSigma.clamp(0, 14).toDouble()
         : uncappedSigma;

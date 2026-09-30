@@ -13,7 +13,6 @@ import 'pages/settings/encryption_page.dart';
 import 'pages/settings/settings_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
-import 'providers/chat_visual_settings_provider.dart';
 import 'providers/navigation_provider.dart';
 import 'src/rust/api/matrix.dart' as rust;
 import 'theme/neu_colors.dart';
@@ -397,35 +396,31 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     ref.watch(syncStreamProvider);
     _syncDesktopSelectionAfterAccountChange(ref.watch(activeUserIdProvider));
 
-    final visualSettings = ref.watch(chatVisualSettingsProvider);
-    return ChatVisualSettingsScope(
-      settings: visualSettings,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isDesktop = constraints.maxWidth >= _desktopBreakpoint;
-          _syncMobilePageAfterLayoutChange(isDesktop);
-          if (isDesktop) {
-            // Only the desktop layout keeps a selected room whose metadata
-            // must follow the room sources; watching them on mobile would
-            // rebuild the whole app on every room list refresh for nothing.
-            if (_desktopRoomSource == _DesktopRoomSource.space) {
-              final spaceId = _selectedDesktopSpace?.id;
-              if (spaceId != null) {
-                // Space children live in spaceChildrenProvider, not
-                // chatRooms: follow that source so a renamed/departed space
-                // child updates the panel snapshot.
-                _syncSelectedRoomFromRooms(
-                  ref.watch(spaceChildrenProvider(spaceId)),
-                );
-              }
-            } else {
-              _syncSelectedRoomFromRooms(ref.watch(chatRoomsProvider));
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop = constraints.maxWidth >= _desktopBreakpoint;
+        _syncMobilePageAfterLayoutChange(isDesktop);
+        if (isDesktop) {
+          // Only the desktop layout keeps a selected room whose metadata
+          // must follow the room sources; watching them on mobile would
+          // rebuild the whole app on every room list refresh for nothing.
+          if (_desktopRoomSource == _DesktopRoomSource.space) {
+            final spaceId = _selectedDesktopSpace?.id;
+            if (spaceId != null) {
+              // Space children live in spaceChildrenProvider, not
+              // chatRooms: follow that source so a renamed/departed space
+              // child updates the panel snapshot.
+              _syncSelectedRoomFromRooms(
+                ref.watch(spaceChildrenProvider(spaceId)),
+              );
             }
-            return _buildDesktopLayout(context, constraints);
+          } else {
+            _syncSelectedRoomFromRooms(ref.watch(chatRoomsProvider));
           }
-          return _buildMobileLayout();
-        },
-      ),
+          return _buildDesktopLayout(context, constraints);
+        }
+        return _buildMobileLayout();
+      },
     );
   }
 

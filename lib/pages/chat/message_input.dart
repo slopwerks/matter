@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../providers/chat_visual_settings_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/glass.dart';
@@ -1748,6 +1749,9 @@ class MessageInputState extends ConsumerState<MessageInput> {
                         ),
                         decoration: NeuDecoration(
                           colors: colors,
+                          superellipseEnabled: ChatVisualSettingsScope.of(
+                            context,
+                          ).superellipseBorderEnabled,
                           depth: NeuDepth.pressed,
                           radius: NeuRadius.content,
                           intensity: .85,
@@ -2004,6 +2008,9 @@ class MessageInputState extends ConsumerState<MessageInput> {
       padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
       decoration: NeuDecoration(
         colors: colors,
+        superellipseEnabled: ChatVisualSettingsScope.of(
+          context,
+        ).superellipseBorderEnabled,
         depth: NeuDepth.pressed,
         radius: NeuRadius.button,
         intensity: .7,
@@ -2064,6 +2071,9 @@ class MessageInputState extends ConsumerState<MessageInput> {
       padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
       decoration: NeuDecoration(
         colors: colors,
+        superellipseEnabled: ChatVisualSettingsScope.of(
+          context,
+        ).superellipseBorderEnabled,
         depth: NeuDepth.pressed,
         radius: NeuRadius.button,
         intensity: .7,

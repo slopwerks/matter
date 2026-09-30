@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../providers/chat_visual_settings_provider.dart';
 import '../theme/neu_colors.dart';
 import 'neu_decoration.dart';
 
@@ -18,6 +19,9 @@ class NeuChipTray extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: NeuDecoration(
         colors: context.neu,
+        superellipseEnabled: ChatVisualSettingsScope.of(
+          context,
+        ).superellipseBorderEnabled,
         depth: NeuDepth.pressed,
         radius: NeuRadius.nav, // 超出槽高的圆角被钳制成药丸
         intensity: .8,

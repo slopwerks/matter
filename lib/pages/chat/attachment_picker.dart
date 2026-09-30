@@ -598,6 +598,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
       child: Container(
         decoration: NeuDecoration(
           colors: colors,
+          superellipseEnabled: ChatVisualSettingsScope.of(
+            context,
+          ).superellipseBorderEnabled,
           radius: NeuRadius.surface,
           intensity: .6,
         ),

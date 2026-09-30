@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../providers/chat_visual_settings_provider.dart';
 import '../theme/neu_colors.dart';
 import 'neu_decoration.dart';
 
@@ -49,6 +50,9 @@ class NeuTextField extends StatelessWidget {
             padding: padding,
             decoration: NeuDecoration(
               colors: colors,
+              superellipseEnabled: ChatVisualSettingsScope.of(
+                context,
+              ).superellipseBorderEnabled,
               depth: NeuDepth.pressed,
               radius: radius,
               intensity: .85,
