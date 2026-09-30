@@ -4,6 +4,7 @@ import 'action_failure_message.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
+import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
@@ -389,6 +390,18 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
                             setSheetState(() => savingAction = 'unread'),
                       ),
               ),
+              const NeuSheetDivider(),
+              NeuSheetItem(
+                icon: Icons.visibility_off_outlined,
+                label: '隐藏聊天',
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await ref.read(hiddenRoomsProvider.notifier).hideRooms([
+                    room.id,
+                  ]);
+                  if (context.mounted) neuToast(context, '已隐藏聊天');
+                },
+              ),
             ],
           );
         },
@@ -474,9 +487,9 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
       if (!context.mounted) return;
       if (suppressionToken.isCurrent) {
         setRoomUnreadOverride(ref, room, unread: markedUnread);
-        ref.invalidate(chatRoomsProvider);
-        ref.invalidate(ungroupedRoomsProvider);
-        ref.invalidate(spaceChildrenProvider);
+        ref.invalidate(allChatRoomsProvider);
+        ref.invalidate(allUngroupedRoomsProvider);
+        ref.invalidate(allSpaceChildrenProvider);
         ref.invalidate(searchRoomsProvider);
       }
       // The account may have switched while the request was in flight (the
@@ -667,8 +680,8 @@ class _PendingRoomActionsState extends ConsumerState<_PendingRoomActions> {
       // `mounted` first: `ref.read` throws after unmount.
       if (!context.mounted) return;
       if (ref.read(activeUserIdProvider) != accountUserId) return;
-      ref.invalidate(chatRoomsProvider);
-      ref.invalidate(ungroupedRoomsProvider);
+      ref.invalidate(allChatRoomsProvider);
+      ref.invalidate(allUngroupedRoomsProvider);
       neuToast(context, successMessage);
     } catch (error) {
       if (!context.mounted) return;

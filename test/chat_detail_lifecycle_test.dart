@@ -14,6 +14,7 @@ import 'package:matter/pages/chat/search_page.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
+import 'package:matter/providers/hidden_rooms_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/widgets/neu_surface.dart';
@@ -2641,6 +2642,7 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     container.read(sessionReadyProvider.notifier).value = true;
+    container.read(activeUserIdProvider.notifier).value = '@alice:example.org';
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -2660,12 +2662,24 @@ void main() {
 
     // Another client renamed the room; the next room-list snapshot carries it.
     rustApi.chatRooms = [room('New name')];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
 
     expect(find.text('Old name'), findsNothing);
     expect(find.text('New name'), findsWidgets);
+
+    // Hiding the currently open room must not stop metadata updates.
+    await container.read(hiddenRoomsProvider.notifier).hideRooms([
+      '!room:example.org',
+    ]);
+    await tester.pump();
+    rustApi.chatRooms = [room('Hidden room name')];
+    container.invalidate(allChatRoomsProvider);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Hidden room name'), findsWidgets);
   });
 
   testWidgets('repeated local room names wait for the matching event echo', (
@@ -2733,14 +2747,14 @@ void main() {
     // Re-deliver the cached original A event. Its equal display value must not
     // confirm the final A edit.
     rustApi.chatRooms = [room('Name A', r'$name-a0')];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(find.text('Name A'), findsWidgets);
 
     // B is the real echo of the superseded first edit. Keep the final A.
     rustApi.chatRooms = [room('Name B', r'$name-b')];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(find.text('Name B'), findsNothing);
@@ -2748,14 +2762,14 @@ void main() {
 
     // Only the distinct event ID of the final A confirms the latest edit.
     rustApi.chatRooms = [room('Name A', r'$name-a2')];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(find.text('Name A'), findsWidgets);
 
     // A real remote edit may reuse B's value, but has its own event ID.
     rustApi.chatRooms = [room('Name B', r'$name-b-remote')];
-    container.invalidate(chatRoomsProvider);
+    container.invalidate(allChatRoomsProvider);
     await tester.pump();
     await tester.pump();
     expect(find.text('Name B'), findsWidgets);

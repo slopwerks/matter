@@ -52,8 +52,8 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       // Refresh all room sources like every other write path: the new
       // room must appear in the ungrouped/space lists too (the sync echo
       // would eventually cover it, but not while sync is stalled).
-      ref.invalidate(chatRoomsProvider);
-      ref.invalidate(ungroupedRoomsProvider);
+      ref.invalidate(allChatRoomsProvider);
+      ref.invalidate(allUngroupedRoomsProvider);
       ref.invalidate(spacesProvider);
       ref.invalidate(searchRoomsProvider);
       if (mounted) {
@@ -99,8 +99,8 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
       // Refresh all room sources like every other write path: the new
       // room must appear in the ungrouped/space lists too (the sync echo
       // would eventually cover it, but not while sync is stalled).
-      ref.invalidate(chatRoomsProvider);
-      ref.invalidate(ungroupedRoomsProvider);
+      ref.invalidate(allChatRoomsProvider);
+      ref.invalidate(allUngroupedRoomsProvider);
       ref.invalidate(spacesProvider);
       ref.invalidate(searchRoomsProvider);
       if (mounted) {
@@ -258,8 +258,8 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                           }
                           return;
                         }
-                        ref.invalidate(chatRoomsProvider);
-                        ref.invalidate(ungroupedRoomsProvider);
+                        ref.invalidate(allChatRoomsProvider);
+                        ref.invalidate(allUngroupedRoomsProvider);
                         ref.invalidate(spacesProvider);
                         ref.invalidate(searchRoomsProvider);
                         if (!mounted) return;

@@ -706,9 +706,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       if (cleared) {
         setRoomUnreadOverrideById(ref, widget.roomId, unread: false);
       }
-      ref.invalidate(chatRoomsProvider);
-      ref.invalidate(ungroupedRoomsProvider);
-      ref.invalidate(spaceChildrenProvider);
+      ref.invalidate(allChatRoomsProvider);
+      ref.invalidate(allUngroupedRoomsProvider);
+      ref.invalidate(allSpaceChildrenProvider);
       ref.invalidate(searchRoomsProvider);
     } catch (error) {
       debugPrint('markRoomAsRead failed: $error');
@@ -1833,7 +1833,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     // Follow server-side renames/avatar changes for this room. select() keeps
     // unrelated room list churn from rebuilding the timeline.
     final syncedRoom = ref.watch(
-      chatRoomsProvider.select((roomsAsync) {
+      allChatRoomsProvider.select((roomsAsync) {
         final rooms = roomsAsync.value;
         if (rooms == null) return null;
         for (final room in rooms) {
