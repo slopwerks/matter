@@ -5567,13 +5567,6 @@ pub async fn rename_account_device(device_id: String, display_name: String) -> R
     let client = get_client()
         .await
         .ok_or_else(|| api_err("devices", "No active client".to_string()))?;
-    let (_, current_device_id) = active_session_meta(&client)?;
-    if device_id != current_device_id {
-        return Err(api_err(
-            "devices",
-            "Only the current device can be renamed".to_string(),
-        ));
-    }
     let device_id = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
     client
         .rename_device(&device_id, display_name.trim())
