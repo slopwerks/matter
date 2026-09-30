@@ -13,6 +13,7 @@ import 'pages/chat/decrypted_video_source.dart';
 import 'pages/chat/chat_detail_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/chat_visual_settings_provider.dart';
 import 'providers/mutable_state.dart';
 import 'providers/theme_provider.dart';
 import 'src/rust/api/matrix.dart' as rust;
@@ -342,6 +343,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       theme: theme,
       darkTheme: darkTheme,
       themeMode: themeMode,
+      builder: (context, child) => ChatVisualSettingsRoot(child: child!),
       home: showMainApp ? const MatterApp() : const LoginPage(),
     );
   }

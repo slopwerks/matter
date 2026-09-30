@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/chat_visual_settings_provider.dart';
 import '../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
@@ -345,9 +346,17 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         decoration: ShapeDecoration(
           color: _pressed ? context.neu.accentSoft : null,
-          shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(NeuRadius.content),
-          ),
+          shape:
+              (ChatVisualSettingsScope.maybeOf(
+                    context,
+                  )?.superellipseBorderEnabled ??
+                  true)
+              ? RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(NeuRadius.content),
+                )
+              : RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(NeuRadius.content),
+                ),
         ),
         child: Row(
           children: [

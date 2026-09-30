@@ -414,6 +414,8 @@ void main() {
       // Start removing the non-active account and keep the Rust call in
       // flight so `_removingAccountId` stays set.
       await tester.scrollUntilVisible(find.text('移除 bob (example.org)'), 300);
+      await tester.ensureVisible(find.text('移除 bob (example.org)'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('移除 bob (example.org)'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('确定'));

@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/connection_provider.dart';
 import '../../src/rust/api/matrix.dart';
+import '../../providers/chat_visual_settings_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/cascade_title.dart';
@@ -669,6 +670,9 @@ class _SliverSectionCard extends StatelessWidget {
       sliver: DecoratedSliver(
         decoration: NeuDecoration(
           colors: context.neu,
+          superellipseEnabled: ChatVisualSettingsScope.of(
+            context,
+          ).superellipseBorderEnabled,
           color: context.neu.surfaceStrong,
           radius: NeuRadius.surface,
         ),

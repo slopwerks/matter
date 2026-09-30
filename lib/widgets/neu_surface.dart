@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../providers/chat_visual_settings_provider.dart';
 import '../theme/neu_colors.dart';
 import 'neu_action.dart';
 import 'neu_decoration.dart';
@@ -39,6 +40,9 @@ class NeuSurface extends StatelessWidget {
       padding: padding,
       decoration: NeuDecoration(
         colors: context.neu,
+        superellipseEnabled: ChatVisualSettingsScope.of(
+          context,
+        ).superellipseBorderEnabled,
         depth: depth,
         radius: radius,
         color: color,
@@ -129,6 +133,9 @@ class _NeuButtonState extends State<NeuButton> {
           padding: widget.padding,
           decoration: NeuDecoration(
             colors: colors,
+            superellipseEnabled: ChatVisualSettingsScope.of(
+              context,
+            ).superellipseBorderEnabled,
             depth: !enabled
                 ? NeuDepth.flat
                 : _pressed
@@ -193,6 +200,9 @@ class _NeuIconButtonState extends State<NeuIconButton> {
         height: widget.size,
         decoration: NeuDecoration(
           colors: colors,
+          superellipseEnabled: ChatVisualSettingsScope.of(
+            context,
+          ).superellipseBorderEnabled,
           depth: !enabled
               ? NeuDepth.flat
               : _pressed

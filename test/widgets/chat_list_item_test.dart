@@ -7,6 +7,7 @@ import 'package:matter/pages/chat/chat_list_item.dart';
 import 'package:matter/pages/chat/message_input.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
+import 'package:matter/providers/chat_visual_settings_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 import 'package:matter/src/rust/frb_generated.dart';
 
@@ -56,6 +57,7 @@ void main() {
     });
 
     tearDownAll(RustLib.dispose);
+
     ChatRoom room({
       String id = '!room:example.org',
       String name = 'Room',
@@ -80,6 +82,39 @@ void main() {
       isMuted: isMuted,
       roomState: roomState,
     );
+
+    testWidgets('room row follows the superellipse setting', (tester) async {
+      for (final enabled in [true, false]) {
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              theme: neuTestTheme(),
+              home: ChatVisualSettingsScope(
+                settings: ChatVisualSettings(
+                  superellipseBorderEnabled: enabled,
+                ),
+                child: Scaffold(body: ChatListItem(room: room())),
+              ),
+            ),
+          ),
+        );
+        final row = tester.widget<AnimatedContainer>(
+          find
+              .descendant(
+                of: find.byType(ChatListItem),
+                matching: find.byType(AnimatedContainer),
+              )
+              .first,
+        );
+        final shape = (row.decoration! as ShapeDecoration).shape;
+        expect(
+          shape,
+          enabled
+              ? isA<RoundedSuperellipseBorder>()
+              : isA<RoundedRectangleBorder>(),
+        );
+      }
+    });
 
     testWidgets('renders room name and last message', (tester) async {
       await tester.pumpWidget(

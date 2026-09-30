@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../providers/chat_visual_settings_provider.dart';
 import '../theme/neu_colors.dart';
 import 'glass.dart';
 import 'neu_field.dart';
@@ -248,6 +249,9 @@ Future<String?> showNeuPrompt(
 /// 统一的原型提示:超椭圆浮层 SnackBar,新拟物配色。
 void neuToast(BuildContext context, String message) {
   final colors = context.neu;
+  final superellipseEnabled =
+      ChatVisualSettingsScope.maybeOf(context)?.superellipseBorderEnabled ??
+      true;
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
@@ -263,10 +267,15 @@ void neuToast(BuildContext context, String message) {
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         duration: const Duration(milliseconds: 1500),
-        shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(NeuRadius.surface),
-          side: BorderSide(color: colors.hairline),
-        ),
+        shape: superellipseEnabled
+            ? RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(NeuRadius.surface),
+                side: BorderSide(color: colors.hairline),
+              )
+            : RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(NeuRadius.surface),
+                side: BorderSide(color: colors.hairline),
+              ),
       ),
     );
 }

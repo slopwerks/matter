@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
+import '../../providers/chat_visual_settings_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/neu_decoration.dart';
@@ -198,6 +199,9 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       decoration: NeuDecoration(
         colors: colors,
+        superellipseEnabled: ChatVisualSettingsScope.of(
+          context,
+        ).superellipseBorderEnabled,
         radius: NeuRadius.surface,
         intensity: .7,
       ),
