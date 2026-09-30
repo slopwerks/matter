@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:matter/pages/settings/encryption_page.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/widgets/sheets.dart';
 
 import 'helpers/neu_test_theme.dart';
 
@@ -149,6 +150,7 @@ void main() {
 
     expect(find.text('Device ID'), findsOneWidget);
     expect(find.text('203.0.113.7'), findsOneWidget);
+    expect(find.text('验证'), findsNothing);
     expect(
       find.text(DateFormat('yyyy-MM-dd HH:mm').format(lastSeen)),
       findsOneWidget,
@@ -164,7 +166,7 @@ void main() {
     expect(find.text('客厅平板'), findsOneWidget);
   });
 
-  testWidgets('其他设备只能查看详情，不能重命名', (tester) async {
+  testWidgets('其他设备可重命名并刷新列表', (tester) async {
     rustApi.accountDevices = const [
       rust.AccountDevice(
         deviceId: 'OTHER',
@@ -179,9 +181,50 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Device ID'), findsOneWidget);
-    expect(find.text('重命名'), findsNothing);
-    expect(rustApi.renames, isEmpty);
+    expect(find.text('重命名'), findsOneWidget);
+    await tester.tap(find.text('重命名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '客厅平板');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.renames, [('OTHER', '客厅平板')]);
+    expect(find.text('客厅平板'), findsOneWidget);
   });
+
+  for (final isVerified in [false, true]) {
+    testWidgets(isVerified ? '已验证设备可从详情重新验证' : '未验证设备可从详情验证', (tester) async {
+      rustApi.accountDevices = const [
+        rust.AccountDevice(
+          deviceId: 'OTHER',
+          displayName: '平板',
+          isCurrent: false,
+        ),
+      ];
+      rustApi.verificationDevices = [
+        rust.VerificationDevice(
+          deviceId: 'OTHER',
+          displayName: '平板',
+          isCurrent: false,
+          isVerified: isVerified,
+        ),
+      ];
+
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+      expect(find.text('验证'), isVerified ? findsNothing : findsOneWidget);
+      await tester.tap(find.text('平板'));
+      await tester.pumpAndSettle();
+
+      final verifyItem = find.widgetWithText(NeuSheetItem, '验证');
+      expect(verifyItem, findsOneWidget);
+      await tester.tap(verifyItem);
+      await tester.pumpAndSettle();
+
+      expect(rustApi.verificationStarts, ['OTHER']);
+      expect(find.text('Device ID'), findsNothing);
+    });
+  }
 
   testWidgets('服务器设备列表不可用时仍可查看已同步的验证设备', (tester) async {
     rustApi.failAccountDevices = true;

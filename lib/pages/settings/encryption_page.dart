@@ -461,14 +461,17 @@ class _EncryptionPageState extends State<EncryptionPage> {
                 await _renameDevice(device);
               },
             ),
-            if (!device.isCurrent) NeuSheetItem(
-              icon: Icons.shield_outlined,
-              label: '验证',
-              onTap: _busy ? () => {} : () async {
-                Navigator.of(context).pop();
-                await _startVerification(device.deviceId);
-              }
-            )
+            if (!device.isCurrent)
+              NeuSheetItem(
+                icon: Icons.shield_outlined,
+                label: '验证',
+                onTap: _busy
+                    ? () => {}
+                    : () async {
+                        Navigator.of(context).pop();
+                        await _startVerification(device.deviceId);
+                      },
+              ),
           ],
           const SizedBox(height: 8),
         ],
