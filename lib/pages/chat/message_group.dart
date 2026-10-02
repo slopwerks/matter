@@ -6,7 +6,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/markdown/markdown_composer.dart';
-import '../../features/markdown/markdown_source_store.dart';
 import '../../features/matrix_html/matrix_html_parser.dart';
 import '../../features/matrix_html/matrix_html_renderer.dart';
 import '../../features/matrix_html/matrix_link_router.dart';
@@ -1361,14 +1360,6 @@ class MessageGroupWidget extends ConsumerWidget {
         onRecall: () async {
           try {
             await redactMessage(ref, roomId, message.id);
-            await const MarkdownSourceStore().delete(
-              userId:
-                  ref.read(activeUserIdProvider) ??
-                  ref.read(currentUserProvider)?.id ??
-                  'anonymous',
-              roomId: roomId,
-              eventId: message.id,
-            );
           } catch (e) {
             if (overlayContext.mounted) {
               ScaffoldMessenger.of(overlayContext).showSnackBar(

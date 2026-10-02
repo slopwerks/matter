@@ -191,6 +191,7 @@ class AppUpdateService {
   Future<String> downloadUpdate(
     ReleaseUpdate update, {
     required void Function(int received, int total) onProgress,
+    Future<void>? cancel,
   }) {
     if (!isSupported) {
       throw const AppUpdateException('当前平台暂不支持应用内更新');
@@ -201,6 +202,7 @@ class AppUpdateService {
       expectedSize: update.assetSize,
       digest: update.digest,
       onProgress: onProgress,
+      cancel: cancel,
     );
   }
 

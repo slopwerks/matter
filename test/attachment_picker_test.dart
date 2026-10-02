@@ -429,6 +429,7 @@ class _AttachmentPickerHarness extends StatelessWidget {
           height: 300,
           maxHeight: 500,
           roomId: '!room:example.org',
+          accountUserId: '@alice:example.org',
           onRefresh: (_) async {},
           resolveSendPresentation: () => MessageSendPresentation.quiet,
           onMessageSent: (_, _) {},

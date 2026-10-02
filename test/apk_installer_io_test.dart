@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/app_update/apk_installer_io.dart';
+import 'package:matter/features/app_update/update_exception.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,10 +16,12 @@ void main() {
   late HttpServer server;
   var requests = 0;
   List<int>? servedBytes;
+  var stallBody = false;
 
   setUp(() async {
     HttpOverrides.global = null;
     requests = 0;
+    stallBody = false;
     temporaryDirectory = await Directory.systemTemp.createTemp(
       'matter_update_test_',
     );
@@ -37,8 +41,13 @@ void main() {
       } else {
         request.response
           ..statusCode = HttpStatus.ok
-          ..contentLength = bytes.length
+          ..bufferOutput = false
+          ..contentLength = stallBody ? bytes.length * 2 : bytes.length
           ..add(bytes);
+      }
+      if (stallBody) {
+        unawaited(request.response.flush());
+        return;
       }
       request.response.close();
     });
@@ -121,4 +130,93 @@ void main() {
     expect(path, cachedApk.path);
     expect(await cachedApk.readAsBytes(), bytes);
   });
+
+  test(
+    'a stalled response body times out and removes the partial APK',
+    () async {
+      servedBytes = List.filled(32768, 1);
+      stallBody = true;
+      final started = Completer<void>();
+      final download = downloadAndroidApk(
+        uri: Uri.parse('http://127.0.0.1:${server.port}/matter.apk'),
+        fileName: 'matter.apk',
+        expectedSize: 65536,
+        digest: null,
+        onProgress: (_, _) {
+          if (!started.isCompleted) started.complete();
+        },
+      );
+      final expectation = expectLater(
+        download,
+        throwsA(
+          isA<AppUpdateException>().having(
+            (error) => error.message,
+            'message',
+            contains('下载超时'),
+          ),
+        ),
+      );
+      await started.future.timeout(const Duration(seconds: 5));
+      await expectation;
+      expect(
+        await File(
+          '${temporaryDirectory.path}/updates/matter.apk.download',
+        ).exists(),
+        isFalse,
+      );
+      expect(
+        await File('${temporaryDirectory.path}/updates/matter.apk').exists(),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'cancelling a response body cleans up and permits a fresh download',
+    () async {
+      servedBytes = List.filled(32768, 1);
+      stallBody = true;
+      final cancel = Completer<void>();
+      final started = Completer<void>();
+      final uri = Uri.parse('http://127.0.0.1:${server.port}/matter.apk');
+      final download = downloadAndroidApk(
+        uri: uri,
+        fileName: 'matter.apk',
+        expectedSize: 65536,
+        digest: null,
+        cancel: cancel.future,
+        onProgress: (_, _) {
+          if (!started.isCompleted) started.complete();
+        },
+      );
+      final expectation = expectLater(
+        download,
+        throwsA(
+          isA<AppUpdateException>().having(
+            (error) => error.message,
+            'message',
+            '下载已取消',
+          ),
+        ),
+      );
+      await started.future.timeout(const Duration(seconds: 5));
+      cancel.complete();
+      await expectation;
+      expect(
+        await File(
+          '${temporaryDirectory.path}/updates/matter.apk.download',
+        ).exists(),
+        isFalse,
+      );
+      stallBody = false;
+      final path = await downloadAndroidApk(
+        uri: uri,
+        fileName: 'matter.apk',
+        expectedSize: servedBytes!.length,
+        digest: null,
+        onProgress: (_, _) {},
+      );
+      expect(await File(path).readAsBytes(), servedBytes);
+    },
+  );
 }

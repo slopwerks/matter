@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -149,6 +151,8 @@ class _DownloadUpdateDialog extends StatefulWidget {
 }
 
 class _DownloadUpdateDialogState extends State<_DownloadUpdateDialog> {
+  final _cancel = Completer<void>();
+  bool _installing = false;
   int _received = 0;
   int _total = 0;
   String _status = '正在连接 GitHub…';
@@ -161,20 +165,33 @@ class _DownloadUpdateDialogState extends State<_DownloadUpdateDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
+  @override
+  void dispose() {
+    _cancelDownload();
+    super.dispose();
+  }
+
+  void _cancelDownload() {
+    if (!_cancel.isCompleted) _cancel.complete();
+  }
+
   Future<void> _start() async {
+    if (!mounted || _cancel.isCompleted) return;
     setState(() {
       _received = 0;
       _total = 0;
       _status = '正在连接 GitHub…';
       _error = null;
+      _installing = false;
     });
     try {
       final path =
           _downloadedPath ??
           await widget.service.downloadUpdate(
             widget.update,
+            cancel: _cancel.future,
             onProgress: (received, total) {
-              if (!mounted) return;
+              if (!mounted || _cancel.isCompleted) return;
               setState(() {
                 _received = received;
                 _total = total;
@@ -182,15 +199,19 @@ class _DownloadUpdateDialogState extends State<_DownloadUpdateDialog> {
               });
             },
           );
+      if (!mounted || _cancel.isCompleted) return;
       _downloadedPath = path;
-      if (!mounted) return;
-      setState(() => _status = '正在打开系统安装器…');
+      setState(() {
+        _installing = true;
+        _status = '正在打开系统安装器…';
+      });
       await widget.service.installUpdate(path);
       if (mounted) Navigator.pop(context);
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || _cancel.isCompleted) return;
       setState(() {
         _error = error is AppUpdateException ? error.message : error.toString();
+        _installing = false;
         _status = '更新失败';
       });
     }
@@ -204,7 +225,10 @@ class _DownloadUpdateDialogState extends State<_DownloadUpdateDialog> {
         : '${(progress.clamp(0.0, 1.0) * 100).round()}%';
 
     return PopScope(
-      canPop: _error != null,
+      canPop: !_installing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _cancelDownload();
+      },
       child: AlertDialog(
         title: Text(_status),
         content: SizedBox(
@@ -227,15 +251,19 @@ class _DownloadUpdateDialogState extends State<_DownloadUpdateDialog> {
             ],
           ),
         ),
-        actions: _error == null
-            ? null
-            : [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                FilledButton(onPressed: _start, child: const Text('重试')),
-              ],
+        actions: [
+          TextButton(
+            onPressed: _installing
+                ? null
+                : () {
+                    _cancelDownload();
+                    Navigator.pop(context);
+                  },
+            child: const Text('取消'),
+          ),
+          if (_error != null)
+            FilledButton(onPressed: _start, child: const Text('重试')),
+        ],
       ),
     );
   }

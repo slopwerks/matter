@@ -22,6 +22,46 @@ const _kMaxCachedMessagesPerRoom = 200;
 String _msgStorageKey(String namespace, String roomId) =>
     '${_kMsgCachePrefix}_$namespace::$roomId';
 
+String _redactionsStorageKey(String namespace, String roomId) =>
+    '${_msgStorageKey(namespace, roomId)}_redacted';
+
+Future<Set<String>> loadCachedMessageRedactions({
+  required String namespace,
+  required String roomId,
+}) async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs
+          .getStringList(_redactionsStorageKey(namespace, roomId))
+          ?.toSet() ??
+      const <String>{};
+}
+
+/// Keep a tombstone so a late snapshot cannot persist a recalled message again.
+Future<void> redactCachedMessage({
+  required String namespace,
+  required String roomId,
+  required String eventId,
+}) async {
+  final prefs = await SharedPreferences.getInstance();
+  final key = _redactionsStorageKey(namespace, roomId);
+  final ids = {...?prefs.getStringList(key), eventId};
+  await prefs.setStringList(key, ids.toList());
+  final cacheKey = _msgStorageKey(namespace, roomId);
+  final raw = prefs.getString(cacheKey);
+  if (raw == null) return;
+  final cached = jsonDecode(raw) as List<dynamic>;
+  await prefs.setString(
+    cacheKey,
+    jsonEncode(
+      cached
+          .where(
+            (message) => (message as Map<String, dynamic>)['id'] != eventId,
+          )
+          .toList(),
+    ),
+  );
+}
+
 /// Serialize a [rust.ChatMessage] to a JSON-encodable map.
 Map<String, dynamic> chatMessageToMap(rust.ChatMessage message) {
   return {
@@ -216,9 +256,15 @@ Future<List<rust.ChatMessage>> loadCachedMessages({
     if (raw == null || raw.isEmpty) return const <rust.ChatMessage>[];
     final decoded = jsonDecode(raw);
     if (decoded is! List) return const <rust.ChatMessage>[];
+    final redactedIds =
+        prefs
+            .getStringList(_redactionsStorageKey(namespace, roomId))
+            ?.toSet() ??
+        const <String>{};
     return decoded
         .whereType<Map<String, dynamic>>()
         .map(chatMessageFromMap)
+        .where((message) => !redactedIds.contains(message.id))
         .toList();
   } catch (error) {
     debugPrint('loadCachedMessages failed for $roomId: $error');
@@ -242,7 +288,14 @@ Future<void> saveCachedMessages({
       await prefs.remove(key);
       return;
     }
-    final sorted = [...messages]..sort(compareChatMessages);
+    final redactedIds =
+        prefs
+            .getStringList(_redactionsStorageKey(namespace, roomId))
+            ?.toSet() ??
+        const <String>{};
+    final sorted =
+        messages.where((message) => !redactedIds.contains(message.id)).toList()
+          ..sort(compareChatMessages);
     final trimmed = sorted.length > _kMaxCachedMessagesPerRoom
         ? sorted.sublist(sorted.length - _kMaxCachedMessagesPerRoom)
         : sorted;

@@ -353,6 +353,8 @@ pub enum SyncEvent {
     RoomListChanged,
     /// A message was sent (room list should refresh).
     MessageSent { room_id: String },
+    /// A message was redacted, including events outside the live window.
+    MessageRedacted { room_id: String, event_id: String },
     /// A room's pinned-event state changed.
     PinnedMessagesChanged { room_id: String },
     /// A room's membership state changed.
@@ -2468,9 +2470,22 @@ fn install_verification_event_handler(client: &Client, identity: ClientIdentity)
 
 fn install_live_update_event_handlers(client: &Client, identity: ClientIdentity) {
     let message_identity = identity.clone();
-    client.add_event_handler(move |_event: AnySyncMessageLikeEvent, room: Room| {
+    client.add_event_handler(move |event: AnySyncMessageLikeEvent, room: Room| {
         let identity = message_identity.clone();
         async move {
+            if let AnySyncMessageLikeEvent::RoomRedaction(redaction) = &event {
+                let rules = room.clone_info().room_version_rules_or_default().redaction;
+                if let Some(event_id) = redaction.redacts(&rules) {
+                    notify_sync_event_for_client(
+                        &identity,
+                        SyncEvent::MessageRedacted {
+                            room_id: room.room_id().to_string(),
+                            event_id: event_id.to_string(),
+                        },
+                    )
+                    .await;
+                }
+            }
             notify_sync_event_for_client(
                 &identity,
                 SyncEvent::MessageSent {
@@ -8420,6 +8435,7 @@ fn video_message_content(
 /// `filename` is the original file name (e.g. "photo.jpg").
 #[frb]
 pub async fn send_image_message(
+    account_user_id: String,
     room_id: String,
     image_data: Vec<u8>,
     filename: String,
@@ -8430,6 +8446,7 @@ pub async fn send_image_message(
     let client = get_client()
         .await
         .ok_or_else(|| api_err("media", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
     let mime_type = image_mime_type(&filename, mime_type)?;
     let identity = media_client_identity(&client).await?;
@@ -8512,6 +8529,7 @@ pub async fn send_image_message(
 /// Send an arbitrary file (document) attachment to a room.
 #[frb]
 pub async fn send_file_message(
+    account_user_id: String,
     room_id: String,
     file_data: Vec<u8>,
     filename: String,
@@ -8521,6 +8539,7 @@ pub async fn send_file_message(
     let client = get_client()
         .await
         .ok_or_else(|| api_err("media", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
     let mime_type = parse_supplied_mime_type(mime_type)?.unwrap_or(mime::APPLICATION_OCTET_STREAM);
     let file_size = size
@@ -8590,6 +8609,7 @@ pub async fn send_file_message(
 #[frb]
 #[allow(clippy::too_many_arguments)]
 pub async fn send_video_message(
+    account_user_id: String,
     room_id: String,
     video_data: Vec<u8>,
     filename: String,
@@ -8602,6 +8622,7 @@ pub async fn send_video_message(
     let client = get_client()
         .await
         .ok_or_else(|| api_err("media", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
     let mime_type = video_mime_type(&filename, mime_type)?;
     let identity = media_client_identity(&client).await?;
@@ -8773,7 +8794,12 @@ fn location_message_content(
 /// `matrix-sdk-ui` version. `geo_uri` follows RFC 5870, for example
 /// `geo:37.786971,-122.399677`.
 #[frb]
-pub async fn send_location(room_id: String, body: String, geo_uri: String) -> Result<(), String> {
+pub async fn send_location(
+    account_user_id: String,
+    room_id: String,
+    body: String,
+    geo_uri: String,
+) -> Result<(), String> {
     let generation = SYNC_GENERATION.load(Ordering::SeqCst);
 
     let content = location_message_content(&body, &geo_uri)?;
@@ -8781,6 +8807,7 @@ pub async fn send_location(room_id: String, body: String, geo_uri: String) -> Re
     let client = get_client()
         .await
         .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
     room.send(content)
         .await
@@ -8875,6 +8902,7 @@ fn poll_start_content(
 /// stable counterpart is not parsed there yet.
 #[frb]
 pub async fn send_poll(
+    account_user_id: String,
     room_id: String,
     question: String,
     answers: Vec<String>,
@@ -8894,6 +8922,7 @@ pub async fn send_poll(
     let client = get_client()
         .await
         .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
     room.send(content)
         .await
@@ -9750,6 +9779,99 @@ fn ensure_account_matches(client: &Client, account_user_id: &str) -> Result<(), 
         return Err(api_err("account", "当前账号已切换，请重试。".to_string()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod account_bound_attachment_tests {
+    use super::*;
+    use matrix_sdk::test_utils::mocks::MatrixMockServer;
+
+    #[tokio::test]
+    async fn attachment_and_recall_apis_reject_a_switched_account_before_room_access() {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let user_id = client.user_id().unwrap().to_string();
+        let (previous_active, previous_entry) = {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            let active = ACTIVE_USER.write().await.replace(user_id.clone());
+            let entry = CLIENTS.write().await.insert(
+                user_id.clone(),
+                ClientEntry {
+                    client,
+                    data_dir: String::new(),
+                    search_index_dir: std::path::PathBuf::new(),
+                    instance_id: u64::MAX,
+                    room_key_task: tokio::spawn(std::future::pending()),
+                },
+            );
+            (active, entry)
+        };
+        let wrong = "@wrong:example.org".to_owned();
+        let room = "!missing:example.org".to_owned();
+        let results = [
+            send_image_message(
+                wrong.clone(),
+                room.clone(),
+                vec![1],
+                "image.png".into(),
+                None,
+                None,
+                None,
+            )
+            .await,
+            send_file_message(
+                wrong.clone(),
+                room.clone(),
+                vec![1],
+                "file.txt".into(),
+                None,
+                None,
+            )
+            .await,
+            send_video_message(
+                wrong.clone(),
+                room.clone(),
+                vec![1],
+                "video.mp4".into(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await,
+            send_location(
+                wrong.clone(),
+                room.clone(),
+                "location".into(),
+                "geo:1,2".into(),
+            )
+            .await,
+            send_poll(
+                wrong.clone(),
+                room.clone(),
+                "question".into(),
+                vec!["yes".into(), "no".into()],
+                true,
+                1,
+            )
+            .await,
+            redact_message(wrong, room, "$event:example.org".into(), None).await,
+        ];
+        {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            *ACTIVE_USER.write().await = previous_active;
+            let entry = CLIENTS.write().await.remove(&user_id).unwrap();
+            entry.room_key_task.abort();
+            if let Some(previous_entry) = previous_entry {
+                CLIENTS.write().await.insert(user_id, previous_entry);
+            }
+        }
+        for result in results {
+            assert!(result.unwrap_err().contains("当前账号已切换"));
+        }
+        server.verify_and_reset().await;
+    }
 }
 
 /// Leave a joined non-space room.
@@ -11906,6 +12028,7 @@ pub async fn send_reaction(
 /// Redact (delete) a message from a room.
 #[frb]
 pub async fn redact_message(
+    account_user_id: String,
     room_id: String,
     event_id: String,
     reason: Option<String>,
@@ -11915,6 +12038,7 @@ pub async fn redact_message(
     let client = get_client()
         .await
         .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
 
     let parsed_event_id = matrix_sdk::ruma::EventId::parse(&event_id)
@@ -11930,7 +12054,7 @@ pub async fn redact_message(
         format!("Redacted event {} in room {}", event_id, room_id),
     );
     info!("Redacted event {} in room {}", event_id, room_id);
-    notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
+    notify_sync_event_for_generation(generation, SyncEvent::MessageRedacted { room_id, event_id });
     Ok(())
 }
 

@@ -56,14 +56,15 @@ extension SyncEventPatterns on SyncEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SyncEvent_SyncCompleted value)?  syncCompleted,TResult Function( SyncEvent_FullRefreshRequired value)?  fullRefreshRequired,TResult Function( SyncEvent_RoomListChanged value)?  roomListChanged,TResult Function( SyncEvent_MessageSent value)?  messageSent,TResult Function( SyncEvent_PinnedMessagesChanged value)?  pinnedMessagesChanged,TResult Function( SyncEvent_RoomMembersChanged value)?  roomMembersChanged,TResult Function( SyncEvent_IgnoredUsersChanged value)?  ignoredUsersChanged,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SyncEvent_SyncCompleted value)?  syncCompleted,TResult Function( SyncEvent_FullRefreshRequired value)?  fullRefreshRequired,TResult Function( SyncEvent_RoomListChanged value)?  roomListChanged,TResult Function( SyncEvent_MessageSent value)?  messageSent,TResult Function( SyncEvent_MessageRedacted value)?  messageRedacted,TResult Function( SyncEvent_PinnedMessagesChanged value)?  pinnedMessagesChanged,TResult Function( SyncEvent_RoomMembersChanged value)?  roomMembersChanged,TResult Function( SyncEvent_IgnoredUsersChanged value)?  ignoredUsersChanged,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case SyncEvent_SyncCompleted() when syncCompleted != null:
 return syncCompleted(_that);case SyncEvent_FullRefreshRequired() when fullRefreshRequired != null:
 return fullRefreshRequired(_that);case SyncEvent_RoomListChanged() when roomListChanged != null:
 return roomListChanged(_that);case SyncEvent_MessageSent() when messageSent != null:
-return messageSent(_that);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
+return messageSent(_that);case SyncEvent_MessageRedacted() when messageRedacted != null:
+return messageRedacted(_that);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
 return pinnedMessagesChanged(_that);case SyncEvent_RoomMembersChanged() when roomMembersChanged != null:
 return roomMembersChanged(_that);case SyncEvent_IgnoredUsersChanged() when ignoredUsersChanged != null:
 return ignoredUsersChanged(_that);case _:
@@ -84,14 +85,15 @@ return ignoredUsersChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SyncEvent_SyncCompleted value)  syncCompleted,required TResult Function( SyncEvent_FullRefreshRequired value)  fullRefreshRequired,required TResult Function( SyncEvent_RoomListChanged value)  roomListChanged,required TResult Function( SyncEvent_MessageSent value)  messageSent,required TResult Function( SyncEvent_PinnedMessagesChanged value)  pinnedMessagesChanged,required TResult Function( SyncEvent_RoomMembersChanged value)  roomMembersChanged,required TResult Function( SyncEvent_IgnoredUsersChanged value)  ignoredUsersChanged,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SyncEvent_SyncCompleted value)  syncCompleted,required TResult Function( SyncEvent_FullRefreshRequired value)  fullRefreshRequired,required TResult Function( SyncEvent_RoomListChanged value)  roomListChanged,required TResult Function( SyncEvent_MessageSent value)  messageSent,required TResult Function( SyncEvent_MessageRedacted value)  messageRedacted,required TResult Function( SyncEvent_PinnedMessagesChanged value)  pinnedMessagesChanged,required TResult Function( SyncEvent_RoomMembersChanged value)  roomMembersChanged,required TResult Function( SyncEvent_IgnoredUsersChanged value)  ignoredUsersChanged,}){
 final _that = this;
 switch (_that) {
 case SyncEvent_SyncCompleted():
 return syncCompleted(_that);case SyncEvent_FullRefreshRequired():
 return fullRefreshRequired(_that);case SyncEvent_RoomListChanged():
 return roomListChanged(_that);case SyncEvent_MessageSent():
-return messageSent(_that);case SyncEvent_PinnedMessagesChanged():
+return messageSent(_that);case SyncEvent_MessageRedacted():
+return messageRedacted(_that);case SyncEvent_PinnedMessagesChanged():
 return pinnedMessagesChanged(_that);case SyncEvent_RoomMembersChanged():
 return roomMembersChanged(_that);case SyncEvent_IgnoredUsersChanged():
 return ignoredUsersChanged(_that);}
@@ -108,14 +110,15 @@ return ignoredUsersChanged(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SyncEvent_SyncCompleted value)?  syncCompleted,TResult? Function( SyncEvent_FullRefreshRequired value)?  fullRefreshRequired,TResult? Function( SyncEvent_RoomListChanged value)?  roomListChanged,TResult? Function( SyncEvent_MessageSent value)?  messageSent,TResult? Function( SyncEvent_PinnedMessagesChanged value)?  pinnedMessagesChanged,TResult? Function( SyncEvent_RoomMembersChanged value)?  roomMembersChanged,TResult? Function( SyncEvent_IgnoredUsersChanged value)?  ignoredUsersChanged,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SyncEvent_SyncCompleted value)?  syncCompleted,TResult? Function( SyncEvent_FullRefreshRequired value)?  fullRefreshRequired,TResult? Function( SyncEvent_RoomListChanged value)?  roomListChanged,TResult? Function( SyncEvent_MessageSent value)?  messageSent,TResult? Function( SyncEvent_MessageRedacted value)?  messageRedacted,TResult? Function( SyncEvent_PinnedMessagesChanged value)?  pinnedMessagesChanged,TResult? Function( SyncEvent_RoomMembersChanged value)?  roomMembersChanged,TResult? Function( SyncEvent_IgnoredUsersChanged value)?  ignoredUsersChanged,}){
 final _that = this;
 switch (_that) {
 case SyncEvent_SyncCompleted() when syncCompleted != null:
 return syncCompleted(_that);case SyncEvent_FullRefreshRequired() when fullRefreshRequired != null:
 return fullRefreshRequired(_that);case SyncEvent_RoomListChanged() when roomListChanged != null:
 return roomListChanged(_that);case SyncEvent_MessageSent() when messageSent != null:
-return messageSent(_that);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
+return messageSent(_that);case SyncEvent_MessageRedacted() when messageRedacted != null:
+return messageRedacted(_that);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
 return pinnedMessagesChanged(_that);case SyncEvent_RoomMembersChanged() when roomMembersChanged != null:
 return roomMembersChanged(_that);case SyncEvent_IgnoredUsersChanged() when ignoredUsersChanged != null:
 return ignoredUsersChanged(_that);case _:
@@ -135,13 +138,14 @@ return ignoredUsersChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  syncCompleted,TResult Function()?  fullRefreshRequired,TResult Function()?  roomListChanged,TResult Function( String roomId)?  messageSent,TResult Function( String roomId)?  pinnedMessagesChanged,TResult Function( String roomId)?  roomMembersChanged,TResult Function()?  ignoredUsersChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  syncCompleted,TResult Function()?  fullRefreshRequired,TResult Function()?  roomListChanged,TResult Function( String roomId)?  messageSent,TResult Function( String roomId,  String eventId)?  messageRedacted,TResult Function( String roomId)?  pinnedMessagesChanged,TResult Function( String roomId)?  roomMembersChanged,TResult Function()?  ignoredUsersChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case SyncEvent_SyncCompleted() when syncCompleted != null:
 return syncCompleted();case SyncEvent_FullRefreshRequired() when fullRefreshRequired != null:
 return fullRefreshRequired();case SyncEvent_RoomListChanged() when roomListChanged != null:
 return roomListChanged();case SyncEvent_MessageSent() when messageSent != null:
-return messageSent(_that.roomId);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
+return messageSent(_that.roomId);case SyncEvent_MessageRedacted() when messageRedacted != null:
+return messageRedacted(_that.roomId,_that.eventId);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
 return pinnedMessagesChanged(_that.roomId);case SyncEvent_RoomMembersChanged() when roomMembersChanged != null:
 return roomMembersChanged(_that.roomId);case SyncEvent_IgnoredUsersChanged() when ignoredUsersChanged != null:
 return ignoredUsersChanged();case _:
@@ -162,13 +166,14 @@ return ignoredUsersChanged();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  syncCompleted,required TResult Function()  fullRefreshRequired,required TResult Function()  roomListChanged,required TResult Function( String roomId)  messageSent,required TResult Function( String roomId)  pinnedMessagesChanged,required TResult Function( String roomId)  roomMembersChanged,required TResult Function()  ignoredUsersChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  syncCompleted,required TResult Function()  fullRefreshRequired,required TResult Function()  roomListChanged,required TResult Function( String roomId)  messageSent,required TResult Function( String roomId,  String eventId)  messageRedacted,required TResult Function( String roomId)  pinnedMessagesChanged,required TResult Function( String roomId)  roomMembersChanged,required TResult Function()  ignoredUsersChanged,}) {final _that = this;
 switch (_that) {
 case SyncEvent_SyncCompleted():
 return syncCompleted();case SyncEvent_FullRefreshRequired():
 return fullRefreshRequired();case SyncEvent_RoomListChanged():
 return roomListChanged();case SyncEvent_MessageSent():
-return messageSent(_that.roomId);case SyncEvent_PinnedMessagesChanged():
+return messageSent(_that.roomId);case SyncEvent_MessageRedacted():
+return messageRedacted(_that.roomId,_that.eventId);case SyncEvent_PinnedMessagesChanged():
 return pinnedMessagesChanged(_that.roomId);case SyncEvent_RoomMembersChanged():
 return roomMembersChanged(_that.roomId);case SyncEvent_IgnoredUsersChanged():
 return ignoredUsersChanged();}
@@ -185,13 +190,14 @@ return ignoredUsersChanged();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  syncCompleted,TResult? Function()?  fullRefreshRequired,TResult? Function()?  roomListChanged,TResult? Function( String roomId)?  messageSent,TResult? Function( String roomId)?  pinnedMessagesChanged,TResult? Function( String roomId)?  roomMembersChanged,TResult? Function()?  ignoredUsersChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  syncCompleted,TResult? Function()?  fullRefreshRequired,TResult? Function()?  roomListChanged,TResult? Function( String roomId)?  messageSent,TResult? Function( String roomId,  String eventId)?  messageRedacted,TResult? Function( String roomId)?  pinnedMessagesChanged,TResult? Function( String roomId)?  roomMembersChanged,TResult? Function()?  ignoredUsersChanged,}) {final _that = this;
 switch (_that) {
 case SyncEvent_SyncCompleted() when syncCompleted != null:
 return syncCompleted();case SyncEvent_FullRefreshRequired() when fullRefreshRequired != null:
 return fullRefreshRequired();case SyncEvent_RoomListChanged() when roomListChanged != null:
 return roomListChanged();case SyncEvent_MessageSent() when messageSent != null:
-return messageSent(_that.roomId);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
+return messageSent(_that.roomId);case SyncEvent_MessageRedacted() when messageRedacted != null:
+return messageRedacted(_that.roomId,_that.eventId);case SyncEvent_PinnedMessagesChanged() when pinnedMessagesChanged != null:
 return pinnedMessagesChanged(_that.roomId);case SyncEvent_RoomMembersChanged() when roomMembersChanged != null:
 return roomMembersChanged(_that.roomId);case SyncEvent_IgnoredUsersChanged() when ignoredUsersChanged != null:
 return ignoredUsersChanged();case _:
@@ -357,6 +363,74 @@ class _$SyncEvent_MessageSentCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? roomId = null,}) {
   return _then(SyncEvent_MessageSent(
 roomId: null == roomId ? _self.roomId : roomId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class SyncEvent_MessageRedacted extends SyncEvent {
+  const SyncEvent_MessageRedacted({required this.roomId, required this.eventId}): super._();
+
+
+ final  String roomId;
+ final  String eventId;
+
+/// Create a copy of SyncEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SyncEvent_MessageRedactedCopyWith<SyncEvent_MessageRedacted> get copyWith => _$SyncEvent_MessageRedactedCopyWithImpl<SyncEvent_MessageRedacted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SyncEvent_MessageRedacted&&(identical(other.roomId, roomId) || other.roomId == roomId)&&(identical(other.eventId, eventId) || other.eventId == eventId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,roomId,eventId);
+
+@override
+String toString() {
+  return 'SyncEvent.messageRedacted(roomId: $roomId, eventId: $eventId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SyncEvent_MessageRedactedCopyWith<$Res> implements $SyncEventCopyWith<$Res> {
+  factory $SyncEvent_MessageRedactedCopyWith(SyncEvent_MessageRedacted value, $Res Function(SyncEvent_MessageRedacted) _then) = _$SyncEvent_MessageRedactedCopyWithImpl;
+@useResult
+$Res call({
+ String roomId, String eventId
+});
+
+
+
+
+}
+/// @nodoc
+class _$SyncEvent_MessageRedactedCopyWithImpl<$Res>
+    implements $SyncEvent_MessageRedactedCopyWith<$Res> {
+  _$SyncEvent_MessageRedactedCopyWithImpl(this._self, this._then);
+
+  final SyncEvent_MessageRedacted _self;
+  final $Res Function(SyncEvent_MessageRedacted) _then;
+
+/// Create a copy of SyncEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? roomId = null,Object? eventId = null,}) {
+  return _then(SyncEvent_MessageRedacted(
+roomId: null == roomId ? _self.roomId : roomId // ignore: cast_nullable_to_non_nullable
+as String,eventId: null == eventId ? _self.eventId : eventId // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }

@@ -51,6 +51,7 @@ class AttachmentPicker extends StatefulWidget {
   final double height;
   final double maxHeight;
   final String roomId;
+  final String accountUserId;
   final Future<void> Function(String roomId) onRefresh;
   final MessageSendPresentation Function() resolveSendPresentation;
   final void Function(
@@ -66,6 +67,7 @@ class AttachmentPicker extends StatefulWidget {
     required this.height,
     required this.maxHeight,
     required this.roomId,
+    required this.accountUserId,
     required this.onRefresh,
     required this.resolveSendPresentation,
     required this.onMessageSent,
@@ -82,6 +84,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   late final ValueNotifier<double> _sheetExtent;
   AttachmentTab _tab = AttachmentTab.media;
   final Set<AttachmentTab> _visitedTabs = {AttachmentTab.media};
+  late final String _accountUserId;
   bool _isSending = false;
   bool _isPickingFiles = false;
 
@@ -94,6 +97,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   @override
   void initState() {
     super.initState();
+    _accountUserId = widget.accountUserId;
     _sheetController = DraggableScrollableController();
     _sheetExtent = ValueNotifier<double>(0);
   }
@@ -131,7 +135,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     if (asset.type == AssetType.video) {
       final bytes = await _readFileBytes(file, '视频');
       final size = asset.size;
+      _ensureCanSend();
       await rust.sendVideoMessage(
+        accountUserId: _accountUserId,
         roomId: widget.roomId,
         videoData: bytes,
         filename: filename,
@@ -151,7 +157,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         filename: filename,
         mimeType: mime,
       );
+      _ensureCanSend();
       await rust.sendImageMessage(
+        accountUserId: _accountUserId,
         roomId: widget.roomId,
         imageData: prepared.bytes,
         filename: prepared.filename,
@@ -161,7 +169,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
       );
     } else {
       final bytes = await _readFileBytes(file, '文件');
+      _ensureCanSend();
       await rust.sendFileMessage(
+        accountUserId: _accountUserId,
         roomId: widget.roomId,
         fileData: bytes,
         filename: filename,
@@ -220,7 +230,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         filename: file.name,
         mimeType: mime!,
       );
+      _ensureCanSend();
       await rust.sendImageMessage(
+        accountUserId: _accountUserId,
         roomId: widget.roomId,
         imageData: prepared.bytes,
         filename: prepared.filename,
@@ -229,7 +241,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         height: prepared.height,
       );
     } else if (kind == AttachmentMediaKind.video) {
+      _ensureCanSend();
       await rust.sendVideoMessage(
+        accountUserId: _accountUserId,
         roomId: widget.roomId,
         videoData: original,
         filename: file.name,
@@ -237,7 +251,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         size: original.length,
       );
     } else {
+      _ensureCanSend();
       await rust.sendFileMessage(
+        accountUserId: _accountUserId,
         roomId: widget.roomId,
         fileData: original,
         filename: file.name,
@@ -249,7 +265,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
 
   Future<void> _sendSingleFile(XFile file) async {
     final bytes = await _readXFileBytes(file);
+    _ensureCanSend();
     await rust.sendFileMessage(
+      accountUserId: _accountUserId,
       roomId: widget.roomId,
       fileData: bytes,
       filename: file.name,
@@ -432,7 +450,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         _imageExtensionForMime(mimeType!),
       );
       final imageSize = await _decodeImageSize(bytes);
+      _ensureCanSend();
       await rust.sendImageMessage(
+        accountUserId: _accountUserId,
         roomId: widget.roomId,
         imageData: bytes,
         filename: filename,
@@ -450,6 +470,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     int maxSelections,
   ) => _runBatch([
     () => rust.sendPoll(
+      accountUserId: _accountUserId,
       roomId: widget.roomId,
       question: question,
       answers: answers,
@@ -459,8 +480,17 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   ], null);
 
   Future<void> _sendLocation(String body, String geoUri) => _runBatch([
-    () => rust.sendLocation(roomId: widget.roomId, body: body, geoUri: geoUri),
+    () => rust.sendLocation(
+      accountUserId: _accountUserId,
+      roomId: widget.roomId,
+      body: body,
+      geoUri: geoUri,
+    ),
   ], null);
+
+  void _ensureCanSend() {
+    if (!mounted) throw StateError('附件发送已取消');
+  }
 
   /// Sends a batch of individual send operations, tracking per-item success so
   /// a partial failure does not re-send already-delivered items on retry, and
@@ -478,6 +508,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     var sent = 0;
     try {
       for (var i = 0; i < ops.length; i++) {
+        if (!mounted) return;
         try {
           await ops[i]();
           sent++;

@@ -444,6 +444,7 @@ Future<String> forwardMessage({
 /// `image_data` is the raw bytes of the image file.
 /// `filename` is the original file name (e.g. "photo.jpg").
 Future<void> sendImageMessage({
+  required String accountUserId,
   required String roomId,
   required List<int> imageData,
   required String filename,
@@ -451,6 +452,7 @@ Future<void> sendImageMessage({
   int? width,
   int? height,
 }) => RustLib.instance.api.crateApiMatrixSendImageMessage(
+  accountUserId: accountUserId,
   roomId: roomId,
   imageData: imageData,
   filename: filename,
@@ -461,12 +463,14 @@ Future<void> sendImageMessage({
 
 /// Send an arbitrary file (document) attachment to a room.
 Future<void> sendFileMessage({
+  required String accountUserId,
   required String roomId,
   required List<int> fileData,
   required String filename,
   String? mimeType,
   int? size,
 }) => RustLib.instance.api.crateApiMatrixSendFileMessage(
+  accountUserId: accountUserId,
   roomId: roomId,
   fileData: fileData,
   filename: filename,
@@ -476,6 +480,7 @@ Future<void> sendFileMessage({
 
 /// Send a video attachment to a room.
 Future<void> sendVideoMessage({
+  required String accountUserId,
   required String roomId,
   required List<int> videoData,
   required String filename,
@@ -485,6 +490,7 @@ Future<void> sendVideoMessage({
   int? durationMs,
   int? size,
 }) => RustLib.instance.api.crateApiMatrixSendVideoMessage(
+  accountUserId: accountUserId,
   roomId: roomId,
   videoData: videoData,
   filename: filename,
@@ -501,10 +507,12 @@ Future<void> sendVideoMessage({
 /// `matrix-sdk-ui` version. `geo_uri` follows RFC 5870, for example
 /// `geo:37.786971,-122.399677`.
 Future<void> sendLocation({
+  required String accountUserId,
   required String roomId,
   required String body,
   required String geoUri,
 }) => RustLib.instance.api.crateApiMatrixSendLocation(
+  accountUserId: accountUserId,
   roomId: roomId,
   body: body,
   geoUri: geoUri,
@@ -515,12 +523,14 @@ Future<void> sendLocation({
 /// This is the poll type surfaced by the current `matrix-sdk-ui` version; its
 /// stable counterpart is not parsed there yet.
 Future<void> sendPoll({
+  required String accountUserId,
   required String roomId,
   required String question,
   required List<String> answers,
   required bool disclosed,
   required int maxSelections,
 }) => RustLib.instance.api.crateApiMatrixSendPoll(
+  accountUserId: accountUserId,
   roomId: roomId,
   question: question,
   answers: answers,
@@ -919,10 +929,12 @@ Future<String> sendReaction({
 
 /// Redact (delete) a message from a room.
 Future<void> redactMessage({
+  required String accountUserId,
   required String roomId,
   required String eventId,
   String? reason,
 }) => RustLib.instance.api.crateApiMatrixRedactMessage(
+  accountUserId: accountUserId,
   roomId: roomId,
   eventId: eventId,
   reason: reason,
@@ -2231,6 +2243,12 @@ sealed class SyncEvent with _$SyncEvent {
   /// A message was sent (room list should refresh).
   const factory SyncEvent.messageSent({required String roomId}) =
       SyncEvent_MessageSent;
+
+  /// A message was redacted, including events outside the live window.
+  const factory SyncEvent.messageRedacted({
+    required String roomId,
+    required String eventId,
+  }) = SyncEvent_MessageRedacted;
 
   /// A room's pinned-event state changed.
   const factory SyncEvent.pinnedMessagesChanged({required String roomId}) =
