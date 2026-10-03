@@ -514,6 +514,59 @@ void main() {
     );
   });
 
+  testWidgets('a recall removes a message from detached history browsing', (
+    tester,
+  ) async {
+    const roomId = '!recalled-history:example.org';
+    const userId = '@alice:example.org';
+    rustApi.messagesAround = [_message(r'$old-target')];
+    final container = ProviderContainer(
+      overrides: [
+        ignoredUserIdsProvider.overrideWith((ref) async => const <String>{}),
+        roomMembersProvider(roomId).overrideWith((ref) async => const []),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = userId;
+    await container.read(roomMembersProvider(roomId).future);
+    container.read(messageCacheOwnerProvider(roomId).notifier).value = userId;
+    container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+    container.read(messageCacheProvider(roomId).notifier).value = [
+      _message(r'$latest'),
+    ];
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: ChatDetailPage(
+            roomId: roomId,
+            roomName: 'Room',
+            initialMessageId: r'$old-target',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey(r'text-bubble:$old-target')),
+      findsOneWidget,
+    );
+    await tester.runAsync(
+      () => recordMessageRedaction(container.read, (
+        roomId: roomId,
+        userId: userId,
+      ), r'$old-target'),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey(r'text-bubble:$old-target')),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('a connected initial search result keeps the live timeline', (
     tester,
   ) async {

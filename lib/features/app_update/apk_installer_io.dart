@@ -16,6 +16,7 @@ Future<String> downloadAndroidApk({
   required int expectedSize,
   required String? digest,
   required void Function(int received, int total) onProgress,
+  Future<void>? cancel,
 }) async {
   final client = http.Client();
   IOSink? fileSink;
@@ -31,7 +32,7 @@ Future<String> downloadAndroidApk({
     }
     if (await targetFile.exists()) await targetFile.delete();
 
-    final request = http.Request('GET', uri)
+    final request = http.AbortableRequest('GET', uri, abortTrigger: cancel)
       ..headers['Accept'] = 'application/octet-stream'
       ..headers['User-Agent'] = 'Matter-Android-Updater';
     final response = await client
@@ -52,7 +53,9 @@ Future<String> downloadAndroidApk({
     final hashInput = sha256.startChunkedConversion(hashOutput);
     final total = response.contentLength ?? expectedSize;
     var received = 0;
-    await for (final chunk in response.stream) {
+    await for (final chunk in response.stream.timeout(
+      const Duration(seconds: 15),
+    )) {
       fileSink.add(chunk);
       hashInput.add(chunk);
       received += chunk.length;
@@ -75,6 +78,8 @@ Future<String> downloadAndroidApk({
     return (await partialFile.rename(targetFile.path)).path;
   } on AppUpdateException {
     rethrow;
+  } on http.RequestAbortedException {
+    throw const AppUpdateException('下载已取消');
   } on TimeoutException {
     throw const AppUpdateException('下载超时，请检查网络后重试');
   } on SocketException {
@@ -84,11 +89,11 @@ Future<String> downloadAndroidApk({
   } catch (error) {
     throw AppUpdateException('下载安装包失败：$error');
   } finally {
+    client.close();
     await fileSink?.close();
     if (partialFile != null && await partialFile.exists()) {
       await partialFile.delete();
     }
-    client.close();
   }
 }
 

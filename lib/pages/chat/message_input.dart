@@ -1899,9 +1899,10 @@ class MessageInputState extends ConsumerState<MessageInput> {
                             ),
                             InputPanelMode.attachment => AttachmentPicker(
                               key: ValueKey(
-                                'attachment_picker_${widget.roomId}',
+                                'attachment_picker_${_draftKey.userId}_${widget.roomId}',
                               ),
                               roomId: widget.roomId,
+                              accountUserId: _draftKey.userId,
                               onRefresh: (roomId) =>
                                   refreshMessages(ref, roomId),
                               resolveSendPresentation:

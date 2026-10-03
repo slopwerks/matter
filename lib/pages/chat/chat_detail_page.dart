@@ -193,6 +193,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   RoomAccountKey? _lastLocalRoomAccountKey;
   List<ChatMessage> _lastTimelineMessages = const [];
   List<ChatMessage>? _lastDerivedMessagesInput;
+  Set<String>? _lastDerivedRedactedIds;
   int _olderMessagesRevision = 0;
   int _lastDerivedOlderMessagesRevision = -1;
   int _sortOverrideRevision = 0;
@@ -1404,16 +1405,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   List<ChatMessage> _mergeMessages(
     List<ChatMessage> latestMessages,
     Set<String> ignoredUserIds,
+    Set<String> redactedIds,
   ) {
     final byId = <String, ChatMessage>{
       for (final message in _olderMessages)
-        if (message.isMe || !ignoredUserIds.contains(message.senderId))
+        if (!redactedIds.contains(message.id) &&
+            (message.isMe || !ignoredUserIds.contains(message.senderId)))
           message.id: message,
       // Focused history browsing hides the live window: merging it back in
       // would show the unfillable gap between the slice and the live edge.
       if (!_focusedBrowsing)
         for (final message in latestMessages)
-          if (message.isMe || !ignoredUserIds.contains(message.senderId))
+          if (!redactedIds.contains(message.id) &&
+              (message.isMe || !ignoredUserIds.contains(message.senderId)))
             message.id: message,
     };
     final messages = byId.values.toList()
@@ -1543,6 +1547,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   String _messagesFingerprint(
     List<ChatMessage> latestMessages,
     Set<String> ignoredUserIds,
+    Set<String> redactedIds,
   ) {
     final sortedIgnoredUserIds = ignoredUserIds.toList()..sort();
     final buffer = StringBuffer()
@@ -1553,7 +1558,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       ..write(';focused=')
       ..write(_focusedBrowsing ? 1 : 0)
       ..write(';ignored=')
-      ..writeAll(sortedIgnoredUserIds, ',');
+      ..writeAll(sortedIgnoredUserIds, ',')
+      ..write(';redacted=')
+      ..writeAll(redactedIds.toList()..sort(), ',');
     for (final message in _olderMessages) {
       buffer
         ..write('|o:')
@@ -1610,13 +1617,20 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   void _rebuildDerivedMessages(
     List<ChatMessage> latestMessages,
     Set<String> ignoredUserIds,
+    Set<String> redactedIds,
   ) {
-    if (identical(_lastDerivedMessagesInput, latestMessages) &&
+    if (identical(_lastDerivedRedactedIds, redactedIds) &&
+        identical(_lastDerivedMessagesInput, latestMessages) &&
         _lastDerivedOlderMessagesRevision == _olderMessagesRevision &&
         _lastDerivedSortOverrideRevision == _sortOverrideRevision) {
       return;
     }
-    final fingerprint = _messagesFingerprint(latestMessages, ignoredUserIds);
+    _lastDerivedRedactedIds = redactedIds;
+    final fingerprint = _messagesFingerprint(
+      latestMessages,
+      ignoredUserIds,
+      redactedIds,
+    );
     if (_derivedMessagesFingerprint == fingerprint) {
       _lastDerivedMessagesInput = latestMessages;
       _lastDerivedOlderMessagesRevision = _olderMessagesRevision;
@@ -1627,7 +1641,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _lastDerivedMessagesInput = latestMessages;
     _lastDerivedOlderMessagesRevision = _olderMessagesRevision;
     _lastDerivedSortOverrideRevision = _sortOverrideRevision;
-    final displayedMessages = _mergeMessages(latestMessages, ignoredUserIds);
+    final displayedMessages = _mergeMessages(
+      latestMessages,
+      ignoredUserIds,
+      redactedIds,
+    );
     _displayedMessages = displayedMessages;
     _messageIndex
       ..clear()
@@ -1807,6 +1825,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       messageCacheOwnerProvider(widget.roomId),
     );
     final activeUserId = ref.watch(activeUserIdProvider) ?? 'anonymous';
+    final redactedIds = ref.watch(
+      redactedMessageIdsProvider((roomId: widget.roomId, userId: activeUserId)),
+    );
     final ignoredUserIdsAsync = ref.watch(ignoredUserIdsProvider);
     // Re-arm auto-pagination once the ignore list becomes known: the block
     // may have been decided without the filter (see _rebuildDerivedMessages),
@@ -2058,7 +2079,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       localOutgoingMessages,
                       roomAccountKey,
                     );
-                    _rebuildDerivedMessages(timelineMessages, ignoredUserIds);
+                    _rebuildDerivedMessages(
+                      timelineMessages,
+                      ignoredUserIds,
+                      redactedIds,
+                    );
                     if (_displayedMessages.isEmpty &&
                         !_initialMessageJumpPending &&
                         !_automaticOlderLoadBlocked &&

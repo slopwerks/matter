@@ -1333,7 +1333,13 @@ List<rust.ChatMessage> updateMessageCache(
   List<rust.ChatMessage> messages,
 ) {
   final current = ref.read(messageCacheProvider(roomId));
-  final reconciled = reconcileMessageSnapshot(current, messages);
+  final redactedIds = ref.read(
+    redactedMessageIdsProvider(activeRoomAccountKey(ref, roomId)),
+  );
+  final snapshot = reconcileMessageSnapshot(current, messages);
+  final reconciled = redactedIds.isEmpty
+      ? snapshot
+      : snapshot.where((message) => !redactedIds.contains(message.id)).toList();
   if (current.length == reconciled.length) {
     var same = true;
     for (var i = 0; i < reconciled.length; i++) {
@@ -1388,7 +1394,10 @@ Future<void> primeMessageCache(WidgetRef ref, String roomId) async {
   // The calling widget may have been unmounted while the disk check was in
   // flight (entering the chat and leaving again): `ref.read` below throws
   // on a disposed widget.
-  if (!ref.context.mounted) return;
+  if (!ref.context.mounted ||
+      (ref.read(activeUserIdProvider) ?? 'anonymous') != namespace) {
+    return;
+  }
   final owner = ref.read(messageCacheOwnerProvider(roomId));
   if (owner != namespace) {
     ref.read(messageCacheProvider(roomId).notifier).value = const [];
@@ -1396,6 +1405,21 @@ Future<void> primeMessageCache(WidgetRef ref, String roomId) async {
     ref.read(messageCacheOwnerProvider(roomId).notifier).value = namespace;
   }
   if (ref.read(messageCachePrimedProvider(roomId))) return;
+  final persistedRedactions = await loadCachedMessageRedactions(
+    namespace: namespace,
+    roomId: roomId,
+  );
+  if (!ref.context.mounted ||
+      (ref.read(activeUserIdProvider) ?? 'anonymous') != namespace ||
+      ref.read(messageCacheOwnerProvider(roomId)) != namespace) {
+    return;
+  }
+  final redactions = ref.read(
+    redactedMessageIdsProvider((roomId: roomId, userId: namespace)).notifier,
+  );
+  if (persistedRedactions.isNotEmpty) {
+    redactions.value = {...redactions.value, ...persistedRedactions};
+  }
   if (!allowDiskCache) {
     await clearCachedMessagesForRoom(namespace: namespace, roomId: roomId);
   }
@@ -1404,10 +1428,16 @@ Future<void> primeMessageCache(WidgetRef ref, String roomId) async {
     roomId: roomId,
     allowDiskRead: allowDiskCache,
   );
-  if (!ref.context.mounted) return;
+  if (!ref.context.mounted ||
+      (ref.read(activeUserIdProvider) ?? 'anonymous') != namespace ||
+      ref.read(messageCacheOwnerProvider(roomId)) != namespace) {
+    return;
+  }
   final current = ref.read(messageCacheProvider(roomId));
   if (current.isEmpty && cached.isNotEmpty) {
-    ref.read(messageCacheProvider(roomId).notifier).value = cached;
+    ref.read(messageCacheProvider(roomId).notifier).value = cached
+        .where((message) => !redactions.value.contains(message.id))
+        .toList();
   }
   ref.read(messageCachePrimedProvider(roomId).notifier).value = true;
 }
@@ -1483,6 +1513,14 @@ class LocalOutgoingMessage {
 }
 
 typedef RoomAccountKey = ({String roomId, String userId});
+
+/// Confirmed recalls, shared by live snapshots and detached history slices.
+final redactedMessageIdsProvider =
+    NotifierProvider.family<
+      MutableState<Set<String>>,
+      Set<String>,
+      RoomAccountKey
+    >((key) => AccountScopedMutableState(const <String>{}, key.userId));
 
 final _accountComposerStateRevisionProvider =
     NotifierProvider.family<MutableState<int>, int, String>(
@@ -1886,7 +1924,15 @@ Future<void> _refreshMessagesShared(
     if ((read(activeUserIdProvider) ?? 'anonymous') != namespace) return;
     read(messageCacheOwnerProvider(roomId).notifier).value = namespace;
     final current = read(messageCacheProvider(roomId));
-    final reconciled = reconcileMessageSnapshot(current, latest);
+    final snapshot = reconcileMessageSnapshot(current, latest);
+    final redactedIds = read(
+      redactedMessageIdsProvider((roomId: roomId, userId: namespace)),
+    );
+    final reconciled = redactedIds.isEmpty
+        ? snapshot
+        : snapshot
+              .where((message) => !redactedIds.contains(message.id))
+              .toList();
     // Content-equality check (same discipline as updateMessageCache): the
     // snapshot is rebuilt on every refresh, so `identical` would be false
     // even for unchanged content, forcing a full watcher rebuild each sync.
@@ -2260,9 +2306,53 @@ Future<void> redactMessage(
   String eventId, {
   String? reason,
 }) async {
-  await rust.redactMessage(roomId: roomId, eventId: eventId, reason: reason);
+  final userId = ref.read(activeUserIdProvider) ?? '';
+  final container = ProviderScope.containerOf(ref.context, listen: false);
+  await rust.redactMessage(
+    accountUserId: userId,
+    roomId: roomId,
+    eventId: eventId,
+    reason: reason,
+  );
+  await recordMessageRedaction(container.read, (
+    roomId: roomId,
+    userId: userId,
+  ), eventId);
+  if (!ref.context.mounted || ref.read(activeUserIdProvider) != userId) return;
   await refreshMessages(ref, roomId);
-  ref.invalidate(allChatRoomsProvider);
+  if (ref.context.mounted) ref.invalidate(allChatRoomsProvider);
+}
+
+/// Apply an explicit recall even when the event lies outside the live window.
+Future<void> recordMessageRedaction(
+  T Function<T>(ProviderListenable<T> provider) read,
+  RoomAccountKey key,
+  String eventId,
+) async {
+  final state = read(redactedMessageIdsProvider(key).notifier);
+  state.value = {...state.value, eventId};
+  final owner = read(messageCacheOwnerProvider(key.roomId));
+  if (read(activeUserIdProvider) == key.userId &&
+      (owner == null || owner == key.userId)) {
+    final cache = read(messageCacheProvider(key.roomId).notifier);
+    cache.value = cache.value
+        .where((message) => message.id != eventId)
+        .toList();
+  }
+  try {
+    await redactCachedMessage(
+      namespace: key.userId,
+      roomId: key.roomId,
+      eventId: eventId,
+    );
+    await const MarkdownSourceStore().delete(
+      userId: key.userId,
+      roomId: key.roomId,
+      eventId: eventId,
+    );
+  } catch (error) {
+    debugPrint('Failed to persist message recall: $error');
+  }
 }
 
 /// The sync event stream subscription. Stays active for the app's lifetime.
@@ -2716,6 +2806,20 @@ final syncStreamProvider =
           case rust.SyncEvent_MessageSent(:final roomId):
             if (ref.read(currentRoomIdProvider) == roomId) {
               scheduleMessageRefresh(roomId, markReadAfterRefresh: true);
+            }
+            scheduleRoomRefresh();
+          case rust.SyncEvent_MessageRedacted(:final roomId, :final eventId):
+            unawaited(
+              recordMessageRedaction(ref.read, (
+                roomId: roomId,
+                userId: activeUserId,
+              ), eventId),
+            );
+            ref.invalidate(
+              pinnedMessagesProvider((roomId: roomId, userId: activeUserId)),
+            );
+            if (ref.read(currentRoomIdProvider) == roomId) {
+              scheduleMessageRefresh(roomId);
             }
             scheduleRoomRefresh();
           case rust.SyncEvent_PinnedMessagesChanged(:final roomId):
