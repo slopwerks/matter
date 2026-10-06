@@ -31,13 +31,23 @@ Future<bool> showSessionCredentialCompatibilityDialog(
 );
 
 class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({
+    super.key,
+    this.initialHomeserver,
+    this.initialUserId,
+    this.resumeSession = false,
+  });
+
+  final String? initialHomeserver;
+  final String? initialUserId;
+  final bool resumeSession;
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
+  late String _sessionSearchIndexKey;
   final _homeserverController = TextEditingController();
   List<HomeserverEntry> _homeservers = const [];
 
@@ -73,6 +83,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   void initState() {
     super.initState();
+    _sessionSearchIndexKey = _pendingSearchIndexKey;
+    _homeserverController.text = widget.initialHomeserver ?? '';
+    _usernameController.text =
+        widget.initialUserId?.split(':').first.replaceFirst('@', '') ?? '';
+    _userIdController.text = widget.initialUserId ?? '';
     _loadHomeservers();
   }
 
@@ -270,7 +285,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       userId: session.userId,
       deviceId: session.deviceId,
       displayName: displayName,
-      searchIndexKey: _pendingSearchIndexKey,
+      searchIndexKey: _sessionSearchIndexKey,
     );
     await applyActiveSessionState(
       ref,
@@ -345,18 +360,44 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (_hasCompletedRustLogin) {
         throw StateError('登录已成功，但本地凭据保存失败；请重启应用后再试');
       }
-      final useInMemorySearchIndex =
-          await isSessionCredentialCompatibilityModeEnabled();
-      await rust.createClient(
-        homeserverUrl: homeserverUrl,
-        dataDir: await _getDataDir(),
-        searchIndexKey: useInMemorySearchIndex ? '' : _pendingSearchIndexKey,
-        useInMemorySearchIndex: useInMemorySearchIndex,
-      );
-      final result = await rust.loginWithPassword(
-        username: _usernameController.text,
-        password: _passwordController.text,
-      );
+      final originalUser = widget.initialUserId;
+      final username = _usernameController.text.trim();
+      final resume =
+          widget.resumeSession &&
+          originalUser != null &&
+          (username == originalUser ||
+              username ==
+                  originalUser.split(':').first.replaceFirst('@', '')) &&
+          homeserverUrl.replaceFirst(RegExp(r'/$'), '') ==
+              widget.initialHomeserver?.replaceFirst(RegExp(r'/$'), '');
+      final rust.AuthResult result;
+      if (resume) {
+        final indexKey = await loadOrCreateSearchIndexKey(originalUser);
+        _sessionSearchIndexKey = indexKey.key.isEmpty
+            ? _pendingSearchIndexKey
+            : indexKey.key;
+        result = await rust.resumeSessionWithPassword(
+          accountUserId: originalUser,
+          password: _passwordController.text,
+          searchIndexKey: indexKey.key,
+          resetSearchIndex: indexKey.created,
+          useInMemorySearchIndex: indexKey.key.isEmpty,
+        );
+      } else {
+        _sessionSearchIndexKey = _pendingSearchIndexKey;
+        final useInMemorySearchIndex =
+            await isSessionCredentialCompatibilityModeEnabled();
+        await rust.createClient(
+          homeserverUrl: homeserverUrl,
+          dataDir: await _getDataDir(),
+          searchIndexKey: useInMemorySearchIndex ? '' : _pendingSearchIndexKey,
+          useInMemorySearchIndex: useInMemorySearchIndex,
+        );
+        result = await rust.loginWithPassword(
+          username: username,
+          password: _passwordController.text,
+        );
+      }
       if (result.success) {
         _hasCompletedRustLogin = true;
         await _onAuthSuccess(result.userId ?? '', _usernameController.text);
@@ -371,6 +412,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<void> _register() async {
+    _sessionSearchIndexKey = _pendingSearchIndexKey;
     _clearError();
 
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -441,6 +483,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<void> _loginWithAccessToken() async {
+    _sessionSearchIndexKey = _pendingSearchIndexKey;
     _clearError();
     if (_accessTokenController.text.isEmpty || _userIdController.text.isEmpty) {
       setState(() => _error = '请输入 Access Token 和 User ID');
