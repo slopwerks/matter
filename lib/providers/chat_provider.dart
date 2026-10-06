@@ -1049,6 +1049,20 @@ Future<void> refreshCurrentUserProfile(WidgetRef ref) {
   return _refreshCurrentUserProfile(_ProviderAccess.fromWidgetRef(ref));
 }
 
+bool _updateSessionExpiry(_ProviderAccess ref) {
+  try {
+    if (rust.getConnectionStatus() != rust.ConnectionStatus.sessionExpired) {
+      return false;
+    }
+    ref.read(connectionProvider.notifier).value =
+        AppConnectionState.sessionExpired;
+    return true;
+  } catch (_) {
+    // The bridge may not be ready or the caller may have been disposed.
+    return false;
+  }
+}
+
 Future<void> _refreshCurrentUserProfile(_ProviderAccess ref) async {
   try {
     final profile = await rust.getProfile();
@@ -1065,7 +1079,8 @@ Future<void> _refreshCurrentUserProfile(_ProviderAccess ref) async {
       homeserver: current.homeserver,
     );
   } catch (_) {
-    // Offline, session not ready, or caller widget disposed: keep cached state.
+    _updateSessionExpiry(ref);
+    // Keep the cached profile when the request fails.
   }
 }
 
@@ -1129,6 +1144,10 @@ Future<void> _bootstrapActiveSessionSync(
   for (var attempt = 0; attempt < 3; attempt++) {
     try {
       await syncOnce();
+      if (_updateSessionExpiry(ref)) {
+        if (requireSyncLoop) throw StateError('登录已失效，请重新登录');
+        return;
+      }
       initialSyncSucceeded = true;
       ref.read(connectionProvider.notifier).value =
           AppConnectionState.connected;
@@ -1136,6 +1155,10 @@ Future<void> _bootstrapActiveSessionSync(
       break;
     } catch (e) {
       debugPrint('$attemptLabel ${attempt + 1} failed: $e');
+      if (_updateSessionExpiry(ref)) {
+        if (requireSyncLoop) rethrow;
+        return;
+      }
       if (attempt < 2) {
         await delay(Duration(seconds: 2 * (attempt + 1)));
       }
@@ -1149,10 +1172,15 @@ Future<void> _bootstrapActiveSessionSync(
 
   try {
     await startSync();
+    if (_updateSessionExpiry(ref) && requireSyncLoop) {
+      throw StateError('登录已失效，请重新登录');
+    }
   } catch (e) {
     debugPrint('$startSyncLabel: $e');
-    ref.read(connectionProvider.notifier).value =
-        AppConnectionState.disconnected;
+    if (!_updateSessionExpiry(ref)) {
+      ref.read(connectionProvider.notifier).value =
+          AppConnectionState.disconnected;
+    }
     if (requireSyncLoop) rethrow;
   }
   _invalidateSessionCollections(ref);

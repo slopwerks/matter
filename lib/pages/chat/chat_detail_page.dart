@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/connection_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/message_cache_persistence.dart';
 import '../../providers/message_ordering.dart';
@@ -683,7 +684,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     // No account yet (deep-link before login completed): skip — a write
     // with an empty account id would be rejected by the Rust guard anyway
     // (same guard as clearViewedMarkedUnread / the flush path).
-    if (startAccount == null) return;
+    if (startAccount == null ||
+        ref.read(connectionProvider) == AppConnectionState.sessionExpired) {
+      return;
+    }
     if (ref.read(roomViewOwnerProvider(widget.roomId)) != startAccount) {
       return;
     }

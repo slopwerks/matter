@@ -60,6 +60,14 @@ class _FakeRustApi implements RustLibApi {
   }
 
   @override
+  Future<rust.SessionTokenUpdate?> crateApiMatrixGetSessionTokens({
+    required String accountUserId,
+  }) async => rust.SessionTokenUpdate(
+    userId: accountUserId,
+    accessToken: 'token-$accountUserId',
+  );
+
+  @override
   Future<String?> crateApiMatrixGetRefreshToken() async => null;
 
   @override

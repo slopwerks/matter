@@ -3,7 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'mutable_state.dart';
 
-enum AppConnectionState { connected, connecting, updating, disconnected }
+enum AppConnectionState {
+  connected,
+  connecting,
+  updating,
+  disconnected,
+  sessionExpired,
+}
 
 final connectionProvider =
     NotifierProvider<MutableState<AppConnectionState>, AppConnectionState>(
@@ -17,6 +23,7 @@ final connectionLabelProvider = Provider<String>((ref) {
     AppConnectionState.connecting => '连接中…',
     AppConnectionState.updating => '同步中…',
     AppConnectionState.disconnected => '已断开',
+    AppConnectionState.sessionExpired => '登录已失效，请重新登录',
   };
 });
 
@@ -34,6 +41,7 @@ Future<void> pollConnectionStatus(Ref ref) async {
       rust.ConnectionStatus.connecting => AppConnectionState.connecting,
       rust.ConnectionStatus.updating => AppConnectionState.updating,
       rust.ConnectionStatus.disconnected => AppConnectionState.disconnected,
+      rust.ConnectionStatus.sessionExpired => AppConnectionState.sessionExpired,
     };
     ref.read(connectionProvider.notifier).value = mapped;
   } catch (_) {

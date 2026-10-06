@@ -63,9 +63,19 @@ class _FakeRustApi implements RustLibApi {
   List<rust.ChatRoom> chatRooms = const [];
   List<rust.Contact> contacts = const [];
 
+  rust.ConnectionStatus connectionStatus = rust.ConnectionStatus.connected;
+  Object? profileError;
+
   @override
-  rust.ConnectionStatus crateApiMatrixGetConnectionStatus() {
-    return rust.ConnectionStatus.connected;
+  rust.ConnectionStatus crateApiMatrixGetConnectionStatus() => connectionStatus;
+
+  @override
+  Future<rust.UserProfile> crateApiMatrixGetProfile() async {
+    if (profileError case final error?) throw error;
+    return const rust.UserProfile(
+      userId: '@alice:example.org',
+      displayName: 'Alice',
+    );
   }
 
   @override
@@ -180,6 +190,11 @@ class _FakeRustApi implements RustLibApi {
       typingEvents.stream;
 
   @override
+  Future<rust.SessionTokenUpdate?> crateApiMatrixGetSessionTokens({
+    required String accountUserId,
+  }) async => null;
+
+  @override
   Future<String?> crateApiMatrixGetAccessToken() async => null;
 
   @override
@@ -263,6 +278,8 @@ void main() {
     // tests so a stale confirmed list cannot leak into the next account
     // snapshot read.
     resetIgnoredListAccountState('@alice:example.org');
+    rustApi.connectionStatus = rust.ConnectionStatus.connected;
+    rustApi.profileError = null;
     rustApi.ignoredUsersCalls = 0;
     rustApi.ignoredUsers = const [];
     rustApi.ignoredUsersFromServer = true;
@@ -2058,7 +2075,134 @@ void main() {
     },
   );
 
+  testWidgets(
+    'profile authentication failure reports expired and keeps cached user',
+    (tester) async {
+      final ref = await _captureRef(tester);
+      const cached = CurrentUser(
+        id: '@alice:example.org',
+        displayName: 'Cached Alice',
+        homeserver: 'https://example.org',
+      );
+      ref.read(currentUserProvider.notifier).value = cached;
+      rustApi.connectionStatus = rust.ConnectionStatus.sessionExpired;
+      rustApi.profileError = StateError(
+        '[401 / M_MISSING_TOKEN] Missing or invalid access token.',
+      );
+
+      await refreshCurrentUserProfile(ref);
+
+      expect(ref.read(currentUserProvider), same(cached));
+      expect(ref.read(connectionProvider), AppConnectionState.sessionExpired);
+      expect(ref.read(connectionLabelProvider), '登录已失效，请重新登录');
+    },
+  );
+
+  testWidgets('offline profile failure keeps the existing connection state', (
+    tester,
+  ) async {
+    final ref = await _captureRef(tester);
+    ref.read(connectionProvider.notifier).value =
+        AppConnectionState.disconnected;
+    rustApi.profileError = StateError('offline');
+    await refreshCurrentUserProfile(ref);
+    expect(ref.read(connectionProvider), AppConnectionState.disconnected);
+  });
+
   group('bootstrapActiveSessionSync', () {
+    testWidgets(
+      'required sync propagates authentication failure without retrying',
+      (tester) async {
+        final ref = await _captureRef(tester);
+        rustApi.connectionStatus = rust.ConnectionStatus.sessionExpired;
+        final error = StateError('M_MISSING_TOKEN');
+        await expectLater(
+          bootstrapActiveSessionSyncForTest(
+            ref,
+            attemptLabel: 'test sync',
+            startSyncLabel: 'test start sync',
+            requireSyncLoop: true,
+            syncOnce: () async => throw error,
+            startSync: () async => fail('expired session must not start sync'),
+            delay: (_) async => fail('expired session must not retry'),
+          ),
+          throwsA(same(error)),
+        );
+        expect(ref.read(connectionProvider), AppConnectionState.sessionExpired);
+      },
+    );
+
+    testWidgets(
+      'authentication failure while starting sync keeps expired status',
+      (tester) async {
+        final ref = await _captureRef(tester);
+        await bootstrapActiveSessionSyncForTest(
+          ref,
+          attemptLabel: 'test sync',
+          startSyncLabel: 'test start sync',
+          syncOnce: () async {},
+          startSync: () async {
+            rustApi.connectionStatus = rust.ConnectionStatus.sessionExpired;
+            throw StateError('M_MISSING_TOKEN');
+          },
+          delay: (_) async {},
+        );
+        expect(ref.read(connectionProvider), AppConnectionState.sessionExpired);
+      },
+    );
+
+    testWidgets(
+      'expired session stops retries and does not start the sync loop',
+      (tester) async {
+        final ref = await _captureRef(tester);
+        var attempts = 0;
+        var starts = 0;
+        var delays = 0;
+        rustApi.connectionStatus = rust.ConnectionStatus.sessionExpired;
+        await bootstrapActiveSessionSyncForTest(
+          ref,
+          attemptLabel: 'test sync',
+          startSyncLabel: 'test start sync',
+          syncOnce: () async {
+            attempts++;
+            throw StateError('M_MISSING_TOKEN');
+          },
+          startSync: () async {
+            starts++;
+          },
+          delay: (_) async {
+            delays++;
+          },
+        );
+        expect(attempts, 1);
+        expect(starts, 0);
+        expect(delays, 0);
+        expect(ref.read(connectionProvider), AppConnectionState.sessionExpired);
+      },
+    );
+
+    testWidgets(
+      'profile expiry during initial sync survives a successful response',
+      (tester) async {
+        final ref = await _captureRef(tester);
+        var starts = 0;
+        await bootstrapActiveSessionSyncForTest(
+          ref,
+          attemptLabel: 'test sync',
+          startSyncLabel: 'test start sync',
+          syncOnce: () async {
+            rustApi.connectionStatus = rust.ConnectionStatus.sessionExpired;
+          },
+          startSync: () async {
+            starts++;
+          },
+          delay: (_) async {},
+        );
+        expect(starts, 0);
+        expect(ref.read(connectionProvider), AppConnectionState.sessionExpired);
+      },
+    );
+
     testWidgets('retries until the third sync attempt succeeds', (
       tester,
     ) async {

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +23,35 @@ class _FakeRustApi implements RustLibApi {
   String? logoutCleanupError;
   bool logoutRemotePending = false;
   int logoutCalls = 0;
+
+  @override
+  Future<String?> crateApiMatrixGetAccessToken() async => 'old-access';
+
+  @override
+  Future<String?> crateApiMatrixGetRefreshToken() async => 'new-refresh';
+
+  final tokenUpdates = StreamController<rust.SessionTokenUpdate>.broadcast(
+    sync: true,
+  );
+  final tokenRequests = <String>[];
+
+  @override
+  Future<rust.SessionTokenUpdate?> crateApiMatrixGetSessionTokens({
+    required String accountUserId,
+  }) async {
+    tokenRequests.add(accountUserId);
+    final session = currentSession;
+    if (session == null || session.userId != accountUserId) return null;
+    return rust.SessionTokenUpdate(
+      userId: session.userId,
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+    );
+  }
+
+  @override
+  Stream<rust.SessionTokenUpdate> crateApiMatrixWatchSessionTokenUpdates() =>
+      tokenUpdates.stream;
 
   @override
   Future<void> crateApiMatrixCleanupRemovedAccountStore({
@@ -95,6 +126,7 @@ void main() {
           }
           return null;
         });
+    rustApi.tokenRequests.clear();
     rustApi.sdkCleanupCalls.clear();
     rustApi.appLogs.clear();
     rustApi.currentSession = null;
@@ -484,6 +516,78 @@ void main() {
       expect(sessions.single.deviceId, 'DEVICE_B');
       expect(sessions.single.accessToken, 'token-b');
     });
+
+    test(
+      'syncStoredSessionTokens persists a matching token snapshot',
+      () async {
+        rustApi.currentSession = const rust.StoredSession(
+          homeserverUrl: 'https://example.org',
+          userId: '@alice:example.org',
+          deviceId: 'DEVICE_A',
+          accessToken: 'new-access',
+          refreshToken: 'new-refresh',
+        );
+        await addSession(
+          homeserver: 'https://example.org',
+          accessToken: 'old-access',
+          refreshToken: 'old-refresh',
+          userId: '@alice:example.org',
+          deviceId: 'DEVICE_A',
+          displayName: 'Alice',
+        );
+        await syncStoredSessionTokens('@alice:example.org');
+        final sessions = await loadAllSessions();
+        expect(sessions.single.accessToken, 'new-access');
+        expect(sessions.single.refreshToken, 'new-refresh');
+      },
+    );
+
+    test(
+      'a delayed rotation notification cannot overwrite newer credentials',
+      () async {
+        const userId = '@alice:example.org';
+        await addSession(
+          homeserver: 'https://example.org',
+          accessToken: 'old-access',
+          refreshToken: 'old-refresh',
+          userId: userId,
+          deviceId: 'DEVICE_A',
+          displayName: 'Alice',
+        );
+        rustApi.currentSession = const rust.StoredSession(
+          homeserverUrl: 'https://example.org',
+          userId: userId,
+          deviceId: 'DEVICE_A',
+          accessToken: 'latest-access',
+          refreshToken: 'latest-refresh',
+        );
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(sessionTokenPersistenceProvider);
+        rustApi.tokenUpdates.add(
+          const rust.SessionTokenUpdate(
+            userId: userId,
+            accessToken: 'older-access',
+            refreshToken: 'older-refresh',
+          ),
+        );
+        await syncStoredSessionTokens(userId);
+        final sessions = await loadAllSessions();
+        expect(sessions.single.accessToken, 'latest-access');
+        expect(sessions.single.refreshToken, 'latest-refresh');
+        expect(rustApi.tokenRequests, [userId, userId]);
+      },
+    );
+
+    test(
+      'token persistence skips an account removed before its notification',
+      () async {
+        rustApi.currentSession = null;
+        await syncStoredSessionTokens('@removed:example.org');
+        expect(await loadAllSessions(), isEmpty);
+        expect(await const FlutterSecureStorage().readAll(), isEmpty);
+      },
+    );
 
     test('persistSessionTokens replaces rotated tokens', () async {
       await addSession(
