@@ -11983,46 +11983,25 @@ pub async fn edit_message(
     Ok(response.response.event_id.to_string())
 }
 
-/// Send an emoji reaction (m.annotation) to an event.
-///
-/// Re-sending the same key is de-duplicated server-side per MSC2677. To remove
-/// a reaction, redact the reaction event (not implemented in this client yet).
+/// Toggle the current user's emoji reaction and return the updated message.
 #[frb]
-pub async fn send_reaction(
+pub async fn toggle_reaction(
+    account_user_id: String,
     room_id: String,
     event_id: String,
     key: String,
-) -> Result<String, String> {
+) -> Result<ChatMessage, String> {
     let generation = SYNC_GENERATION.load(Ordering::SeqCst);
-
     let client = get_client()
         .await
         .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
-
     let parsed_event_id = matrix_sdk::ruma::EventId::parse(&event_id)
         .map_err(|e| api_err("rooms", format!("无效的事件 ID: {e}")))?;
-
-    use matrix_sdk::ruma::events::relation::Annotation;
-    let content = matrix_sdk::ruma::events::reaction::ReactionEventContent::from(Annotation::new(
-        parsed_event_id,
-        key.clone(),
-    ));
-
-    let handle = room
-        .send(content)
-        .await
-        .map_err(|e| api_err("rooms", format!("Reaction failed: {e}")))?;
-    let new_event_id = handle.response.event_id.to_string();
-
-    app_log(
-        "info",
-        "rooms",
-        format!("Reaction '{}' on {} in room {}", key, event_id, room_id),
-    );
-    info!("Reaction '{}' on {} in room {}", key, event_id, room_id);
-    notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
-    Ok(new_event_id)
+    let message = sdk_timeline::toggle_reaction(&client, &room, parsed_event_id, &key).await?;
+    notify_sync_event_for_generation(generation, SyncEvent::MessageSent { room_id });
+    Ok(message)
 }
 
 /// Redact (delete) a message from a room.

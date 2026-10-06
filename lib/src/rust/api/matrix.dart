@@ -913,15 +913,14 @@ Future<String> editMessage({
   previousMentionsRoom: previousMentionsRoom,
 );
 
-/// Send an emoji reaction (m.annotation) to an event.
-///
-/// Re-sending the same key is de-duplicated server-side per MSC2677. To remove
-/// a reaction, redact the reaction event (not implemented in this client yet).
-Future<String> sendReaction({
+/// Toggle the current user's emoji reaction and return the updated message.
+Future<ChatMessage> toggleReaction({
+  required String accountUserId,
   required String roomId,
   required String eventId,
   required String key,
-}) => RustLib.instance.api.crateApiMatrixSendReaction(
+}) => RustLib.instance.api.crateApiMatrixToggleReaction(
+  accountUserId: accountUserId,
   roomId: roomId,
   eventId: eventId,
   key: key,

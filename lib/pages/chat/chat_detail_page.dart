@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -1407,11 +1408,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     Set<String> ignoredUserIds,
     Set<String> redactedIds,
   ) {
+    final latestById = {
+      for (final message in latestMessages) message.id: message,
+    };
     final byId = <String, ChatMessage>{
       for (final message in _olderMessages)
         if (!redactedIds.contains(message.id) &&
             (message.isMe || !ignoredUserIds.contains(message.senderId)))
-          message.id: message,
+          message.id: latestById[message.id] == null
+              ? message
+              : chooseMessageForSameEvent(message, latestById[message.id]!),
       // Focused history browsing hides the live window: merging it back in
       // would show the unfillable gap between the slice and the live edge.
       if (!_focusedBrowsing)
@@ -1599,7 +1605,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ..write('#')
         ..write(message.isEdited ? 1 : 0)
         ..write('#')
-        ..write(message.reactions.length)
+        ..write(
+          jsonEncode(
+            message.reactions
+                .map(
+                  (reaction) => [
+                    reaction.key,
+                    reaction.senders,
+                    reaction.myEventId,
+                  ],
+                )
+                .toList(),
+          ),
+        )
         ..write('#')
         ..write(message.totalMembers)
         ..write('#')

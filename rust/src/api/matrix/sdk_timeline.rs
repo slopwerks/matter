@@ -31,6 +31,9 @@ use super::{
     MessageType, PollAnswerInfo, PollAnswerResult, PollInfo, Reaction,
 };
 
+static REACTION_LOCKS: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 static TIMELINES: Lazy<Mutex<HashMap<String, Arc<Timeline>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -47,6 +50,10 @@ fn timeline_key(client: &Client, room: &Room) -> Result<String, String> {
 pub(super) async fn clear_for_user(user_id: &str) {
     let prefix = format!("{user_id}\n");
     TIMELINES
+        .lock()
+        .await
+        .retain(|key, _| !key.starts_with(&prefix));
+    REACTION_LOCKS
         .lock()
         .await
         .retain(|key, _| !key.starts_with(&prefix));
@@ -155,6 +162,86 @@ pub(super) async fn get_messages(client: &Client, room: &Room) -> Result<Vec<Cha
         messages.drain(..messages.len() - LIVE_WINDOW);
     }
     Ok(messages)
+}
+
+/// Toggle through the SDK so pending reactions and remote reactions share
+/// one source of truth. Wait for the local echo before accepting another click.
+pub(super) async fn toggle_reaction(
+    client: &Client,
+    room: &Room,
+    event_id: matrix_sdk::ruma::OwnedEventId,
+    key: &str,
+) -> Result<ChatMessage, String> {
+    let room_key = timeline_key(client, room)?;
+    let lock = REACTION_LOCKS
+        .lock()
+        .await
+        .entry(room_key.clone())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    let _guard = lock.lock().await;
+    let live_timeline = get_or_create_timeline(client, room).await?;
+    let timeline = if live_timeline.item_by_event_id(&event_id).await.is_some() {
+        live_timeline
+    } else {
+        // Detached history and pinned messages may be outside the live window.
+        // Keep their focused timeline alive so repeated clicks see local echoes.
+        let focused_key = format!("{room_key}\n{event_id}");
+        let cached = TIMELINES.lock().await.get(&focused_key).cloned();
+        if let Some(timeline) = cached {
+            timeline
+        } else {
+            let timeline = Arc::new(
+                TimelineBuilder::new(room)
+                    .with_focus(TimelineFocus::Event {
+                        target: event_id.clone(),
+                        num_context_events: 0,
+                        thread_mode: TimelineEventFocusThreadMode::Automatic {
+                            hide_threaded_events: false,
+                        },
+                    })
+                    .build()
+                    .await
+                    .map_err(|error| api_err("rooms", format!("加载回应目标失败: {error}")))?,
+            );
+            TIMELINES.lock().await.insert(focused_key, timeline.clone());
+            timeline
+        }
+    };
+    let (_, mut updates) = timeline.subscribe().await;
+    let added = timeline
+        .toggle_reaction(
+            &matrix_sdk_ui::timeline::TimelineEventItemId::EventId(event_id.clone()),
+            key,
+        )
+        .await
+        .map_err(|error| api_err("rooms", format!("Reaction failed: {error}")))?;
+    let my_user_id = client.user_id().map(ToString::to_string);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(item) = timeline.item_by_event_id(&event_id).await {
+                let reactions = timeline_reactions(&item, my_user_id.as_deref());
+                let has_reacted = reactions.iter().any(|reaction| {
+                    reaction.key == key
+                        && my_user_id
+                            .as_ref()
+                            .is_some_and(|user| reaction.senders.contains(user))
+                });
+                if has_reacted == added {
+                    return convert_snapshot(room, &snapshot(&timeline).await)
+                        .await
+                        .into_iter()
+                        .find(|message| message.id == event_id.as_str())
+                        .ok_or_else(|| api_err("rooms", "回应目标消息不可用。".to_owned()));
+                }
+            }
+            if updates.next().await.is_none() {
+                return Err(api_err("rooms", "回应时间线已关闭。".to_owned()));
+            }
+        }
+    })
+    .await
+    .map_err(|_| api_err("rooms", "回应状态更新超时，请刷新确认。".to_owned()))?
 }
 
 /// Send the read receipts for the room's latest timeline position. Not a
@@ -1582,6 +1669,120 @@ mod tests {
     use crate::api::matrix::uint_to_i32;
     use crate::api::matrix::{ChatMessage, MessageType};
     use std::collections::{HashMap, HashSet};
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reaction_toggle_updates_count_and_cancels_before_sync() {
+        use matrix_sdk::{
+            ruma::{event_id, room_id, user_id},
+            test_utils::mocks::MatrixMockServer,
+        };
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        let room_id = room_id!("!reaction:localhost");
+        let event_id = event_id!("$message:localhost");
+        let other_user = user_id!("@bob:localhost");
+        let factory = EventFactory::new().room(room_id).sender(other_user);
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(room_id)
+                    .add_timeline_event(factory.text_msg("hello").event_id(event_id))
+                    .add_timeline_event(
+                        factory
+                            .reaction(event_id, "👍")
+                            .event_id(event_id!("$bob:localhost")),
+                    ),
+            )
+            .await;
+        let room = client.get_room(room_id).unwrap();
+        server.mock_room_state_encryption().plain().mount().await;
+        server
+            .mock_room_send()
+            .ok(event_id!("$sent:localhost"))
+            .mount()
+            .await;
+        // Pause sending: the second click must cancel a local reaction even
+        // though it has no server event ID yet.
+        room.send_queue().set_enabled(false);
+        let message = super::toggle_reaction(&client, &room, event_id.to_owned(), "👍")
+            .await
+            .unwrap();
+        assert_eq!(message.reactions[0].senders.len(), 2);
+        assert!(message.reactions[0]
+            .senders
+            .contains(&client.user_id().unwrap().to_string()));
+        assert!(message.reactions[0].my_event_id.is_none());
+
+        let message = super::toggle_reaction(&client, &room, event_id.to_owned(), "👍")
+            .await
+            .unwrap();
+        assert_eq!(message.reactions[0].senders, [other_user.to_string()]);
+        let message = super::toggle_reaction(&client, &room, event_id.to_owned(), "🎉")
+            .await
+            .unwrap();
+        assert_eq!(message.reactions.len(), 2);
+        let message = super::toggle_reaction(&client, &room, event_id.to_owned(), "🎉")
+            .await
+            .unwrap();
+        assert_eq!(message.reactions.len(), 1);
+        super::clear_for_user(client.user_id().unwrap().as_str()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reaction_toggle_redacts_synced_own_reaction_without_sending_a_duplicate() {
+        use matrix_sdk::{
+            ruma::{event_id, room_id, user_id},
+            test_utils::mocks::MatrixMockServer,
+        };
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        let room_id = room_id!("!synced-reaction:localhost");
+        let event_id = event_id!("$message:localhost");
+        let factory = EventFactory::new()
+            .room(room_id)
+            .sender(user_id!("@bob:localhost"));
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(room_id)
+                    .add_timeline_event(factory.text_msg("hello").event_id(event_id))
+                    .add_timeline_event(factory.reaction(event_id, "👍"))
+                    .add_timeline_event(
+                        factory
+                            .reaction(event_id, "👍")
+                            .sender(client.user_id().unwrap())
+                            .event_id(event_id!("$mine:localhost")),
+                    ),
+            )
+            .await;
+        let room = client.get_room(room_id).unwrap();
+        server
+            .mock_room_redact()
+            .ok(event_id!("$redaction:localhost"))
+            .expect(1)
+            .mount()
+            .await;
+        server
+            .mock_room_send()
+            .ok(event_id!("$duplicate:localhost"))
+            .expect(0)
+            .mount()
+            .await;
+
+        let message = super::toggle_reaction(&client, &room, event_id.to_owned(), "👍")
+            .await
+            .unwrap();
+        assert_eq!(message.reactions[0].senders, ["@bob:localhost"]);
+        assert!(message.reactions[0].my_event_id.is_none());
+        server.verify_and_reset().await;
+        super::clear_for_user(client.user_id().unwrap().as_str()).await;
+    }
 
     fn message(id: &str) -> ChatMessage {
         ChatMessage {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_detail_page.dart';
+import 'package:matter/pages/chat/emoji_picker_panel.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_insert_animation.dart';
@@ -42,6 +43,25 @@ class _FakeRustApi implements RustLibApi {
   Completer<bool>? pendingRoomEncryption;
   List<rust.ChatRoom> chatRooms = const [];
   final sentMessages = <rust.FormattedMessageInput>[];
+  @override
+  Future<List<String>> crateApiMatrixGetPinnedEventIds({
+    required String accountUserId,
+    required String roomId,
+  }) async => const [];
+
+  rust.ChatMessage? reactionResult;
+  final reactionCalls = <String>[];
+
+  @override
+  Future<rust.ChatMessage> crateApiMatrixToggleReaction({
+    required String accountUserId,
+    required String roomId,
+    required String eventId,
+    required String key,
+  }) async {
+    reactionCalls.add('$accountUserId/$roomId/$eventId/$key');
+    return reactionResult!;
+  }
 
   @override
   Future<List<rust.ChatRoom>> crateApiMatrixGetChatRooms({
@@ -198,6 +218,7 @@ rust.ChatMessage _message(
   String id, {
   String timestamp = '1',
   String? inReplyTo,
+  List<rust.Reaction> reactions = const [],
 }) {
   return rust.ChatMessage(
     id: id,
@@ -212,7 +233,7 @@ rust.ChatMessage _message(
     inReplyTo: inReplyTo,
     isEdited: false,
     editHistory: const [],
-    reactions: const [],
+    reactions: reactions,
     readers: const [],
     totalMembers: 2,
   );
@@ -279,6 +300,8 @@ void main() {
     rustApi.pendingMessagesAround.clear();
     rustApi.pendingSend = null;
     rustApi.sentMessages.clear();
+    rustApi.reactionResult = null;
+    rustApi.reactionCalls.clear();
     rustApi.pendingRoomEncryption = null;
     rustApi.chatRooms = const [];
     rustApi.pinnedMessagesCalls = 0;
@@ -291,6 +314,107 @@ void main() {
     rustApi.roomUnsubscribeBarrier = null;
     SharedPreferences.setMockInitialValues({});
   });
+
+  for (final focused in [false, true]) {
+    for (final entry in ['chip', 'quick', 'picker']) {
+      testWidgets(
+        'reaction counts update with the same emoji ($entry, focused=$focused)',
+        (tester) async {
+          const roomId = '!reaction-count:example.org';
+          const userId = '@me:example.org';
+          const eventId = r'$react';
+          rust.ChatMessage message(List<String> senders) => _message(
+            eventId,
+            reactions: [rust.Reaction(key: '👍', senders: senders)],
+          );
+          final original = message(['@bob:example.org']);
+          rustApi.messagesAround = [original];
+          final container = ProviderContainer(
+            overrides: [
+              ignoredUserIdsProvider.overrideWith(
+                (ref) async => const <String>{},
+              ),
+              roomMembersProvider(roomId).overrideWith((ref) async => const []),
+            ],
+          );
+          addTearDown(container.dispose);
+          container.read(activeUserIdProvider.notifier).value = userId;
+          await container.read(roomMembersProvider(roomId).future);
+          container.read(messageCacheOwnerProvider(roomId).notifier).value =
+              userId;
+          container.read(messageCachePrimedProvider(roomId).notifier).value =
+              true;
+          container.read(messageCacheProvider(roomId).notifier).value = [
+            original,
+          ];
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: container,
+              child: MaterialApp(
+                theme: neuTestTheme(),
+                home: ChatDetailPage(
+                  roomId: roomId,
+                  roomName: 'Room',
+                  initialMessageId: focused ? eventId : null,
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          final chip = find.byKey(const ValueKey('$eventId:👍'));
+          expect(
+            find.descendant(of: chip, matching: find.text('1')),
+            findsOneWidget,
+          );
+          Future<void> clickReaction() async {
+            if (entry == 'chip') {
+              await tester.tap(chip);
+              return;
+            }
+            final bubble = tester.getRect(
+              find.byKey(const ValueKey('text-bubble:$eventId')),
+            );
+            await tester.longPressAt(Offset(bubble.right - 6, bubble.top + 6));
+            await tester.pumpAndSettle();
+            if (entry == 'quick') {
+              await tester.tap(find.text('👍').last);
+            } else {
+              await tester.tap(find.byIcon(Icons.add_rounded).last);
+              await tester.pumpAndSettle();
+              await tester.tap(
+                find.descendant(
+                  of: find.byType(EmojiPickerPanel),
+                  matching: find.text('👍'),
+                ),
+              );
+            }
+          }
+
+          rustApi.reactionResult = message(['@bob:example.org', userId]);
+          await clickReaction();
+          await tester.pumpAndSettle();
+          expect(
+            find.descendant(of: chip, matching: find.text('2')),
+            findsOneWidget,
+          );
+          // There is still no reaction event ID. This click must use the shared
+          // toggle API, rather than sending again or redacting the parent message.
+          rustApi.reactionResult = original;
+          await clickReaction();
+          await tester.pumpAndSettle();
+          expect(
+            find.descendant(of: chip, matching: find.text('1')),
+            findsOneWidget,
+          );
+          expect(
+            rustApi.reactionCalls,
+            List.filled(2, '$userId/$roomId/$eventId/👍'),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('room subscriptions are bound to the active account', (
     tester,
