@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/connection_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/message_cache_persistence.dart';
 import '../../providers/message_ordering.dart';
@@ -682,7 +684,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     // No account yet (deep-link before login completed): skip — a write
     // with an empty account id would be rejected by the Rust guard anyway
     // (same guard as clearViewedMarkedUnread / the flush path).
-    if (startAccount == null) return;
+    if (startAccount == null ||
+        ref.read(connectionProvider) == AppConnectionState.sessionExpired) {
+      return;
+    }
     if (ref.read(roomViewOwnerProvider(widget.roomId)) != startAccount) {
       return;
     }
@@ -1407,11 +1412,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     Set<String> ignoredUserIds,
     Set<String> redactedIds,
   ) {
+    final latestById = {
+      for (final message in latestMessages) message.id: message,
+    };
     final byId = <String, ChatMessage>{
       for (final message in _olderMessages)
         if (!redactedIds.contains(message.id) &&
             (message.isMe || !ignoredUserIds.contains(message.senderId)))
-          message.id: message,
+          message.id: latestById[message.id] == null
+              ? message
+              : chooseMessageForSameEvent(message, latestById[message.id]!),
       // Focused history browsing hides the live window: merging it back in
       // would show the unfillable gap between the slice and the live edge.
       if (!_focusedBrowsing)
@@ -1599,7 +1609,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ..write('#')
         ..write(message.isEdited ? 1 : 0)
         ..write('#')
-        ..write(message.reactions.length)
+        ..write(
+          jsonEncode(
+            message.reactions
+                .map(
+                  (reaction) => [
+                    reaction.key,
+                    reaction.senders,
+                    reaction.myEventId,
+                  ],
+                )
+                .toList(),
+          ),
+        )
         ..write('#')
         ..write(message.totalMembers)
         ..write('#')

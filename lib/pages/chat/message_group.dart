@@ -668,35 +668,14 @@ class MessageGroupWidget extends ConsumerWidget {
         runSpacing: 4,
         alignment: isMe ? WrapAlignment.end : WrapAlignment.start,
         children: message.reactions.map((reaction) {
-          final reacted = reaction.myEventId != null;
+          final userId = ref.watch(activeUserIdProvider);
+          final reacted = reaction.senders.contains(userId);
           return _ReactionChip(
             key: ValueKey('${message.id}:${reaction.key}'),
             reaction: reaction,
             reacted: reacted,
-            onTap: () async {
-              try {
-                if (reacted) {
-                  // Toggle off: redact our own reaction event.
-                  await redactMessage(ref, roomId, reaction.myEventId!);
-                } else {
-                  await sendReaction(
-                    roomId: roomId,
-                    eventId: message.id,
-                    key: reaction.key,
-                  );
-                  await refreshMessages(ref, roomId);
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('回应失败: $e'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                }
-              }
-            },
+            onTap: () =>
+                _toggleReaction(context, ref, message.id, reaction.key),
           );
         }).toList(),
       ),
@@ -1232,15 +1211,29 @@ class MessageGroupWidget extends ConsumerWidget {
     );
   }
 
-  Future<void> _sendReactionAndRefresh(
+  Future<void> _toggleReaction(
     BuildContext context,
     WidgetRef ref,
     String eventId,
     String emoji,
   ) async {
     try {
-      await sendReaction(roomId: roomId, eventId: eventId, key: emoji);
-      await refreshMessages(ref, roomId);
+      final userId = ref.read(activeUserIdProvider) ?? '';
+      final updated = await toggleReaction(
+        accountUserId: userId,
+        roomId: roomId,
+        eventId: eventId,
+        key: emoji,
+      );
+      if (!context.mounted || !ref.context.mounted) return;
+      if (ref.read(activeUserIdProvider) != userId) return;
+      updateMessageCache(
+        ref,
+        roomId,
+        mergeMessageSnapshotAdditions(ref.read(messageCacheProvider(roomId)), [
+          updated,
+        ]),
+      );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1287,7 +1280,7 @@ class MessageGroupWidget extends ConsumerWidget {
             child: EmojiPickerPanel(
               onEmojiSelected: (emoji) async {
                 Navigator.of(context).pop();
-                await _sendReactionAndRefresh(context, ref, message.id, emoji);
+                await _toggleReaction(context, ref, message.id, emoji);
               },
             ),
           ),
@@ -1429,7 +1422,7 @@ class MessageGroupWidget extends ConsumerWidget {
                 }
               },
         onReact: (emoji) =>
-            _sendReactionAndRefresh(overlayContext, ref, message.id, emoji),
+            _toggleReaction(overlayContext, ref, message.id, emoji),
         onShowFullEmojiPicker: () =>
             _showEmojiPicker(overlayContext, ref, message),
       ),

@@ -675,34 +675,47 @@ discardUnpersistedLoginSession() async {
   );
 }
 
+// Read and persist within one queue. Delayed rotation notifications must read
+// the account's current pair rather than overwrite it with their older payload.
+bool _sessionTokenPersistenceActive = false;
+final _sessionTokenPersistenceWaiters = <Completer<void>>[];
+
 Future<void> syncStoredSessionTokens(String userId) async {
-  final accessToken = await rust.getAccessToken();
-  if (accessToken == null || accessToken.isEmpty) return;
-  await persistSessionTokens(
-    userId: userId,
-    accessToken: accessToken,
-    refreshToken: await rust.getRefreshToken(),
-  );
+  if (_sessionTokenPersistenceActive) {
+    final turn = Completer<void>();
+    _sessionTokenPersistenceWaiters.add(turn);
+    await turn.future;
+  } else {
+    _sessionTokenPersistenceActive = true;
+  }
+  try {
+    final tokens = await rust.getSessionTokens(accountUserId: userId);
+    if (tokens == null || tokens.accessToken.isEmpty) return;
+    await persistSessionTokens(
+      userId: tokens.userId,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    );
+  } finally {
+    if (_sessionTokenPersistenceWaiters.isEmpty) {
+      _sessionTokenPersistenceActive = false;
+    } else {
+      _sessionTokenPersistenceWaiters.removeAt(0).complete();
+    }
+  }
 }
 
 final sessionTokenPersistenceProvider =
     Provider<StreamSubscription<rust.SessionTokenUpdate>>((ref) {
-      var pendingWrite = Future<void>.value();
       final subscription = rust.watchSessionTokenUpdates().listen((update) {
-        pendingWrite = pendingWrite.then((_) async {
-          try {
-            await persistSessionTokens(
-              userId: update.userId,
-              accessToken: update.accessToken,
-              refreshToken: update.refreshToken,
-            );
-          } catch (error) {
+        unawaited(
+          syncStoredSessionTokens(update.userId).catchError((Object error) {
             debugPrint(
               'Failed to persist refreshed session tokens for '
               '${update.userId}: $error',
             );
-          }
-        });
+          }),
+        );
       });
       ref.onDispose(subscription.cancel);
       return subscription;

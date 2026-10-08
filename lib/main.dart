@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'app.dart';
 import 'features/app_update/app_update_service.dart';
 import 'features/app_update/update_dialog.dart';
+import 'features/auth/session_expiry_listener.dart';
 import 'pages/login/login_page.dart';
 import 'pages/chat/decrypted_video_source.dart';
 import 'pages/chat/chat_detail_page.dart';
@@ -135,6 +136,8 @@ class _AppRoot extends ConsumerStatefulWidget {
 class _AppRootState extends ConsumerState<_AppRoot> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   bool _credentialCompatibilityDialogShown = false;
+  CurrentUser? _reloginUser;
+  bool _resumeSession = false;
 
   /// True only while the startup session-restore is in flight. Keeps the main
   /// app on screen during restore so the login page doesn't flash, then drops
@@ -324,6 +327,7 @@ class _AppRootState extends ConsumerState<_AppRoot> {
     ref.watch(sessionTokenPersistenceProvider);
     final isLoggedIn = ref.watch(isLoggedInProvider);
     final showMainApp = isLoggedIn || _restoring;
+    if (isLoggedIn) _resumeSession = false;
     final themeStyle = ref.watch(appThemeStyleProvider);
     _syncSystemOverlayStyle(themeStyle);
 
@@ -343,8 +347,25 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       theme: theme,
       darkTheme: darkTheme,
       themeMode: themeMode,
-      builder: (context, child) => ChatVisualSettingsRoot(child: child!),
-      home: showMainApp ? const MatterApp() : const LoginPage(),
+      builder: (context, child) => ChatVisualSettingsRoot(
+        child: SessionExpiryListener(
+          navigatorKey: _navigatorKey,
+          onRelogin: (canResume) {
+            _resumeSession = canResume;
+            _reloginUser = ref.read(currentUserProvider);
+            clearActiveSessionState(ref, markSessionReady: true);
+            _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+          },
+          child: child!,
+        ),
+      ),
+      home: showMainApp
+          ? const MatterApp()
+          : LoginPage(
+              initialHomeserver: _reloginUser?.homeserver,
+              initialUserId: _reloginUser?.id,
+              resumeSession: _resumeSession,
+            ),
     );
   }
 

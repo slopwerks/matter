@@ -20,6 +20,8 @@ void main() {
             expect(label, '同步中…');
           case AppConnectionState.disconnected:
             expect(label, '已断开');
+          case AppConnectionState.sessionExpired:
+            expect(label, '登录已失效，请重新登录');
         }
       }
     });

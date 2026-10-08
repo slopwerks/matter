@@ -308,7 +308,181 @@ static SYNC_PUBLICATION_LOCK: Lazy<std::sync::Mutex<()>> = Lazy::new(|| std::syn
 
 fn set_connection_status(status: ConnectionStatus) {
     if let Ok(mut guard) = CONNECTION_STATE.write() {
-        *guard = status;
+        // Only a session/account transition may clear terminal authentication
+        // failure; an in-flight sync response cannot restore revoked tokens.
+        if !matches!(*guard, ConnectionStatus::SessionExpired) {
+            *guard = status;
+        }
+    }
+}
+
+fn reset_connection_status() {
+    let _publication = sync_publication_lock();
+    *SESSION_EXPIRY.write().unwrap_or_else(|e| e.into_inner()) = None;
+    if let Ok(mut guard) = CONNECTION_STATE.write() {
+        *guard = ConnectionStatus::Disconnected;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum SessionExpiry {
+    Unknown,
+    SoftLogout,
+    HardLogout,
+}
+
+static SESSION_EXPIRY: Lazy<std::sync::RwLock<Option<SessionExpiry>>> =
+    Lazy::new(|| std::sync::RwLock::new(None));
+
+fn record_session_expiry(expiry: SessionExpiry) {
+    let mut current = SESSION_EXPIRY.write().unwrap_or_else(|e| e.into_inner());
+    // A generic missing-token error must not overwrite a known soft logout;
+    // an explicit revocation must never be downgraded by a late response.
+    *current = Some(current.map_or(expiry, |previous| previous.max(expiry)));
+    set_connection_status(ConnectionStatus::SessionExpired);
+}
+
+fn report_session_error(error: &matrix_sdk::Error) {
+    if let Some(expiry) = classify_session_expiry(error) {
+        let _publication = sync_publication_lock();
+        record_session_expiry(expiry);
+    }
+}
+
+fn report_session_error_for_generation(generation: u64, error: &matrix_sdk::Error) -> bool {
+    let Some(expiry) = classify_session_expiry(error) else {
+        return false;
+    };
+    let _publication = sync_publication_lock();
+    if SYNC_GENERATION.load(Ordering::SeqCst) == generation {
+        record_session_expiry(expiry);
+    }
+    true
+}
+
+fn classify_session_expiry(error: &matrix_sdk::Error) -> Option<SessionExpiry> {
+    fn http_expiry(error: &matrix_sdk::HttpError, refreshing: bool) -> Option<SessionExpiry> {
+        use matrix_sdk::{ruma::api::error::ErrorKind, HttpError, RefreshTokenError};
+        match error {
+            HttpError::RefreshToken(RefreshTokenError::MatrixAuth(error)) => {
+                http_expiry(error, true)
+            }
+            HttpError::RefreshToken(RefreshTokenError::RefreshTokenRequired) => {
+                Some(SessionExpiry::Unknown)
+            }
+            HttpError::Cached(error) => http_expiry(error, refreshing),
+            _ => match error.client_api_error_kind() {
+                Some(ErrorKind::UnknownToken(data)) => Some(if data.soft_logout {
+                    SessionExpiry::SoftLogout
+                } else {
+                    SessionExpiry::HardLogout
+                }),
+                Some(ErrorKind::Forbidden) if refreshing => Some(SessionExpiry::HardLogout),
+                Some(ErrorKind::MissingToken) => Some(SessionExpiry::Unknown),
+                _ => None,
+            },
+        }
+    }
+    match error {
+        matrix_sdk::Error::Http(error) => http_expiry(error, false),
+        matrix_sdk::Error::AuthenticationRequired => Some(SessionExpiry::Unknown),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+fn is_session_expired_error(error: &matrix_sdk::Error) -> bool {
+    classify_session_expiry(error).is_some()
+}
+
+#[cfg(test)]
+mod session_expiry_tests {
+    use super::{classify_session_expiry, is_session_expired_error, SessionExpiry};
+    use matrix_sdk::{
+        ruma::api::{
+            client::uiaa::UiaaResponse,
+            error::{ErrorBody, FromHttpResponseError},
+        },
+        HttpError, RefreshTokenError,
+    };
+    use std::sync::Arc;
+
+    fn http_error(code: &str, status: u16) -> HttpError {
+        http_error_with_soft_logout(code, status, true)
+    }
+
+    fn http_error_with_soft_logout(code: &str, status: u16, soft_logout: bool) -> HttpError {
+        let body = serde_json::from_value(serde_json::json!({
+            "errcode": code, "error": "test error", "soft_logout": soft_logout,
+        }))
+        .unwrap();
+        HttpError::Api(Box::new(FromHttpResponseError::Server(
+            UiaaResponse::MatrixError(
+                ErrorBody::Standard(body).into_error(status.try_into().unwrap()),
+            ),
+        )))
+    }
+
+    fn refresh_error(code: &str, status: u16) -> matrix_sdk::Error {
+        matrix_sdk::Error::Http(Box::new(HttpError::RefreshToken(
+            RefreshTokenError::MatrixAuth(Arc::new(http_error(code, status))),
+        )))
+    }
+
+    #[test]
+    fn rejected_refresh_token_is_terminal_but_room_forbidden_is_not() {
+        assert!(is_session_expired_error(&refresh_error("M_FORBIDDEN", 403)));
+        assert!(is_session_expired_error(&refresh_error(
+            "M_UNKNOWN_TOKEN",
+            401
+        )));
+        assert!(is_session_expired_error(&matrix_sdk::Error::Http(
+            Box::new(http_error("M_UNKNOWN_TOKEN", 401))
+        )));
+        assert!(!is_session_expired_error(&matrix_sdk::Error::Http(
+            Box::new(http_error("M_FORBIDDEN", 403))
+        )));
+        assert!(!is_session_expired_error(&refresh_error(
+            "M_LIMIT_EXCEEDED",
+            429
+        )));
+        assert!(!is_session_expired_error(&refresh_error("M_UNKNOWN", 500)));
+    }
+
+    #[test]
+    fn missing_access_token_is_terminal_with_or_without_refresh() {
+        assert!(is_session_expired_error(&matrix_sdk::Error::Http(
+            Box::new(http_error("M_MISSING_TOKEN", 401))
+        )));
+        assert!(is_session_expired_error(&refresh_error(
+            "M_MISSING_TOKEN",
+            401
+        )));
+    }
+
+    #[test]
+    fn only_explicit_soft_logout_allows_device_reuse() {
+        for (soft_logout, expected) in [
+            (true, SessionExpiry::SoftLogout),
+            (false, SessionExpiry::HardLogout),
+        ] {
+            let error = matrix_sdk::Error::Http(Box::new(HttpError::Cached(Arc::new(
+                http_error_with_soft_logout("M_UNKNOWN_TOKEN", 401, soft_logout),
+            ))));
+            assert_eq!(classify_session_expiry(&error), Some(expected));
+        }
+        assert_eq!(
+            classify_session_expiry(&refresh_error("M_UNKNOWN_TOKEN", 401)),
+            Some(SessionExpiry::SoftLogout)
+        );
+        assert_eq!(
+            classify_session_expiry(&refresh_error("M_FORBIDDEN", 403)),
+            Some(SessionExpiry::HardLogout)
+        );
+        assert_eq!(
+            classify_session_expiry(&refresh_error("M_MISSING_TOKEN", 401)),
+            Some(SessionExpiry::Unknown)
+        );
     }
 }
 
@@ -1927,6 +2101,17 @@ impl ClientEntry {
     }
 }
 
+#[derive(Clone)]
+struct SessionRelogin {
+    meta: SessionMeta,
+    data_dir: String,
+    homeserver_url: String,
+    instance_id: u64,
+}
+
+static SESSION_RELOGIN: Lazy<RwLock<Option<SessionRelogin>>> = Lazy::new(|| RwLock::new(None));
+static SESSION_RELOGIN_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
 struct PendingEntry {
     client: Client,
     data_dir: String,
@@ -3414,6 +3599,8 @@ async fn finalize_pending() -> Result<String, String> {
                     *active = Some(user_id.clone());
                 }
                 stop_sync_task(None, false).await;
+                *SESSION_RELOGIN.write().await = None;
+                reset_connection_status();
                 set_subscription_user(Some(user_id.clone())).await;
             }
 
@@ -3433,6 +3620,7 @@ pub enum ConnectionStatus {
     Connecting,
     Updating,
     Disconnected,
+    SessionExpired,
 }
 
 #[frb]
@@ -4874,12 +5062,18 @@ pub async fn get_profile() -> Result<UserProfile, String> {
     let display_name = account
         .get_display_name()
         .await
-        .map_err(|e| api_err("auth", format!("Failed to fetch display name: {e}")))?
+        .map_err(|e| {
+            report_session_error(&e);
+            api_err("auth", format!("Failed to fetch display name: {e}"))
+        })?
         .unwrap_or_default();
     let avatar_url = account
         .get_avatar_url()
         .await
-        .map_err(|e| api_err("auth", format!("Failed to fetch avatar: {e}")))?
+        .map_err(|e| {
+            report_session_error(&e);
+            api_err("auth", format!("Failed to fetch avatar: {e}"))
+        })?
         .map(|u| u.to_string());
 
     Ok(UserProfile {
@@ -4990,6 +5184,10 @@ pub async fn switch_account(user_id: String) -> bool {
             *active = Some(user_id.clone());
             previous
         };
+        if previous_user.as_deref() != Some(&user_id) {
+            *SESSION_RELOGIN.write().await = None;
+            reset_connection_status();
+        }
         set_subscription_user(Some(user_id.clone())).await;
         clear_verification_session().await;
         // Drop only the previously active account's timelines: a global
@@ -5009,6 +5207,210 @@ pub async fn switch_account(user_id: String) -> bool {
         );
         false
     }
+}
+
+/// Release an expired active client so the same account can authenticate again.
+/// Returns whether a soft logout allows reuse of the original device and store.
+#[frb]
+pub async fn prepare_session_relogin(account_user_id: String) -> Result<bool, String> {
+    let _sync_lifecycle = SYNC_LIFECYCLE.write().await;
+    if ACTIVE_USER.read().await.as_deref() != Some(&account_user_id) {
+        return Err(api_err("auth", "当前账号已切换，请重试。".to_string()));
+    }
+    if !matches!(get_connection_status(), ConnectionStatus::SessionExpired) {
+        return Err(api_err("auth", "当前登录尚未失效。".to_string()));
+    }
+    if !CLIENTS.read().await.contains_key(&account_user_id) {
+        return Err(api_err("auth", "No client created.".to_string()));
+    }
+    set_subscription_user(None).await;
+    stop_sync_task(None, false).await;
+    clear_verification_session().await;
+    clear_timeline_cache_for(&account_user_id).await;
+    clear_account_runtime_state(&account_user_id).await;
+    let entry = CLIENTS.write().await.remove(&account_user_id).unwrap();
+    let resume = *SESSION_EXPIRY.read().unwrap_or_else(|e| e.into_inner())
+        == Some(SessionExpiry::SoftLogout);
+    *SESSION_RELOGIN.write().await = if resume {
+        entry
+            .client
+            .matrix_auth()
+            .session()
+            .map(|session| SessionRelogin {
+                meta: session.meta,
+                data_dir: entry.data_dir.clone(),
+                homeserver_url: entry.client.homeserver().to_string(),
+                instance_id: entry.instance_id,
+            })
+    } else {
+        None
+    };
+    let can_resume = SESSION_RELOGIN.read().await.is_some();
+    *ACTIVE_USER.write().await = None;
+    reset_connection_status();
+    let (client, _) = entry.into_client_and_data_dir().await;
+    drop(client);
+    Ok(can_resume)
+}
+
+/// Renew a soft-logged-out session using its original device and crypto store.
+#[frb]
+pub async fn resume_session_with_password(
+    account_user_id: String,
+    password: String,
+    search_index_key: String,
+    reset_search_index: bool,
+    use_in_memory_search_index: bool,
+) -> Result<AuthResult, String> {
+    use matrix_sdk::ruma::api::client::session::login::v3::{LoginInfo, Password, Request};
+    use matrix_sdk::ruma::api::client::uiaa::{MatrixUserIdentifier, UserIdentifier};
+
+    let _relogin = SESSION_RELOGIN_LOCK.lock().await;
+    let lifecycle = SYNC_LIFECYCLE.read().await;
+    let context = SESSION_RELOGIN
+        .read()
+        .await
+        .clone()
+        .filter(|context| context.meta.user_id.as_str() == account_user_id)
+        .ok_or_else(|| api_err("auth", "没有可恢复的设备会话，请重新登录。".to_string()))?;
+    if ACTIVE_USER.read().await.is_some() {
+        return Err(api_err("auth", "当前账号已切换，请重试。".to_string()));
+    }
+    let sdk_dir = build_sdk_data_dir(&context.data_dir, Some(&account_user_id));
+    if !sdk_dir.exists() {
+        return Err(api_err(
+            "auth",
+            "原设备加密数据已丢失，需要重新登录并验证设备。".to_string(),
+        ));
+    }
+    if !use_in_memory_search_index && search_index_key.is_empty() {
+        return Err(api_err(
+            "auth",
+            "Encrypted search index key is empty".to_string(),
+        ));
+    }
+    let search_index_dir = if use_in_memory_search_index {
+        sdk_dir.join("search_index")
+    } else {
+        prepare_encrypted_search_index(&sdk_dir, reset_search_index).await?
+    };
+    let index_store = if use_in_memory_search_index {
+        matrix_sdk::search_index::SearchIndexStoreKind::InMemory
+    } else {
+        matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(
+            search_index_dir.clone(),
+            search_index_key,
+        )
+    };
+    let client = Client::builder()
+        .handle_refresh_tokens()
+        .homeserver_url(&context.homeserver_url)
+        .with_encryption_settings(encryption_settings())
+        .request_config(bounded_request_config())
+        .search_index_store(index_store)
+        .sqlite_store(&sdk_dir, None)
+        .build()
+        .await
+        .map_err(|e| api_err("auth", format!("恢复原设备数据库失败: {e}")))?;
+    install_session_token_callback(&client)?;
+
+    // Validate the response before activating the SDK's crypto store. Reusing
+    // only a device ID with a newly initialized key store would lose trust.
+    let mut request = Request::new(LoginInfo::Password(Password::new(
+        UserIdentifier::Matrix(MatrixUserIdentifier::new(account_user_id.clone())),
+        password,
+    )));
+    request.device_id = Some(context.meta.device_id.clone());
+    request.refresh_token = true;
+    let response = match client
+        .send(request)
+        .with_request_config(RequestConfig::short_retry())
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            return Ok(AuthResult {
+                success: false,
+                user_id: None,
+                device_id: None,
+                access_token: None,
+                refresh_token: None,
+                error: Some(friendly_auth_error(
+                    &error.to_string(),
+                    "重新认证失败，请稍后重试",
+                )),
+                needs_uiaa: false,
+                session: None,
+                flows: None,
+            })
+        }
+    };
+    if response.user_id != context.meta.user_id || response.device_id != context.meta.device_id {
+        return Err(api_err(
+            "auth",
+            "重新认证返回的账号或设备与原会话不一致。".to_string(),
+        ));
+    }
+    client
+        .matrix_auth()
+        .restore_session((&response).into(), RoomLoadSettings::default())
+        .await
+        .map_err(|e| api_err("auth", format!("恢复原设备会话失败: {e}")))?;
+    wait_for_e2ee_initialization(&client, "session reauthentication").await;
+    let instance_id = NEXT_CLIENT_INSTANCE_ID.fetch_add(1, Ordering::Relaxed);
+    let identity = ClientIdentity {
+        user_id: account_user_id.clone(),
+        instance_id,
+    };
+    install_verification_event_handler(&client, identity.clone());
+    install_live_update_event_handlers(&client, identity.clone());
+    let room_key_task = install_room_key_event_handler(&client, identity);
+    drop(lifecycle);
+    {
+        let _lifecycle = SYNC_LIFECYCLE.write().await;
+        let mut relogin = SESSION_RELOGIN.write().await;
+        if ACTIVE_USER.read().await.is_some()
+            || relogin
+                .as_ref()
+                .is_none_or(|pending| pending.instance_id != context.instance_id)
+            || CLIENTS.read().await.contains_key(&account_user_id)
+        {
+            room_key_task.abort();
+            return Err(api_err("auth", "账号状态已改变，请重试。".to_string()));
+        }
+        stop_sync_task(None, false).await;
+        clear_account_runtime_state(&account_user_id).await;
+        CLIENTS.write().await.insert(
+            account_user_id.clone(),
+            ClientEntry {
+                client,
+                data_dir: context.data_dir,
+                search_index_dir,
+                instance_id,
+                room_key_task,
+            },
+        );
+        *ACTIVE_USER.write().await = Some(account_user_id.clone());
+        *relogin = None;
+        reset_connection_status();
+        set_subscription_user(Some(account_user_id)).await;
+    }
+    app_log(
+        "info",
+        "auth",
+        "Original device session reauthenticated".to_string(),
+    );
+    Ok(AuthResult {
+        success: true,
+        user_id: Some(response.user_id.to_string()),
+        device_id: Some(response.device_id.to_string()),
+        access_token: Some(response.access_token),
+        refresh_token: response.refresh_token,
+        error: None,
+        needs_uiaa: false,
+        session: None,
+        flows: None,
+    })
 }
 
 /// Logout the active user and remove its data.
@@ -5068,6 +5470,7 @@ pub async fn logout() -> Result<AccountRemovalResult, String> {
             info!("No more accounts, active cleared");
         }
     }
+    reset_connection_status();
     // Release the lifecycle lock before the network request and filesystem
     // cleanup so other API calls are not blocked while the server is unreachable
     // or while Windows releases file handles.
@@ -5192,6 +5595,7 @@ pub async fn remove_account(user_id: String) -> Result<AccountRemovalResult, Str
     if removing_active {
         let mut active = ACTIVE_USER.write().await;
         *active = next_user_id.clone();
+        reset_connection_status();
     }
     // Release the lifecycle lock before the network request and filesystem
     // cleanup so other API calls are not blocked.
@@ -5304,6 +5708,20 @@ pub async fn get_session() -> Option<StoredSession> {
         refresh_token: session.tokens.refresh_token,
         user_id: session.meta.user_id.to_string(),
         device_id: session.meta.device_id.to_string(),
+    })
+}
+
+/// Read one account's access/refresh token pair from the same SDK snapshot.
+/// Account-scoped so late notifications cannot persist another account's tokens.
+#[frb]
+pub async fn get_session_tokens(account_user_id: String) -> Option<SessionTokenUpdate> {
+    let clients = CLIENTS.read().await;
+    let client = &clients.get(&account_user_id)?.client;
+    let session = client.matrix_auth().session()?;
+    Some(SessionTokenUpdate {
+        user_id: session.meta.user_id.to_string(),
+        access_token: session.tokens.access_token,
+        refresh_token: session.tokens.refresh_token,
     })
 }
 
@@ -5458,7 +5876,9 @@ pub async fn restore_session(
             *active = Some(session.user_id.clone());
         }
         stop_sync_task(None, false).await;
+        reset_connection_status();
         set_subscription_user(Some(session.user_id.clone())).await;
+        *SESSION_RELOGIN.write().await = None;
     }
 
     app_log(
@@ -6019,6 +6439,9 @@ pub async fn sync_once() -> Result<(), String> {
         app_log("error", "sync", "sync_once: no client created".to_string());
         "No client created.".to_string()
     })?;
+    if matches!(get_connection_status(), ConnectionStatus::SessionExpired) {
+        return Err("登录已失效，请重新登录".to_string());
+    }
     let user_id = client.user_id().map(|u| u.to_string()).unwrap_or_default();
     let generation = SYNC_GENERATION.load(Ordering::SeqCst);
     if !sync_generation_is_active(generation, &user_id).await {
@@ -6076,6 +6499,7 @@ pub async fn sync_once() -> Result<(), String> {
         Ok(Err(e)) => {
             let msg = format!("sync_once: failed for user {}: {e}", user_id);
             app_log("error", "sync", msg.clone());
+            report_session_error(&e);
             set_connection_status_for_generation(generation, ConnectionStatus::Disconnected);
             Err(format!("同步失败: {e}"))
         }
@@ -6119,6 +6543,9 @@ fn start_sync_internal(
             app_log("error", "sync", "start_sync: no client created".to_string());
             "No client created.".to_string()
         })?;
+        if matches!(get_connection_status(), ConnectionStatus::SessionExpired) {
+            return Err("登录已失效，请重新登录".to_string());
+        }
         let user_id = client.user_id().map(|u| u.to_string()).unwrap_or_default();
         let hs = client.homeserver().to_string();
         app_log(
@@ -6196,6 +6623,13 @@ fn start_sync_internal(
                             // receipt push and the room subscription extension.
                             let mut successful_syncs: u32 = 0;
                             loop {
+                                if matches!(
+                                    get_connection_status(),
+                                    ConnectionStatus::SessionExpired
+                                ) {
+                                    clear_published_sync(generation).await;
+                                    break;
+                                }
                                 if !sync_generation_is_active(generation, &loop_user_id).await {
                                     break;
                                 }
@@ -6272,6 +6706,10 @@ fn start_sync_internal(
                                             "sync",
                                             format!("Traditional sync error: {e}"),
                                         );
+                                        if report_session_error_for_generation(generation, &e) {
+                                            clear_published_sync(generation).await;
+                                            break;
+                                        }
                                         set_connection_status_for_generation(
                                             generation,
                                             ConnectionStatus::Disconnected,
@@ -6398,6 +6836,10 @@ async fn try_start_sliding_sync(
                 app_log("info", "sync", "Sliding Sync loop started".to_string());
                 let mut consecutive_failures: u32 = 0;
                 'rebuild: loop {
+                    if matches!(get_connection_status(), ConnectionStatus::SessionExpired) {
+                        clear_published_sync(generation).await;
+                        break;
+                    }
                     if !sync_generation_is_active(generation, &user_id).await {
                         break;
                     }
@@ -6457,6 +6899,10 @@ async fn try_start_sliding_sync(
                     futures_util::pin_mut!(stream);
                     let mut received_update = false;
                     while let Some(update) = stream.next().await {
+                        if matches!(get_connection_status(), ConnectionStatus::SessionExpired) {
+                            clear_published_sync(generation).await;
+                            return;
+                        }
                         if !sync_generation_is_active(generation, &user_id).await {
                             clear_published_sync(generation).await;
                             return;
@@ -6481,6 +6927,10 @@ async fn try_start_sliding_sync(
                             }
                             Err(e) => {
                                 app_log("error", "sync", format!("Sliding Sync error: {e}"));
+                                if report_session_error_for_generation(generation, &e) {
+                                    clear_published_sync(generation).await;
+                                    break 'rebuild;
+                                }
                                 set_connection_status_for_generation(
                                     generation,
                                     ConnectionStatus::Disconnected,
@@ -9784,10 +10234,14 @@ fn ensure_account_matches(client: &Client, account_user_id: &str) -> Result<(), 
 #[cfg(test)]
 mod account_bound_attachment_tests {
     use super::*;
+    use matrix_sdk::ruma::profile::ProfileFieldName;
     use matrix_sdk::test_utils::mocks::MatrixMockServer;
+
+    static ACCOUNT_API_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[tokio::test]
     async fn attachment_and_recall_apis_reject_a_switched_account_before_room_access() {
+        let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
         let user_id = client.user_id().unwrap().to_string();
@@ -9871,6 +10325,310 @@ mod account_bound_attachment_tests {
             assert!(result.unwrap_err().contains("当前账号已切换"));
         }
         server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn soft_logout_relogin_preserves_device_and_cross_signing_keys() {
+        use matrix_sdk::test_utils::mocks::LoginResponseTemplate200;
+        let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
+        let server = MatrixMockServer::new().await;
+        server.mock_versions().ok().mount().await;
+        let user_id = matrix_sdk::ruma::owned_user_id!("@alice:example.org");
+        let device_id = matrix_sdk::ruma::owned_device_id!("EXISTING_DEVICE");
+        let data_dir = std::env::temp_dir().join(format!(
+            "matter-soft-relogin-{}",
+            SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let sdk_dir = build_sdk_data_dir(data_dir.to_str().unwrap(), Some(user_id.as_str()));
+        let index_dir = prepare_encrypted_search_index(&sdk_dir, false)
+            .await
+            .unwrap();
+        let key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned();
+        let client = server
+            .client_builder()
+            .logged_in_with_token("1234".into(), user_id.clone(), device_id.clone())
+            .on_builder(|builder| {
+                builder.sqlite_store(&sdk_dir, None).search_index_store(
+                    matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(
+                        index_dir.clone(),
+                        key.clone(),
+                    ),
+                )
+            })
+            .build()
+            .await;
+        let fingerprint = client.encryption().ed25519_key().await.unwrap();
+        let secrets = {
+            let machine = client.olm_machine_for_testing().await;
+            let machine = machine.as_ref().unwrap();
+            machine.bootstrap_cross_signing(false).await.unwrap();
+            machine.export_cross_signing_keys().await.unwrap().unwrap()
+        };
+        let marker = sdk_dir.join("cached-local-state");
+        tokio::fs::write(&marker, b"preserve cache").await.unwrap();
+        let (previous_active, previous_entry) = {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            let active = ACTIVE_USER.write().await.replace(user_id.to_string());
+            let entry = CLIENTS.write().await.insert(
+                user_id.to_string(),
+                ClientEntry {
+                    client,
+                    data_dir: data_dir.to_str().unwrap().into(),
+                    search_index_dir: index_dir,
+                    instance_id: u64::MAX,
+                    room_key_task: tokio::spawn(std::future::pending()),
+                },
+            );
+            (active, entry)
+        };
+        reset_connection_status();
+        server
+            .mock_get_profile_field(&user_id, ProfileFieldName::DisplayName)
+            .error_unknown_token(true)
+            .expect(1)
+            .mount()
+            .await;
+        assert!(get_profile().await.is_err());
+        assert!(prepare_session_relogin(user_id.to_string()).await.unwrap());
+        {
+            let _scope = server
+                .mock_login()
+                .error_unknown_token(false)
+                .expect(1)
+                .mount_as_scoped()
+                .await;
+            let result = resume_session_with_password(
+                user_id.to_string(),
+                "wrong-password".into(),
+                key.clone(),
+                false,
+                false,
+            )
+            .await
+            .unwrap();
+            assert!(!result.success);
+            assert!(SESSION_RELOGIN.read().await.is_some());
+            assert!(ACTIVE_USER.read().await.is_none());
+        }
+        for (returned_user, returned_device) in [
+            (
+                user_id.clone(),
+                matrix_sdk::ruma::owned_device_id!("WRONG_DEVICE"),
+            ),
+            (
+                matrix_sdk::ruma::owned_user_id!("@bob:example.org"),
+                device_id.clone(),
+            ),
+        ] {
+            let _scope = server
+                .mock_login()
+                .ok_with(LoginResponseTemplate200::new(
+                    "new-access",
+                    returned_device,
+                    returned_user,
+                ))
+                .expect(1)
+                .mount_as_scoped()
+                .await;
+            let error = resume_session_with_password(
+                user_id.to_string(),
+                "password".into(),
+                key.clone(),
+                false,
+                false,
+            )
+            .await
+            .unwrap_err();
+            assert!(error.contains("与原会话不一致"));
+            assert!(SESSION_RELOGIN.read().await.is_some());
+            assert!(ACTIVE_USER.read().await.is_none());
+        }
+        server
+            .mock_login()
+            .ok_with(
+                LoginResponseTemplate200::new("new-access", device_id.clone(), user_id.clone())
+                    .refresh_token("new-refresh"),
+            )
+            .expect(1)
+            .mount()
+            .await;
+        let resumed =
+            resume_session_with_password(user_id.to_string(), "password".into(), key, false, false)
+                .await
+                .unwrap();
+        assert!(
+            resumed.success,
+            "reauthentication failed: {:?}",
+            resumed.error
+        );
+        let requests = server.received_requests().await.unwrap();
+        let login_requests: Vec<_> = requests
+            .iter()
+            .filter(|request| request.url.path().ends_with("/login"))
+            .collect();
+        assert_eq!(login_requests.len(), 4);
+        for request in login_requests {
+            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(body["device_id"], device_id.as_str());
+            assert_eq!(body["identifier"]["user"], user_id.as_str());
+            assert_eq!(body["refresh_token"], true);
+        }
+        let client = get_client().await.unwrap();
+        let new_fingerprint = client.encryption().ed25519_key().await.unwrap();
+        let new_secrets = client
+            .olm_machine_for_testing()
+            .await
+            .as_ref()
+            .unwrap()
+            .export_cross_signing_keys()
+            .await
+            .unwrap()
+            .unwrap();
+        let restored_session = client.matrix_auth().session().unwrap();
+        drop(client);
+        {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            *ACTIVE_USER.write().await = previous_active;
+            let entry = CLIENTS.write().await.remove(user_id.as_str()).unwrap();
+            let (client, _) = entry.into_client_and_data_dir().await;
+            drop(client);
+            if let Some(previous_entry) = previous_entry {
+                CLIENTS
+                    .write()
+                    .await
+                    .insert(user_id.to_string(), previous_entry);
+            }
+            reset_connection_status();
+            *SESSION_RELOGIN.write().await = None;
+            set_subscription_user(None).await;
+        }
+        assert!(resumed.success);
+        assert_eq!(restored_session.meta.device_id, device_id);
+        assert_eq!(restored_session.tokens.access_token, "new-access");
+        assert_eq!(
+            restored_session.tokens.refresh_token.as_deref(),
+            Some("new-refresh")
+        );
+        assert_eq!(fingerprint, new_fingerprint);
+        assert!(
+            secrets.master_key == new_secrets.master_key
+                && secrets.self_signing_key == new_secrets.self_signing_key
+                && secrets.user_signing_key == new_secrets.user_signing_key
+        );
+        assert_eq!(tokio::fs::read(&marker).await.unwrap(), b"preserve cache");
+        tokio::fs::remove_dir_all(data_dir).await.unwrap();
+        server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn profile_authentication_failure_is_sticky_and_blocks_sync_restart() {
+        let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let user_id = client.user_id().unwrap().to_owned();
+        let data_dir = std::env::temp_dir().join(format!(
+            "matter-relogin-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        tokio::fs::create_dir_all(&data_dir).await.unwrap();
+        let marker = data_dir.join("cached-session-data");
+        tokio::fs::write(&marker, b"preserve cache").await.unwrap();
+        let (previous_active, previous_entry, previous_status) = {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            let active = ACTIVE_USER.write().await.replace(user_id.to_string());
+            let entry = CLIENTS.write().await.insert(
+                user_id.to_string(),
+                ClientEntry {
+                    client,
+                    data_dir: data_dir.to_string_lossy().to_string(),
+                    search_index_dir: std::path::PathBuf::new(),
+                    instance_id: u64::MAX,
+                    room_key_task: tokio::spawn(std::future::pending()),
+                },
+            );
+            (active, entry, get_connection_status())
+        };
+        reset_connection_status();
+        let valid_session_error = prepare_session_relogin(user_id.to_string())
+            .await
+            .unwrap_err();
+        let wrong_account_error = prepare_session_relogin("@wrong:example.org".into())
+            .await
+            .unwrap_err();
+        let mut results = Vec::new();
+        for field in [ProfileFieldName::DisplayName, ProfileFieldName::AvatarUrl] {
+            reset_connection_status();
+            if field == ProfileFieldName::AvatarUrl {
+                server
+                    .mock_get_profile_field(&user_id, ProfileFieldName::DisplayName)
+                    .ok_with_value(Some(serde_json::json!("Alice")))
+                    .expect(1)
+                    .mount()
+                    .await;
+            }
+            server
+                .mock_get_profile_field(&user_id, field)
+                .error_unknown_token(false)
+                .expect(1)
+                .mount()
+                .await;
+            let profile_error = get_profile().await.unwrap_err();
+            set_connection_status_for_generation(
+                SYNC_GENERATION.load(Ordering::SeqCst),
+                ConnectionStatus::Connected,
+            );
+            let status = get_connection_status();
+            let sync_error = sync_once().await.unwrap_err();
+            let restart_error = start_sync().await.unwrap_err();
+            results.push((profile_error, status, sync_error, restart_error));
+            server.verify_and_reset().await;
+        }
+        let prepared = prepare_session_relogin(user_id.to_string()).await;
+        let resume_error = resume_session_with_password(
+            user_id.to_string(),
+            "password".into(),
+            String::new(),
+            false,
+            true,
+        )
+        .await
+        .unwrap_err();
+        let active_cleared = ACTIVE_USER.read().await.is_none();
+        let client_removed = !CLIENTS.read().await.contains_key(user_id.as_str());
+        let cache = tokio::fs::read(&marker).await.unwrap();
+        {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            *ACTIVE_USER.write().await = previous_active;
+            if let Some(entry) = CLIENTS.write().await.remove(user_id.as_str()) {
+                entry.room_key_task.abort();
+            }
+            if let Some(previous_entry) = previous_entry {
+                CLIENTS
+                    .write()
+                    .await
+                    .insert(user_id.to_string(), previous_entry);
+            }
+            *CONNECTION_STATE.write().unwrap() = previous_status;
+        }
+        tokio::fs::remove_dir_all(&data_dir).await.unwrap();
+        assert!(valid_session_error.contains("尚未失效"));
+        assert!(wrong_account_error.contains("当前账号已切换"));
+        assert!(!prepared.unwrap());
+        assert!(resume_error.contains("没有可恢复的设备会话"));
+        assert!(active_cleared && client_removed);
+        assert_eq!(cache, b"preserve cache");
+        for (profile_error, status, sync_error, restart_error) in results {
+            assert!(profile_error.contains("M_UNKNOWN_TOKEN"));
+            assert!(matches!(status, ConnectionStatus::SessionExpired));
+            assert_eq!(sync_error, "登录已失效，请重新登录");
+            assert_eq!(restart_error, "登录已失效，请重新登录");
+        }
     }
 }
 
@@ -11983,46 +12741,25 @@ pub async fn edit_message(
     Ok(response.response.event_id.to_string())
 }
 
-/// Send an emoji reaction (m.annotation) to an event.
-///
-/// Re-sending the same key is de-duplicated server-side per MSC2677. To remove
-/// a reaction, redact the reaction event (not implemented in this client yet).
+/// Toggle the current user's emoji reaction and return the updated message.
 #[frb]
-pub async fn send_reaction(
+pub async fn toggle_reaction(
+    account_user_id: String,
     room_id: String,
     event_id: String,
     key: String,
-) -> Result<String, String> {
+) -> Result<ChatMessage, String> {
     let generation = SYNC_GENERATION.load(Ordering::SeqCst);
-
     let client = get_client()
         .await
         .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
     let room = get_room_by_id(&client, &room_id)?;
-
     let parsed_event_id = matrix_sdk::ruma::EventId::parse(&event_id)
         .map_err(|e| api_err("rooms", format!("无效的事件 ID: {e}")))?;
-
-    use matrix_sdk::ruma::events::relation::Annotation;
-    let content = matrix_sdk::ruma::events::reaction::ReactionEventContent::from(Annotation::new(
-        parsed_event_id,
-        key.clone(),
-    ));
-
-    let handle = room
-        .send(content)
-        .await
-        .map_err(|e| api_err("rooms", format!("Reaction failed: {e}")))?;
-    let new_event_id = handle.response.event_id.to_string();
-
-    app_log(
-        "info",
-        "rooms",
-        format!("Reaction '{}' on {} in room {}", key, event_id, room_id),
-    );
-    info!("Reaction '{}' on {} in room {}", key, event_id, room_id);
-    notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
-    Ok(new_event_id)
+    let message = sdk_timeline::toggle_reaction(&client, &room, parsed_event_id, &key).await?;
+    notify_sync_event_for_generation(generation, SyncEvent::MessageSent { room_id });
+    Ok(message)
 }
 
 /// Redact (delete) a message from a room.
