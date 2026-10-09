@@ -4206,7 +4206,8 @@ pub struct DeviceVerificationStatus {
 #[derive(Clone, Debug)]
 pub struct EncryptionRecoveryInfo {
     pub state: String,
-    pub device_verified: bool,
+    /// Account cross-signing verification; None means it is not known yet.
+    pub device_verified: Option<bool>,
 }
 
 #[frb]
@@ -6343,28 +6344,58 @@ pub async fn cancel_device_verification(mismatch: bool) -> Result<(), String> {
 }
 
 #[frb]
-pub async fn get_encryption_recovery_info() -> Result<EncryptionRecoveryInfo, String> {
+pub async fn get_encryption_recovery_info(
+    account_user_id: Option<String>,
+) -> Result<EncryptionRecoveryInfo, String> {
     let client = get_client()
         .await
         .ok_or_else(|| api_err("encryption", "No active client".to_string()))?;
+    if let Some(user_id) = account_user_id.as_deref() {
+        ensure_account_matches(&client, user_id)?;
+    }
+    Ok(encryption_recovery_info(&client))
+}
+
+fn encryption_recovery_info(client: &Client) -> EncryptionRecoveryInfo {
     let state = match client.encryption().recovery().state() {
         RecoveryState::Unknown => "unknown",
         RecoveryState::Enabled => "enabled",
         RecoveryState::Disabled => "disabled",
         RecoveryState::Incomplete => "incomplete",
     };
-    let device_verified = matches!(
-        client.encryption().verification_state().get(),
-        OwnVerificationState::Verified
-    );
-    Ok(EncryptionRecoveryInfo {
+    let device_verified = match client.encryption().verification_state().get() {
+        OwnVerificationState::Unknown => None,
+        OwnVerificationState::Verified => Some(true),
+        OwnVerificationState::Unverified => Some(false),
+    };
+    EncryptionRecoveryInfo {
         state: state.into(),
         device_verified,
-    })
+    }
+}
+
+#[cfg(test)]
+mod encryption_recovery_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn an_uninitialized_client_has_unknown_encryption_status() {
+        let client = Client::builder()
+            .homeserver_url("https://example.org")
+            .build()
+            .await
+            .unwrap();
+        let info = encryption_recovery_info(&client);
+        assert_eq!(info.state, "unknown");
+        assert_eq!(info.device_verified, None);
+    }
 }
 
 #[frb]
-pub async fn recover_encryption(recovery_key_or_passphrase: String) -> Result<(), String> {
+pub async fn recover_encryption(
+    recovery_key_or_passphrase: String,
+    account_user_id: Option<String>,
+) -> Result<(), String> {
     let generation = SYNC_GENERATION.load(Ordering::SeqCst);
 
     let value = recovery_key_or_passphrase.trim();
@@ -6377,6 +6408,9 @@ pub async fn recover_encryption(recovery_key_or_passphrase: String) -> Result<()
     let client = get_client()
         .await
         .ok_or_else(|| api_err("encryption", "No active client".to_string()))?;
+    if let Some(user_id) = account_user_id.as_deref() {
+        ensure_account_matches(&client, user_id)?;
+    }
     client
         .encryption()
         .recovery()
@@ -6393,11 +6427,23 @@ pub async fn recover_encryption(recovery_key_or_passphrase: String) -> Result<()
 }
 
 #[frb]
-pub async fn enable_encryption_recovery(passphrase: Option<String>) -> Result<String, String> {
+pub async fn enable_encryption_recovery(
+    passphrase: Option<String>,
+    account_user_id: Option<String>,
+) -> Result<String, String> {
     let client = get_client()
         .await
         .ok_or_else(|| api_err("encryption", "No active client".to_string()))?;
+    if let Some(user_id) = account_user_id.as_deref() {
+        ensure_account_matches(&client, user_id)?;
+    }
     let recovery = client.encryption().recovery();
+    if recovery.state() != RecoveryState::Disabled {
+        return Err(api_err(
+            "encryption",
+            "恢复配置已存在或状态尚未确认，请先恢复已有密钥".to_string(),
+        ));
+    }
     let passphrase = passphrase
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
@@ -10240,7 +10286,7 @@ mod account_bound_attachment_tests {
     static ACCOUNT_API_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[tokio::test]
-    async fn attachment_and_recall_apis_reject_a_switched_account_before_room_access() {
+    async fn account_bound_apis_reject_a_switched_account_before_access() {
         let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
@@ -10310,8 +10356,16 @@ mod account_bound_attachment_tests {
                 1,
             )
             .await,
-            redact_message(wrong, room, "$event:example.org".into(), None).await,
+            redact_message(wrong.clone(), room, "$event:example.org".into(), None).await,
+            get_encryption_recovery_info(Some(wrong.clone()))
+                .await
+                .map(|_| ()),
+            recover_encryption("existing-recovery-key".into(), Some(wrong.clone())).await,
+            enable_encryption_recovery(None, Some(wrong))
+                .await
+                .map(|_| ()),
         ];
+        let unknown_recovery = enable_encryption_recovery(None, Some(user_id.clone())).await;
         {
             let _lifecycle = SYNC_LIFECYCLE.write().await;
             *ACTIVE_USER.write().await = previous_active;
@@ -10321,6 +10375,9 @@ mod account_bound_attachment_tests {
                 CLIENTS.write().await.insert(user_id, previous_entry);
             }
         }
+        assert!(unknown_recovery
+            .unwrap_err()
+            .contains("恢复配置已存在或状态尚未确认"));
         for result in results {
             assert!(result.unwrap_err().contains("当前账号已切换"));
         }
