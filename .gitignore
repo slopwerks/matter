@@ -78,8 +78,12 @@ windows/flutter/generated_plugins.cmake
 *.keystore
 android/key.properties
 
-# Google services (if using Firebase)
+# Private build scripts and client push configuration stay local.
+.private/
+lib/firebase_options.dart
+firebase.json
 android/app/google-services.json
+# Server service-account credentials must stay outside the repository.
 ios/Runner/GoogleService-Info.plist
 # Build artifacts
 android/app/src/main/jniLibs/

@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/markdown/markdown_source_store.dart';
+import '../features/push/push_settings.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'authenticated_media_cache.dart';
 import 'ignored_users_persistence.dart';
@@ -810,6 +811,7 @@ Future<void> removeSession(String userId) async {
   await deletePersistedSessionCredentials(userId);
   await clearCachedMessagesForNamespace(userId);
   await prefs.remove(ignoredUsersCacheKey(userId));
+  await prefs.remove(pushSettingsKey(userId));
   await const MarkdownSourceStore().clearForUser(userId);
   for (final homeserver in removedHomeservers) {
     await clearAuthenticatedMediaCacheForSession(
@@ -861,6 +863,7 @@ Future<void> markSessionRemoved(
   if (!persisted) {
     throw StateError('无法持久化账号删除状态');
   }
+  await PushSettingsStore().blockDelivery(userId);
 }
 
 Future<void> unmarkSessionRemoved(String userId) async {
@@ -869,6 +872,7 @@ Future<void> unmarkSessionRemoved(String userId) async {
   if (!removed && prefs.containsKey(_removedSessionKey(userId))) {
     throw StateError('无法撤销账号删除状态');
   }
+  await PushSettingsStore().resumeDelivery(userId);
 }
 
 /// Finish local cleanup for removals interrupted by a previous app exit.
@@ -968,6 +972,15 @@ Future<void> clearAllSessions() async {
     await prefs.remove(key);
   }
   await clearAllCompatibilitySessionCredentials();
+  for (final key in prefs.getKeys().where(
+    (key) => key.startsWith('fcm_push_'),
+  )) {
+    final userId = utf8.decode(
+      base64Url.decode(key.substring('fcm_push_'.length)),
+    );
+    await PushSettingsStore().blockDelivery(userId);
+    await prefs.remove(key);
+  }
 }
 
 // ── Legacy single-session compat (migration) ───────────────────────────

@@ -70,6 +70,9 @@ dependencies:
   flutter_math_fork: ^0.7.4
   re_highlight: ^0.0.3
   inspire_blur: ^0.4.1
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
+  flutter_local_notifications: ^22.3.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
