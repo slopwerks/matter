@@ -21,6 +21,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
+import '../login/login_page.dart';
 import 'encryption_page.dart';
 import 'blur_settings_page.dart';
 import 'log_viewer_page.dart';
@@ -297,6 +298,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   // The account being removed (if any): same progress/blocking discipline
   // for the removal flow.
   String? _removingAccountId;
+  bool _addingAccount = false;
 
   @override
   void initState() {
@@ -465,6 +467,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 
+  Future<void> _addAccount() async {
+    if (_addingAccount ||
+        _switchingAccountId != null ||
+        _removingAccountId != null ||
+        !ref.read(sessionReadyProvider)) {
+      return;
+    }
+    final homeserver = ref.read(currentUserProvider)?.homeserver;
+    setState(() => _addingAccount = true);
+    try {
+      final added = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) =>
+              LoginPage(initialHomeserver: homeserver, addingAccount: true),
+        ),
+      );
+      if (added != true) await rust.cancelPendingLogin();
+      if (mounted) await _loadAccounts();
+    } catch (error) {
+      if (mounted) neuToast(context, '添加账号失败：$error');
+    } finally {
+      if (mounted) setState(() => _addingAccount = false);
+    }
+  }
+
   Future<void> _switchAccount(String userId) async {
     final controller = ref.read(accountSwitchControllerProvider);
     setState(() => _switchingAccountId = userId);
@@ -534,6 +561,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final colors = context.neu;
     final currentUser = ref.watch(currentUserProvider);
     final activeUserId = ref.watch(activeUserIdProvider);
+    final currentAccountId = activeUserId ?? currentUser?.id;
 
     return Scaffold(
       backgroundColor: colors.base,
@@ -619,48 +647,66 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ],
                       ),
                     ],
-                    if (_accounts.length > 1) ...[
+                    // Saved accounts stay reachable even when no session is
+                    // active (e.g. one was just cleared): the list is read from
+                    // disk, and hiding it would remove the only route back into
+                    // an account or into adding a new one.
+                    if (_accounts.isNotEmpty) ...[
                       const SizedBox(height: NeuSpacing.xl),
                       _buildGroup(
                         title: '账号切换',
-                        items: _accounts.map((account) {
-                          final isActive = account.userId == activeUserId;
-                          return _SettingItem(
-                            icon: Icons.person_outline_rounded,
-                            iconColor: isActive ? colors.accent : null,
-                            title: _formatUserId(account.userId),
-                            subtitle: account.homeserverUrl.replaceAll(
-                              RegExp(r'https?://'),
-                              '',
-                            ),
-                            trailing: isActive
-                                ? Icon(
-                                    Icons.check_circle_rounded,
-                                    color: colors.accent,
-                                    size: 20,
-                                  )
-                                : _switchingAccountId == account.userId
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : null,
-                            // Removal internally switches accounts (see
-                            // `_removeAccount`); during that window a switch
-                            // tile must stay disabled like the remove buttons,
-                            // or a queued tap can target the account being
-                            // deleted.
+                        items: [
+                          ..._accounts.map((account) {
+                            final isActive = account.userId == activeUserId;
+                            return _SettingItem(
+                              icon: Icons.person_outline_rounded,
+                              iconColor: isActive ? colors.accent : null,
+                              title: _formatUserId(account.userId),
+                              subtitle: account.homeserverUrl.replaceAll(
+                                RegExp(r'https?://'),
+                                '',
+                              ),
+                              trailing: isActive
+                                  ? Icon(
+                                      Icons.check_circle_rounded,
+                                      color: colors.accent,
+                                      size: 20,
+                                    )
+                                  : _switchingAccountId == account.userId
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : null,
+                              // Removal internally switches accounts (see
+                              // `_removeAccount`); during that window a switch
+                              // tile must stay disabled like the remove buttons,
+                              // or a queued tap can target the account being
+                              // deleted.
+                              onTap:
+                                  (isActive ||
+                                      _addingAccount ||
+                                      _switchingAccountId != null ||
+                                      _removingAccountId != null)
+                                  ? null
+                                  : () => _switchAccount(account.userId),
+                            );
+                          }),
+                          _SettingItem(
+                            icon: Icons.person_add_alt_1_rounded,
+                            title: '添加账号',
+                            subtitle: '保留当前账号登录，添加后切换使用',
                             onTap:
-                                (isActive ||
+                                _addingAccount ||
                                     _switchingAccountId != null ||
-                                    _removingAccountId != null)
+                                    _removingAccountId != null
                                 ? null
-                                : () => _switchAccount(account.userId),
-                          );
-                        }).toList(),
+                                : _addAccount,
+                          ),
+                        ],
                       ),
                     ],
 
@@ -897,11 +943,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ),
                       ],
                     ),
-                    if (currentUser != null) ...[
+                    if (currentAccountId != null) ...[
                       const SizedBox(height: NeuSpacing.xl),
                       // Remove other accounts (not current)
                       for (final account in _accounts.where(
-                        (a) => a.userId != activeUserId,
+                        (a) => a.userId != currentAccountId,
                       ))
                         Padding(
                           padding: const EdgeInsets.only(bottom: NeuSpacing.md),
@@ -910,7 +956,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             child: NeuButton(
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               onPressed:
-                                  (_removingAccountId != null ||
+                                  (_addingAccount ||
+                                      _removingAccountId != null ||
                                       _switchingAccountId != null)
                                   ? null
                                   : () => _removeAccount(account.userId),
@@ -937,15 +984,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         child: NeuButton(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           onPressed:
-                              (_removingAccountId != null ||
+                              (_addingAccount ||
+                                  _removingAccountId != null ||
                                   _switchingAccountId != null)
                               ? null
-                              : () => _removeAccount(
-                                  activeUserId ?? currentUser.id,
-                                ),
-                          icon:
-                              _removingAccountId ==
-                                  (activeUserId ?? currentUser.id)
+                              : () => _removeAccount(currentAccountId),
+                          icon: _removingAccountId == currentAccountId
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,

@@ -2579,6 +2579,18 @@ async fn clear_published_sync(generation: u64) {
 /// Temporary client during login (before we know the user_id for a per-user dir).
 static PENDING: Lazy<Arc<RwLock<Option<PendingEntry>>>> = Lazy::new(|| Arc::new(RwLock::new(None)));
 
+/// Serializes the pending-login store lifecycle. `create_client` holds it
+/// across its staging, client build and install; `cancel_pending_login` holds
+/// it across its take-and-delete. Without it a cancel can unlink the
+/// `_pending` store while a concurrent `create_client` is still building its
+/// client on that path — `create_client` deliberately does not hold
+/// `SYNC_LIFECYCLE` for the slow build, so the directory cleanup and the build
+/// were previously unordered and the install could resurrect a pending client
+/// whose SQLite files had just been unlinked.
+///
+/// Lock order (never inverted): `PENDING_LIFECYCLE` -> `SYNC_LIFECYCLE`.
+static PENDING_LIFECYCLE: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
 #[derive(Clone, Debug)]
 struct VerificationSession {
     user_id: String,
@@ -3236,6 +3248,16 @@ async fn get_client() -> Option<ClientLease> {
     } else {
         PENDING.read().await.as_ref().map(|p| p.client.clone())
     }?;
+    Some(ClientLease {
+        client,
+        lifecycle: Arc::new(lifecycle),
+    })
+}
+
+/// Authentication must use the pending client even while another account is active.
+async fn get_pending_client() -> Option<ClientLease> {
+    let lifecycle = SYNC_LIFECYCLE.read().await;
+    let client = PENDING.read().await.as_ref()?.client.clone();
     Some(ClientLease {
         client,
         lifecycle: Arc::new(lifecycle),
@@ -4536,6 +4558,10 @@ fn friendly_auth_error(raw: &str, fallback: &str) -> String {
         return "注册需要有效的注册 Token".to_string();
     }
 
+    if text.contains("already signed in") {
+        return "该账号已登录，请返回设置切换账号".to_string();
+    }
+
     if text.contains("user id") && text.contains("invalid") {
         return "用户 ID 格式无效".to_string();
     }
@@ -4597,10 +4623,14 @@ pub async fn create_client(
     })?;
     let sdk_dir = build_sdk_data_dir(&data_dir, None);
 
-    // Drain API calls and remove any stale pending directory under the
-    // lifecycle write lock. Then release the lock for the expensive client
-    // build and verify afterwards that no other lifecycle transition replaced
-    // the pending entry before installing ours.
+    // Staging, build and install must be atomic against `cancel_pending_login`:
+    // the lock is held across the whole function so a cancel cannot delete the
+    // pending store while this client is being built on it.
+    let _pending_lifecycle = PENDING_LIFECYCLE.lock().await;
+
+    // Remove any stale pending directory under the lifecycle write lock (the
+    // build itself deliberately runs without it so it cannot block unrelated
+    // API calls).
     {
         let _sync_lifecycle = SYNC_LIFECYCLE.write().await;
         if sdk_dir.exists() {
@@ -4638,7 +4668,9 @@ pub async fn create_client(
     {
         let _sync_lifecycle = SYNC_LIFECYCLE.write().await;
         // If another login attempt finished while we were building the client,
-        // drop this one and let the winner stand.
+        // drop this one and let the winner stand. `PENDING_LIFECYCLE` already
+        // rules out a concurrent `cancel_pending_login`, so the directory this
+        // client was built on has not been deleted underneath us.
         if PENDING.read().await.is_some() {
             drop(client);
             return Err(api_err(
@@ -4657,6 +4689,39 @@ pub async fn create_client(
     Ok(())
 }
 
+/// Release only the unfinished login; existing account sessions stay intact.
+#[frb]
+pub async fn cancel_pending_login() -> Result<(), String> {
+    // Same lock as `create_client`: cancelling may not observe a half-staged
+    // pending login, and may not delete a store a concurrent create is
+    // building on.
+    let _pending_lifecycle = PENDING_LIFECYCLE.lock().await;
+    let _lifecycle = SYNC_LIFECYCLE.write().await;
+    let Some(pending) = PENDING.write().await.take() else {
+        return Ok(());
+    };
+    let sdk_dir = build_sdk_data_dir(&pending.data_dir, None);
+    // Drop the client but hold `PENDING_LIFECYCLE` for the delete below: an
+    // interleaved `create_client` must not re-stage the same `_pending` path
+    // while we are unlinking it.
+    drop(pending);
+    drop(_lifecycle);
+    // SQLite can release its pooled file handles just after the client drops.
+    for attempt in 0..3 {
+        match remove_dir_all_if_exists(&sdk_dir).await {
+            Ok(_) => return Ok(()),
+            Err(error) if attempt == 2 => {
+                return Err(api_err(
+                    "auth",
+                    format!("Failed to clear pending login: {error}"),
+                ));
+            }
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(100)).await,
+        }
+    }
+    Ok(())
+}
+
 /// Step 1 of registration: discover UIAA flows.
 #[frb]
 pub async fn register_get_uiaa_session(
@@ -4668,7 +4733,7 @@ pub async fn register_get_uiaa_session(
         "auth",
         format!("register_get_uiaa_session: user={}", username),
     );
-    let client = get_client().await.ok_or_else(|| {
+    let client = get_pending_client().await.ok_or_else(|| {
         api_err(
             "auth",
             "No client created. Call create_client first.".to_string(),
@@ -4683,17 +4748,23 @@ pub async fn register_get_uiaa_session(
     request.auth = Some(AuthData::Dummy(Dummy::new()));
 
     match client.matrix_auth().register(request).await {
-        Ok(response) => Ok(AuthResult {
-            success: true,
-            user_id: Some(response.user_id.to_string()),
-            device_id: response.device_id.map(|d| d.to_string()),
-            access_token: response.access_token,
-            refresh_token: response.refresh_token,
-            error: None,
-            needs_uiaa: false,
-            session: None,
-            flows: None,
-        }),
+        Ok(response) => {
+            drop(client);
+            finalize_pending()
+                .await
+                .map_err(|e| api_err("auth", format!("Finalization failed: {e}")))?;
+            Ok(AuthResult {
+                success: true,
+                user_id: Some(response.user_id.to_string()),
+                device_id: response.device_id.map(|d| d.to_string()),
+                access_token: response.access_token,
+                refresh_token: response.refresh_token,
+                error: None,
+                needs_uiaa: false,
+                session: None,
+                flows: None,
+            })
+        }
         Err(err) => {
             let err_str = format!("{err}");
             info!(
@@ -4738,7 +4809,7 @@ pub async fn register_complete_uiaa(
         "auth",
         format!("register_complete_uiaa: user={}", username),
     );
-    let client = get_client().await.ok_or_else(|| {
+    let client = get_pending_client().await.ok_or_else(|| {
         api_err(
             "auth",
             "No client created. Call create_client first.".to_string(),
@@ -4851,7 +4922,7 @@ pub async fn login_with_password(username: String, password: String) -> Result<A
         "auth",
         format!("login_with_password: user={}", username),
     );
-    let client = get_client().await.ok_or_else(|| {
+    let client = get_pending_client().await.ok_or_else(|| {
         api_err(
             "auth",
             "No client created. Call create_client first.".to_string(),
@@ -4948,7 +5019,7 @@ pub async fn login_with_token(
     device_id: String,
     refresh_token: Option<String>,
 ) -> Result<AuthResult, String> {
-    let client = get_client().await.ok_or_else(|| {
+    let client = get_pending_client().await.ok_or_else(|| {
         api_err(
             "auth",
             "No client created. Call create_client first.".to_string(),
@@ -4961,6 +5032,15 @@ pub async fn login_with_token(
             friendly_auth_error(&format!("无效的用户 ID: {e}"), "用户 ID 格式无效"),
         )
     })?;
+    // Imported credentials belong to an existing server session. Reject a
+    // duplicate before restore/finalization, whose cleanup logs out newly
+    // created password sessions and must never revoke an imported token.
+    if CLIENTS.read().await.contains_key(&user_id) {
+        return Err(api_err(
+            "auth",
+            "该账号已登录，请返回设置切换账号".to_string(),
+        ));
+    }
     let parsed_device_id = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
 
     let session = MatrixSession {
@@ -10280,7 +10360,7 @@ fn ensure_account_matches(client: &Client, account_user_id: &str) -> Result<(), 
 #[cfg(test)]
 mod account_bound_attachment_tests {
     use super::*;
-    use matrix_sdk::ruma::profile::ProfileFieldName;
+    use matrix_sdk::ruma::{profile::ProfileFieldName, UserId};
     use matrix_sdk::test_utils::mocks::MatrixMockServer;
 
     static ACCOUNT_API_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -10381,6 +10461,328 @@ mod account_bound_attachment_tests {
         for result in results {
             assert!(result.unwrap_err().contains("当前账号已切换"));
         }
+        server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn adding_account_token_login_preserves_original_crypto_and_cancel_is_isolated() {
+        let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
+        let active_server = MatrixMockServer::new().await;
+        let pending_server = MatrixMockServer::new().await;
+        let client = active_server
+            .client_builder()
+            .logged_in_with_token(
+                "1234".into(),
+                UserId::parse("@original-add-token:example.org").unwrap(),
+                "ORIGINAL_DEVICE".into(),
+            )
+            .build()
+            .await;
+        let user_id = client.user_id().unwrap().to_string();
+        let fingerprint = client.encryption().ed25519_key().await.unwrap();
+        let previous_status = get_connection_status();
+        let (previous_active, previous_entry, previous_pending, previous_relogin) = {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            let active = ACTIVE_USER.write().await.replace(user_id.clone());
+            let entry = CLIENTS.write().await.insert(
+                user_id.clone(),
+                ClientEntry {
+                    client,
+                    data_dir: String::new(),
+                    search_index_dir: std::path::PathBuf::new(),
+                    instance_id: u64::MAX,
+                    room_key_task: tokio::spawn(std::future::pending()),
+                },
+            );
+            let pending = PENDING.write().await.take();
+            let relogin = SESSION_RELOGIN.write().await.take();
+            (active, entry, pending, relogin)
+        };
+        let data_dir = std::env::temp_dir().join(format!(
+            "matter-add-account-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let search_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_owned();
+        create_client(
+            pending_server.uri(),
+            data_dir.to_str().unwrap().into(),
+            search_key.clone(),
+            false,
+        )
+        .await
+        .unwrap();
+        let bob = "@bob:example.org".to_owned();
+        let result =
+            login_with_token("bob-token".into(), bob.clone(), "BOB_DEVICE".into(), None).await;
+        let bob_session = get_session().await.unwrap();
+        let switched = switch_account(user_id.clone()).await;
+        let restored_fingerprint = get_client().await.unwrap().encryption().ed25519_key().await;
+        let original_session = get_session().await.unwrap();
+        create_client(
+            pending_server.uri(),
+            data_dir.to_str().unwrap().into(),
+            search_key,
+            false,
+        )
+        .await
+        .unwrap();
+        let cancelled = cancel_pending_login().await;
+        let cancelled_again = cancel_pending_login().await;
+        let current_user = get_active_user_id().await;
+        let account_count = list_accounts().await.len();
+        let pending_cleared = PENDING.read().await.is_none()
+            && !build_sdk_data_dir(data_dir.to_str().unwrap(), None).exists();
+        let bob_store_preserved =
+            build_sdk_data_dir(data_dir.to_str().unwrap(), Some(&bob)).exists();
+        {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            *ACTIVE_USER.write().await = previous_active.clone();
+            *PENDING.write().await = previous_pending;
+            *SESSION_RELOGIN.write().await = previous_relogin;
+            let mut clients = CLIENTS.write().await;
+            if let Some(entry) = clients.remove(&bob) {
+                entry.room_key_task.abort();
+            }
+            let entry = clients.remove(&user_id).unwrap();
+            entry.room_key_task.abort();
+            if let Some(previous_entry) = previous_entry {
+                clients.insert(user_id.clone(), previous_entry);
+            }
+            drop(clients);
+            set_subscription_user(previous_active).await;
+            set_connection_status(previous_status);
+        }
+        let _ = tokio::fs::remove_dir_all(data_dir).await;
+        assert!(result.unwrap().success);
+        assert_eq!(bob_session.user_id, bob);
+        assert_eq!(bob_session.device_id, "BOB_DEVICE");
+        assert_eq!(bob_session.access_token, "bob-token");
+        assert!(switched);
+        assert_eq!(restored_fingerprint, Some(fingerprint));
+        assert_eq!(original_session.access_token, "1234");
+        assert!(cancelled.is_ok());
+        assert!(cancelled_again.is_ok());
+        assert!(pending_cleared);
+        assert!(bob_store_preserved);
+        assert_eq!(current_user, Some(user_id));
+        assert_eq!(account_count, 2);
+    }
+
+    #[tokio::test]
+    async fn adding_existing_account_with_token_never_revokes_imported_credentials() {
+        let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
+        let server = MatrixMockServer::new().await;
+        let user_id = "@existing-add-token:example.org".to_owned();
+        let client = server
+            .client_builder()
+            .logged_in_with_token(
+                "1234".into(),
+                UserId::parse(&user_id).unwrap(),
+                "ORIGINAL_DEVICE".into(),
+            )
+            .build()
+            .await;
+        let fingerprint = client.encryption().ed25519_key().await.unwrap();
+        let (previous_active, previous_entry, previous_pending) = {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            let active = ACTIVE_USER.write().await.replace(user_id.clone());
+            let entry = CLIENTS.write().await.insert(
+                user_id.clone(),
+                ClientEntry {
+                    client,
+                    data_dir: String::new(),
+                    search_index_dir: std::path::PathBuf::new(),
+                    instance_id: u64::MAX,
+                    room_key_task: tokio::spawn(std::future::pending()),
+                },
+            );
+            let pending = PENDING.write().await.take();
+            (active, entry, pending)
+        };
+        let data_dir = std::env::temp_dir().join(format!(
+            "matter-duplicate-token-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        server.mock_versions().ok().mount().await;
+        server.mock_logout().ok().expect(0).mount().await;
+        let mut results = Vec::new();
+        for (token, device) in [("1234", "ORIGINAL_DEVICE"), ("other-token", "OTHER_DEVICE")] {
+            create_client(
+                server.uri(),
+                data_dir.to_str().unwrap().into(),
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
+                false,
+            )
+            .await
+            .unwrap();
+            results
+                .push(login_with_token(token.into(), user_id.clone(), device.into(), None).await);
+            cancel_pending_login().await.unwrap();
+        }
+        let logout_requests = server
+            .server()
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|request| request.url.path().ends_with("/logout"))
+            .count();
+        let original_session = get_session().await.unwrap();
+        let current_fingerprint = get_client().await.unwrap().encryption().ed25519_key().await;
+        {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            *ACTIVE_USER.write().await = previous_active;
+            *PENDING.write().await = previous_pending;
+            let entry = CLIENTS.write().await.remove(&user_id).unwrap();
+            entry.room_key_task.abort();
+            if let Some(previous_entry) = previous_entry {
+                CLIENTS
+                    .write()
+                    .await
+                    .insert(user_id.clone(), previous_entry);
+            }
+        }
+        let _ = tokio::fs::remove_dir_all(data_dir).await;
+        for result in results {
+            assert!(result.unwrap_err().contains("已登录"));
+        }
+        assert_eq!(logout_requests, 0, "importing a token must never revoke it");
+        assert_eq!(original_session.user_id, user_id);
+        assert_eq!(original_session.device_id, "ORIGINAL_DEVICE");
+        assert_eq!(original_session.access_token, "1234");
+        assert_eq!(current_fingerprint, Some(fingerprint));
+        server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn adding_account_password_login_uses_pending_homeserver() {
+        let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
+        let active_server = MatrixMockServer::new().await;
+        let pending_server = MatrixMockServer::new().await;
+        let client = active_server
+            .client_builder()
+            .logged_in_with_token(
+                "1234".into(),
+                UserId::parse("@original-add-password:example.org").unwrap(),
+                "ORIGINAL_DEVICE".into(),
+            )
+            .build()
+            .await;
+        let user_id = client.user_id().unwrap().to_string();
+        let fingerprint = client.encryption().ed25519_key().await.unwrap();
+        let pending_client = pending_server.client_builder().unlogged().build().await;
+        let (previous_active, previous_entry, previous_pending) = {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            let active = ACTIVE_USER.write().await.replace(user_id.clone());
+            let entry = CLIENTS.write().await.insert(
+                user_id.clone(),
+                ClientEntry {
+                    client,
+                    data_dir: String::new(),
+                    search_index_dir: std::path::PathBuf::new(),
+                    instance_id: u64::MAX,
+                    room_key_task: tokio::spawn(std::future::pending()),
+                },
+            );
+            let pending = PENDING.write().await.replace(PendingEntry {
+                client: pending_client,
+                data_dir: String::new(),
+                homeserver_url: pending_server.uri(),
+                search_index_key: String::new(),
+            });
+            (active, entry, pending)
+        };
+        active_server
+            .mock_login()
+            .error_unknown_token(false)
+            .expect(0)
+            .mount()
+            .await;
+        pending_server
+            .mock_login()
+            .error_unknown_token(false)
+            .expect(1)
+            .mount()
+            .await;
+        let result = login_with_password("bob".into(), "wrong-password".into()).await;
+        let current_user = get_active_user_id().await;
+        let current_fingerprint = get_client().await.unwrap().encryption().ed25519_key().await;
+        {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            *ACTIVE_USER.write().await = previous_active;
+            *PENDING.write().await = previous_pending;
+            let entry = CLIENTS.write().await.remove(&user_id).unwrap();
+            entry.room_key_task.abort();
+            if let Some(previous_entry) = previous_entry {
+                CLIENTS
+                    .write()
+                    .await
+                    .insert(user_id.clone(), previous_entry);
+            }
+        }
+        assert!(!result.unwrap().success);
+        assert_eq!(current_user, Some(user_id));
+        assert_eq!(current_fingerprint, Some(fingerprint));
+        active_server.verify_and_reset().await;
+        pending_server.verify_and_reset().await;
+    }
+
+    /// The pending store must never be unlinked while a `create_client` build
+    /// is still staging on it. Before `PENDING_LIFECYCLE` the cancel took only
+    /// `SYNC_LIFECYCLE`, which `create_client` releases for the expensive
+    /// build — so a cancel landing in that window deleted `_pending` and the
+    /// build then installed a pending client whose SQLite files were gone.
+    ///
+    /// Deterministic proof: `PENDING_LIFECYCLE` is held for the whole test, so
+    /// an unguarded `cancel_pending_login` still empties `PENDING` (it takes
+    /// only `SYNC_LIFECYCLE`) while the guarded one waits and cannot run.
+    #[tokio::test]
+    async fn cancel_pending_login_cannot_race_an_in_flight_create_client() {
+        let _test_lock = ACCOUNT_API_TEST_LOCK.lock().await;
+        let server = MatrixMockServer::new().await;
+        let pending_client = server.client_builder().unlogged().build().await;
+        let (previous_pending, previous_active) = {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            let previous_pending = PENDING.write().await.replace(PendingEntry {
+                client: pending_client,
+                data_dir: String::new(),
+                homeserver_url: server.uri(),
+                search_index_key: String::new(),
+            });
+            let previous_active = ACTIVE_USER.write().await.clone();
+            (previous_pending, previous_active)
+        };
+
+        // Stand in for a `create_client` that is inside its build: it holds
+        // the pending-login lifecycle lock for the whole staging window.
+        let staging = PENDING_LIFECYCLE.lock().await;
+        let cancel = tokio::spawn(cancel_pending_login());
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let cancelled_while_staging = PENDING.read().await.is_none();
+        drop(staging);
+        let cancel_result = cancel.await.unwrap();
+        let pending_after = PENDING.read().await.is_none();
+
+        {
+            let _lifecycle = SYNC_LIFECYCLE.write().await;
+            *PENDING.write().await = previous_pending;
+            *ACTIVE_USER.write().await = previous_active;
+        }
+
+        assert!(
+            !cancelled_while_staging,
+            "cancel_pending_login emptied PENDING while a create_client build was staging"
+        );
+        assert!(cancel_result.is_ok());
+        assert!(pending_after);
         server.verify_and_reset().await;
     }
 
