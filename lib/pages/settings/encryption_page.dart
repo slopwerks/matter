@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
@@ -13,19 +15,28 @@ import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 
-class EncryptionPage extends StatefulWidget {
+class EncryptionPage extends ConsumerStatefulWidget {
   const EncryptionPage({super.key});
 
   @override
-  State<EncryptionPage> createState() => _EncryptionPageState();
+  ConsumerState<EncryptionPage> createState() => _EncryptionPageState();
 }
 
-class _EncryptionPageState extends State<EncryptionPage> {
+class _EncryptionPageState extends ConsumerState<EncryptionPage> {
+  late final String? _accountUserId;
+  bool get _isCurrentAccount =>
+      mounted && ref.read(activeUserIdProvider) == _accountUserId;
   final _recoveryController = TextEditingController();
   List<rust.VerificationDevice> _devices = [];
   List<rust.AccountDevice>? _accountDevices;
   String? _accountDevicesError;
   rust.EncryptionRecoveryInfo? _recoveryInfo;
+  String? _devicesError;
+  String? _recoveryError;
+  Timer? _recoveryTimer;
+  bool _loadingAll = false;
+  bool _refreshingRecovery = false;
+  int _recoveryRequestId = 0;
   bool _loading = true;
   bool _busy = false;
   bool _verificationDialogOpen = false;
@@ -34,55 +45,104 @@ class _EncryptionPageState extends State<EncryptionPage> {
   @override
   void initState() {
     super.initState();
+    _accountUserId = ref.read(activeUserIdProvider);
     _loadAll();
     _loadAccountDevices();
+    _recoveryTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_isCurrentAccount && !_loadingAll && !_busy && !_refreshingRecovery) {
+        unawaited(_refreshRecoveryInfo());
+      }
+    });
   }
 
   @override
   void dispose() {
+    _recoveryTimer?.cancel();
     _recoveryController.dispose();
     super.dispose();
   }
 
   Future<void> _loadAll() async {
+    if (_loadingAll || !_isCurrentAccount) return;
+    _loadingAll = true;
+    // A pending state read must not overwrite the identity refresh below.
+    _recoveryRequestId++;
     try {
-      final results = await Future.wait([
-        rust.listOwnDevices(),
-        rust.getEncryptionRecoveryInfo(),
-        rust.getDeviceVerificationStatus(),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _devices = results[0] as List<rust.VerificationDevice>;
-        _recoveryInfo = results[1] as rust.EncryptionRecoveryInfo;
-        _loading = false;
-      });
-      final verification = results[2] as rust.DeviceVerificationStatus?;
-      if (verification != null &&
-          verification.phase != 'done' &&
-          verification.phase != 'cancelled') {
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _showVerificationDialog(verification),
-        );
-      }
-    } catch (error) {
-      if (!mounted) return;
+      await _loadDevices();
+      if (!_isCurrentAccount) return;
+      await _refreshRecoveryInfo();
+      if (!_isCurrentAccount) return;
       setState(() => _loading = false);
-      _showError(error);
+      try {
+        final verification = await rust.getDeviceVerificationStatus();
+        if (!_isCurrentAccount) return;
+        if (verification != null &&
+            verification.phase != 'done' &&
+            verification.phase != 'cancelled') {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _showVerificationDialog(verification),
+          );
+        }
+      } catch (error) {
+        _showError(error);
+      }
+    } finally {
+      _loadingAll = false;
+    }
+  }
+
+  Future<void> _loadDevices() async {
+    if (!_isCurrentAccount) return;
+    try {
+      final devices = await rust.listOwnDevices();
+      if (!_isCurrentAccount) return;
+      setState(() {
+        _devices = devices;
+        _devicesError = null;
+      });
+    } catch (error) {
+      if (!_isCurrentAccount) return;
+      setState(() => _devicesError = error.toString());
+    }
+  }
+
+  Future<void> _refreshRecoveryInfo() async {
+    if (!_isCurrentAccount) return;
+    final requestId = ++_recoveryRequestId;
+    _refreshingRecovery = true;
+    try {
+      final recovery = await rust.getEncryptionRecoveryInfo(
+        accountUserId: _accountUserId,
+      );
+      if (!_isCurrentAccount || requestId != _recoveryRequestId) return;
+      if (_recoveryInfo == recovery && _recoveryError == null) return;
+      setState(() {
+        _recoveryInfo = recovery;
+        _recoveryError = null;
+      });
+    } catch (error) {
+      if (!_isCurrentAccount || requestId != _recoveryRequestId) return;
+      setState(() {
+        _recoveryInfo = null;
+        _recoveryError = error.toString();
+      });
+    } finally {
+      if (requestId == _recoveryRequestId) _refreshingRecovery = false;
     }
   }
 
   Future<bool> _loadAccountDevices() async {
+    if (!_isCurrentAccount) return false;
     try {
       final devices = await rust.listAccountDevices();
-      if (!mounted) return false;
+      if (!_isCurrentAccount) return false;
       setState(() {
         _accountDevices = devices;
         _accountDevicesError = null;
       });
       return true;
     } catch (error) {
-      if (!mounted) return false;
+      if (!_isCurrentAccount) return false;
       setState(() => _accountDevicesError = error.toString());
       return false;
     }
@@ -92,13 +152,9 @@ class _EncryptionPageState extends State<EncryptionPage> {
     // Device trust can be committed just after the verification reaches Done.
     // Retry briefly so the success state is visible without a manual refresh.
     for (var attempt = 0; attempt < 3; attempt++) {
-      final devices = await rust.listOwnDevices();
-      final recovery = await rust.getEncryptionRecoveryInfo();
-      if (!mounted) return;
-      setState(() {
-        _devices = devices;
-        _recoveryInfo = recovery;
-      });
+      await _loadDevices();
+      if (!_isCurrentAccount) return;
+      await _refreshRecoveryInfo();
       if (attempt < 2) {
         await Future.delayed(const Duration(milliseconds: 500));
       }
@@ -106,7 +162,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Future<void> _run(Future<void> Function() action) async {
-    if (_busy) return;
+    if (_busy || !_isCurrentAccount) return;
     setState(() => _busy = true);
     try {
       await action();
@@ -118,7 +174,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   void _showError(Object error) {
-    if (!mounted) return;
+    if (!_isCurrentAccount) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('操作失败：${error.toString()}')));
@@ -127,8 +183,8 @@ class _EncryptionPageState extends State<EncryptionPage> {
   String _recoveryLabel(String? state) {
     return switch (state) {
       'enabled' => '已启用，当前设备已持有恢复信息',
-      'incomplete' => '需要恢复密钥或恢复口令',
-      'disabled' => '尚未启用加密恢复',
+      'incomplete' => '账号已配置恢复，当前设备需要恢复密钥或恢复口令',
+      'disabled' => '账号尚未配置密钥恢复',
       _ => '正在确认恢复状态',
     };
   }
@@ -136,6 +192,13 @@ class _EncryptionPageState extends State<EncryptionPage> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    if (ref.watch(activeUserIdProvider) != _accountUserId) {
+      return Scaffold(
+        backgroundColor: colors.base,
+        appBar: AppBar(title: const Text('设备与加密')),
+        body: const Center(child: Text('当前账号已切换，请返回设置重新打开')),
+      );
+    }
     final viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
     return Scaffold(
       backgroundColor: colors.base,
@@ -224,7 +287,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   Widget _buildOverview() {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
-    final verified = _recoveryInfo?.deviceVerified ?? false;
+    final verified = _recoveryInfo?.deviceVerified;
     return NeuSurface(
       color: colors.card,
       radius: NeuRadius.surface,
@@ -232,22 +295,27 @@ class _EncryptionPageState extends State<EncryptionPage> {
       child: Row(
         children: [
           Icon(
-            verified ? Icons.verified_user_rounded : Icons.shield_outlined,
+            verified == true
+                ? Icons.verified_user_rounded
+                : Icons.shield_outlined,
             size: 22,
-            color: verified ? colors.success : colors.warning,
+            color: verified == true ? colors.success : colors.warning,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  verified ? '当前设备已验证' : '当前设备尚未验证',
-                  style: textTheme.titleSmall,
-                ),
+                Text(switch (verified) {
+                  true => '当前设备已验证',
+                  false => '当前设备尚未验证',
+                  null => '正在确认设备验证状态',
+                }, style: textTheme.titleSmall),
                 const SizedBox(height: 2),
                 Text(
-                  _recoveryLabel(_recoveryInfo?.state),
+                  _recoveryError == null
+                      ? _recoveryLabel(_recoveryInfo?.state)
+                      : '加密状态读取失败，请下拉重试',
                   style: textTheme.bodySmall,
                 ),
               ],
@@ -269,6 +337,15 @@ class _EncryptionPageState extends State<EncryptionPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _SectionTitle('我的设备'),
+        if (_devicesError != null) ...[
+          NeuSurface(
+            color: colors.card,
+            radius: NeuRadius.surface,
+            padding: const EdgeInsets.all(16),
+            child: Text('设备验证状态刷新失败，请下拉重试', style: textTheme.bodySmall),
+          ),
+          const SizedBox(height: NeuSpacing.md),
+        ],
         if (_accountDevicesError != null) ...[
           NeuSurface(
             color: colors.card,
@@ -329,7 +406,10 @@ class _EncryptionPageState extends State<EncryptionPage> {
         ? device!.displayName
         : '未命名设备';
     final isCurrent = account?.isCurrent ?? device?.isCurrent ?? false;
-    final isVerified = device?.isVerified ?? false;
+    // Local trust of our own keys is not account cross-signing verification.
+    final isVerified = isCurrent
+        ? _recoveryInfo?.deviceVerified == true
+        : _devicesError == null && (device?.isVerified ?? false);
     return GestureDetector(
       onTap: account == null ? null : () => _openDeviceDetails(account),
       child: NeuSurface(
@@ -480,7 +560,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Future<void> _renameDevice(rust.AccountDevice device) async {
-    if (_busy) return;
+    if (_busy || !_isCurrentAccount) return;
     final name = await showNeuPrompt(
       context,
       title: '重命名设备',
@@ -489,7 +569,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
       initial: device.displayName ?? '',
       confirmLabel: '保存',
     );
-    if (name == null || !mounted) return;
+    if (name == null || !_isCurrentAccount) return;
     setState(() => _busy = true);
     try {
       await rust.renameAccountDevice(
@@ -508,7 +588,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   }
 
   Future<void> _startVerification(String deviceId) async {
-    if (_busy) return;
+    if (_busy || !_isCurrentAccount) return;
     setState(() => _busy = true);
     try {
       await rust.startDeviceVerification(deviceId: deviceId);
@@ -526,7 +606,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   Future<void> _showVerificationDialog(
     rust.DeviceVerificationStatus status,
   ) async {
-    if (_verificationDialogOpen || !mounted) return;
+    if (_verificationDialogOpen || !_isCurrentAccount) return;
     _verificationDialogOpen = true;
     await showDialog<void>(
       context: context,
@@ -540,7 +620,7 @@ class _EncryptionPageState extends State<EncryptionPage> {
   Widget _buildRecovery() {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
-    final enabled = _recoveryInfo?.state == 'enabled';
+    final canCreate = _recoveryInfo?.state == 'disabled';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -581,17 +661,19 @@ class _EncryptionPageState extends State<EncryptionPage> {
                     ? null
                     : () => _run(() async {
                         await rust.recoverEncryption(
+                          accountUserId: _accountUserId,
                           recoveryKeyOrPassphrase: _recoveryController.text,
                         );
+                        if (!_isCurrentAccount) return;
                         _recoveryController.clear();
                         await _refreshDevicesAndRecovery();
-                        if (mounted) {
-                          neuToast(context, '加密数据恢复完成');
+                        if (mounted && _isCurrentAccount) {
+                          neuToast(context, '恢复信息已导入，历史消息将按需解密');
                         }
                       }),
                 child: const Center(child: Text('恢复加密数据')),
               ),
-              if (!enabled) ...[
+              if (canCreate) ...[
                 const SizedBox(height: 8),
                 NeuButton(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -615,14 +697,15 @@ class _EncryptionPageState extends State<EncryptionPage> {
       confirmLabel: '创建',
       obscureText: true,
     );
-    if (passphrase == null || !mounted) return;
+    if (passphrase == null || !_isCurrentAccount) return;
 
     await _run(() async {
       final key = await rust.enableEncryptionRecovery(
+        accountUserId: _accountUserId,
         passphrase: passphrase.trim().isEmpty ? null : passphrase.trim(),
       );
       await _refreshDevicesAndRecovery();
-      if (!mounted) return;
+      if (!mounted || !_isCurrentAccount) return;
       await showDialog<void>(
         context: context,
         barrierDismissible: false,

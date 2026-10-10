@@ -36,11 +36,13 @@ class LoginPage extends ConsumerStatefulWidget {
     this.initialHomeserver,
     this.initialUserId,
     this.resumeSession = false,
+    this.addingAccount = false,
   });
 
   final String? initialHomeserver;
   final String? initialUserId;
   final bool resumeSession;
+  final bool addingAccount;
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
@@ -48,6 +50,7 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   late String _sessionSearchIndexKey;
+  CurrentUser? _previousUser;
   final _homeserverController = TextEditingController();
   List<HomeserverEntry> _homeservers = const [];
 
@@ -84,6 +87,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void initState() {
     super.initState();
     _sessionSearchIndexKey = _pendingSearchIndexKey;
+    if (widget.addingAccount) _previousUser = ref.read(currentUserProvider);
     _homeserverController.text = widget.initialHomeserver ?? '';
     _usernameController.text =
         widget.initialUserId?.split(':').first.replaceFirst('@', '') ?? '';
@@ -155,6 +159,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         text.contains('missing token')) {
       return '注册需要有效的注册 Token';
     }
+    if (text.contains('already signed in') || text.contains('该账号已登录')) {
+      return '该账号已登录，请返回设置切换账号';
+    }
     if (text.contains('no client created')) {
       return '客户端初始化失败，请重试';
     }
@@ -187,7 +194,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (result.rustSessionDiscarded) {
       _hasCompletedRustLogin = false;
       if (mounted) {
-        ref.read(sessionReadyProvider.notifier).value = true;
+        if (_previousUser != null) {
+          try {
+            await _restorePreviousAccount();
+          } catch (error) {
+            clearActiveSessionState(ref, markSessionReady: true);
+            return '$reason。本次登录已撤销，但恢复原账号失败，请重启应用：$error';
+          }
+        } else {
+          ref.read(sessionReadyProvider.notifier).value = true;
+        }
       }
     }
     final warning = result.warning;
@@ -265,11 +281,52 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     try {
       await _persistAndSync(userId, displayName);
     } catch (_) {
-      ref.read(sessionReadyProvider.notifier).value = true;
+      if (!widget.addingAccount) {
+        ref.read(sessionReadyProvider.notifier).value = true;
+      }
       rethrow;
     }
     if (!mounted) return;
     ref.read(isLoggedInProvider.notifier).value = true;
+    if (widget.addingAccount) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _restorePreviousAccount() async {
+    final previous = _previousUser!;
+    if (!await rust.switchAccount(userId: previous.id)) {
+      throw StateError('原账号会话不可用');
+    }
+    if (!mounted) return;
+    await applyActiveSessionState(
+      ref,
+      userId: previous.id,
+      displayName: previous.displayName,
+      homeserver: previous.homeserver,
+      persistActiveUser: true,
+      refreshStoredSessions: true,
+    );
+    await bootstrapActiveSessionSync(
+      ref,
+      attemptLabel: 'Restore original account sync attempt',
+      startSyncLabel: 'Restore original account sync failed',
+    );
+    ref.read(sessionReadyProvider.notifier).value = true;
+  }
+
+  void _beginAuthAttempt() {
+    setState(() => _isLoading = true);
+    if (widget.addingAccount) {
+      resetIgnoredListAccountState(_previousUser?.id ?? '');
+      ref.read(sessionReadyProvider.notifier).value = false;
+    }
+  }
+
+  void _finishAuthAttempt() {
+    if (!mounted) return;
+    if (widget.addingAccount && !_hasCompletedRustLogin) {
+      ref.read(sessionReadyProvider.notifier).value = true;
+    }
+    setState(() => _isLoading = false);
   }
 
   Future<void> _persistAndSync(String userId, String displayName) async {
@@ -347,13 +404,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<void> _login() async {
+    if (_isLoading) return;
     _clearError();
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
       setState(() => _error = '请输入用户名和密码');
       return;
     }
 
-    setState(() => _isLoading = true);
+    _beginAuthAttempt();
     try {
       final homeserverUrl = await _resolveHomeserverUrl();
       if (homeserverUrl == null) return;
@@ -407,11 +465,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (e) {
       await _handleAuthFailure('登录失败，请稍后重试', e);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      _finishAuthAttempt();
     }
   }
 
   Future<void> _register() async {
+    if (_isLoading) return;
     _sessionSearchIndexKey = _pendingSearchIndexKey;
     _clearError();
 
@@ -426,7 +485,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    _beginAuthAttempt();
     try {
       final homeserverUrl = await _resolveHomeserverUrl();
       if (homeserverUrl == null) return;
@@ -478,11 +537,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (e) {
       await _handleAuthFailure('注册失败，请稍后重试', e);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      _finishAuthAttempt();
     }
   }
 
   Future<void> _loginWithAccessToken() async {
+    if (_isLoading) return;
     _sessionSearchIndexKey = _pendingSearchIndexKey;
     _clearError();
     if (_accessTokenController.text.isEmpty || _userIdController.text.isEmpty) {
@@ -490,7 +550,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    _beginAuthAttempt();
     try {
       final homeserverUrl = await _resolveHomeserverUrl();
       if (homeserverUrl == null) return;
@@ -526,41 +586,45 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (e) {
       await _handleAuthFailure('Token 登录失败，请检查输入信息', e);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      _finishAuthAttempt();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.neu.base,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 430),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 40),
-                        _buildHeader(),
-                        const SizedBox(height: 32),
-                        _buildModeChips(),
-                        const SizedBox(height: 20),
-                        _buildFormCard(),
-                        const Spacer(),
-                        _buildFooter(),
-                      ],
+    return PopScope(
+      canPop: !widget.addingAccount || (!_isLoading && !_hasCompletedRustLogin),
+      child: Scaffold(
+        appBar: widget.addingAccount ? AppBar(title: const Text('添加账号')) : null,
+        backgroundColor: context.neu.base,
+        body: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 430),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 40),
+                          _buildHeader(),
+                          const SizedBox(height: 32),
+                          _buildModeChips(),
+                          const SizedBox(height: 20),
+                          _buildFormCard(),
+                          const Spacer(),
+                          _buildFooter(),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -609,6 +673,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             label: labels[i],
             selected: _tabIndex == i,
             onTap: () {
+              if (_isLoading || _hasCompletedRustLogin) return;
               setState(() {
                 _tabIndex = i;
                 _uiaaSession = null;
