@@ -19,40 +19,13 @@ import 'src/rust/api/matrix.dart' as rust;
 import 'theme/neu_colors.dart';
 import 'widgets/app_avatar.dart';
 import 'widgets/glass.dart';
+import 'widgets/mobile_tab_view.dart';
 import 'widgets/neu_action.dart';
 import 'widgets/neu_surface.dart';
 import 'widgets/max_content_width.dart';
 import 'widgets/sheets.dart';
 
 enum _DesktopRoomSource { directMessages, ungroupedRooms, space }
-
-// PageView mounts tabs lazily. Retain visited tabs so a return swipe does
-// not repeat initialization, layout and image loading. Account-scoped keys
-// discard retained state when switching accounts.
-class _MobilePage extends ConsumerStatefulWidget {
-  const _MobilePage({super.key, required this.index, required this.child});
-
-  final int index;
-  final Widget child;
-
-  @override
-  ConsumerState<_MobilePage> createState() => _MobilePageState();
-}
-
-class _MobilePageState extends ConsumerState<_MobilePage>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return TickerMode(
-      enabled: ref.watch(navigationIndexProvider) == widget.index,
-      child: widget.child,
-    );
-  }
-}
 
 class MatterApp extends ConsumerStatefulWidget {
   const MatterApp({super.key});
@@ -62,13 +35,10 @@ class MatterApp extends ConsumerStatefulWidget {
 }
 
 class _MatterAppState extends ConsumerState<MatterApp> {
-  final _pageController = PageController();
-  int? _mobileNavigationTarget;
-  int _navigationRequest = 0;
+  final _tabPosition = ValueNotifier(0.0);
   Timer? _verificationTimer;
   bool _checkingVerification = false;
   bool _verificationDialogOpen = false;
-  bool? _lastLayoutWasDesktop;
   final Set<String> _handledVerificationFlows = {};
   rust.ChatRoom? _selectedRoom;
   rust.Space? _selectedDesktopSpace;
@@ -114,7 +84,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   @override
   void dispose() {
     _verificationTimer?.cancel();
-    _pageController.dispose();
+    _tabPosition.dispose();
     super.dispose();
   }
 
@@ -181,20 +151,9 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     }
   }
 
-  Future<void> _onItemTapped(int index) async {
-    final request = ++_navigationRequest;
-    _mobileNavigationTarget = _pageController.hasClients ? index : null;
+  void _onItemTapped(int index) {
     if (ref.read(navigationIndexProvider) != index) {
       ref.read(navigationIndexProvider.notifier).value = index;
-    }
-    if (_pageController.hasClients) {
-      await _pageController.animateToPage(
-        index,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-      );
-      if (!mounted || request != _navigationRequest) return;
-      _mobileNavigationTarget = null;
     }
   }
 
@@ -406,7 +365,6 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= _desktopBreakpoint;
-        _syncMobilePageAfterLayoutChange(isDesktop);
         if (isDesktop) {
           // Only the desktop layout keeps a selected room whose metadata
           // must follow the room sources; watching them on mobile would
@@ -480,54 +438,16 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     _selectedRoom = _reconcileSelectedRoomDetails(selectedRoom, refreshedRoom);
   }
 
-  void _syncMobilePageAfterLayoutChange(bool isDesktop) {
-    if (_lastLayoutWasDesktop == isDesktop) return;
-    _lastLayoutWasDesktop = isDesktop;
-    _mobileNavigationTarget = null;
-    _navigationRequest++;
-    if (isDesktop) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _pageController.hasClients) {
-        _pageController.jumpToPage(ref.read(navigationIndexProvider));
-      }
-    });
-  }
-
   Widget _buildMobileLayout() {
     final navigationIndex = ref.watch(navigationIndexProvider);
     return Scaffold(
       extendBody: true,
-      body: NotificationListener<ScrollStartNotification>(
-        onNotification: (notification) {
-          if (notification.depth == 0 && notification.dragDetails != null) {
-            // A drag takes over from a dock tap, including an unfinished one.
-            _mobileNavigationTarget = null;
-            _navigationRequest++;
-            final index = _pageController.page!.round();
-            if (ref.read(navigationIndexProvider) != index) {
-              ref.read(navigationIndexProvider.notifier).value = index;
-            }
-          }
-          return false;
-        },
-        child: PageView(
-          controller: _pageController,
-          children: [
-            for (var index = 0; index < _pages.length; index++)
-              _MobilePage(
-                key: ValueKey((ref.watch(activeUserIdProvider), index)),
-                index: index,
-                child: _pages[index],
-              ),
-          ],
-          onPageChanged: (index) {
-            if (_mobileNavigationTarget == null &&
-                ref.read(navigationIndexProvider) != index) {
-              ref.read(navigationIndexProvider.notifier).value = index;
-            }
-          },
-        ),
+      body: MobileTabView(
+        key: ValueKey(ref.watch(activeUserIdProvider)),
+        index: navigationIndex,
+        position: _tabPosition,
+        onChanged: _onItemTapped,
+        children: _pages,
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -537,13 +457,9 @@ class _MatterAppState extends ConsumerState<MatterApp> {
           radius: NeuRadius.nav,
           padding: const EdgeInsets.all(6),
           child: AnimatedBuilder(
-            animation: _pageController,
+            animation: _tabPosition,
             builder: (context, _) {
-              final page =
-                  _pageController.hasClients &&
-                      _pageController.position.hasContentDimensions
-                  ? (_pageController.page ?? 0).clamp(0.0, 3.0)
-                  : navigationIndex.toDouble();
+              final page = _tabPosition.value;
               return Stack(
                 children: [
                   Positioned.fill(
