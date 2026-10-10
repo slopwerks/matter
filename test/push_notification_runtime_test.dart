@@ -114,12 +114,78 @@ void main() {
           ...target.toData(),
           'type': type,
           'content': jsonEncode({'body': '消息正文'}),
+          'content_body': '展开后的正文',
         });
         final args = calls.last.arguments as Map;
         expect(args['body'], type == 'm.room.message' ? '消息正文' : '你有一条新消息');
       }
     },
   );
+
+  test(
+    'Sygnal FCM v1 content_body is shown only for plaintext events',
+    () async {
+      final notifications = FlutterLocalNotificationsPlugin();
+      for (final type in [
+        'm.room.message',
+        'm.sticker',
+        'm.room.encrypted',
+        'm.room.member',
+        null,
+      ]) {
+        await showMatrixPush(notifications, {
+          ...target.toData(),
+          'type': type,
+          'content_body': 'Sygnal 消息正文',
+          'content_msgtype': 'm.text',
+        });
+        final args = calls.last.arguments as Map;
+        expect(
+          args['body'],
+          type == 'm.room.message' || type == 'm.sticker'
+              ? 'Sygnal 消息正文'
+              : '你有一条新消息',
+        );
+      }
+    },
+  );
+
+  test('content_body is used when nested content has no usable body', () async {
+    final notifications = FlutterLocalNotificationsPlugin();
+    for (final content in [
+      null,
+      'invalid json',
+      jsonEncode({'body': '  '}),
+      {'body': 42},
+      {'msgtype': 'm.text'},
+    ]) {
+      await showMatrixPush(notifications, {
+        ...target.toData(),
+        'type': 'm.room.message',
+        'content': content,
+        'content_body': 'Sygnal 消息正文',
+      });
+      expect((calls.last.arguments as Map)['body'], 'Sygnal 消息正文');
+    }
+  });
+
+  test('missing or invalid content_body keeps the generic notice', () async {
+    final notifications = FlutterLocalNotificationsPlugin();
+    for (final body in [
+      null,
+      '',
+      '  ',
+      42,
+      {'body': 'not a string'},
+    ]) {
+      await showMatrixPush(notifications, {
+        ...target.toData(),
+        'type': 'm.room.message',
+        'content_body': body,
+      });
+      expect((calls.last.arguments as Map)['body'], '你有一条新消息');
+    }
+  });
 
   test(
     'successful receipts cancel notifications even without a marked-unread flag',

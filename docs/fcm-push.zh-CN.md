@@ -82,7 +82,7 @@ FCM 网关应发送高优先级的 **data message**，不要添加 FCM 的 `noti
 
 Web 网关须支持 Web Push/VAPID。客户端在 Matrix pusher 的 `data` 中传递 `endpoint`、`p256dh` 和 `auth`，`pushkey` 使用订阅的 `p256dh`。请确认所用 Sygnal 版本或其他网关支持该模式；FCM 应用项不能接收浏览器订阅。
 
-两种方式都使用 Matrix 默认推送格式，Homeserver 会把非加密事件的内容交给网关。网关须将 `data.default_payload` 中的 `user_id`、`registration_id` 与 `room_id`、`event_id` 一同送达客户端，并保留事件的 `type` 和 `content`，否则客户端只能显示通用提示。FCM 的 `content` 可以是 JSON 字符串，Web 可使用 JSON 对象或 JSON 字符串。浏览器 worker 接受这些字段组成的 JSON 对象，或位于 `notification` 内的对象。不保留账号路由数据的 Web 网关需要调整转发，否则通知会被拒绝。旧的 `event_id_only` 注册会在账号就绪或应用恢复前台时的注册刷新中更新。
+两种方式都使用 Matrix 默认推送格式，Homeserver 会把非加密事件的内容交给网关。网关须将 `data.default_payload` 中的 `user_id`、`registration_id` 与 `room_id`、`event_id` 一同送达客户端，并保留事件的 `type` 和消息正文，否则客户端只能显示通用提示。FCM 支持 JSON 字符串形式的 `content`，也支持 Sygnal HTTP v1 转发的展开字段 `content_body`；有效的 `content.body` 优先。Web 的 `content` 可使用 JSON 对象或 JSON 字符串。浏览器 worker 接受这些字段组成的 JSON 对象，或位于 `notification` 内的对象。不保留账号路由数据的 Web 网关需要调整转发，否则通知会被拒绝。旧的 `event_id_only` 注册会在账号就绪或应用恢复前台时的注册刷新中更新。
 
 ## 用户设置与生命周期
 

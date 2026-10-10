@@ -71,10 +71,14 @@ Future<void> showMatrixPush(
         content = null;
       }
     }
+    final flattenedBody = data['content_body'];
     if (content is Map &&
         content['body'] is String &&
         (content['body'] as String).trim().isNotEmpty) {
       body = content['body'] as String;
+    } else if (flattenedBody is String && flattenedBody.trim().isNotEmpty) {
+      // Sygnal flattens content fields for FCM HTTP v1.
+      body = flattenedBody;
     }
   }
   await notifications.show(
