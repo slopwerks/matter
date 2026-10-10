@@ -63,6 +63,8 @@ class MatterApp extends ConsumerStatefulWidget {
 
 class _MatterAppState extends ConsumerState<MatterApp> {
   final _pageController = PageController();
+  int? _mobileNavigationTarget;
+  int _navigationRequest = 0;
   Timer? _verificationTimer;
   bool _checkingVerification = false;
   bool _verificationDialogOpen = false;
@@ -179,16 +181,20 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     }
   }
 
-  void _onItemTapped(int index) {
+  Future<void> _onItemTapped(int index) async {
+    final request = ++_navigationRequest;
+    _mobileNavigationTarget = _pageController.hasClients ? index : null;
     if (ref.read(navigationIndexProvider) != index) {
       ref.read(navigationIndexProvider.notifier).value = index;
     }
     if (_pageController.hasClients) {
-      _pageController.animateToPage(
+      await _pageController.animateToPage(
         index,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOutCubic,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
       );
+      if (!mounted || request != _navigationRequest) return;
+      _mobileNavigationTarget = null;
     }
   }
 
@@ -477,6 +483,8 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   void _syncMobilePageAfterLayoutChange(bool isDesktop) {
     if (_lastLayoutWasDesktop == isDesktop) return;
     _lastLayoutWasDesktop = isDesktop;
+    _mobileNavigationTarget = null;
+    _navigationRequest++;
     if (isDesktop) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -487,69 +495,118 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   }
 
   Widget _buildMobileLayout() {
+    final navigationIndex = ref.watch(navigationIndexProvider);
     return Scaffold(
       extendBody: true,
-      body: PageView(
-        controller: _pageController,
-        children: [
-          for (var index = 0; index < _pages.length; index++)
-            _MobilePage(
-              key: ValueKey((ref.watch(activeUserIdProvider), index)),
-              index: index,
-              child: _pages[index],
-            ),
-        ],
-        onPageChanged: (index) {
-          if (ref.read(navigationIndexProvider) != index) {
-            ref.read(navigationIndexProvider.notifier).value = index;
+      body: NotificationListener<ScrollStartNotification>(
+        onNotification: (notification) {
+          if (notification.depth == 0 && notification.dragDetails != null) {
+            // A drag takes over from a dock tap, including an unfinished one.
+            _mobileNavigationTarget = null;
+            _navigationRequest++;
+            final index = _pageController.page!.round();
+            if (ref.read(navigationIndexProvider) != index) {
+              ref.read(navigationIndexProvider.notifier).value = index;
+            }
           }
+          return false;
         },
+        child: PageView(
+          controller: _pageController,
+          children: [
+            for (var index = 0; index < _pages.length; index++)
+              _MobilePage(
+                key: ValueKey((ref.watch(activeUserIdProvider), index)),
+                index: index,
+                child: _pages[index],
+              ),
+          ],
+          onPageChanged: (index) {
+            if (_mobileNavigationTarget == null &&
+                ref.read(navigationIndexProvider) != index) {
+              ref.read(navigationIndexProvider.notifier).value = index;
+            }
+          },
+        ),
       ),
       bottomNavigationBar: SafeArea(
         top: false,
         minimum: const EdgeInsets.fromLTRB(14, 8, 14, 10),
         child: GlassPanel(
+          key: const ValueKey('mobile-dock'),
           radius: NeuRadius.nav,
           padding: const EdgeInsets.all(6),
-          child: Row(
-            children: [
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  activeIcon: Icons.chat_bubble_rounded,
-                  label: '聊天',
-                  isActive: ref.watch(navigationIndexProvider) == 0,
-                  onTap: () => _onItemTapped(0),
-                ),
-              ),
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.account_tree_outlined,
-                  activeIcon: Icons.account_tree_rounded,
-                  label: '空间',
-                  isActive: ref.watch(navigationIndexProvider) == 1,
-                  onTap: () => _onItemTapped(1),
-                ),
-              ),
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.people_outline_rounded,
-                  activeIcon: Icons.people_rounded,
-                  label: '通讯录',
-                  isActive: ref.watch(navigationIndexProvider) == 2,
-                  onTap: () => _onItemTapped(2),
-                ),
-              ),
-              Expanded(
-                child: _NavItem(
-                  icon: Icons.settings_outlined,
-                  activeIcon: Icons.settings_rounded,
-                  label: '设置',
-                  isActive: ref.watch(navigationIndexProvider) == 3,
-                  onTap: () => _onItemTapped(3),
-                ),
-              ),
-            ],
+          child: AnimatedBuilder(
+            animation: _pageController,
+            builder: (context, _) {
+              final page =
+                  _pageController.hasClients &&
+                      _pageController.position.hasContentDimensions
+                  ? (_pageController.page ?? 0).clamp(0.0, 3.0)
+                  : navigationIndex.toDouble();
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: FractionallySizedBox(
+                        widthFactor: 1 / _pages.length,
+                        alignment: AlignmentDirectional(-1 + 2 * page / 3, 0),
+                        child: const NeuSurface(
+                          accent: true,
+                          // Keep the pill concentric with the dock's padding.
+                          radius: NeuRadius.nav - 6,
+                          child: SizedBox.expand(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _NavItem(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          activeIcon: Icons.chat_bubble_rounded,
+                          label: '聊天',
+                          isActive: navigationIndex == 0,
+                          activation: (1 - page.abs()).clamp(0.0, 1.0),
+                          onTap: () => _onItemTapped(0),
+                        ),
+                      ),
+                      Expanded(
+                        child: _NavItem(
+                          icon: Icons.account_tree_outlined,
+                          activeIcon: Icons.account_tree_rounded,
+                          label: '空间',
+                          isActive: navigationIndex == 1,
+                          activation: (1 - (page - 1).abs()).clamp(0.0, 1.0),
+                          onTap: () => _onItemTapped(1),
+                        ),
+                      ),
+                      Expanded(
+                        child: _NavItem(
+                          icon: Icons.people_outline_rounded,
+                          activeIcon: Icons.people_rounded,
+                          label: '通讯录',
+                          isActive: navigationIndex == 2,
+                          activation: (1 - (page - 2).abs()).clamp(0.0, 1.0),
+                          onTap: () => _onItemTapped(2),
+                        ),
+                      ),
+                      Expanded(
+                        child: _NavItem(
+                          icon: Icons.settings_outlined,
+                          activeIcon: Icons.settings_rounded,
+                          label: '设置',
+                          isActive: navigationIndex == 3,
+                          activation: (1 - (page - 3).abs()).clamp(0.0, 1.0),
+                          onTap: () => _onItemTapped(3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -880,6 +937,7 @@ class _NavItem extends StatelessWidget {
   final IconData activeIcon;
   final String label;
   final bool isActive;
+  final double activation;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -887,6 +945,7 @@ class _NavItem extends StatelessWidget {
     required this.activeIcon,
     required this.label,
     required this.isActive,
+    required this.activation,
     required this.onTap,
   });
 
@@ -895,48 +954,58 @@ class _NavItem extends StatelessWidget {
     final neu = context.neu;
 
     return NeuAction(
+      label: label,
       selected: isActive,
       radius: NeuRadius.nav - 6,
       onTap: onTap,
-      child: isActive
-          ? NeuSurface(
-              accent: true,
-              // 与外层 GlassPanel(radius: nav, padding: 6) 保持同心圆角：
-              // 内圆角 = 外圆角 - 内边距，否则药丸与 dock 的曲率明显不匹配。
-              radius: NeuRadius.nav - 6,
-              padding: const EdgeInsets.symmetric(vertical: 9),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
+      child: ExcludeSemantics(
+        child: SizedBox(
+          height: 44,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Opacity(
+                opacity: 1 - activation,
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(activeIcon, size: 20, color: neu.onAccent),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: neu.onAccent,
-                        ),
-                      ),
-                    ),
+                    Icon(icon, size: 22, color: neu.textSecondary),
+                    const SizedBox(height: 2),
+                    Text(label, style: Theme.of(context).textTheme.labelSmall),
                   ],
                 ),
               ),
-            )
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 22, color: neu.textSecondary),
-                const SizedBox(height: 2),
-                Text(label, style: Theme.of(context).textTheme.labelSmall),
-              ],
-            ),
+              Opacity(
+                opacity: activation,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(activeIcon, size: 20, color: neu.onAccent),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: neu.onAccent,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
