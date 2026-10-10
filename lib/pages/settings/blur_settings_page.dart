@@ -86,9 +86,9 @@ class BlurSettingsPage extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             child: Text(
               '普通玻璃面板仍使用 Flutter 原生 ImageFilter.blur。渐进式模糊的固定采样核和降采样由 inspire_blur 0.4.1 内部管理，当前版本没有公开配置接口。',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: context.neu.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: context.neu.textSecondary),
             ),
           ),
         ],
@@ -167,9 +167,9 @@ class _BlurSwitch extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(

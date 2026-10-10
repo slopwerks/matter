@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../src/rust/api/matrix/push.dart' as push;
 import 'fcm_push_runtime.dart';
@@ -55,6 +56,27 @@ class PushRegistrationErrors extends Notifier<Map<String, String>> {
     if (error != null) state = {...state, userId: error};
   }
 }
+
+/// Clear notifications when a synced read on another device empties a room.
+final pushReadStateProvider = Provider<void>((ref) {
+  if (!pushSupported || !ref.watch(sessionReadyProvider)) return;
+  final userId = ref.watch(activeUserIdProvider);
+  if (userId == null) return;
+  Map<String, int>? previousCounts;
+  ref.listen(allChatRoomsProvider, (_, next) {
+    if (next.isLoading || next.hasError) return;
+    final rooms = next.asData?.value;
+    if (rooms == null) return;
+    final previous = previousCounts;
+    previousCounts = {for (final room in rooms) room.id: room.unreadCount};
+    if (previous == null) return;
+    for (final room in rooms) {
+      if (room.unreadCount == 0 && (previous[room.id] ?? 0) > 0) {
+        unawaited(dismissReadRoomPushes(userId, room.id));
+      }
+    }
+  }, fireImmediately: true);
+});
 
 /// Kept alive at the app root, including the login page and account switches.
 final pushLifecycleProvider = Provider<void>((ref) {

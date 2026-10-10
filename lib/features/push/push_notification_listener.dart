@@ -131,6 +131,7 @@ class _PushNotificationListenerState
   @override
   Widget build(BuildContext context) {
     ref.watch(pushLifecycleProvider);
+    ref.watch(pushReadStateProvider);
     ref.listen(sessionReadyProvider, (_, ready) {
       if (ready) _scheduleOpen();
     });

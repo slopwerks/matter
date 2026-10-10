@@ -1,7 +1,7 @@
 use flutter_rust_bridge::frb;
 use matrix_sdk::ruma::{
     api::client::push::{PusherIds, PusherInit, PusherKind},
-    push::{HttpPusherData, PushFormat},
+    push::HttpPusherData,
 };
 
 use super::{api_err, run_bounded, ClientLease, CLIENTS, SYNC_LIFECYCLE};
@@ -51,7 +51,8 @@ fn http_pusher(
         return Err("推送应用 ID 或设备令牌无效。".to_owned());
     }
     let mut data = HttpPusherData::new(gateway_url);
-    data.format = Some(PushFormat::EventIdOnly);
+    // The default format includes plaintext event content. Encrypted events
+    // remain ciphertext and clients display only a generic notification.
     data.data.insert(
         "default_payload".to_owned(),
         serde_json::json!({"user_id": user_id, "registration_id": registration_id}),
@@ -151,7 +152,7 @@ mod tests {
     use super::http_pusher;
 
     #[test]
-    fn pusher_contains_only_event_ids_and_account_routing_data() {
+    fn pusher_uses_default_format_and_account_routing_data() {
         let pusher = http_pusher(
             "@alice:example.org",
             "DEVICE",
@@ -164,7 +165,7 @@ mod tests {
         .unwrap();
         let json = serde_json::to_value(pusher).unwrap();
         assert_eq!(json["kind"], "http");
-        assert_eq!(json["data"]["format"], "event_id_only");
+        assert!(json["data"].get("format").is_none());
         assert_eq!(
             json["data"]["default_payload"]["user_id"],
             "@alice:example.org"
@@ -196,7 +197,7 @@ mod tests {
         assert_eq!(json["data"]["endpoint"], subscription["endpoint"]);
         assert_eq!(json["data"]["p256dh"], "browser-key");
         assert_eq!(json["data"]["auth"], "browser-auth");
-        assert_eq!(json["data"]["format"], "event_id_only");
+        assert!(json["data"].get("format").is_none());
         assert_eq!(
             json["data"]["default_payload"]["user_id"],
             "@alice:example.org"

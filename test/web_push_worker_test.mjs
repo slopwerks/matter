@@ -8,6 +8,7 @@ function environment() {
   const handlers = {};
   const shown = [];
   const opened = [];
+  const active = [];
   const cache = {
     async put(url, value) { entries.set(url, await value.text()); },
     async match(url) { return entries.has(url) ? new Response(entries.get(url)) : undefined; },
@@ -16,14 +17,15 @@ function environment() {
     caches: { async open() { return cache; } },
     self: {
       registration: { scope: 'https://example.org/matter/.matter-push/',
-        async showNotification(title, options) { shown.push({ title, options }); } },
+        async showNotification(title, options) { shown.push({ title, options }); },
+        async getNotifications() { return active; } },
       addEventListener(type, handler) { handlers[type] = handler; },
       clients: { async matchAll() { return []; }, async openWindow(url) { opened.push(url); } },
       async skipWaiting() {},
     },
   });
   vm.runInContext(readFileSync(new URL('../web/matter-push-sw.js', import.meta.url), 'utf8'), context);
-  return { cache, context, shown, opened,
+  return { cache, context, shown, opened, active,
     async dispatch(type, event) {
       let pending;
       handlers[type]({ ...event, waitUntil(promise) { pending = promise; } });
@@ -37,6 +39,30 @@ async function account(env, id, enabled = true, registrationId = 'current') {
   await env.cache.put(`https://example.org/matter/.matter-push/accounts/${encodeURIComponent(id)}`,
     new Response(JSON.stringify({ enabled, registrationId })));
 }
+
+test('worker suppresses notifications only for a focused visible Matter window', async () => {
+  const env = environment();
+  await account(env, target.user_id);
+  for (const [url, focused, visibilityState, expected] of [
+    ['https://example.org/matter/', true, 'visible', 0],
+    ['https://example.org/matter/', false, 'visible', 1],
+    ['https://example.org/matter/', true, 'hidden', 2],
+    ['https://example.org/elsewhere/', true, 'visible', 3],
+  ]) {
+    env.context.self.clients.matchAll = async () => [{ url, focused, visibilityState }];
+    await env.dispatch('push', { data: { json: () => target } });
+    assert.equal(env.shown.length, expected);
+  }
+});
+
+test('worker shows plain message content and keeps encrypted messages generic', async () => {
+  const env = environment();
+  await account(env, target.user_id);
+  for (const type of ['m.room.message', 'm.room.encrypted', undefined]) {
+    await env.dispatch('push', { data: { json: () => ({ ...target, type, content: { body: '正文' } }) } });
+    assert.equal(env.shown.at(-1).options.body, type === 'm.room.message' ? '正文' : '你有一条新消息');
+  }
+});
 
 test('worker displays generic content and routes notification clicks from a closed app', async () => {
   const env = environment();
@@ -90,7 +116,7 @@ test('browser bridge requests permission only explicitly and reuses subscription
   const key = Buffer.from([4, ...Array(64).fill(1)]);
   const subscription = { options: { applicationServerKey: key },
     toJSON() { return { endpoint: 'https://push.example.org/sub', keys: { p256dh: 'key', auth: 'auth' } }; } };
-  const registration = { active: {}, pushManager: {
+  const registration = { active: {}, async getNotifications() { return env.active; }, pushManager: {
     async getSubscription() { return subscription; },
     async subscribe() { subscriptions++; return subscription; },
   } };
@@ -122,4 +148,15 @@ test('browser bridge requests permission only explicitly and reuses subscription
   await bridge.updateAccount(target.user_id, '', false);
   await env.dispatch('push', { data: { json: () => target } });
   assert.equal(env.shown.length, 1);
+  const closed = [];
+  for (const data of [target, { ...target, user_id: '@bob:example.org' },
+    { ...target, room_id: '!other:example.org' }]) {
+    env.active.push({ data, close() { closed.push(data); } });
+  }
+  const events = JSON.parse(await bridge.roomNotificationEvents(target.user_id, target.room_id));
+  assert.deepEqual(events, [target.event_id]);
+  env.active.push({ data: { ...target, event_id: '$arriving' }, close() { closed.push(this.data); } });
+  await bridge.cancelRoomNotifications(target.user_id, target.room_id, events);
+  assert.deepEqual(closed, [target]);
+  assert.equal(permissionRequests, 1);
 });

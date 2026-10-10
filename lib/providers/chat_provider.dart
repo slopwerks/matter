@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/markdown/markdown_source_store.dart';
+import '../features/push/push_runtime.dart';
 import '../src/rust/api/matrix.dart' as rust;
 import 'auth_provider.dart';
 import 'connection_provider.dart';
@@ -2605,7 +2606,7 @@ final syncStreamProvider =
           return;
         }
         try {
-          final cleared = await rust.markRoomAsRead(
+          final cleared = await markRoomAsReadWithPushCleanup(
             accountUserId: startAccount,
             roomId: roomId,
             explicit: false,
@@ -2731,7 +2732,7 @@ final syncStreamProvider =
               final roomForRead = unreadRoom;
               unawaited(() async {
                 try {
-                  final cleared = await rust.markRoomAsRead(
+                  final cleared = await markRoomAsReadWithPushCleanup(
                     accountUserId: startAccount,
                     roomId: roomId,
                     explicit: false,

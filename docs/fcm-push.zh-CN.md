@@ -82,7 +82,7 @@ FCM 网关应发送高优先级的 **data message**，不要添加 FCM 的 `noti
 
 Web 网关须支持 Web Push/VAPID。客户端在 Matrix pusher 的 `data` 中传递 `endpoint`、`p256dh` 和 `auth`，`pushkey` 使用订阅的 `p256dh`。请确认所用 Sygnal 版本或其他网关支持该模式；FCM 应用项不能接收浏览器订阅。
 
-两种方式都使用 `event_id_only`，网关须将 `data.default_payload` 中的 `user_id`、`registration_id` 与 `room_id`、`event_id` 一同送达客户端。浏览器 worker 接受这些字段组成的 JSON 对象，或位于 `notification` 内的对象。不保留账号路由数据的 Web 网关需要调整转发，否则通知会被拒绝。
+两种方式都使用 Matrix 默认推送格式，Homeserver 会把非加密事件的内容交给网关。网关须将 `data.default_payload` 中的 `user_id`、`registration_id` 与 `room_id`、`event_id` 一同送达客户端，并保留事件的 `type` 和 `content`，否则客户端只能显示通用提示。FCM 的 `content` 可以是 JSON 字符串，Web 可使用 JSON 对象或 JSON 字符串。浏览器 worker 接受这些字段组成的 JSON 对象，或位于 `notification` 内的对象。不保留账号路由数据的 Web 网关需要调整转发，否则通知会被拒绝。旧的 `event_id_only` 注册会在账号就绪或应用恢复前台时的注册刷新中更新。
 
 ## 用户设置与生命周期
 
@@ -90,7 +90,9 @@ Web 网关须支持 Web Push/VAPID。客户端在 Matrix pusher 的 `data` 中�
 
 浏览器的推送 worker 使用单独作用域，不替换 Flutter 的应用 worker。关闭某个账号只注销该账号的 pusher，浏览器订阅保留给其他账号使用。同一站点订阅只能使用一把 VAPID 公钥；发现不同公钥时报错，不会取消其他账号仍在使用的订阅。更换公钥需先关闭所有账号推送，再清除原有浏览器订阅。
 
-权限只在启用时请求。每个 Matrix 账号分别注册，`append=true` 保留共享同一安装或浏览器订阅的其他账号。Matter 在前台且有焦点时不显示系统通知，Web 以同一应用路径下可见且有焦点的窗口为准。通知只显示“你有一条新消息”，后台不做任何解密。点击通知时会重新检查当前设置，切换到所属账号并打开对应房间及事件。房间免打扰和服务器推送规则继续生效。
+权限只在启用时请求。每个 Matrix 账号分别注册，`append=true` 保留共享同一安装或浏览器订阅的其他账号。Matter 在前台且有焦点时不显示系统通知，Web 以同一应用路径下可见且有焦点的窗口为准。非加密的 `m.room.message` 和 `m.sticker` 显示 `content.body`，加密事件或缺少正文的事件显示“你有一条新消息”，后台不做任何解密。点击通知时会重新检查当前设置，切换到所属账号并打开对应房间及事件。房间免打扰和服务器推送规则继续生效。
+
+打开房间或手动标记已读时，成功发送已读回执后才撤销该账号、该房间在操作开始时已有的通知，操作期间新到的消息保留。当前账号同步到房间未读数从正数降为零时也会清理该房间通知，以处理其他设备上的已读。回执失败不撤销任何通知。Android 用通知 tag 保存账号、房间和事件标识，因此清理逻辑也能识别后台进程创建的通知；升级前没有 tag 的旧通知无法按房间识别，需手动清除。
 
 “推送已注册”表示 Homeserver 接受了 pusher，不证明网关或完整投递链路可用。关闭推送先保存本地停用状态，再注销远端 pusher；离线失败保留日志，之后在下次启动、账号就绪、Android 令牌更新和恢复前台时重试。令牌或应用 ID 变更先注册新 pusher，再删除旧 pusher。已发送但结果不确定的注册也会记录，以便后续清理。Android 被强行停止后，需要重新打开应用才能恢复 FCM 投递。
 
@@ -98,7 +100,7 @@ Web 网关须支持 Web Push/VAPID。客户端在 Matrix pusher 的 `data` 中�
 
 ```sh
 flutter analyze
-flutter test test/firebase_client_config_test.dart test/push_registration_test.dart test/notification_settings_page_test.dart test/settings_account_switch_test.dart test/auth_provider_test.dart test/account_cache_regression_test.dart
+flutter test test/push_notification_runtime_test.dart test/firebase_client_config_test.dart test/push_registration_test.dart test/notification_settings_page_test.dart test/settings_account_switch_test.dart test/auth_provider_test.dart test/account_cache_regression_test.dart
 flutter test --platform chrome test/push_registration_test.dart
 node --test test/web_push_worker_test.mjs
 cd rust
@@ -108,4 +110,4 @@ cargo test --locked api::matrix::push::tests
 cargo test --locked api::matrix::notifications::tests
 ```
 
-完整投递仍需设备与已部署网关联调。先用未预填 Firebase 的 APK 导入项目 A 的 JSON，强行停止后重开，验证前台、后台和进程回收后的通知。再导入项目 B，确认项目 A 的所有旧 pusher 已注销、重开后使用项目 B 的令牌、项目 A 的延迟推送被拒绝。之后检查停用时既不请求权限也不获取令牌，检查两个账号各自的 HTTP pusher、URL、应用 ID 和 `event_id_only`。用另一个客户端验证前台、后台和进程回收后的消息与通知点击。最后验证加密房间、非当前账号、静音房间、离线停用重试、账号移除和令牌轮换。浏览器模块的自动检查不替代与真实 Web 客户端和真实浏览器推送服务的完整联调。
+完整投递仍需设备与已部署网关联调。先用未预填 Firebase 的 APK 导入项目 A 的 JSON，强行停止后重开，验证前台、后台和进程回收后的通知。再导入项目 B，确认项目 A 的所有旧 pusher 已注销、重开后使用项目 B 的令牌、项目 A 的延迟推送被拒绝。之后检查停用时既不请求权限也不获取令牌，检查两个账号各自的 HTTP pusher、URL、应用 ID 和默认推送格式。用另一个客户端验证有焦点时不弹通知、失去焦点和后台时显示通知、进程回收后的消息与通知点击，以及打开房间、手动标记已读后的通知撤销和其他设备已读同步后的撤销。最后验证加密房间、非当前账号、静音房间、离线停用重试、账号移除和令牌轮换。浏览器模块的自动检查不替代与真实 Web 客户端和真实浏览器推送服务的完整联调。

@@ -18,6 +18,17 @@ external JSPromise<JSAny?> _updateAccount(
   JSString registrationId,
   JSBoolean enabled,
 );
+@JS('matterPush.roomNotificationEvents')
+external JSPromise<JSString> _roomNotificationEvents(
+  JSString userId,
+  JSString roomId,
+);
+@JS('matterPush.cancelRoomNotifications')
+external JSPromise<JSAny?> _cancelRoomNotifications(
+  JSString userId,
+  JSString roomId,
+  JSArray<JSString> eventIds,
+);
 @JS('matterPush.addOpenListener')
 external void _addOpenListener(JSFunction listener);
 @JS('matterPush.takeInitialTarget')
@@ -70,6 +81,29 @@ Future<void> updateAccount(String userId, PushSettings settings) async {
     (settings.enabled && settings.backend == PushBackend.web).toJS,
   ).toDart;
 }
+
+Future<List<String>> roomNotificationEvents(
+  String userId,
+  String roomId,
+) async =>
+    (jsonDecode(
+              (await _roomNotificationEvents(
+                userId.toJS,
+                roomId.toJS,
+              ).toDart).toDart,
+            )
+            as List)
+        .cast<String>();
+
+Future<void> cancelRoomNotifications(
+  String userId,
+  String roomId,
+  List<String> eventIds,
+) async => await _cancelRoomNotifications(
+  userId.toJS,
+  roomId.toJS,
+  eventIds.map((id) => id.toJS).toList().toJS,
+).toDart;
 
 Future<void> blockAccount(String userId) async {
   await _updateAccount(userId.toJS, ''.toJS, false.toJS).toDart;

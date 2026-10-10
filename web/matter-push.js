@@ -76,6 +76,29 @@
       const cache = await caches.open(cacheName);
       await cache.put(accountUrl(userId), new Response(JSON.stringify({ registrationId, enabled })));
     },
+    async roomNotificationEvents(userId, roomId) {
+      const saved = registration || await navigator.serviceWorker?.getRegistration(
+        new URL('.matter-push/', base).href,
+      );
+      if (!saved) return '[]';
+      const notifications = await saved.getNotifications();
+      return JSON.stringify(notifications
+        .filter(({ data }) => data?.user_id === userId && data?.room_id === roomId)
+        .map(({ data }) => data.event_id));
+    },
+    async cancelRoomNotifications(userId, roomId, eventIds) {
+      const saved = registration || await navigator.serviceWorker?.getRegistration(
+        new URL('.matter-push/', base).href,
+      );
+      if (!saved) return;
+      const readEvents = new Set(eventIds);
+      for (const notification of await saved.getNotifications()) {
+        const data = notification.data;
+        if (data?.user_id === userId && data?.room_id === roomId && readEvents.has(data.event_id)) {
+          notification.close();
+        }
+      }
+    },
     addOpenListener(listener) { listeners.add(listener); },
     takeInitialTarget() { const target = initialTarget; initialTarget = null; return target; },
   };

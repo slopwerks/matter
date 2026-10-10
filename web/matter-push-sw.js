@@ -22,8 +22,17 @@ self.addEventListener('push', (event) => {
     // Gateways must preserve the Matrix default_payload account routing.
     const target = payload?.notification || payload;
     if (!await accepts(target)) return;
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (windows.some((client) => client.url.startsWith(appBase.href) &&
+        client.focused && client.visibilityState === 'visible')) return;
+    let content = target.content;
+    if (typeof content === 'string') {
+      try { content = JSON.parse(content); } catch { content = null; }
+    }
+    const body = (target.type === 'm.room.message' || target.type === 'm.sticker') &&
+      typeof content?.body === 'string' && content.body.trim() ? content.body : '你有一条新消息';
     await self.registration.showNotification('Matter', {
-      body: '你有一条新消息',
+      body,
       icon: new URL('icons/Icon-192.png', appBase).href,
       tag: `${target.user_id}:${target.event_id}`,
       data: target,

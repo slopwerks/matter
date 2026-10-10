@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import '../../features/push/push_runtime.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/connection_provider.dart';
@@ -692,7 +693,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       return;
     }
     try {
-      final cleared = await markRoomAsRead(
+      final cleared = await markRoomAsReadWithPushCleanup(
         accountUserId: startAccount,
         roomId: widget.roomId,
         // Opening the room clears a marked-unread flag via the store-checked

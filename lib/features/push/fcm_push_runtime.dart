@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -49,16 +50,37 @@ int pushNotificationId(PushTarget target) {
 
 Future<void> showMatrixPush(
   FlutterLocalNotificationsPlugin notifications,
-  Map<String, dynamic> data,
-) async {
+  Map<String, dynamic> data, {
+  bool Function()? isFocused,
+}) async {
   final target = PushTarget.fromData(data);
   // Counts-only updates do not represent a new event. Ignore stale pushes
   // from an old gateway, disabled setting or removed account, too.
-  if (target == null || !await acceptsPushTarget(target)) return;
+  if (target == null ||
+      !await acceptsPushTarget(target) ||
+      (isFocused?.call() ?? false)) {
+    return;
+  }
+  var body = '你有一条新消息';
+  if (data['type'] == 'm.room.message' || data['type'] == 'm.sticker') {
+    dynamic content = data['content'];
+    if (content is String) {
+      try {
+        content = jsonDecode(content);
+      } on FormatException {
+        content = null;
+      }
+    }
+    if (content is Map &&
+        content['body'] is String &&
+        (content['body'] as String).trim().isNotEmpty) {
+      body = content['body'] as String;
+    }
+  }
   await notifications.show(
     id: pushNotificationId(target),
     title: 'Matter',
-    body: '你有一条新消息',
+    body: body,
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
@@ -68,6 +90,8 @@ Future<void> showMatrixPush(
         priority: Priority.high,
         visibility: NotificationVisibility.private,
         groupKey: 'matrix:${target.userId}',
+        // Android's active-notification query exposes tags, not payloads.
+        tag: jsonEncode(target.toData()),
       ),
     ),
     payload: jsonEncode(target.toData()),
@@ -105,9 +129,13 @@ class FcmPushRuntime {
       }
       FirebaseMessaging.onMessage.listen((message) {
         unawaited(
-          showMatrixPush(notifications, message.data).catchError((
-            Object error,
-          ) {
+          showMatrixPush(
+            notifications,
+            message.data,
+            isFocused: () =>
+                WidgetsBinding.instance.lifecycleState ==
+                AppLifecycleState.resumed,
+          ).catchError((Object error) {
             debugPrint(
               'Failed to display Matrix notification: ${error.runtimeType}',
             );
@@ -133,7 +161,8 @@ class FcmPushRuntime {
   PushTarget? _parsePayload(String? payload) {
     if (payload == null || payload.isEmpty) return null;
     try {
-      return PushTarget.fromData(jsonDecode(payload) as Map<String, dynamic>);
+      final data = jsonDecode(payload);
+      return data is Map<String, dynamic> ? PushTarget.fromData(data) : null;
     } on FormatException {
       return null;
     }
@@ -142,6 +171,38 @@ class FcmPushRuntime {
   void _openPayload(String? payload) {
     final target = _parsePayload(payload);
     if (target != null) _opened.add(target);
+  }
+
+  Future<List<String>> roomNotificationEvents(
+    String userId,
+    String roomId,
+  ) async {
+    final active = await notifications.getActiveNotifications();
+    return [
+      for (final notification in active)
+        if (_parsePayload(notification.tag ?? notification.payload)
+            case final target?
+            when target.userId == userId && target.roomId == roomId)
+          target.eventId,
+    ];
+  }
+
+  Future<void> cancelRoomNotifications(
+    String userId,
+    String roomId,
+    List<String> eventIds,
+  ) async {
+    final readEvents = eventIds.toSet();
+    for (final notification in await notifications.getActiveNotifications()) {
+      final target = _parsePayload(notification.tag ?? notification.payload);
+      if (target != null &&
+          target.userId == userId &&
+          target.roomId == roomId &&
+          readEvents.contains(target.eventId) &&
+          notification.id != null) {
+        await notifications.cancel(id: notification.id!, tag: notification.tag);
+      }
+    }
   }
 
   Future<void> retireToken() async {
