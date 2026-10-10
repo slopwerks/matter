@@ -1,5 +1,9 @@
 # matter
 
+## Push notifications
+
+Push settings distinguish browser Web Push/VAPID from Android FCM. Matter provides no default gateway or Firebase project. Android users can import their own `google-services.json` in settings without rebuilding the APK; builders may also prefill public client configuration. See [push setup and testing](docs/fcm-push.md), including the current Rust WASM limitation for the complete Web client.
+
 ## Building
 
 First generate the bindings between Rust and Flutter. This will need to be rerun on any change in Rust code or environment.

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'action_failure_message.dart';
+import '../../features/push/push_runtime.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
@@ -2046,7 +2047,7 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                                                 suppressed: false,
                                               );
                                           try {
-                                            await rust.markRoomAsRead(
+                                            await markRoomAsReadWithPushCleanup(
                                               accountUserId:
                                                   _openedUserId ?? '',
                                               roomId: widget.roomId,

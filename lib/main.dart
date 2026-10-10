@@ -9,6 +9,8 @@ import 'app.dart';
 import 'features/app_update/app_update_service.dart';
 import 'features/app_update/update_dialog.dart';
 import 'features/auth/session_expiry_listener.dart';
+import 'features/push/push_runtime.dart';
+import 'features/push/push_notification_listener.dart';
 import 'pages/login/login_page.dart';
 import 'pages/chat/decrypted_video_source.dart';
 import 'pages/chat/chat_detail_page.dart';
@@ -27,6 +29,7 @@ Future<void> main() async {
   await cleanupStaleDecryptedVideoSources();
   await RustLib.init();
   _installDartErrorLogging();
+  await initializePush();
 
   String? dataDir;
   try {
@@ -348,15 +351,18 @@ class _AppRootState extends ConsumerState<_AppRoot> {
       darkTheme: darkTheme,
       themeMode: themeMode,
       builder: (context, child) => ChatVisualSettingsRoot(
-        child: SessionExpiryListener(
+        child: PushNotificationListener(
           navigatorKey: _navigatorKey,
-          onRelogin: (canResume) {
-            _resumeSession = canResume;
-            _reloginUser = ref.read(currentUserProvider);
-            clearActiveSessionState(ref, markSessionReady: true);
-            _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-          },
-          child: child!,
+          child: SessionExpiryListener(
+            navigatorKey: _navigatorKey,
+            onRelogin: (canResume) {
+              _resumeSession = canResume;
+              _reloginUser = ref.read(currentUserProvider);
+              clearActiveSessionState(ref, markSessionReady: true);
+              _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+            },
+            child: child!,
+          ),
         ),
       ),
       home: showMainApp

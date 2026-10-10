@@ -7,6 +7,7 @@ import '../../features/app_update/app_update_service.dart';
 import '../../features/app_update/update_dialog.dart';
 import '../../features/cache/image_cache_control.dart';
 import '../../features/diagnostics/diagnostic_exporter.dart';
+import '../../features/push/push_providers.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart';
@@ -25,6 +26,7 @@ import '../login/login_page.dart';
 import 'encryption_page.dart';
 import 'blur_settings_page.dart';
 import 'log_viewer_page.dart';
+import 'notification_settings_page.dart';
 import 'profile_edit_page.dart';
 
 final accountSwitchControllerProvider = Provider(AccountSwitchController.new);
@@ -66,6 +68,17 @@ class AccountSwitchController {
     Future<T> Function() removeFromRust,
   ) async {
     await markSessionRemoved(userId);
+    try {
+      await _ref
+          .read(pushRegistrationManagerProvider)
+          .prepareAccountRemoval(userId);
+    } catch (error) {
+      // Remote logout still revokes session-owned pushers when it succeeds.
+      // Local delivery already stops at the persisted removal tombstone.
+      debugPrint(
+        'Push cleanup before account removal failed: ${error.runtimeType}',
+      );
+    }
     try {
       return await removeFromRust();
     } catch (error, stackTrace) {
@@ -726,7 +739,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         _SettingItem(
                           icon: Icons.notifications_rounded,
                           title: '通知',
-                          subtitle: '免打扰请在房间管理中设置',
+                          subtitle: 'FCM 推送 · 自定义网关 · 房间免打扰',
+                          onTap: currentUser == null
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => NotificationSettingsPage(
+                                      userId: currentUser.id,
+                                    ),
+                                  ),
+                                ),
                         ),
                         _SettingItem(
                           icon: Icons.language_rounded,

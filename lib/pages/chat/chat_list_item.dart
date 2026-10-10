@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'action_failure_message.dart';
+import '../../features/push/push_runtime.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
@@ -350,11 +351,12 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
                         sheetContext,
                         ref,
                         room,
-                        ({required String roomId}) => markRoomAsRead(
-                          accountUserId: sheetAccountUserId,
-                          roomId: roomId,
-                          explicit: true,
-                        ),
+                        ({required String roomId}) =>
+                            markRoomAsReadWithPushCleanup(
+                              accountUserId: sheetAccountUserId,
+                              roomId: roomId,
+                              explicit: true,
+                            ),
                         false,
                         '已标记为已读',
                         onStart: () =>

@@ -229,15 +229,17 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
                 key: ValueKey('image-blurred-background:${widget.heroTag}'),
                 imageFilter: ImageFilter.blur(
                   sigmaX:
-                      ChatVisualSettingsScope.of(context)
-                              .imageBlurOptimizationEnabled
-                          ? 8
-                          : 14,
+                      ChatVisualSettingsScope.of(
+                        context,
+                      ).imageBlurOptimizationEnabled
+                      ? 8
+                      : 14,
                   sigmaY:
-                      ChatVisualSettingsScope.of(context)
-                              .imageBlurOptimizationEnabled
-                          ? 8
-                          : 14,
+                      ChatVisualSettingsScope.of(
+                        context,
+                      ).imageBlurOptimizationEnabled
+                      ? 8
+                      : 14,
                 ),
                 child: Transform.scale(
                   scale: 1.12,

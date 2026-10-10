@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -6,20 +7,40 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// The same public Firebase options are supplied to Dart and native startup.
+// PushFirebaseApplication also uses these when no runtime config is saved.
+val pushDefines =
+    (project.findProperty("dart-defines") as String?)
+        ?.split(",")
+        ?.associate { encoded ->
+            val value = String(Base64.getDecoder().decode(encoded), Charsets.UTF_8)
+            val parts = value.split("=", limit = 2)
+            parts[0] to parts.getOrElse(1) { "" }
+        }.orEmpty()
+val firebaseResources =
+    mapOf(
+        "google_app_id" to "MATTER_FIREBASE_APP_ID",
+        "google_api_key" to "MATTER_FIREBASE_API_KEY",
+        "gcm_defaultSenderId" to "MATTER_FIREBASE_SENDER_ID",
+        "project_id" to "MATTER_FIREBASE_PROJECT_ID",
+    )
+
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
-val releaseSigningProperties = listOf(
-    "storeFile",
-    "storePassword",
-    "keyAlias",
-    "keyPassword",
-)
-val missingReleaseSigningProperties = releaseSigningProperties.filter {
-    (keystoreProperties[it] as String?).isNullOrBlank()
-}
+val releaseSigningProperties =
+    listOf(
+        "storeFile",
+        "storePassword",
+        "keyAlias",
+        "keyPassword",
+    )
+val missingReleaseSigningProperties =
+    releaseSigningProperties.filter {
+        (keystoreProperties[it] as String?).isNullOrBlank()
+    }
 val configuredNdkVersion =
     System.getenv("ANDROID_NDK_VERSION")
         ?: project.findProperty("android.ndkVersion") as String?
@@ -30,7 +51,12 @@ android {
     compileSdk = 37
     ndkVersion = configuredNdkVersion
 
+    buildFeatures {
+        resValues = true
+    }
+
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -41,6 +67,11 @@ android {
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        if (firebaseResources.values.all { !pushDefines[it].isNullOrBlank() }) {
+            firebaseResources.forEach { (resource, define) ->
+                resValue("string", resource, pushDefines.getValue(define))
+            }
+        }
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -78,6 +109,12 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-common")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 flutter {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'features/push/push_runtime.dart';
 import 'pages/chat/chat_detail_page.dart';
 import 'pages/chat/chat_page.dart';
 import 'pages/chat/desktop_room_details_panel.dart';
@@ -260,7 +261,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     // with an empty account id would be rejected by the Rust guard anyway.
     if (accountUserId == null) return;
     try {
-      final cleared = await rust.markRoomAsRead(
+      final cleared = await markRoomAsReadWithPushCleanup(
         accountUserId: accountUserId,
         roomId: room.id,
         // Selecting the room is a viewing action: rely on the store-checked
