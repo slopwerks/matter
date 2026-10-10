@@ -43,6 +43,7 @@ use std::time::SystemTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+pub mod notifications;
 pub mod push;
 mod sdk_timeline;
 
