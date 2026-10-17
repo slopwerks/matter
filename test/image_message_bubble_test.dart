@@ -1,9 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
+import 'package:matter/pages/chat/image_media.dart';
+import 'package:matter/pages/chat/image_placeholders.dart';
 import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/chat_provider.dart';
@@ -1023,4 +1027,274 @@ void main() {
     expect(endRect.bottom, lessThanOrEqualTo(bubbleRect.bottom - 10));
     expect(endRect.overlaps(metadataRect), isFalse);
   });
+
+  testWidgets(
+    'an optimistic image keeps painting its local bytes while the server copy '
+    'has not loaded',
+    (tester) async {
+      // A 1x1 PNG: enough for Image.memory to decode a real frame.
+      final preview = Uint8List.fromList(const [
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+        0x00,
+        0x00,
+        0x00,
+        0x0d,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00,
+        0x1f,
+        0x15,
+        0xc4,
+        0x89,
+        0x00,
+        0x00,
+        0x00,
+        0x0a,
+        0x49,
+        0x44,
+        0x41,
+        0x54,
+        0x78,
+        0x9c,
+        0x63,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x0d,
+        0x0a,
+        0x2d,
+        0xb4,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4e,
+        0x44,
+        0xae,
+        0x42,
+        0x60,
+        0x82,
+      ]);
+      const localMessage = ChatMessage(
+        id: '${localOutgoingPendingPrefix}image-handoff',
+        senderId: '@me:example.org',
+        senderName: '我',
+        content: 'holiday.png',
+        filename: 'holiday.png',
+        mimeType: 'image/png',
+        mentionedUserIds: [],
+        mentionsRoom: false,
+        timestamp: '100',
+        isMe: true,
+        msgType: MessageType.image,
+        imageUrl: 'local-preview:${localOutgoingPendingPrefix}image-handoff',
+        imageWidth: 64,
+        imageHeight: 64,
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        readers: [],
+        totalMembers: 2,
+      );
+      const remoteMessage = ChatMessage(
+        id: r'$remote-image',
+        senderId: '@me:example.org',
+        senderName: '我',
+        content: 'holiday.png',
+        filename: 'holiday.png',
+        mimeType: 'image/png',
+        mentionedUserIds: [],
+        mentionsRoom: false,
+        timestamp: '100',
+        isMe: true,
+        msgType: MessageType.image,
+        imageUrl: 'https://example.org/uploaded.png',
+        imageWidth: 64,
+        imageHeight: 64,
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        readers: [],
+        totalMembers: 2,
+      );
+
+      var message = localMessage;
+      var previews = <String, Uint8List>{
+        '${localOutgoingPendingPrefix}image-handoff': preview,
+      };
+      // The timeline maps the echo back onto the local flight id, which keeps
+      // the bubble's element (and so its kept preview) alive across the swap.
+      var remoteToLocalFlightId = const <String, String>{};
+      late StateSetter update;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  return MessageGroupWidget(
+                    group: MessageGroup(
+                      senderId: message.senderId,
+                      senderName: message.senderName,
+                      isMe: true,
+                      messages: [message],
+                    ),
+                    roomId: '!room:example.org',
+                    messageIndex: {message.id: message},
+                    remoteToLocalFlightId: remoteToLocalFlightId,
+                    localImagePreviews: previews,
+                    showAvatar: false,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      Finder bubbleMedia() => find.byType(ChatMediaImage);
+      // chatWidth-based decoding wraps the provider in ResizeImage.
+      Uint8List? memoryBytes(ImageProvider provider) {
+        var current = provider;
+        while (current is ResizeImage) {
+          current = current.imageProvider;
+        }
+        return current is MemoryImage ? current.bytes : null;
+      }
+
+      List<Uint8List?> renderedBytes(WidgetTester tester) => tester
+          .widgetList<Image>(
+            find.descendant(of: bubbleMedia(), matching: find.byType(Image)),
+          )
+          .map((widget) => memoryBytes(widget.image))
+          .toList();
+
+      // While the row is local, the picked bytes are the only source.
+      expect(bubbleMedia(), findsOneWidget);
+      expect(renderedBytes(tester), [preview]);
+
+      // The echo arrives: the bubble now also has an `mxc://` source that has
+      // not been fetched yet. This is the frame that used to fall back to the
+      // blurhash placeholder and flash.
+      final localState = tester.state(find.byType(ImageMessageBubble));
+      update(() {
+        message = remoteMessage;
+        previews = const {};
+        remoteToLocalFlightId = const {r'$remote-image': 'image-handoff'};
+      });
+      await tester.pump();
+
+      // Same bubble element: the handover happens in place.
+      expect(tester.state(find.byType(ImageMessageBubble)), same(localState));
+
+      expect(bubbleMedia(), findsWidgets);
+      // The local bytes are still painted during the handover: the bubble must
+      // not fall back to a blurhash/loading placeholder while the `mxc://`
+      // thumbnail is still being fetched.
+      expect(renderedBytes(tester), contains(preview));
+      // The handover frame must not draw a blurhash block or a spinner over
+      // the local picture (that placeholder was the visible flash).
+      // Both sources are present: the local bytes underneath, the server copy
+      // on top waiting for its first frame.
+      expect(bubbleMedia(), findsNWidgets(2));
+      expect(find.byKey(const ValueKey('msg-image-preview')), findsOneWidget);
+      expect(find.byKey(const ValueKey('msg-image-server')), findsOneWidget);
+      expect(find.byType(BlurhashPlaceholder), findsNothing);
+      // The server layer must not draw the default spinner over the picture.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a remote image still shows its blurhash placeholder while loading',
+    (tester) async {
+      // Guard: the optimistic-handover Stack is keyed off local preview bytes.
+      // A message from someone else (or any message without them) must keep the
+      // original blurhash/loading transition untouched.
+      const message = ChatMessage(
+        id: r'$remote-blurhash',
+        senderId: '@other:example.org',
+        senderName: 'Other',
+        content: 'photo.jpg',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        imageMetadata: ImageMessageMetadata(
+          blurhash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
+          spoiler: false,
+        ),
+        mentionedUserIds: [],
+        mentionsRoom: false,
+        timestamp: '100',
+        isMe: false,
+        msgType: MessageType.image,
+        imageUrl: 'https://example.org/remote-blurhash.png',
+        imageWidth: 640,
+        imageHeight: 480,
+        isEdited: false,
+        editHistory: [],
+        reactions: [],
+        readers: [],
+        totalMembers: 2,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: Scaffold(
+              body: MessageGroupWidget(
+                group: MessageGroup(
+                  senderId: message.senderId,
+                  senderName: message.senderName,
+                  isMe: false,
+                  messages: const [message],
+                ),
+                roomId: '!room:example.org',
+                messageIndex: const {r'$remote-blurhash': message},
+                showAvatar: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // No local bytes: the handover Stack must not engage, so a message from
+      // someone else keeps its normal blurhash loading transition.
+      expect(find.byType(ChatMediaImage), findsOneWidget);
+      expect(find.byKey(const ValueKey('msg-image-preview')), findsNothing);
+      expect(find.byType(BlurhashPlaceholder), findsWidgets);
+    },
+  );
 }

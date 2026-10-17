@@ -154,6 +154,11 @@ class MessageGroupWidget extends ConsumerWidget {
   final Map<String, String> remoteToLocalFlightId;
   final Set<String> insertionAnimationIds;
   final Set<String> lateralInsertionAnimationIds;
+
+  /// Decoded preview bytes for optimistic image rows, keyed by the image
+  /// message's local id. Lets the bubble paint the picked file before the
+  /// upload has produced a `mxc://` source.
+  final Map<String, Uint8List> localImagePreviews;
   final Map<String, Contact> membersById;
   final String? senderAvatarUrl;
   final bool compact;
@@ -176,6 +181,7 @@ class MessageGroupWidget extends ConsumerWidget {
     this.remoteToLocalFlightId = const {},
     this.insertionAnimationIds = const {},
     this.lateralInsertionAnimationIds = const {},
+    this.localImagePreviews = const {},
     this.membersById = const {},
     this.showAvatar = true,
     this.senderAvatarUrl,
@@ -424,6 +430,9 @@ class MessageGroupWidget extends ConsumerWidget {
     final isLocalOutgoing = isLocalOutgoingMessage(message.id);
     final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
     final isLocalSent = isLocalOutgoingSentMessage(message.id);
+    // An optimistic image has no `mxc://` source yet, so its bubble is fed
+    // the picked bytes instead of resolving a URL.
+    final previewBytes = localImagePreviews[message.id];
     final messageBorderRadius = _messageBorderRadius(
       isMe: isMe,
       isFirst: isFirst,
@@ -561,11 +570,14 @@ class MessageGroupWidget extends ConsumerWidget {
               )
             : (message.msgType == MessageType.image ||
                       message.msgType == MessageType.sticker) &&
-                  (message.imageUrl != null || message.mediaSourceJson != null)
+                  (message.imageUrl != null ||
+                      message.mediaSourceJson != null ||
+                      previewBytes != null)
             ? ImageMessageBubble(
                 key: ValueKey('image-bubble:$visualMessageId'),
                 imageUrl: message.imageUrl,
                 mediaSourceJson: message.mediaSourceJson,
+                previewBytes: previewBytes,
                 imageWidth: message.imageWidth,
                 imageHeight: message.imageHeight,
                 fileSize: message.fileSize,

@@ -1931,6 +1931,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
                               resolveSendPresentation:
                                   widget.resolveSendPresentation,
                               onMessageSent: widget.onMessageSent,
+                              onMessageQueued: widget.onMessageQueued,
+                              totalMembers: widget.totalMembers,
                               height: attachmentKeyboard
                                   ? widget.pickerHeight
                                   : widget.pickerBaseHeight,

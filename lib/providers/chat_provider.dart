@@ -1507,6 +1507,32 @@ const localOutgoingPendingPrefix = 'local_outgoing_pending:';
 const localOutgoingSentPrefix = 'local_outgoing_sent:';
 const localOutgoingFailedPrefix = 'local_outgoing_failed:';
 
+/// Placeholder `imageUrl` on an optimistic image message whose real
+/// `mxc://` source only exists once the upload finished. It keeps the local
+/// row on the image bubble path (see `isChatImage`) while the bubble renders
+/// its `imageBytes` preview; nothing ever fetches it.
+const localOutgoingPreviewUrlPrefix = 'local-preview:';
+
+/// Next local timestamp for an optimistic message: monotonic against both the
+/// cached timeline and the outgoing entries already queued for the room, so a
+/// send never sorts behind an existing row on a slow or skewed clock.
+int nextLocalOutgoingTimestamp(
+  ProviderContainer container,
+  String roomId,
+  RoomAccountKey key,
+) {
+  var timestamp = clock.now().millisecondsSinceEpoch;
+  for (final message in container.read(messageCacheProvider(roomId))) {
+    final candidate = int.tryParse(message.timestamp) ?? 0;
+    if (candidate >= timestamp) timestamp = candidate + 1;
+  }
+  for (final outgoing in container.read(localOutgoingMessagesProvider(key))) {
+    final candidate = int.tryParse(outgoing.message.timestamp) ?? 0;
+    if (candidate >= timestamp) timestamp = candidate + 1;
+  }
+  return timestamp;
+}
+
 bool isLocalOutgoingMessage(String id) =>
     id.startsWith(localOutgoingPendingPrefix) ||
     id.startsWith(localOutgoingSentPrefix) ||
@@ -1537,11 +1563,17 @@ class LocalOutgoingMessage {
   /// failed reply can be retried with the correct `reply_to` mention.
   final String? replyToUserId;
 
+  /// Decoded bytes of an optimistic media preview. Set for image uploads so
+  /// the bubble can render the local file while the upload is in flight,
+  /// before any `mxc://` URI exists.
+  final Uint8List? localImageBytes;
+
   const LocalOutgoingMessage({
     required this.message,
     this.sourceImageUrl,
     this.markdownSource,
     this.replyToUserId,
+    this.localImageBytes,
   });
 }
 
@@ -1639,6 +1671,26 @@ void removeLocalOutgoingMessage(
   ref.read(localOutgoingMessagesProvider(key).notifier).value = messages
       .where((message) => message.message.id != messageId)
       .toList();
+}
+
+/// [upsertLocalOutgoingMessage] for callers that do not hold a [WidgetRef]
+/// (the attachment picker keeps its send pipeline alive across a preview
+/// route, where the widget ref may be disposed mid-upload).
+void upsertLocalOutgoingMessageInState(
+  MutableState<List<LocalOutgoingMessage>> outgoing,
+  LocalOutgoingMessage message,
+) {
+  final messages = outgoing.value;
+  final index = messages.indexWhere(
+    (existing) => existing.message.id == message.message.id,
+  );
+  final next = [...messages];
+  if (index == -1) {
+    next.add(message);
+  } else {
+    next[index] = message;
+  }
+  outgoing.value = next;
 }
 
 /// Retry a failed local outgoing message: flip it back to pending and
@@ -1854,23 +1906,17 @@ String markLocalOutgoingMessageSent(
   );
 }
 
-String markLocalOutgoingMessageSentInState(
-  MutableState<List<LocalOutgoingMessage>> outgoing,
-  String pendingId,
+/// The same optimistic entry carrying a different message id, used to cross
+/// the `pending:` / `sent:` / `failed:` state boundaries without losing the
+/// preview bytes or the reply target.
+LocalOutgoingMessage copyLocalOutgoingMessageWithId(
+  LocalOutgoingMessage local,
+  String id,
 ) {
-  final sentId = sentLocalOutgoingId(pendingId);
-  final messages = outgoing.value;
-  final index = messages.indexWhere(
-    (message) => message.message.id == pendingId,
-  );
-  if (index == -1) return sentId;
-
-  final local = messages[index];
   final message = local.message;
-  final next = [...messages];
-  next[index] = LocalOutgoingMessage(
+  return LocalOutgoingMessage(
     message: rust.ChatMessage(
-      id: sentId,
+      id: id,
       senderId: message.senderId,
       senderName: message.senderName,
       content: message.content,
@@ -1888,6 +1934,9 @@ String markLocalOutgoingMessageSentInState(
       mediaSourceJson: message.mediaSourceJson,
       imageWidth: message.imageWidth,
       imageHeight: message.imageHeight,
+      filename: message.filename,
+      fileSize: message.fileSize,
+      mimeType: message.mimeType,
       inReplyTo: message.inReplyTo,
       isEdited: message.isEdited,
       editHistory: message.editHistory,
@@ -1898,7 +1947,23 @@ String markLocalOutgoingMessageSentInState(
     sourceImageUrl: local.sourceImageUrl,
     markdownSource: local.markdownSource,
     replyToUserId: local.replyToUserId,
+    localImageBytes: local.localImageBytes,
   );
+}
+
+String markLocalOutgoingMessageSentInState(
+  MutableState<List<LocalOutgoingMessage>> outgoing,
+  String pendingId,
+) {
+  final sentId = sentLocalOutgoingId(pendingId);
+  final messages = outgoing.value;
+  final index = messages.indexWhere(
+    (message) => message.message.id == pendingId,
+  );
+  if (index == -1) return sentId;
+
+  final next = [...messages];
+  next[index] = copyLocalOutgoingMessageWithId(messages[index], sentId);
   outgoing.value = next;
   return sentId;
 }
@@ -1917,6 +1982,37 @@ void markLocalOutgoingMessageFailedInState(
   final next = [...messages];
   next[index] = failed;
   outgoing.value = next;
+}
+
+/// Same reconciliation as [reconcileSentLocalMessage], driven by a
+/// [MutableState] instead of a [WidgetRef] so an upload whose preview route
+/// outlived the picker widget can still poll its way to the server echo.
+///
+/// Stops as soon as none of [localIds] is local any more, so a whole batch
+/// shares one poll ladder instead of one per item.
+Future<void> reconcileSentLocalMessagesInState(
+  MutableState<List<LocalOutgoingMessage>> outgoing,
+  Future<void> Function() refresh,
+  bool Function() isAlive,
+  Set<String> localIds,
+) async {
+  const retryDelays = [
+    Duration.zero,
+    Duration(milliseconds: 500),
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+  ];
+  for (final delay in retryDelays) {
+    if (delay != Duration.zero) await Future<void>.delayed(delay);
+    if (!isAlive()) return;
+    final stillLocal = outgoing.value.any(
+      (message) => localIds.contains(message.message.id),
+    );
+    if (!stillLocal) return;
+    await refresh();
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+  }
 }
 
 Future<void> refreshMessagesRef(Ref ref, String roomId) =>

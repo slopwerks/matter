@@ -16,6 +16,11 @@ class ChatMediaImage extends StatelessWidget {
   final int? cacheHeight;
   final String? blurhash;
 
+  /// Shown while a remote image is still loading. Defaults to the blurhash (or
+  /// a progress indicator) when null; pass [SizedBox.shrink] to keep an
+  /// already-painted layer underneath visible instead.
+  final Widget? placeholder;
+
   const ChatMediaImage({
     super.key,
     required this.imageUrl,
@@ -26,6 +31,7 @@ class ChatMediaImage extends StatelessWidget {
     this.cacheWidth,
     this.cacheHeight,
     this.blurhash,
+    this.placeholder,
   });
 
   @override
@@ -74,9 +80,11 @@ class ChatMediaImage extends StatelessWidget {
       onError: onError,
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
-      loadingPlaceholder: blurhash == null
-          ? null
-          : BlurhashPlaceholder(hash: blurhash, color: context.neu.card),
+      loadingPlaceholder:
+          placeholder ??
+          (blurhash == null
+              ? null
+              : BlurhashPlaceholder(hash: blurhash, color: context.neu.card)),
     );
   }
 }

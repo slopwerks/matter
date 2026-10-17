@@ -253,6 +253,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// collapsed onto the same remote event.
   final Set<String> _consumedRemoteIds = {};
 
+  /// Decoded preview bytes for optimistic image rows, keyed by local message
+  /// id. Rebuilt from the outgoing provider whenever a local image is queued,
+  /// so the timeline can paint the picked file before the upload produces a
+  /// `mxc://` source.
+  final Map<String, Uint8List> _localImagePreviews = {};
+
   /// Maps a remote event id to the stable flight id of the local message it
   /// replaced. Used to keep [SendFlightTarget] state alive across the
   /// local-to-remote transition.
@@ -1863,6 +1869,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           remoteToLocalFlightId: _remoteToLocalFlightId,
           insertionAnimationIds: _insertionAnimationIds,
           lateralInsertionAnimationIds: _lateralInsertionAnimationIds,
+          localImagePreviews: _localImagePreviews,
           membersById: membersById,
           showAvatar: _needsStickyAvatar(group),
           compact: widget.isDm,
@@ -1888,6 +1895,27 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   int? _findTimelineEntryIndex(Key key) {
     return _timelineEntryIndexByKey[key];
+  }
+
+  /// Keeps [_localImagePreviews] in step with the optimistic image rows. The
+  /// bytes are cached here because the provider entries are rebuilt as the send
+  /// moves through `pending` / `sent` / `failed`; a queued image must keep
+  /// painting until its server echo replaces the row.
+  void _syncLocalImagePreviews(List<LocalOutgoingMessage> localMessages) {
+    final next = <String, Uint8List>{};
+    for (final local in localMessages) {
+      final bytes = local.localImageBytes;
+      if (bytes != null) next[local.message.id] = bytes;
+    }
+    if (next.length == _localImagePreviews.length &&
+        next.entries.every(
+          (entry) => identical(_localImagePreviews[entry.key], entry.value),
+        )) {
+      return;
+    }
+    _localImagePreviews
+      ..clear()
+      ..addAll(next);
   }
 
   @override
@@ -1975,6 +2003,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final localOutgoingMessages = ref.watch(
       localOutgoingMessagesProvider(roomAccountKey),
     );
+    _syncLocalImagePreviews(localOutgoingMessages);
     final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
     if (keyboardHeight > 0 && keyboardHeight > _panelBaselineHeight) {
       _panelBaselineHeight = keyboardHeight;

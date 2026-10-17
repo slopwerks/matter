@@ -128,12 +128,14 @@ void main() {
 
   Future<void> pick(WidgetTester tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: neuTestTheme(),
-        localizationsDelegates: const [
-          ...material_ui.GlobalMaterialLocalizations.delegates,
-        ],
-        home: const _PickerHarness(),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          localizationsDelegates: const [
+            ...material_ui.GlobalMaterialLocalizations.delegates,
+          ],
+          home: const _PickerHarness(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -583,6 +585,8 @@ class _PickerHarnessState extends State<_PickerHarness> {
               onRefresh: (_) async {},
               resolveSendPresentation: () => MessageSendPresentation.insert,
               onMessageSent: (_, _) {},
+              onMessageQueued: (_, _) {},
+              totalMembers: 2,
               onHeightChanged: (_) {},
               onClose: close,
             ),

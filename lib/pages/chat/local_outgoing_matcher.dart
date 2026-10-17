@@ -27,6 +27,22 @@ class LocalOutgoingMatchResult {
   );
 }
 
+/// Whether an optimistic media bubble is the same upload as a server event.
+///
+/// Stickers and re-sent media carry an `mxc://` source before they are sent,
+/// so the source URI identifies them exactly. An image picked for upload does
+/// not: it has no `mxc://` until the homeserver finishes the upload, and the
+/// echo therefore only matches on the metadata the uploader already knew
+/// (filename, declared MIME type, and dimensions).
+bool _sameMediaPayload(ChatMessage remote, LocalOutgoingMessage local) {
+  final localUrl = local.sourceImageUrl;
+  if (localUrl != null) return remote.imageUrl == localUrl;
+  return remote.filename == local.message.filename &&
+      remote.mimeType == local.message.mimeType &&
+      remote.imageWidth == local.message.imageWidth &&
+      remote.imageHeight == local.message.imageHeight;
+}
+
 /// Matches local outgoing messages with their corresponding remote events.
 ///
 /// [consumedRemoteIds] tracks remote events that have already been matched in
@@ -75,8 +91,7 @@ LocalOutgoingMatchResult matchLocalOutgoingMessages(
           local.message.msgType == MessageType.sticker;
       final samePayload = isLocalMedia
           ? remote.msgType == local.message.msgType &&
-                remote.imageUrl == local.sourceImageUrl &&
-                remote.content == local.message.content
+                _sameMediaPayload(remote, local)
           : remote.msgType == MessageType.text &&
                 remote.content == local.message.content &&
                 remote.inReplyTo == local.message.inReplyTo;

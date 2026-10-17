@@ -8,12 +8,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
+import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
@@ -26,6 +30,7 @@ import 'attachment_image_preview_page.dart';
 import 'attachment_media_draft.dart';
 import 'attachment_media_gallery.dart';
 import 'attachment_media_utils.dart';
+import 'send_flight.dart';
 
 export 'attachment_media_utils.dart'
     show
@@ -67,6 +72,15 @@ class AttachmentPicker extends StatefulWidget {
     bool insertedOptimistically,
   )
   onMessageSent;
+
+  /// Announces an optimistic image row so the timeline can play its entrance
+  /// animation, exactly like a text or sticker send.
+  final void Function(
+    String stableMessageId,
+    MessageSendPresentation presentation,
+  )
+  onMessageQueued;
+  final int totalMembers;
   final ValueChanged<double> onHeightChanged;
   final VoidCallback onClose;
 
@@ -79,6 +93,8 @@ class AttachmentPicker extends StatefulWidget {
     required this.onRefresh,
     required this.resolveSendPresentation,
     required this.onMessageSent,
+    required this.onMessageQueued,
+    required this.totalMembers,
     required this.onHeightChanged,
     required this.onClose,
   });
@@ -98,6 +114,30 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   final _mediaDraft = AttachmentMediaDraft();
   bool _previewOpen = false;
 
+  /// Room/account pair the optimistic image rows belong to. [AttachmentPicker]
+  /// is handed `accountUserId` from the composer's own draft key, so this is
+  /// the same cell the text send path writes to.
+  late final RoomAccountKey _draftKey;
+
+  /// Providers outlive this widget, so the send pipeline keeps writing
+  /// through them even while the image preview route has replaced it.
+  late final ProviderContainer _container;
+
+  /// Local ids of images whose upload was accepted and whose server echo the
+  /// current batch still has to wait for.
+  final _settledLocalIds = <String>{};
+
+  /// Whether the running batch inserted its messages optimistically, so
+  /// [_finishBatch] can report that to the timeline. Polls and locations share
+  /// the batch path but only appear once the server echoes them.
+  bool _batchInsertedOptimistically = false;
+
+  /// Presentation resolved once per batch. [resolveSendPresentation] has side
+  /// effects (it cancels an in-flight flight and arms the burst suppression),
+  /// so the optimistic rows must reuse the batch's own answer rather than
+  /// resolving a second one.
+  MessageSendPresentation _batchPresentation = MessageSendPresentation.quiet;
+
   /// Every Dart/FRB upload buffer is capped to avoid multiplying a very large
   /// allocation while it crosses the bridge into Rust.
   static const int _maxBufferedBytes = attachmentMaxBufferedBytes;
@@ -108,6 +148,8 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   void initState() {
     super.initState();
     _accountUserId = widget.accountUserId;
+    _container = ProviderScope.containerOf(context, listen: false);
+    _draftKey = (roomId: widget.roomId, userId: widget.accountUserId);
     _sheetController = DraggableScrollableController();
     _sheetExtent = ValueNotifier<double>(0);
   }
@@ -192,6 +234,104 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     return mounted && _mediaDraft.selected.isEmpty;
   }
 
+  /// Optimistically inserts the picked image as a local outgoing message so
+  /// the bubble and its entrance animation appear before the upload starts.
+  /// Returns the local message id used to reconcile or fail the entry.
+  String _queueLocalImage({
+    required _PreparedImage prepared,
+    required String? caption,
+    required rust.ImageMessageMetadata metadata,
+  }) {
+    final timestamp = nextLocalOutgoingTimestamp(
+      _container,
+      widget.roomId,
+      _draftKey,
+    );
+    final id =
+        '$localOutgoingPendingPrefix${DateTime.now().microsecondsSinceEpoch}';
+    final local = LocalOutgoingMessage(
+      message: rust.ChatMessage(
+        id: id,
+        senderId: _draftKey.userId,
+        senderName: '我',
+        content: caption ?? prepared.filename,
+        caption: caption,
+        imageMetadata: metadata,
+        mentionedUserIds: const [],
+        mentionsRoom: false,
+        timestamp: timestamp.toString(),
+        isMe: true,
+        msgType: rust.MessageType.image,
+        // The real `mxc://` source only exists after the upload; the bubble
+        // renders [localImageBytes] meanwhile.
+        imageUrl: '$localOutgoingPreviewUrlPrefix$id',
+        imageWidth: prepared.width,
+        imageHeight: prepared.height,
+        filename: prepared.filename,
+        fileSize: prepared.bytes.length,
+        mimeType: prepared.mimeType,
+        isEdited: false,
+        editHistory: const [],
+        reactions: const [],
+        readers: const [],
+        totalMembers: widget.totalMembers,
+      ),
+      localImageBytes: prepared.bytes,
+    );
+    upsertLocalOutgoingMessageInState(_outgoingState, local);
+    _batchInsertedOptimistically = true;
+    widget.onMessageQueued(sendFlightId(id), _batchPresentation);
+    return id;
+  }
+
+  MutableState<List<LocalOutgoingMessage>> get _outgoingState =>
+      _container.read(localOutgoingMessagesProvider(_draftKey).notifier);
+
+  /// Marks a queued image upload as failed so the bubble keeps showing the
+  /// picked bytes with an error affordance instead of vanishing.
+  void _failLocalMedia(String localId) {
+    final outgoing = _outgoingState;
+    final existing = outgoing.value.where(
+      (message) => message.message.id == localId,
+    );
+    if (existing.isEmpty) return;
+    final failed = copyLocalOutgoingMessageWithId(
+      existing.first,
+      failedLocalOutgoingId(localId),
+    );
+    markLocalOutgoingMessageFailedInState(outgoing, localId, failed);
+  }
+
+  /// Marks a queued image upload as accepted and records it for the batch's
+  /// single reconciliation run once every item has settled.
+  ///
+  /// The poll is driven by the captured [ProviderContainer] because the
+  /// preview route can dispose this widget while the upload is in flight.
+  void _settleLocalMedia(String localId) {
+    final outgoing = _outgoingState;
+    _settledLocalIds.add(
+      markLocalOutgoingMessageSentInState(outgoing, localId),
+    );
+  }
+
+  /// Polls the timeline until every accepted image in the batch has been
+  /// replaced by its server echo, or the retry budget runs out. One ladder per
+  /// batch instead of one per image.
+  void _reconcileSettledLocalMedia() {
+    if (_settledLocalIds.isEmpty) return;
+    final outgoing = _outgoingState;
+    final ids = Set<String>.of(_settledLocalIds);
+    _settledLocalIds.clear();
+    unawaited(
+      reconcileSentLocalMessagesInState(
+        outgoing,
+        () => refreshMessagesContainer(_container, widget.roomId),
+        () => _container.read(activeUserIdProvider) == _draftKey.userId,
+        ids,
+      ),
+    );
+  }
+
   Future<String?> _sendSingleMedia(
     AttachmentMediaItem item, {
     String? caption,
@@ -220,21 +360,37 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
             );
       final blurhash = await encodeImageBlurhash(prepared.bytes);
       _ensureCanSend();
-      return await rust.sendImageMessage(
-        accountUserId: _accountUserId,
-        roomId: widget.roomId,
-        imageData: prepared.bytes,
-        filename: prepared.filename,
-        mimeType: prepared.mimeType,
-        width: prepared.width,
-        height: prepared.height,
-        caption: caption,
-        metadata: rust.ImageMessageMetadata(
-          albumRoot: albumRoot,
-          blurhash: blurhash,
-          spoiler: item.spoiler,
-        ),
+      final metadata = rust.ImageMessageMetadata(
+        albumRoot: albumRoot,
+        blurhash: blurhash,
+        spoiler: item.spoiler,
       );
+      // Insert the bubble before uploading: the upload can take a long time on
+      // a large image or a slow connection and the user should not have to
+      // wait for it (and for the echo download) before seeing their message.
+      final localId = _queueLocalImage(
+        prepared: prepared,
+        caption: caption,
+        metadata: metadata,
+      );
+      try {
+        final eventId = await rust.sendImageMessage(
+          accountUserId: _accountUserId,
+          roomId: widget.roomId,
+          imageData: prepared.bytes,
+          filename: prepared.filename,
+          mimeType: prepared.mimeType,
+          width: prepared.width,
+          height: prepared.height,
+          caption: caption,
+          metadata: metadata,
+        );
+        _settleLocalMedia(localId);
+        return eventId;
+      } catch (_) {
+        _failLocalMedia(localId);
+        rethrow;
+      }
     } else {
       final bytes = await _readXFileBytes(file);
       _ensureCanSend();
@@ -528,6 +684,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     setState(() => _isSending = true);
     _mediaDraft.setSending(true);
     final presentation = widget.resolveSendPresentation();
+    _batchPresentation = presentation;
+    _settledLocalIds.clear();
+    _batchInsertedOptimistically = false;
     var sent = 0;
     try {
       for (var i = 0; i < ops.length; i++) {
@@ -562,6 +721,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
       }
       await _finishBatch(presentation, closePicker: closePicker);
     } finally {
+      // Every exit path funnels through here, so a single flush covers full
+      // success, partial failure, and the preview route's detached sends.
+      _reconcileSettledLocalMedia();
       if (mounted && _isSending) setState(() => _isSending = false);
       if (mounted || _previewOpen) _mediaDraft.setSending(false);
     }
@@ -579,7 +741,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
       // Refresh is best-effort; never surface as a send failure.
     }
     if (!mounted) return;
-    widget.onMessageSent(presentation, false);
+    widget.onMessageSent(presentation, _batchInsertedOptimistically);
     if (closePicker) {
       setState(() => _isSending = false);
       WidgetsBinding.instance.addPostFrameCallback((_) {

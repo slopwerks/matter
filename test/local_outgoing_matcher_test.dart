@@ -9,6 +9,10 @@ rust.ChatMessage _remote({
   required String content,
   rust.MessageType msgType = rust.MessageType.text,
   String? imageUrl,
+  String? filename,
+  String? mimeType,
+  int? imageWidth,
+  int? imageHeight,
   String? inReplyTo,
 }) => rust.ChatMessage(
   id: id,
@@ -21,6 +25,10 @@ rust.ChatMessage _remote({
   isMe: true,
   msgType: msgType,
   imageUrl: imageUrl,
+  filename: filename,
+  mimeType: mimeType,
+  imageWidth: imageWidth,
+  imageHeight: imageHeight,
   inReplyTo: inReplyTo,
   isEdited: false,
   editHistory: const [],
@@ -36,6 +44,10 @@ LocalOutgoingMessage _local({
   rust.MessageType msgType = rust.MessageType.text,
   String? sourceImageUrl,
   String? imageUrl,
+  String? filename,
+  String? mimeType,
+  int? imageWidth,
+  int? imageHeight,
   String? inReplyTo,
 }) => LocalOutgoingMessage(
   message: rust.ChatMessage(
@@ -49,6 +61,10 @@ LocalOutgoingMessage _local({
     isMe: true,
     msgType: msgType,
     imageUrl: imageUrl,
+    filename: filename,
+    mimeType: mimeType,
+    imageWidth: imageWidth,
+    imageHeight: imageHeight,
     inReplyTo: inReplyTo,
     isEdited: false,
     editHistory: const [],
@@ -163,6 +179,68 @@ void main() {
     },
   );
 
+  group('optimistic image uploads', () {
+    LocalOutgoingMessage uploaded({String? filename, String? mimeType}) =>
+        _local(
+          id: 'local_outgoing_pending:image',
+          timestamp: '1000',
+          content: 'photo.jpg',
+          msgType: rust.MessageType.image,
+          // No sourceImageUrl: the mxc URI does not exist until the upload is
+          // done, so the echo has to be recognized by its declared metadata.
+          imageUrl: 'local-preview:local_outgoing_pending:image',
+          filename: filename ?? 'photo.jpg',
+          mimeType: mimeType ?? 'image/jpeg',
+          imageWidth: 1024,
+          imageHeight: 768,
+        );
+
+    test('matches the echo by filename, mime type and dimensions', () {
+      final consumed = <String>{};
+      final remote = _remote(
+        id: 'r1',
+        timestamp: '1100',
+        content: 'photo.jpg',
+        msgType: rust.MessageType.image,
+        imageUrl: 'mxc://example.org/uploaded',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        imageWidth: 1024,
+        imageHeight: 768,
+      );
+      final result = matchLocalOutgoingMessages(
+        [remote],
+        [uploaded()],
+        consumed,
+      );
+      expect(result.localIds, {'local_outgoing_pending:image'});
+      expect(result.remoteToLocalFlightId, {'r1': 'image'});
+      expect(consumed, {'r1'});
+    });
+
+    test('does not match a different file of the same size', () {
+      final consumed = <String>{};
+      final remote = _remote(
+        id: 'r1',
+        timestamp: '1100',
+        content: 'other.jpg',
+        msgType: rust.MessageType.image,
+        imageUrl: 'mxc://example.org/other',
+        filename: 'other.jpg',
+        mimeType: 'image/jpeg',
+        imageWidth: 1024,
+        imageHeight: 768,
+      );
+      final result = matchLocalOutgoingMessages(
+        [remote],
+        [uploaded()],
+        consumed,
+      );
+      expect(result.localIds, isEmpty);
+      expect(consumed, isEmpty);
+    });
+  });
+
   test('matches sticker payloads by source image url', () {
     final consumed = <String>{};
     final local = _local(
@@ -259,33 +337,30 @@ void main() {
     },
   );
 
-  test(
-    'never matches a failed message: its echo belongs to a later successful resend',
-    () {
-      // The user sent "hi" (failed), then typed "hi" again (pending). Only
-      // one echo arrives — for the successful resend. The failed entry must
-      // not consume it: it never produced a remote event, and eating the
-      // echo would leave the successful send's bubble unreconciled forever.
-      final consumed = <String>{};
-      final failed = _local(
-        id: 'local_outgoing_failed:1',
-        timestamp: '1000',
-        content: 'hi',
-      );
-      final resent = _local(
-        id: 'local_outgoing_pending:2',
-        timestamp: '2000',
-        content: 'hi',
-      );
-      final echo = _remote(id: 'r1', timestamp: '2100', content: 'hi');
-      final result = matchLocalOutgoingMessages(
-        [echo],
-        [failed, resent],
-        consumed,
-      );
-      expect(result.localIds, {'local_outgoing_pending:2'});
-      expect(result.remoteToLocalFlightId, {'r1': '2'});
-      expect(consumed, {'r1'});
-    },
-  );
+  test('never matches a failed message: its echo belongs to a later successful resend', () {
+    // The user sent "hi" (failed), then typed "hi" again (pending). Only
+    // one echo arrives — for the successful resend. The failed entry must
+    // not consume it: it never produced a remote event, and eating the
+    // echo would leave the successful send's bubble unreconciled forever.
+    final consumed = <String>{};
+    final failed = _local(
+      id: 'local_outgoing_failed:1',
+      timestamp: '1000',
+      content: 'hi',
+    );
+    final resent = _local(
+      id: 'local_outgoing_pending:2',
+      timestamp: '2000',
+      content: 'hi',
+    );
+    final echo = _remote(id: 'r1', timestamp: '2100', content: 'hi');
+    final result = matchLocalOutgoingMessages(
+      [echo],
+      [failed, resent],
+      consumed,
+    );
+    expect(result.localIds, {'local_outgoing_pending:2'});
+    expect(result.remoteToLocalFlightId, {'r1': '2'});
+    expect(consumed, {'r1'});
+  });
 }

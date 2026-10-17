@@ -340,21 +340,26 @@ void main() {
               },
             );
         await tester.pumpWidget(
-          MaterialApp(
-            theme: buildNeuTheme(NeuColors.dark, Brightness.dark),
-            home: Scaffold(
-              body: Align(
-                alignment: Alignment.bottomCenter,
-                child: AttachmentPicker(
-                  height: 300,
-                  maxHeight: 500,
-                  roomId: room,
-                  accountUserId: alice,
-                  onRefresh: (_) async {},
-                  resolveSendPresentation: () => MessageSendPresentation.quiet,
-                  onMessageSent: (_, _) {},
-                  onHeightChanged: (_) {},
-                  onClose: () {},
+          ProviderScope(
+            child: MaterialApp(
+              theme: buildNeuTheme(NeuColors.dark, Brightness.dark),
+              home: Scaffold(
+                body: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: AttachmentPicker(
+                    height: 300,
+                    maxHeight: 500,
+                    roomId: room,
+                    accountUserId: alice,
+                    onRefresh: (_) async {},
+                    resolveSendPresentation: () =>
+                        MessageSendPresentation.quiet,
+                    onMessageSent: (_, _) {},
+                    onMessageQueued: (_, _) {},
+                    totalMembers: 2,
+                    onHeightChanged: (_) {},
+                    onClose: () {},
+                  ),
                 ),
               ),
             ),

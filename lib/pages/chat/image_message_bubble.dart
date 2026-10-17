@@ -31,6 +31,10 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
   final String? mimeType;
   final String? filename;
   final rust.ChatMessage? message;
+
+  /// Bytes of a picked-but-not-yet-uploaded image, rendered instead of
+  /// resolving [imageUrl]. Set only on optimistic local outgoing rows.
+  final Uint8List? previewBytes;
   final String? roomId;
   final Iterable<rust.ChatMessage> galleryMessages;
   final ImageHistoryLoader? loadOlderImages;
@@ -61,6 +65,7 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
     this.mimeType,
     this.filename,
     this.message,
+    this.previewBytes,
     this.roomId,
     this.galleryMessages = const [],
     this.loadOlderImages,
@@ -97,6 +102,19 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   int _resolveGeneration = 0;
   bool _spoilerRevealed = false;
 
+  /// Preview bytes kept after the server echo replaced the optimistic row.
+  ///
+  /// When the echo arrives, [ImageMessageBubble.previewBytes] goes away before
+  /// the real `mxc://` thumbnail has been fetched, which used to drop the
+  /// bubble back to its blurhash/loading placeholder for a frame — the visible
+  /// flash between "my local picture" and "the server's copy". Holding the
+  /// picked bytes here keeps them painted underneath until the network image
+  /// actually has a frame, then they are released.
+  Uint8List? _stickyPreviewBytes;
+
+  /// Whether the resolved/decrypted server image has produced a frame yet.
+  bool _serverImageReady = false;
+
   bool get _spoilerHidden =>
       widget.message?.imageMetadata?.spoiler == true && !_spoilerRevealed;
 
@@ -119,6 +137,15 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   void _handleMediaLoaded() {
     if (!mounted) return;
+    // The server copy is on screen: the local preview underneath is now dead
+    // weight, so release it instead of holding a full image buffer alive. The
+    // rebuild is what drops the handover Stack back to a single image.
+    if (_stickyPreviewBytes != null || !_serverImageReady) {
+      setState(() {
+        _stickyPreviewBytes = null;
+        _serverImageReady = true;
+      });
+    }
     widget.onLoaded?.call();
     notifySendFlightTargetReady(context);
   }
@@ -151,7 +178,8 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   void didUpdateWidget(covariant ImageMessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.imageUrl != oldWidget.imageUrl ||
-        widget.mediaSourceJson != oldWidget.mediaSourceJson) {
+        widget.mediaSourceJson != oldWidget.mediaSourceJson ||
+        (widget.previewBytes == null) != (oldWidget.previewBytes == null)) {
       _resolveGeneration++;
       _spoilerRevealed = false;
       _resolvedUrl = null;
@@ -159,6 +187,16 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       _isLoadingEncrypted = false;
       _encryptedLoadFailed = false;
       _resolveFailed = false;
+    }
+    // Local row handed over to its server echo: keep painting the picked bytes
+    // until the network copy has a frame, so the swap is invisible.
+    final wasLocalPreview = oldWidget.previewBytes != null;
+    if (wasLocalPreview && widget.previewBytes == null) {
+      _stickyPreviewBytes = oldWidget.previewBytes;
+      _serverImageReady = false;
+    } else if (widget.previewBytes != null) {
+      _stickyPreviewBytes = null;
+      _serverImageReady = false;
     }
     if (widget.imageUrl != oldWidget.imageUrl ||
         widget.imageWidth != oldWidget.imageWidth ||
@@ -175,6 +213,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   Future<void> _resolveUrl() async {
     if (_spoilerHidden) return;
+    // An optimistic image already has its pixels: there is no `mxc://` source
+    // to resolve until the upload produces one.
+    if (widget.previewBytes != null) return;
     if (widget.imageUrl == null && _isLoadingEncrypted) return;
     final generation = ++_resolveGeneration;
     _resolveFailed = false;
@@ -226,6 +267,82 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     }
   }
 
+  /// Builds the bubble's picture.
+  ///
+  /// Usually this is a single image, but during the optimistic-to-server
+  /// handover both sources exist for a moment: the picked bytes are still the
+  /// only thing with pixels, while the server copy has not been fetched yet.
+  /// In that window the preview is painted as the base layer and the server
+  /// image is stacked on top, so the two never trade places through an empty
+  /// placeholder.
+  Widget _buildMedia(
+    BuildContext context, {
+    required String? url,
+    required Uint8List? bytes,
+    required Uint8List? previewBytes,
+    required Uint8List? serverBytes,
+    required bool needsShortImageBackdrop,
+    required int? cacheWidth,
+    required int? cacheHeight,
+  }) {
+    final fit =
+        widget.isSticker ||
+            needsShortImageBackdrop ||
+            (widget.displaySize == null &&
+                context.isMaterial &&
+                _fittedBubbleSize(context).height < _minimumImageBubbleHeight)
+        ? BoxFit.contain
+        : BoxFit.cover;
+    Widget image({
+      required String? imageUrl,
+      required Uint8List? imageBytes,
+      required Key key,
+      VoidCallback? onLoaded,
+      Widget? placeholder,
+    }) => ChatMediaImage(
+      key: key,
+      imageUrl: imageUrl,
+      imageBytes: imageBytes,
+      blurhash: widget.message?.imageMetadata?.blurhash,
+      fit: fit,
+      onLoaded: onLoaded,
+      onError: _handleMediaError,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
+      placeholder: placeholder,
+    );
+
+    final serverSource = serverBytes != null || url != null;
+    // Handover: keep the local picture underneath until the server one paints.
+    // The server layer must not draw its own blurhash/spinner over it, hence
+    // the empty placeholder — otherwise the placeholder itself is the flash.
+    if (previewBytes != null && !_serverImageReady && serverSource) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          image(
+            imageUrl: null,
+            imageBytes: previewBytes,
+            key: const ValueKey('msg-image-preview'),
+          ),
+          image(
+            imageUrl: url,
+            imageBytes: serverBytes,
+            key: const ValueKey('msg-image-server'),
+            onLoaded: _handleMediaLoaded,
+            placeholder: const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
+    return image(
+      imageUrl: url,
+      imageBytes: bytes,
+      key: ValueKey('msg-image:${widget.heroTag}'),
+      onLoaded: _handleMediaLoaded,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(activeUserIdProvider) ?? 'anonymous';
@@ -249,7 +366,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     );
     final colors = context.neu;
     final url = originalUrl ?? _resolvedUrl;
-    final bytes = _decryptedBytes;
+    final serverBytes = _decryptedBytes;
+    final previewBytes = widget.previewBytes ?? _stickyPreviewBytes;
+    final bytes = previewBytes ?? serverBytes;
     final bubbleSize = _bubbleSize(context);
     final caption = widget.caption?.trim();
     final hasCaption =
@@ -306,21 +425,13 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       );
     }
 
-    final media = ChatMediaImage(
-      key: ValueKey('msg-image:${widget.heroTag}'),
-      imageUrl: url,
-      imageBytes: bytes,
-      blurhash: widget.message?.imageMetadata?.blurhash,
-      fit:
-          widget.isSticker ||
-              needsShortImageBackdrop ||
-              (widget.displaySize == null &&
-                  context.isMaterial &&
-                  _fittedBubbleSize(context).height < _minimumImageBubbleHeight)
-          ? BoxFit.contain
-          : BoxFit.cover,
-      onLoaded: _handleMediaLoaded,
-      onError: _handleMediaError,
+    final media = _buildMedia(
+      context,
+      url: url,
+      bytes: bytes,
+      previewBytes: previewBytes,
+      serverBytes: serverBytes,
+      needsShortImageBackdrop: needsShortImageBackdrop,
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
     );

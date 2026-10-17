@@ -201,9 +201,11 @@ void main() {
   testWidgets('attachment panel expands after an upward drag', (tester) async {
     await _mockPhotoManagerEmpty();
     await tester.pumpWidget(
-      MaterialApp(
-        theme: neuTestTheme(),
-        home: const _AttachmentPickerHarness(),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const _AttachmentPickerHarness(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -228,9 +230,11 @@ void main() {
           .setMockMethodCallHandler(_locationChannel, null),
     );
     await tester.pumpWidget(
-      MaterialApp(
-        theme: neuTestTheme(),
-        home: const _AttachmentPickerHarness(),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const _AttachmentPickerHarness(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -271,9 +275,11 @@ void main() {
           .setMockMethodCallHandler(_fileSelectorChannel, null),
     );
     await tester.pumpWidget(
-      MaterialApp(
-        theme: neuTestTheme(),
-        home: const _AttachmentPickerHarness(),
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const _AttachmentPickerHarness(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -433,6 +439,8 @@ class _AttachmentPickerHarness extends StatelessWidget {
           onRefresh: (_) async {},
           resolveSendPresentation: () => MessageSendPresentation.quiet,
           onMessageSent: (_, _) {},
+          onMessageQueued: (_, _) {},
+          totalMembers: 2,
           onHeightChanged: (_) {},
           onClose: () {},
         ),
