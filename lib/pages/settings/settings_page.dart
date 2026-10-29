@@ -30,6 +30,7 @@ import '../../widgets/sheets.dart';
 import '../login/login_page.dart';
 import 'encryption_page.dart';
 import 'blur_settings_page.dart';
+import 'timeline_event_settings_page.dart';
 import 'log_viewer_page.dart';
 import 'material_color_settings_page.dart';
 import 'notification_settings_page.dart';
@@ -747,6 +748,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     _buildGroup(
                       title: context.isMaterial ? '聊天外观' : '性能設置',
                       items: [
+                        _SettingItem(
+                          icon: Icons.tune_rounded,
+                          title: '时间线事件显示',
+                          subtitle: '配置头像更改、成员进退与房间状态事件显示',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const TimelineEventSettingsPage(),
+                            ),
+                          ),
+                        ),
                         if (!context.isMaterial) ...[
                           _SettingItem(
                             icon: Icons.blur_on_rounded,

@@ -1188,6 +1188,27 @@ class MessageGroupWidget extends ConsumerWidget {
 
   IconData _eventIcon(ChatMessage message) {
     final content = message.content;
+    if (content.contains('房间头像')) {
+      return Icons.photo_size_select_actual_outlined;
+    }
+    if (content.contains('头像')) {
+      return Icons.account_circle_outlined;
+    }
+    if (content.contains('加密')) {
+      return Icons.lock_outline_rounded;
+    }
+    if (content.contains('权限')) {
+      return Icons.admin_panel_settings_outlined;
+    }
+    if (content.contains('置顶')) {
+      return Icons.push_pin_outlined;
+    }
+    if (content.contains('封禁')) {
+      return Icons.block_rounded;
+    }
+    if (content.contains('通话')) {
+      return Icons.call_outlined;
+    }
     if (content.contains('加入') || content.contains('邀请')) {
       return Icons.person_add_rounded;
     }

@@ -22,6 +22,7 @@ import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import '../settings/avatar_crop_editor_page.dart';
+import '../settings/timeline_event_settings_page.dart';
 import 'pinned_messages_page.dart';
 import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
@@ -2027,6 +2028,18 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                                     MaterialPageRoute(
                                       builder: (_) => PinnedMessagesPage(
                                         roomId: widget.roomId,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                _actionTile(
+                                  icon: Icons.tune_rounded,
+                                  label: '时间线事件显示',
+                                  onTap: () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => TimelineEventSettingsPage(
+                                        roomId: widget.roomId,
+                                        roomName: widget.roomName,
                                       ),
                                     ),
                                   ),
