@@ -22,6 +22,8 @@ import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/sheets.dart';
 import 'chat_timestamp.dart';
+import 'message_jump_highlight.dart';
+import 'message_pin_actions.dart';
 import 'emoji_picker_panel.dart';
 import 'message_input.dart'
     show editingDraftProvider, editingSendInFlightProvider;
@@ -151,6 +153,7 @@ class MessageGroupWidget extends ConsumerWidget {
   final String roomId;
   final Map<String, ChatMessage> messageIndex;
   final Map<String, GlobalKey> messageAnchorKeys;
+  final ValueNotifier<String?>? jumpHighlight;
   final Map<String, String> remoteToLocalFlightId;
   final Set<String> insertionAnimationIds;
   final Set<String> lateralInsertionAnimationIds;
@@ -178,6 +181,7 @@ class MessageGroupWidget extends ConsumerWidget {
     required this.roomId,
     required this.messageIndex,
     this.messageAnchorKeys = const {},
+    this.jumpHighlight,
     this.remoteToLocalFlightId = const {},
     this.insertionAnimationIds = const {},
     this.lateralInsertionAnimationIds = const {},
@@ -222,7 +226,16 @@ class MessageGroupWidget extends ConsumerWidget {
     ChatMessage message,
     Widget child, {
     bool collection = false,
+    Set<String> collectionIds = const {},
   }) {
+    if (jumpHighlight != null) {
+      child = MessageJumpHighlight(
+        messageId: message.id,
+        collectionIds: collectionIds,
+        target: jumpHighlight!,
+        child: child,
+      );
+    }
     final anchorKey = collection ? null : messageAnchorKeys[message.id];
     return KeyedSubtree(
       key: ValueKey(_messageRowKey(message)),
@@ -385,6 +398,9 @@ class MessageGroupWidget extends ConsumerWidget {
             imageRun: run.collection ? run : null,
           ),
           collection: run.collection,
+          collectionIds: run.collection
+              ? run.messages.map((m) => m.id).toSet()
+              : const {},
         ),
       );
     }
@@ -1512,6 +1528,15 @@ class MessageGroupWidget extends ConsumerWidget {
             : () async {
                 try {
                   final target = !isPinned!;
+                  final confirmed = await confirmMessagePinChange(
+                    overlayContext,
+                    pinned: target,
+                  );
+                  if (!confirmed ||
+                      !overlayContext.mounted ||
+                      container.read(activeUserIdProvider) != menuAccount) {
+                    return;
+                  }
                   final pinned = await setPinnedMessage(
                     accountUserId: menuAccount,
                     roomId: roomId,
@@ -1519,11 +1544,13 @@ class MessageGroupWidget extends ConsumerWidget {
                     pinned: target,
                   );
                   if (overlayContext.mounted) {
-                    ScaffoldMessenger.of(overlayContext).showSnackBar(
-                      SnackBar(
-                        content: Text(pinned ? '消息已置顶' : '已取消置顶'),
-                        duration: const Duration(seconds: 1),
-                      ),
+                    showMessagePinFeedback(
+                      context: overlayContext,
+                      container: container,
+                      accountUserId: menuAccount,
+                      roomId: roomId,
+                      eventId: message.id,
+                      pinned: pinned,
                     );
                   }
                   if (overlayContext.mounted) {

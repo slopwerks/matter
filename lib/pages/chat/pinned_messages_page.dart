@@ -16,6 +16,7 @@ import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'action_failure_message.dart';
 import 'chat_timestamp.dart';
+import 'message_pin_actions.dart';
 
 class PinnedMessagesPage extends ConsumerStatefulWidget {
   final String roomId;
@@ -607,7 +608,18 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
     }
     if (_messages == null) return;
     if (ref.read(activeUserIdProvider) != _subscribedUserId) return;
+    final accountUserId = _subscribedUserId;
+    if (accountUserId == null) return;
+    final confirmed = await confirmMessagePinChange(context, pinned: false);
+    if (!confirmed ||
+        !mounted ||
+        _messages == null ||
+        ref.read(activeUserIdProvider) != accountUserId ||
+        _subscribedUserId != accountUserId) {
+      return;
+    }
     final originalIndex = _messages!.indexWhere((m) => m.id == message.id);
+    if (originalIndex < 0 || _inflightUnpinIds.contains(message.id)) return;
     setState(() {
       _pendingUnpinIds[message.id] = clock.now();
       _inflightUnpinIds.add(message.id);
@@ -624,7 +636,7 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
       // _runReloads) or times out — a stale reload snapshot must not unlock
       // it early, and a cross-device re-pin must not lock it forever.
       await rust.setPinnedMessage(
-        accountUserId: _subscribedUserId ?? '',
+        accountUserId: accountUserId,
         roomId: widget.roomId,
         eventId: message.id,
         pinned: false,
@@ -632,19 +644,43 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
       // The account may have switched while the request was in flight: the
       // write itself was guarded server-side, so just skip the local
       // bookkeeping (the page shows the switched placeholder anyway).
-      if (!mounted || ref.read(activeUserIdProvider) != _subscribedUserId) {
+      if (!mounted || ref.read(activeUserIdProvider) != accountUserId) {
         return;
       }
       setState(() {
         _inflightUnpinIds.remove(message.id);
         _scheduleUnpinLockExpiry();
       });
-      neuToast(context, '已取消置顶');
+      showMessagePinFeedback(
+        context: context,
+        container: ProviderScope.containerOf(context, listen: false),
+        accountUserId: accountUserId,
+        roomId: widget.roomId,
+        eventId: message.id,
+        pinned: false,
+        onChanged: (pinned) {
+          if (!mounted) return;
+          setState(() {
+            _pendingUnpinIds.remove(message.id);
+            if (!pinned) _pendingUnpinIds[message.id] = clock.now();
+            _messages = List.of(_messages ?? <rust.ChatMessage>[])
+              ..removeWhere((m) => m.id == message.id);
+            if (pinned) {
+              _messages!.insert(
+                originalIndex.clamp(0, _messages!.length),
+                message,
+              );
+            }
+            _scheduleUnpinLockExpiry();
+          });
+          unawaited(_reload());
+        },
+      );
       // Refresh towards the server state: after a removal the row stays
       // gone.
       unawaited(_reload());
     } catch (error) {
-      if (!mounted || ref.read(activeUserIdProvider) != _subscribedUserId) {
+      if (!mounted || ref.read(activeUserIdProvider) != accountUserId) {
         // The account switched mid-flight: the page shows the placeholder,
         // so skip the restore, snack bar, and reload entirely.
         return;

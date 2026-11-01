@@ -7,6 +7,44 @@ import 'package:matter/widgets/neu_surface.dart';
 import '../helpers/neu_test_theme.dart';
 
 void main() {
+  testWidgets(
+    'disabled Material actions mount and update without build notifications',
+    (tester) async {
+      var enabled = false;
+      var taps = 0;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: neuTestTheme(material: true),
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return NeuAction(
+                  onTap: enabled ? () => taps++ : null,
+                  child: const Text('Disabled action'),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Disabled action'));
+      expect(taps, 0);
+      update(() => enabled = true);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Disabled action'));
+      await tester.pumpAndSettle();
+      expect(taps, 1);
+      update(() => enabled = false);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Disabled action'));
+      expect(taps, 1);
+    },
+  );
+
   testWidgets('focus border remains visible for keyboard activation', (
     tester,
   ) async {
