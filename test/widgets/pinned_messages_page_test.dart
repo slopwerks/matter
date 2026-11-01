@@ -9,7 +9,9 @@ import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/providers/mutable_state.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+
 import '../helpers/neu_test_theme.dart';
+
 import 'package:matter/widgets/neu_surface.dart';
 
 class _FakeRustApi implements RustLibApi {
@@ -507,6 +509,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            activeUserIdProvider.overrideWith(
+              () => MutableState<String?>('@me:example.org'),
+            ),
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
           child: MaterialApp(
@@ -519,6 +524,13 @@ void main() {
       expect(find.text('Pinned'), findsOneWidget);
 
       await tester.tap(find.byTooltip('取消置顶'));
+      await tester.pumpAndSettle();
+      expect(api.toggleCalls, 0);
+      await tester.tap(find.text('返回'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pinned'), findsOneWidget);
+
+      await _confirmUnpin(tester);
       await tester.pump();
 
       // The row leaves the list immediately, so no second tap can re-pin it
@@ -549,6 +561,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          activeUserIdProvider.overrideWith(
+            () => MutableState<String?>('@me:example.org'),
+          ),
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
         child: MaterialApp(
@@ -560,7 +575,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pinned'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('取消置顶'));
+    await _confirmUnpin(tester);
     await tester.pump();
     // Idempotent set semantics: the response is the post-write state, which
     // under a set request equals the requested value (false).
@@ -588,6 +603,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            activeUserIdProvider.overrideWith(
+              () => MutableState<String?>('@me:example.org'),
+            ),
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
           child: MaterialApp(
@@ -598,7 +616,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('取消置顶'));
+      await _confirmUnpin(tester);
       await tester.pump();
       expect(find.text('Pinned'), findsNothing);
 
@@ -628,6 +646,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          activeUserIdProvider.overrideWith(
+            () => MutableState<String?>('@me:example.org'),
+          ),
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
         child: MaterialApp(
@@ -638,7 +659,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('取消置顶'));
+    await _confirmUnpin(tester);
     await tester.pump();
     expect(find.text('Pinned'), findsNothing);
 
@@ -674,6 +695,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            activeUserIdProvider.overrideWith(
+              () => MutableState<String?>('@me:example.org'),
+            ),
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
           child: MaterialApp(
@@ -684,7 +708,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('取消置顶'));
+      await _confirmUnpin(tester);
       await tester.pump();
       api.pendingToggles.single.completeError(StateError('操作超时，请稍后查看最终状态。'));
       await tester.pumpAndSettle();
@@ -699,7 +723,7 @@ void main() {
       expect(button.onPressed, isNotNull);
 
       // Retry from the restored row: a second (idempotent) unpin write.
-      await tester.tap(find.byTooltip('取消置顶'));
+      await _confirmUnpin(tester);
       await tester.pump();
       expect(api.toggleCalls, 2);
       expect(find.text('Pinned'), findsNothing);
@@ -730,6 +754,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          activeUserIdProvider.overrideWith(
+            () => MutableState<String?>('@me:example.org'),
+          ),
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
         child: MaterialApp(
@@ -740,7 +767,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('取消置顶'));
+    await _confirmUnpin(tester);
     await tester.pump();
     api.pendingToggles.single.complete(false);
     await tester.pumpAndSettle();
@@ -770,6 +797,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            activeUserIdProvider.overrideWith(
+              () => MutableState<String?>('@me:example.org'),
+            ),
             ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
           ],
           child: MaterialApp(
@@ -780,7 +810,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('取消置顶'));
+      await _confirmUnpin(tester);
       await tester.pump();
       api.pendingToggles.single.complete(false);
       await tester.pumpAndSettle();
@@ -820,6 +850,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          activeUserIdProvider.overrideWith(
+            () => MutableState<String?>('@me:example.org'),
+          ),
           ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
         ],
         child: MaterialApp(
@@ -830,7 +863,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('取消置顶'));
+    await _confirmUnpin(tester);
     await tester.pump();
     api.pendingToggles.single.complete(false);
     await tester.pumpAndSettle();
@@ -851,4 +884,12 @@ void main() {
     );
     expect(button.onPressed, isNotNull);
   });
+}
+
+Future<void> _confirmUnpin(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('取消置顶'));
+  await tester.pumpAndSettle();
+  expect(find.text('取消置顶这条消息？'), findsOneWidget);
+  await tester.tap(find.text('取消置顶').last);
+  await tester.pump();
 }

@@ -235,6 +235,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   final Set<String> _insertionAnimationIds = {};
   final Set<String> _lateralInsertionAnimationIds = {};
   int _messageJumpGeneration = 0;
+  final _jumpHighlight = ValueNotifier<String?>(null);
   int _pinnedStackVisibleCount = 0;
 
   /// Measured height of the floating top bar (SafeArea + panel included).
@@ -771,6 +772,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _pickerResizeTimer?.cancel();
     _sentNoticeTimer?.cancel();
     _forwardNoticeTimer?.cancel();
+    _jumpHighlight.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -1078,6 +1080,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         curve: Curves.easeOutCubic,
       );
       if (!mounted || generation != _messageJumpGeneration) return;
+      _jumpHighlight.value = null;
+      _jumpHighlight.value = messageId;
       HapticFeedback.selectionClick();
       if (_focusedBrowsing) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1892,6 +1896,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           roomId: widget.roomId,
           messageIndex: messageIndex,
           messageAnchorKeys: _messageAnchorKeys,
+          jumpHighlight: _jumpHighlight,
           remoteToLocalFlightId: _remoteToLocalFlightId,
           insertionAnimationIds: _insertionAnimationIds,
           lateralInsertionAnimationIds: _lateralInsertionAnimationIds,
@@ -2382,6 +2387,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 right: context.isMaterial ? 0 : 12,
                 child: PinnedMessagesStack(
                   roomId: widget.roomId,
+                  onShowAll: () => unawaited(_openPinnedMessages()),
+                  jumpTarget: _jumpHighlight,
                   onMessageTap: (messageId) =>
                       unawaited(_jumpToMessage(messageId)),
                   onVisibleCountChanged: (count) {

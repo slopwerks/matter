@@ -47,43 +47,47 @@ class _NeuActionState extends State<NeuAction> {
         toggled: widget.toggled,
         child: MaterialPress(
           maxGrowth: 4,
-          builder: (states) => ListenableBuilder(
-            listenable: states,
-            builder: (context, _) {
-              final isFocused = states.value.contains(WidgetState.focused);
-              return Container(
-                foregroundDecoration: isFocused
-                    ? ShapeDecoration(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(widget.radius),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
+          builder: (states) {
+            // InkWell must see its disabled state before descendants listen.
+            states.update(WidgetState.disabled, !enabled);
+            return ListenableBuilder(
+              listenable: states,
+              builder: (context, _) {
+                final isFocused = states.value.contains(WidgetState.focused);
+                return Container(
+                  foregroundDecoration: isFocused
+                      ? ShapeDecoration(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(widget.radius),
+                            side: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
                           ),
+                        )
+                      : null,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      statesController: states,
+                      onTap: widget.onTap,
+                      onLongPress: enabled ? widget.onLongPress : null,
+                      onSecondaryTap: enabled ? widget.onSecondaryTap : null,
+                      onHighlightChanged: widget.onPressedChanged,
+                      borderRadius: BorderRadius.circular(widget.radius),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
                         ),
-                      )
-                    : null,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: InkWell(
-                    statesController: states,
-                    onTap: widget.onTap,
-                    onLongPress: enabled ? widget.onLongPress : null,
-                    onSecondaryTap: enabled ? widget.onSecondaryTap : null,
-                    onHighlightChanged: widget.onPressedChanged,
-                    borderRadius: BorderRadius.circular(widget.radius),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        minWidth: 48,
-                        minHeight: 48,
+                        child: widget.child,
                       ),
-                      child: widget.child,
                     ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            );
+          },
         ),
       );
     }
