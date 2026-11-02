@@ -89,10 +89,17 @@ Future<void> main() async {
     ),
   );
 
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  // Keep phones in portrait; tablets follow the user's system rotation setting.
+  final display = ui.PlatformDispatcher.instance.implicitView?.display;
+  final displayWidth = display == null
+      ? 0
+      : display.size.shortestSide / display.devicePixelRatio;
+  if (displayWidth < 600) {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
 
   runApp(
     ProviderScope(

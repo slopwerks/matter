@@ -241,6 +241,7 @@ field around the same editor. Composer control shapes live in
 `material_theme.dart` and are shared by both skins. Mouse targets are 32 dp;
 touch targets remain 48 dp. Wide tablet panes can expand the editor without
 switching to mouse density; narrow phone panes keep the compact touch layout.
+Tablets follow system rotation, while phones retain the portrait preference.
 
 ## Checking a change
 
