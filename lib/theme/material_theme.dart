@@ -86,6 +86,38 @@ ButtonStyle materialToolbarButtonStyle(ThemeData theme) => IconButton.styleFrom(
   padding: EdgeInsets.zero,
 );
 
+const composerControlShape = RoundedRectangleBorder(
+  borderRadius: BorderRadius.all(Radius.circular(4)),
+);
+
+// Shared flat composer controls: mouse targets are compact; touch stays roomy.
+ButtonStyle composerIconButtonStyle(ThemeData theme, {required bool compact}) =>
+    IconButton.styleFrom(
+      minimumSize: Size.square(compact ? 32 : 48),
+      padding: EdgeInsets.all(compact ? 6 : 12),
+      tapTargetSize: compact
+          ? MaterialTapTargetSize.shrinkWrap
+          : MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
+      shape: composerControlShape,
+    ).copyWith(
+      foregroundColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+
+ButtonStyle composerSendButtonStyle({required bool compact}) =>
+    FilledButton.styleFrom(
+      minimumSize: Size(64, compact ? 32 : 48),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      tapTargetSize: compact
+          ? MaterialTapTargetSize.shrinkWrap
+          : MaterialTapTargetSize.padded,
+      shape: composerControlShape,
+    );
+
 /// 页面标题字号。`buildFloatingAppBar` 和自绘标题行统一取它,不再各抄一个数字。
 const double materialPageTitleSize = 24;
 

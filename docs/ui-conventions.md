@@ -233,6 +233,15 @@ desktop; iOS keeps its native back gesture. `NeuColors` is also used as the
 compatibility palette by shared widgets, so it interpolates every colour during
 a theme transition instead of switching the whole palette halfway through.
 
+## Desktop and tablet composers
+
+Desktop chat input uses one flat surface with a top divider, an unframed editor,
+and compact rectangular controls. Do not nest glass, raised cards and a recessed
+field around the same editor. Composer control shapes live in
+`material_theme.dart` and are shared by both skins. Mouse targets are 32 dp;
+touch targets remain 48 dp. Wide tablet panes can expand the editor without
+switching to mouse density; narrow phone panes keep the compact touch layout.
+
 ## Checking a change
 
 Render the touched screen in both brightnesses at a phone width before and after.

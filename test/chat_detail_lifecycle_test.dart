@@ -2916,13 +2916,7 @@ void main() {
     );
     expect(hasOngoingSendFlight, isTrue);
 
-    final sendButton = tester.widget<NeuIconButton>(
-      find.descendant(
-        of: find.byKey(const ValueKey('send_only')),
-        matching: find.byType(NeuIconButton),
-      ),
-    );
-    sendButton.onPressed!();
+    await tester.tap(find.byKey(const ValueKey('send_only')));
     await tester.pump();
 
     expect(hasOngoingSendFlight, isFalse);

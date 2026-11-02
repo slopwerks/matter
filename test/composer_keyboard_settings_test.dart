@@ -13,6 +13,8 @@ import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:matter/widgets/glass.dart';
+
 import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
@@ -52,10 +54,18 @@ LogicalKeyboardKey? _modifier(ComposerEnterShortcut shortcut) =>
       ComposerEnterShortcut.altEnter => LogicalKeyboardKey.altLeft,
     };
 
-Widget _input(ProviderContainer container) => UncontrolledProviderScope(
+Widget _input(
+  ProviderContainer container, {
+  bool material = const bool.fromEnvironment('MATTER_TEST_MATERIAL'),
+  bool dark = true,
+  TargetPlatform platform = TargetPlatform.linux,
+}) => UncontrolledProviderScope(
   container: container,
   child: MaterialApp(
-    theme: neuTestTheme().copyWith(platform: TargetPlatform.linux),
+    theme: neuTestTheme(
+      material: material,
+      dark: dark,
+    ).copyWith(platform: platform),
     home: Scaffold(
       body: Align(
         alignment: Alignment.bottomCenter,
@@ -172,6 +182,140 @@ void main() {
         },
       );
     }
+  }
+
+  for (final material in [false, true]) {
+    for (final dark in [false, true]) {
+      for (final width in [360.0, 960.0]) {
+        testWidgets(
+          'desktop editor and quick settings retain draft ($material, $dark, $width)',
+          (tester) async {
+            await tester.binding.setSurfaceSize(Size(width, 600));
+            addTearDown(() => tester.binding.setSurfaceSize(null));
+            final container = ProviderContainer();
+            addTearDown(container.dispose);
+            await tester.pumpWidget(
+              _input(container, material: material, dark: dark),
+            );
+            await tester.pumpAndSettle();
+            final field = find.byType(TextField);
+            final emptyRect = tester.getRect(field);
+            final toolbarRect = tester.getRect(
+              find.byKey(const ValueKey('desktop-composer-toolbar')),
+            );
+            expect(emptyRect.height, greaterThanOrEqualTo(80));
+            expect(emptyRect.height, lessThan(96));
+            expect(find.byType(GlassPanel), findsNothing);
+            expect(find.byType(BackdropFilter), findsNothing);
+            expect(tester.getSize(find.byType(IconButton).first).height, 32);
+            expect(
+              tester.widget<TextField>(field).decoration!.border,
+              InputBorder.none,
+            );
+            expect(emptyRect.width, greaterThan(width - 90));
+            expect(toolbarRect.top, greaterThanOrEqualTo(emptyRect.bottom));
+            await tester.enterText(
+              field,
+              List.filled(12, 'long draft').join('\n'),
+            );
+            await tester.pumpAndSettle();
+            final expandedRect = tester.getRect(field);
+            expect(expandedRect.height, greaterThan(emptyRect.height));
+            expect(expandedRect.height, lessThanOrEqualTo(180));
+            await tester.enterText(field, 'first\ndraft');
+            await tester.tap(find.byTooltip('更多'));
+            await tester.pumpAndSettle();
+            expect(find.text('Markdown 编辑器'), findsOneWidget);
+            await tester.tap(find.text('发送与换行按键'));
+            await tester.pumpAndSettle();
+            expect(find.byType(AlertDialog), findsOneWidget);
+            await tester.tap(
+              find.byKey(const ValueKey('composer-key-action-enter')),
+            );
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('换行').last);
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('完成'));
+            await tester.pumpAndSettle();
+            final input = tester.widget<TextField>(field);
+            expect(input.controller!.text, 'first\ndraft');
+            expect(input.focusNode!.hasFocus, isTrue);
+            await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+            await tester.pump();
+            expect(input.controller!.text, 'first\ndraft\n');
+            expect(api.sendCalls, 0);
+            expect(tester.takeException(), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+            await tester.pumpAndSettle();
+          },
+        );
+      }
+    }
+  }
+
+  testWidgets('Android keeps the compact editor and attachment tools', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      _input(container, platform: TargetPlatform.android),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('desktop-composer-layout')), findsNothing);
+    expect(tester.getSize(find.byType(TextField)).height, lessThan(96));
+    expect(find.byTooltip('更多'), findsNothing);
+    await tester.longPress(find.byIcon(Icons.add_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Markdown 编辑器'), findsOneWidget);
+    expect(find.text('发送与换行按键'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final material in [false, true]) {
+    testWidgets(
+      'tablet rotates into a wide touch editor without losing draft ($material)',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(600, 960);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          _input(
+            container,
+            material: material,
+            platform: TargetPlatform.android,
+          ),
+        );
+        await tester.enterText(find.byType(TextField), 'tablet draft');
+        final controller = tester
+            .widget<TextField>(find.byType(TextField))
+            .controller;
+        tester.view.physicalSize = const Size(960, 600);
+        await tester.pumpAndSettle();
+        final input = tester.widget<TextField>(find.byType(TextField));
+        expect(input.controller, same(controller));
+        expect(input.controller!.text, 'tablet draft');
+        expect(input.focusNode!.hasFocus, isTrue);
+        expect(tester.getSize(find.byType(IconButton).first).height, 48);
+        expect(
+          tester.getSize(find.byType(TextField)).height,
+          greaterThanOrEqualTo(96),
+        );
+        expect(find.byType(GlassPanel), findsNothing);
+        await tester.tap(find.byTooltip('更多'));
+        await tester.pumpAndSettle();
+        expect(find.text('Markdown 编辑器'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
   }
 
   for (final shortcut in ComposerEnterShortcut.values) {

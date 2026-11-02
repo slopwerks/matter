@@ -11,34 +11,39 @@ import 'package:matter/widgets/glass.dart';
 import 'helpers/neu_test_theme.dart';
 
 void main() {
-  testWidgets('picker button reopens the previously selected sticker tab', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          theme: neuTestTheme(),
-          home: const _MessageInputHarness(),
+  testWidgets(
+    'picker button reopens the previously selected sticker tab',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: const _MessageInputHarness(),
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    await tester.tap(find.text('贴纸'));
-    await tester.pumpAndSettle();
-    expect(find.byType(StickerPackPanel), findsOneWidget);
+      await tester.tap(find.text('贴纸'));
+      await tester.pumpAndSettle();
+      expect(find.byType(StickerPackPanel), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.keyboard_rounded));
-    await tester.pump();
-    expect(find.byIcon(Icons.interests_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.sticky_note_2_rounded), findsNothing);
+      await tester.tap(find.byIcon(Icons.keyboard_rounded));
+      await tester.pump();
+      expect(find.byIcon(Icons.interests_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.sticky_note_2_rounded), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.interests_rounded));
-    await tester.pump();
-    await tester.pump();
+      await tester.tap(find.byIcon(Icons.interests_rounded));
+      await tester.pump();
+      await tester.pump();
 
-    expect(find.byType(StickerPackPanel), findsOneWidget);
-  });
+      expect(find.byType(StickerPackPanel), findsOneWidget);
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.linux,
+    }),
+  );
 
   final inputWidths = ValueVariant<double>({320, 400});
   testWidgets('input respects safe area and appearance effects', (
@@ -115,34 +120,39 @@ void main() {
     }
   }, variant: inputWidths);
 
-  testWidgets('plus toggles an inline attachment panel at picker height', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          theme: neuTestTheme(),
-          home: const _MessageInputHarness(
-            initialPanelMode: InputPanelMode.keyboard,
+  testWidgets(
+    'plus toggles an inline attachment panel at picker height',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: const _MessageInputHarness(
+              initialPanelMode: InputPanelMode.keyboard,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    final plus = find.byIcon(Icons.add_rounded);
-    await tester.tap(plus);
-    await tester.pumpAndSettle();
+      final plus = find.byIcon(Icons.add_rounded);
+      await tester.tap(plus);
+      await tester.pumpAndSettle();
 
-    expect(find.byType(AttachmentPicker), findsOneWidget);
-    expect(tester.getSize(find.byType(AttachmentPicker)).height, 300);
-    expect(plus, findsOneWidget);
+      expect(find.byType(AttachmentPicker), findsOneWidget);
+      expect(tester.getSize(find.byType(AttachmentPicker)).height, 300);
+      expect(plus, findsOneWidget);
 
-    await tester.tap(plus);
-    await tester.pumpAndSettle();
+      await tester.tap(plus);
+      await tester.pumpAndSettle();
 
-    expect(find.byType(AttachmentPicker), findsNothing);
-  });
+      expect(find.byType(AttachmentPicker), findsNothing);
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.linux,
+    }),
+  );
 
   testWidgets('attachment panel stays mounted while keyboard replaces it', (
     tester,

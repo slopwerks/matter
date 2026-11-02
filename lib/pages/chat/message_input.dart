@@ -14,12 +14,15 @@ import '../../providers/composer_keyboard_settings_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
+import '../settings/composer_keyboard_settings_page.dart';
 import 'attachment_picker.dart';
+import 'composer_layout.dart';
 import 'composer_autocomplete.dart';
 import 'composer_picker_panel.dart';
 import 'latest_message_control.dart';
@@ -676,18 +679,44 @@ class MessageInputState extends ConsumerState<MessageInput> {
         });
   }
 
+  bool get _isDesktop => switch (Theme.of(context).platform) {
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => true,
+    _ => false,
+  };
+
+  bool get _expandedComposer =>
+      _isDesktop || MediaQuery.sizeOf(context).width >= 600;
+
+  Widget _composerToolButton({
+    required IconData icon,
+    String? tooltip,
+    bool selected = false,
+    VoidCallback? onPressed,
+  }) => _expandedComposer
+      ? ComposerToolButton(
+          compact: _isDesktop,
+          icon: icon,
+          tooltip: tooltip,
+          selected: selected,
+          onPressed: onPressed,
+        )
+      : NeuIconButton(
+          icon: icon,
+          tooltip: tooltip,
+          size: 44,
+          selected: selected,
+          onPressed: onPressed,
+        );
+
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (_isComposingText) return KeyEventResult.ignored;
     // Configured newlines bypass autocomplete and are handled here to avoid
     // either losing the newline or inserting it twice through native input.
     if (_isEnterKey(event)) {
       final keyboard = HardwareKeyboard.instance;
-      final desktop = switch (Theme.of(context).platform) {
-        TargetPlatform.linux ||
-        TargetPlatform.macOS ||
-        TargetPlatform.windows => true,
-        _ => false,
-      };
+      final desktop = _isDesktop;
       final shortcut = keyboard.isShiftPressed
           ? ComposerEnterShortcut.shiftEnter
           : keyboard.isAltPressed
@@ -961,8 +990,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
   Future<void> _sendMessage() => _sendMessageText(_controller.text);
 
-  /// Long-press on the attachment button: a small menu of extra composer
-  /// tools that don't deserve a permanent spot in the input row.
+  /// Click More on desktop, or long-press the attachment button on mobile.
   Future<void> _showComposerToolsMenu(BuildContext buttonContext) async {
     final buttonBox = buttonContext.findRenderObject();
     final overlay = Overlay.of(context).context.findRenderObject();
@@ -973,12 +1001,28 @@ class MessageInputState extends ConsumerState<MessageInput> {
       return;
     }
     final action = await showMenu<String>(
+      shape: _isDesktop ? composerControlShape : null,
       context: context,
       position: RelativeRect.fromRect(
         buttonBox.localToGlobal(Offset.zero) & buttonBox.size,
         Offset.zero & overlay.size,
       ),
       items: [
+        if (_isDesktop)
+          PopupMenuItem<String>(
+            value: 'keyboard',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.keyboard_rounded,
+                  color: context.neu.textSecondary,
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                const Text('发送与换行按键'),
+              ],
+            ),
+          ),
         PopupMenuItem<String>(
           value: 'markdown',
           child: Row(
@@ -995,6 +1039,28 @@ class MessageInputState extends ConsumerState<MessageInput> {
         ),
       ],
     );
+    if (action == 'keyboard' && mounted) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: composerControlShape,
+          title: const Text('发送与换行按键'),
+          content: const SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: ComposerKeyboardSettingsOptions(grouped: false),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('完成'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) _showKeyboard();
+    }
     if (action == 'markdown' && mounted) {
       _openMarkdownComposer();
     }
@@ -1643,6 +1709,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final desktop = _isDesktop;
+    final expanded = _expandedComposer;
     final replyTo = ref.watch(replyingToProvider(_draftKey));
     final editing = ref.watch(editingMessageProvider(_draftKey));
     // Do not expose a stale new-message draft as editable content while the
@@ -1745,183 +1813,181 @@ class MessageInputState extends ConsumerState<MessageInput> {
                   viewportItemCount: _autocompleteViewportCount(context),
                 ),
               ),
-            Padding(
-              padding: context.isMaterial
-                  ? const EdgeInsets.all(4)
-                  : const EdgeInsets.fromLTRB(10, 4, 10, 12),
-              child: GlassPanel(
-                key: const ValueKey('message-input-surface'),
-                radius: NeuRadius.nav,
-                opacity: context.isMaterial ? 0 : 1,
-                blur: 18,
-                padding: EdgeInsets.symmetric(
-                  horizontal: context.isMaterial ? 0 : 6,
-                  vertical: 4,
+            ComposerSurface(
+              expanded: expanded,
+              compact: desktop,
+              child: ComposerLayout(
+                desktop: expanded,
+                emojiButton: _composerToolButton(
+                  icon: widget.panelMode == InputPanelMode.emoji
+                      ? Icons.keyboard_rounded
+                      : (_pickerTab == ComposerPickerTab.sticker
+                            ? Icons.interests_rounded
+                            : Icons.sentiment_satisfied_alt_rounded),
+                  selected: widget.panelMode == InputPanelMode.emoji,
+                  onPressed: sendBusy
+                      ? null
+                      : widget.panelMode == InputPanelMode.emoji
+                      ? _showKeyboard
+                      : _togglePicker,
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    NeuIconButton(
-                      icon: widget.panelMode == InputPanelMode.emoji
-                          ? Icons.keyboard_rounded
-                          : (_pickerTab == ComposerPickerTab.sticker
-                                ? Icons.interests_rounded
-                                : Icons.sentiment_satisfied_alt_rounded),
-                      size: 44,
-                      selected: widget.panelMode == InputPanelMode.emoji,
-                      onPressed: sendBusy
-                          ? null
-                          : widget.panelMode == InputPanelMode.emoji
-                          ? _showKeyboard
-                          : _togglePicker,
-                    ),
-                    SizedBox(width: context.isMaterial ? 2 : 6),
-                    Expanded(
-                      child: Container(
-                        key: _textFieldKey,
-                        constraints: const BoxConstraints(
-                          minHeight: 44,
-                          maxHeight: 120,
+                editor: Container(
+                  key: _textFieldKey,
+                  constraints: BoxConstraints(
+                    minHeight: expanded ? (desktop ? 80 : 96) : 44,
+                    maxHeight: expanded
+                        ? (MediaQuery.sizeOf(context).height * .3).clamp(
+                            desktop ? 80.0 : 96.0,
+                            240.0,
+                          )
+                        : 120,
+                  ),
+                  decoration: expanded || context.isMaterial
+                      ? null
+                      : NeuDecoration(
+                          colors: colors,
+                          superellipseEnabled: ChatVisualSettingsScope.of(
+                            context,
+                          ).superellipseBorderEnabled,
+                          depth: NeuDepth.pressed,
+                          radius: NeuRadius.content,
+                          intensity: .85,
+                          borderColor: _focusNode.hasFocus
+                              ? colors.accent
+                              : null,
                         ),
-                        decoration: context.isMaterial
-                            ? null
-                            : NeuDecoration(
-                                colors: colors,
-                                superellipseEnabled: ChatVisualSettingsScope.of(
-                                  context,
-                                ).superellipseBorderEnabled,
-                                depth: NeuDepth.pressed,
-                                radius: NeuRadius.content,
-                                intensity: .85,
-                                borderColor: _focusNode.hasFocus
-                                    ? colors.accent
-                                    : null,
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    readOnly: editingSourceLoading,
+                    contextMenuBuilder: markdownSelectionContextMenuBuilder,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    cursorColor: colors.accent,
+                    decoration: InputDecoration(
+                      hintText: '消息',
+                      hintStyle: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(color: colors.textTertiary),
+                      filled: expanded ? false : null,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: expanded ? 8 : 14,
+                        vertical: expanded ? 6 : 11,
+                      ),
+                      border: context.isMaterial && !expanded
+                          ? const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(28),
                               ),
-                        child: TextField(
-                          controller: _controller,
-                          focusNode: _focusNode,
-                          readOnly: editingSourceLoading,
-                          contextMenuBuilder:
-                              markdownSelectionContextMenuBuilder,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          cursorColor: colors.accent,
-                          decoration: InputDecoration(
-                            hintText: '消息',
-                            hintStyle: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(color: colors.textTertiary),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 11,
-                            ),
-                            border: context.isMaterial
-                                ? const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(28),
-                                    ),
-                                    borderSide: BorderSide.none,
-                                  )
-                                : InputBorder.none,
-                            enabledBorder: context.isMaterial
-                                ? const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(28),
-                                    ),
-                                    borderSide: BorderSide.none,
-                                  )
-                                : InputBorder.none,
-                            focusedBorder: context.isMaterial
-                                ? const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(28),
-                                    ),
-                                    borderSide: BorderSide.none,
-                                  )
-                                : InputBorder.none,
-                            isDense: true,
-                          ),
-                          maxLines: null,
-                          textInputAction: TextInputAction.newline,
-                          keyboardType: TextInputType.multiline,
-                          onTap: () {
-                            widget.onPanelModeChanged(InputPanelMode.keyboard);
-                          },
-                        ),
+                              borderSide: BorderSide.none,
+                            )
+                          : InputBorder.none,
+                      enabledBorder: context.isMaterial && !expanded
+                          ? const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(28),
+                              ),
+                              borderSide: BorderSide.none,
+                            )
+                          : InputBorder.none,
+                      focusedBorder: context.isMaterial && !expanded
+                          ? const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(28),
+                              ),
+                              borderSide: BorderSide.none,
+                            )
+                          : InputBorder.none,
+                      isDense: true,
+                    ),
+                    minLines: expanded ? 3 : null,
+                    maxLines: null,
+                    textInputAction: TextInputAction.newline,
+                    keyboardType: TextInputType.multiline,
+                    onTap: () {
+                      widget.onPanelModeChanged(InputPanelMode.keyboard);
+                    },
+                  ),
+                ),
+                attachmentButton: Builder(
+                  builder: (buttonContext) => Tooltip(
+                    message: '附件',
+                    // Desktop hover still shows the tooltip; its
+                    // long-press trigger belongs to the outer
+                    // GestureDetector so it can open the tools menu
+                    // instead.
+                    triggerMode: TooltipTriggerMode.manual,
+                    child: GestureDetector(
+                      onLongPress: sendBusy
+                          ? null
+                          : () => _showComposerToolsMenu(buttonContext),
+                      child: _composerToolButton(
+                        icon: Icons.add_rounded,
+                        selected: widget.panelMode == InputPanelMode.attachment,
+                        onPressed: sendBusy ? null : _toggleAttachmentPicker,
                       ),
                     ),
-                    SizedBox(width: context.isMaterial ? 2 : 6),
-                    SizedBox(
-                      width: context.isMaterial ? 92 : 94,
-                      height: 44,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Builder(
-                            builder: (buttonContext) => Tooltip(
-                              message: '附件',
-                              // Desktop hover still shows the tooltip; its
-                              // long-press trigger belongs to the outer
-                              // GestureDetector so it can open the tools menu
-                              // instead.
-                              triggerMode: TooltipTriggerMode.manual,
-                              child: GestureDetector(
-                                onLongPress: sendBusy
-                                    ? null
-                                    : () =>
-                                          _showComposerToolsMenu(buttonContext),
+                  ),
+                ),
+                moreButton: Builder(
+                  builder: (buttonContext) => _composerToolButton(
+                    tooltip: '更多',
+                    icon: Icons.more_horiz_rounded,
+                    onPressed: sendBusy
+                        ? null
+                        : () => _showComposerToolsMenu(buttonContext),
+                  ),
+                ),
+                sendButton: expanded
+                    ? FilledButton.icon(
+                        key: const ValueKey('send_only'),
+                        style: composerSendButtonStyle(compact: desktop),
+                        icon: const Icon(Icons.send_rounded),
+                        onPressed: sendBusy || !_hasText ? null : _sendMessage,
+                        label: sendBusy
+                            ? SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  color: colors.onAccent,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('发送'),
+                      )
+                    : AnimatedSwitcher(
+                        duration: _toolbarAnimationDuration,
+                        switchInCurve: _toolbarAnimationCurve,
+                        switchOutCurve: Curves.easeInCubic,
+                        child: _hasText
+                            ? SizedBox.square(
+                                key: const ValueKey('send_only'),
+                                dimension: 44,
+                                child: sendBusy
+                                    ? Center(
+                                        child: SizedBox.square(
+                                          dimension: 20,
+                                          child: CircularProgressIndicator(
+                                            color: colors.accent,
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      )
+                                    : NeuIconButton(
+                                        icon: Icons.send_rounded,
+                                        size: 44,
+                                        accent: true,
+                                        onPressed: _sendMessage,
+                                      ),
+                              )
+                            : const SizedBox.square(
+                                key: ValueKey('voice_only'),
+                                dimension: 44,
                                 child: NeuIconButton(
-                                  icon: Icons.add_rounded,
+                                  tooltip: '语音消息暂未提供',
+                                  icon: Icons.mic_none_rounded,
                                   size: 44,
-                                  selected:
-                                      widget.panelMode ==
-                                      InputPanelMode.attachment,
-                                  onPressed: sendBusy
-                                      ? null
-                                      : _toggleAttachmentPicker,
+                                  onPressed: null,
                                 ),
                               ),
-                            ),
-                          ),
-                          AnimatedSwitcher(
-                            duration: _toolbarAnimationDuration,
-                            switchInCurve: _toolbarAnimationCurve,
-                            switchOutCurve: Curves.easeInCubic,
-                            child: _hasText
-                                ? SizedBox.square(
-                                    key: const ValueKey('send_only'),
-                                    dimension: 44,
-                                    child: sendBusy
-                                        ? Center(
-                                            child: SizedBox.square(
-                                              dimension: 20,
-                                              child: CircularProgressIndicator(
-                                                color: colors.accent,
-                                                strokeWidth: 2,
-                                              ),
-                                            ),
-                                          )
-                                        : NeuIconButton(
-                                            icon: Icons.send_rounded,
-                                            size: 44,
-                                            accent: true,
-                                            onPressed: _sendMessage,
-                                          ),
-                                  )
-                                : const SizedBox.square(
-                                    key: ValueKey('voice_only'),
-                                    dimension: 44,
-                                    child: NeuIconButton(
-                                      tooltip: '语音消息暂未提供',
-                                      icon: Icons.mic_none_rounded,
-                                      size: 44,
-                                      onPressed: null,
-                                    ),
-                                  ),
-                          ),
-                        ],
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
             AnimatedContainer(
@@ -1999,6 +2065,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
       ),
     );
 
+    if (expanded) return input;
     if (context.isMaterial) {
       return ColoredBox(color: colors.glassFill, child: input);
     }

@@ -316,7 +316,13 @@ void main() {
 
     expect(find.widgetWithText(TextField, '选项 2'), findsOneWidget);
     expect(find.byTooltip('删除选项'), findsNothing);
-    expect(find.text('发送'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AttachmentPicker),
+        matching: find.text('发送'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.enterText(find.widgetWithText(TextField, '问题'), '午饭吃什么？');
     await tester.enterText(find.widgetWithText(TextField, '选项 1'), '面条');
