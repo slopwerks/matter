@@ -120,39 +120,34 @@ void main() {
     }
   }, variant: inputWidths);
 
-  testWidgets(
-    'plus toggles an inline attachment panel at picker height',
-    (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            theme: neuTestTheme(),
-            home: const _MessageInputHarness(
-              initialPanelMode: InputPanelMode.keyboard,
-            ),
+  testWidgets('plus toggles an inline attachment panel at picker height', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const _MessageInputHarness(
+            initialPanelMode: InputPanelMode.keyboard,
           ),
         ),
-      );
-      await tester.pump();
+      ),
+    );
+    await tester.pump();
 
-      final plus = find.byIcon(Icons.add_rounded);
-      await tester.tap(plus);
-      await tester.pumpAndSettle();
+    final plus = find.byIcon(Icons.add_rounded);
+    await tester.tap(plus);
+    await tester.pumpAndSettle();
 
-      expect(find.byType(AttachmentPicker), findsOneWidget);
-      expect(tester.getSize(find.byType(AttachmentPicker)).height, 300);
-      expect(plus, findsOneWidget);
+    expect(find.byType(AttachmentPicker), findsOneWidget);
+    expect(tester.getSize(find.byType(AttachmentPicker)).height, 300);
+    expect(plus, findsOneWidget);
 
-      await tester.tap(plus);
-      await tester.pumpAndSettle();
+    await tester.tap(plus);
+    await tester.pumpAndSettle();
 
-      expect(find.byType(AttachmentPicker), findsNothing);
-    },
-    variant: TargetPlatformVariant({
-      TargetPlatform.android,
-      TargetPlatform.linux,
-    }),
-  );
+    expect(find.byType(AttachmentPicker), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
   testWidgets('attachment panel stays mounted while keyboard replaces it', (
     tester,

@@ -89,6 +89,7 @@ class ComposerLayout extends StatelessWidget {
     required this.attachmentButton,
     required this.moreButton,
     required this.sendButton,
+    this.attachments,
   });
 
   final bool desktop;
@@ -97,6 +98,7 @@ class ComposerLayout extends StatelessWidget {
   final Widget attachmentButton;
   final Widget moreButton;
   final Widget sendButton;
+  final Widget? attachments;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +108,7 @@ class ComposerLayout extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          ?attachments,
           editor,
           const SizedBox(height: 4),
           Row(

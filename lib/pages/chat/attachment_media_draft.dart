@@ -141,6 +141,11 @@ class AttachmentMediaDraft extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Long-lived composer drafts need not retain bytes for removed images.
+  void discardUnselected() {
+    _items.removeWhere((_, item) => !selected.contains(item));
+  }
+
   @override
   void dispose() {
     description.dispose();

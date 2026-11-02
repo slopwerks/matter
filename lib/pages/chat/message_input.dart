@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../../features/markdown/markdown_source_store.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/composer_keyboard_settings_provider.dart';
+import '../../providers/composer_attachment_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
@@ -22,6 +24,7 @@ import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
 import '../settings/composer_keyboard_settings_page.dart';
 import 'attachment_picker.dart';
+import 'desktop_clipboard.dart';
 import 'composer_layout.dart';
 import 'composer_autocomplete.dart';
 import 'composer_picker_panel.dart';
@@ -466,9 +469,13 @@ class MessageInputState extends ConsumerState<MessageInput> {
   final _focusNode = FocusNode();
   final _autocompleteScrollController = ScrollController();
   final _textFieldKey = GlobalKey();
+  final _pendingImagesKey = GlobalKey<AttachmentPickerState>();
   late final RoomAccountKey _draftKey;
   bool _hasText = false;
   bool _isSending = false;
+  bool _readingClipboard = false;
+  bool _pickingImages = false;
+  bool _externalAttachmentsOpen = false;
   bool _wasComposingText = false;
   ComposerAutocompleteMatch? _autocompleteMatch;
   int _autocompleteIndex = 0;
@@ -710,8 +717,118 @@ class MessageInputState extends ConsumerState<MessageInput> {
           onPressed: onPressed,
         );
 
+  Future<void> _pasteClipboard(SelectionChangedCause cause) async {
+    if (_readingClipboard ||
+        _externalAttachmentsOpen ||
+        _editingSourceLoadingId != null) {
+      return;
+    }
+    _readingClipboard = true;
+    try {
+      final image = await readClipboardImage();
+      if (!mounted ||
+          (ref.read(activeUserIdProvider) ?? '') != _draftKey.userId) {
+        return;
+      }
+      if (image != null) {
+        if (_isDesktop) {
+          unawaited(previewExternalFiles([image]));
+        } else {
+          await previewExternalFiles([image]);
+        }
+      } else {
+        final editable = _focusNode.context
+            ?.findAncestorStateOfType<EditableTextState>();
+        await editable?.pasteText(cause);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('粘贴失败: $error')));
+      }
+    } finally {
+      _readingClipboard = false;
+    }
+  }
+
+  Future<void> previewExternalFiles(List<XFile> files) async {
+    if (_externalAttachmentsOpen || files.isEmpty || !mounted) return;
+    if ((ref.read(activeUserIdProvider) ?? '') != _draftKey.userId ||
+        _draftKey.userId.isEmpty) {
+      return;
+    }
+    if (_isDesktop &&
+        files.every(
+          (file) =>
+              classifyAttachmentMime(
+                resolveAttachmentMime(file.name, file.mimeType),
+              ) ==
+              AttachmentMediaKind.image,
+        )) {
+      final pending = ref.read(composerAttachmentDraftProvider(_draftKey));
+      if (pending.isSending) return;
+      final released = pending.stage(files);
+      _showKeyboard();
+      await released;
+      return;
+    }
+    final container = ProviderScope.containerOf(context, listen: false);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final roomId = widget.roomId;
+    _focusNode.unfocus();
+    widget.onPanelModeChanged(InputPanelMode.none);
+    setState(() => _externalAttachmentsOpen = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => Dialog(
+          shape: composerControlShape,
+          child: ScaffoldMessenger(
+            child: SizedBox(
+              width: 720,
+              height: MediaQuery.sizeOf(dialogContext).height * .8,
+              child: AttachmentPicker(
+                initialFiles: files,
+                roomId: roomId,
+                accountUserId: _draftKey.userId,
+                height: 400,
+                maxHeight: 400,
+                totalMembers: widget.totalMembers,
+                onRefresh: (_) => refreshMessagesContainer(container, roomId),
+                resolveSendPresentation: widget.resolveSendPresentation,
+                onMessageQueued: widget.onMessageQueued,
+                onMessageSent: widget.onMessageSent,
+                onHeightChanged: (_) {},
+                onClose: () => navigator.pop(),
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _externalAttachmentsOpen = false);
+        _showKeyboard();
+      }
+    }
+  }
+
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (_isComposingText) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    final pasteModifier = Theme.of(context).platform == TargetPlatform.macOS
+        ? keyboard.isMetaPressed
+        : keyboard.isControlPressed;
+    if (_isDesktop &&
+        event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyV &&
+        pasteModifier &&
+        !keyboard.isShiftPressed &&
+        !keyboard.isAltPressed) {
+      unawaited(_pasteClipboard(SelectionChangedCause.keyboard));
+      return KeyEventResult.handled;
+    }
     // Configured newlines bypass autocomplete and are handled here to avoid
     // either losing the newline or inserting it twice through native input.
     if (_isEnterKey(event)) {
@@ -988,7 +1105,42 @@ class MessageInputState extends ConsumerState<MessageInput> {
     _showKeyboard();
   }
 
-  Future<void> _sendMessage() => _sendMessageText(_controller.text);
+  Future<void> _sendMessage() async {
+    if (_isDesktop &&
+        ref.read(editingMessageProvider(_draftKey)) == null &&
+        ref
+            .read(composerAttachmentDraftProvider(_draftKey))
+            .selected
+            .isNotEmpty) {
+      await _sendPendingImages();
+      return;
+    }
+    await _sendMessageText(_controller.text);
+  }
+
+  Future<bool> _sendPendingImages() async {
+    final pending = ref.read(composerAttachmentDraftProvider(_draftKey));
+    if (pending.isSending || _isSending) return false;
+    final sender = _pendingImagesKey.currentState;
+    if (sender == null) return false;
+    final text = _controller.text;
+    final draftState = ref.read(messageDraftProvider(_draftKey).notifier);
+    try {
+      final sent = await sender.sendSelectedMedia(description: text);
+      if (sent && draftState.mounted && draftState.value == text) {
+        draftState.value = '';
+      }
+      if (sent && mounted && _controller.text == text) _controller.clear();
+      if (mounted) _showKeyboard();
+      return sent;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('发送失败: $error')));
+      }
+      return false;
+    }
+  }
 
   /// Click More on desktop, or long-press the attachment button on mobile.
   Future<void> _showComposerToolsMenu(BuildContext buttonContext) async {
@@ -1008,6 +1160,17 @@ class MessageInputState extends ConsumerState<MessageInput> {
         Offset.zero & overlay.size,
       ),
       items: [
+        if (_isDesktop)
+          const PopupMenuItem<String>(
+            value: 'attachments',
+            child: Row(
+              children: [
+                Icon(Icons.attach_file_rounded, size: 22),
+                SizedBox(width: 12),
+                Text('其他附件'),
+              ],
+            ),
+          ),
         if (_isDesktop)
           PopupMenuItem<String>(
             value: 'keyboard',
@@ -1039,6 +1202,9 @@ class MessageInputState extends ConsumerState<MessageInput> {
         ),
       ],
     );
+    if (action == 'attachments' && mounted) {
+      _toggleAttachmentPanel();
+    }
     if (action == 'keyboard' && mounted) {
       await showDialog<void>(
         context: context,
@@ -1457,6 +1623,52 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   void _toggleAttachmentPicker() {
+    if (_isDesktop) {
+      unawaited(_pickDesktopImages());
+      return;
+    }
+    _toggleAttachmentPanel();
+  }
+
+  Future<void> _pickDesktopImages() async {
+    if (_pickingImages) return;
+    _pickingImages = true;
+    try {
+      final files = await openFiles(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: '图片',
+            extensions: [
+              'png',
+              'jpg',
+              'jpeg',
+              'gif',
+              'webp',
+              'bmp',
+              'heic',
+              'heif',
+              'avif',
+            ],
+            mimeTypes: ['image/*'],
+            uniformTypeIdentifiers: ['public.image'],
+          ),
+        ],
+      );
+      if (mounted && files.isNotEmpty) {
+        unawaited(previewExternalFiles(files));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('选择图片失败: $error')));
+      }
+    } finally {
+      _pickingImages = false;
+      if (mounted) _showKeyboard();
+    }
+  }
+
+  void _toggleAttachmentPanel() {
     if (widget.panelMode == InputPanelMode.attachment) {
       widget.onPanelModeChanged(InputPanelMode.none);
       return;
@@ -1730,7 +1942,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final editingSendInFlight = editing != null && editingSendId == editing.id;
     final editingSourceLoading =
         editing != null && _editingSourceLoadingId == editing.id;
-    final sendBusy = _isSending || editingSendInFlight || editingSourceLoading;
+    final pendingImages = desktop
+        ? ref.watch(composerAttachmentDraftProvider(_draftKey))
+        : null;
+    final hasImages = pendingImages?.selected.isNotEmpty == true;
+    final sendBusy =
+        _isSending ||
+        editingSendInFlight ||
+        editingSourceLoading ||
+        pendingImages?.isSending == true;
     final autocompleteMatch = _focusNode.hasFocus && !_isComposingText
         ? _autocompleteMatch
         : null;
@@ -1818,6 +2038,29 @@ class MessageInputState extends ConsumerState<MessageInput> {
               compact: desktop,
               child: ComposerLayout(
                 desktop: expanded,
+                attachments: desktop && (hasImages || pendingImages!.isSending)
+                    ? AttachmentPicker(
+                        key: _pendingImagesKey,
+                        inline: true,
+                        draft: pendingImages,
+                        composerController: _controller,
+                        onInlineSend: _sendPendingImages,
+                        roomId: widget.roomId,
+                        accountUserId: _draftKey.userId,
+                        height: 0,
+                        maxHeight: 0,
+                        totalMembers: widget.totalMembers,
+                        onRefresh: (_) => refreshMessagesContainer(
+                          ProviderScope.containerOf(context, listen: false),
+                          widget.roomId,
+                        ),
+                        resolveSendPresentation: widget.resolveSendPresentation,
+                        onMessageQueued: widget.onMessageQueued,
+                        onMessageSent: widget.onMessageSent,
+                        onHeightChanged: (_) {},
+                        onClose: _showKeyboard,
+                      )
+                    : null,
                 emojiButton: _composerToolButton(
                   icon: widget.panelMode == InputPanelMode.emoji
                       ? Icons.keyboard_rounded
@@ -1860,7 +2103,21 @@ class MessageInputState extends ConsumerState<MessageInput> {
                     controller: _controller,
                     focusNode: _focusNode,
                     readOnly: editingSourceLoading,
-                    contextMenuBuilder: markdownSelectionContextMenuBuilder,
+                    contextMenuBuilder: (context, editable) =>
+                        markdownSelectionContextMenuBuilder(
+                          context,
+                          editable,
+                          onPaste: _isDesktop
+                              ? () {
+                                  ContextMenuController.removeAny();
+                                  unawaited(
+                                    _pasteClipboard(
+                                      SelectionChangedCause.toolbar,
+                                    ),
+                                  );
+                                }
+                              : null,
+                        ),
                     style: Theme.of(context).textTheme.bodyLarge,
                     cursorColor: colors.accent,
                     decoration: InputDecoration(
@@ -1909,7 +2166,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 ),
                 attachmentButton: Builder(
                   builder: (buttonContext) => Tooltip(
-                    message: '附件',
+                    message: desktop ? '选择图片' : '附件',
                     // Desktop hover still shows the tooltip; its
                     // long-press trigger belongs to the outer
                     // GestureDetector so it can open the tools menu
@@ -1920,7 +2177,9 @@ class MessageInputState extends ConsumerState<MessageInput> {
                           ? null
                           : () => _showComposerToolsMenu(buttonContext),
                       child: _composerToolButton(
-                        icon: Icons.add_rounded,
+                        icon: desktop
+                            ? Icons.image_outlined
+                            : Icons.add_rounded,
                         selected: widget.panelMode == InputPanelMode.attachment,
                         onPressed: sendBusy ? null : _toggleAttachmentPicker,
                       ),
@@ -1941,7 +2200,9 @@ class MessageInputState extends ConsumerState<MessageInput> {
                         key: const ValueKey('send_only'),
                         style: composerSendButtonStyle(compact: desktop),
                         icon: const Icon(Icons.send_rounded),
-                        onPressed: sendBusy || !_hasText ? null : _sendMessage,
+                        onPressed: sendBusy || (!_hasText && !hasImages)
+                            ? null
+                            : _sendMessage,
                         label: sendBusy
                             ? SizedBox.square(
                                 dimension: 20,

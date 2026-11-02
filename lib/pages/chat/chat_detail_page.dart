@@ -29,6 +29,7 @@ import '../../widgets/sheets.dart';
 import 'attachment_caption_composer.dart' show attachmentCaptionClearance;
 import 'chat_timestamp.dart';
 import 'composer_picker_panel.dart';
+import 'desktop_file_drop.dart';
 import 'date_separator.dart';
 import 'floating_date_header.dart';
 import 'forward_message_sheet.dart';
@@ -2507,6 +2508,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           onMessageSent: _handleMessageSent,
                         ),
                     ],
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DesktopFileDrop(
+                    enabled:
+                        _subscriptionsAccount == null ||
+                        activeUserId == _subscriptionsAccount,
+                    onFiles: (files) async => _messageInputKey.currentState
+                        ?.previewExternalFiles(files),
+                    child: const SizedBox.expand(),
                   ),
                 ),
               ),

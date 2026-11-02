@@ -24,6 +24,9 @@ import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
 import '../chat/latest_message_control.dart';
+import 'attachment_image_resize.dart';
+import 'external_attachment_preview.dart';
+import 'composer_attachment_strip.dart';
 import 'attachment_caption_composer.dart';
 import 'blurhash_codec.dart';
 import 'attachment_image_preview_page.dart';
@@ -83,6 +86,11 @@ class AttachmentPicker extends StatefulWidget {
   final int totalMembers;
   final ValueChanged<double> onHeightChanged;
   final VoidCallback onClose;
+  final List<XFile>? initialFiles;
+  final AttachmentMediaDraft? draft;
+  final bool inline;
+  final TextEditingController? composerController;
+  final Future<bool> Function()? onInlineSend;
 
   const AttachmentPicker({
     super.key,
@@ -97,13 +105,18 @@ class AttachmentPicker extends StatefulWidget {
     required this.totalMembers,
     required this.onHeightChanged,
     required this.onClose,
+    this.initialFiles,
+    this.draft,
+    this.inline = false,
+    this.composerController,
+    this.onInlineSend,
   });
 
   @override
-  State<AttachmentPicker> createState() => _AttachmentPickerState();
+  AttachmentPickerState createState() => AttachmentPickerState();
 }
 
-class _AttachmentPickerState extends State<AttachmentPicker> {
+class AttachmentPickerState extends State<AttachmentPicker> {
   late final DraggableScrollableController _sheetController;
   late final ValueNotifier<double> _sheetExtent;
   AttachmentTab _tab = AttachmentTab.media;
@@ -111,7 +124,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   late final String _accountUserId;
   bool _isSending = false;
   bool _isPickingFiles = false;
-  final _mediaDraft = AttachmentMediaDraft();
+  late final _mediaDraft = widget.draft ?? AttachmentMediaDraft();
   bool _previewOpen = false;
 
   /// Room/account pair the optimistic image rows belong to. [AttachmentPicker]
@@ -152,14 +165,24 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     _draftKey = (roomId: widget.roomId, userId: widget.accountUserId);
     _sheetController = DraggableScrollableController();
     _sheetExtent = ValueNotifier<double>(0);
+    for (final file in widget.initialFiles ?? const <XFile>[]) {
+      final item = _mediaDraft.forFile(file);
+      if (!_mediaDraft.selected.contains(item)) _mediaDraft.toggle(item);
+    }
   }
 
   @override
   void dispose() {
     _sheetController.dispose();
     _sheetExtent.dispose();
-    if (!_previewOpen) _mediaDraft.dispose();
+    if (!_previewOpen && widget.draft == null) _mediaDraft.dispose();
     super.dispose();
+  }
+
+  Future<bool> sendSelectedMedia({required String description}) {
+    if (_isSending || _mediaDraft.isSending) return Future.value(false);
+    _mediaDraft.description.text = description;
+    return _sendSelectedMedia(closePicker: false);
   }
 
   Future<void> _openPreview(
@@ -168,6 +191,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   ) async {
     if (_isSending || _previewOpen) return;
     _previewOpen = true;
+    if (widget.inline) {
+      _mediaDraft.description.text = widget.composerController!.text;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     final route = MaterialPageRoute<bool>(
       fullscreenDialog: true,
@@ -176,16 +202,24 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         images: images,
         initialImage: item,
         onCaptionFocus: _expandForCaption,
-        onSend: () => _sendSelectedMedia(closePicker: false),
+        onSend: widget.inline
+            ? () {
+                widget.composerController!.text = _mediaDraft.description.text;
+                return widget.onInlineSend!();
+              }
+            : () => _sendSelectedMedia(closePicker: false),
       ),
     );
     try {
       final sent = await Navigator.of(context, rootNavigator: true).push(route);
       await route.completed;
+      if (widget.inline && mounted && sent != true) {
+        widget.composerController!.text = _mediaDraft.description.text;
+      }
       if (mounted && sent == true) widget.onClose();
     } finally {
       _previewOpen = false;
-      if (!mounted) _mediaDraft.dispose();
+      if (!mounted && widget.draft == null) _mediaDraft.dispose();
     }
   }
 
@@ -231,7 +265,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
       _mediaDraft.selected,
       closePicker: closePicker,
     );
-    return mounted && _mediaDraft.selected.isEmpty;
+    return (mounted || widget.draft != null) && _mediaDraft.selected.isEmpty;
   }
 
   /// Optimistically inserts the picked image as a local outgoing message so
@@ -576,13 +610,20 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
     }
 
     try {
-      final compressed = await FlutterImageCompress.compressWithList(
-        original,
-        minWidth: target.width,
-        minHeight: target.height,
-        quality: _maxImageQuality,
-        format: CompressFormat.jpeg,
-      );
+      final compressed = Platform.isLinux || Platform.isWindows
+          ? await resizeAttachmentJpeg(
+              original,
+              width: target.width,
+              height: target.height,
+              quality: _maxImageQuality,
+            )
+          : await FlutterImageCompress.compressWithList(
+              original,
+              minWidth: target.width,
+              minHeight: target.height,
+              quality: _maxImageQuality,
+              format: CompressFormat.jpeg,
+            );
       if (compressed.isNotEmpty) {
         return await _jpegImage(
           compressed,
@@ -667,6 +708,10 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
 
   void _ensureCanSend() {
     if (!mounted) throw StateError('附件发送已取消');
+    if ((widget.initialFiles != null || widget.inline) &&
+        _container.read(activeUserIdProvider) != _draftKey.userId) {
+      throw StateError('账号已切换，请重新选择附件');
+    }
   }
 
   /// Sends a batch of individual send operations, tracking per-item success so
@@ -694,7 +739,7 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
         try {
           await ops[i]();
           sent++;
-          if (!mounted && !_previewOpen) return;
+          if (!mounted && !_previewOpen && widget.draft == null) return;
           // Prune the head: ops and items advance in lockstep, so after a
           // success the list tail == remaining unsent items. On full success
           // the list is empty; on partial failure the user keeps the unsent
@@ -725,7 +770,9 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
       // success, partial failure, and the preview route's detached sends.
       _reconcileSettledLocalMedia();
       if (mounted && _isSending) setState(() => _isSending = false);
-      if (mounted || _previewOpen) _mediaDraft.setSending(false);
+      if (mounted || _previewOpen || widget.draft != null) {
+        _mediaDraft.setSending(false);
+      }
     }
   }
 
@@ -757,6 +804,24 @@ class _AttachmentPickerState extends State<AttachmentPicker> {
   );
 
   Widget _buildPanel(BuildContext context) {
+    if (widget.inline) {
+      return ComposerAttachmentStrip(
+        draft: _mediaDraft,
+        onPreview: _openPreview,
+      );
+    }
+    if (widget.initialFiles != null) {
+      return ExternalAttachmentPreview(
+        draft: _mediaDraft,
+        onClose: widget.onClose,
+        onPreview: _openPreview,
+        onSend: () async {
+          if (await _sendSelectedMedia(closePicker: false) && mounted) {
+            widget.onClose();
+          }
+        },
+      );
+    }
     final maxHeight = math.max(widget.height, widget.maxHeight);
     final minSize = (widget.height / maxHeight).clamp(0.01, 1.0);
     if (_sheetExtent.value == 0) _sheetExtent.value = minSize;
@@ -1674,13 +1739,13 @@ bool _canSendOriginalImageMime(String? mimeType) => const {
 ({int width, int height}) _boundedImageSize(Size source) {
   if (source.width <= 0 || source.height <= 0) {
     return (
-      width: _AttachmentPickerState._maxImageEdge,
-      height: _AttachmentPickerState._maxImageEdge,
+      width: AttachmentPickerState._maxImageEdge,
+      height: AttachmentPickerState._maxImageEdge,
     );
   }
   final longest = source.width > source.height ? source.width : source.height;
-  final scale = longest > _AttachmentPickerState._maxImageEdge
-      ? _AttachmentPickerState._maxImageEdge / longest
+  final scale = longest > AttachmentPickerState._maxImageEdge
+      ? AttachmentPickerState._maxImageEdge / longest
       : 1.0;
   final width = (source.width * scale).floor();
   final height = (source.height * scale).floor();
