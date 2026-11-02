@@ -111,6 +111,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final bool isDm;
   final String? initialMessageId;
   final bool embedded;
+  final VoidCallback? onBack;
   final bool detailsPanelOpen;
   final VoidCallback? onToggleDetailsPanel;
   final VoidCallback? onRoomLeft;
@@ -135,6 +136,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.isDm = false,
     this.initialMessageId,
     this.embedded = false,
+    this.onBack,
     this.detailsPanelOpen = false,
     this.onToggleDetailsPanel,
     this.onRoomLeft,
@@ -410,6 +412,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
     if (oldWidget.avatarEventId != widget.avatarEventId) {
       _avatarEventId = widget.avatarEventId;
+    }
+    if (oldWidget.initialMessageId != widget.initialMessageId &&
+        widget.initialMessageId != null) {
+      final messageId = widget.initialMessageId!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_jumpToInitialMessage(messageId));
+      });
     }
   }
 
@@ -2549,6 +2558,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final compact = MediaQuery.sizeOf(context).width < _headerCompactBreakpoint;
     return buildFloatingAppBar(
       automaticallyImplyLeading: !widget.embedded,
+      leading: widget.onBack == null
+          ? null
+          : BackButton(onPressed: widget.onBack),
       titleSpacing: widget.embedded ? 16 : 0,
       title: Row(
         children: [
@@ -2627,7 +2639,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       icon: Icons.arrow_back_rounded,
                       size: 38,
                       tooltip: '返回',
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed:
+                          widget.onBack ?? () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 4),
                   ],

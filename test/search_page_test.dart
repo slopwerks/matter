@@ -6,9 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_detail_page.dart';
 import 'package:matter/pages/chat/search_bar.dart';
 import 'package:matter/pages/chat/search_page.dart';
+import 'package:matter/providers/navigation_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart' show RustLib, RustLibApi;
+
 import 'helpers/neu_test_theme.dart';
 
 rust.ChatRoom _room({
@@ -91,6 +93,53 @@ void main() {
     expect(find.byType(ChatSearchPage), findsOneWidget);
     expect(find.text('消息'), findsOneWidget);
     expect(find.text('聊天'), findsOneWidget);
+  });
+
+  testWidgets('global search sends its message target to the desktop pane', (
+    tester,
+  ) async {
+    final room = _room(id: _cjkResult.roomId, name: 'Synced room');
+    final container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
+        messageSearchProvider.overrideWith(
+          (ref, request) async => const rust.MessageSearchPage(
+            results: [_cjkResult],
+            hasMore: false,
+            terms: ['开会'],
+            historyComplete: true,
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    rust.ChatRoom? opened;
+    String? target;
+    container.read(desktopRoomNavigationProvider).open = (room, {messageId}) {
+      opened = room;
+      target = messageId;
+      return true;
+    };
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: neuTestTheme(), home: const ChatSearchPage()),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('chat-search-field')),
+      '开会',
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(ValueKey('message-search-result-${_cjkResult.eventId}')),
+    );
+    await tester.pump();
+    expect(opened?.name, 'Synced room');
+    expect(target, _cjkResult.eventId);
+    expect(find.byType(ChatDetailPage), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('room filtering supports CJK names and excludes left rooms', () {

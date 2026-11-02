@@ -8,6 +8,7 @@ import 'pages/chat/chat_detail_page.dart';
 import 'pages/chat/create_chat_page.dart';
 import 'pages/chat/chat_page.dart';
 import 'pages/chat/desktop_room_details_panel.dart';
+import 'pages/chat/desktop_split_view.dart';
 import 'pages/chat/room_metadata_patch.dart';
 import 'pages/chat/room_state_edit_tracker.dart';
 import 'pages/chat/space_page.dart';
@@ -48,9 +49,14 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   bool _verificationDialogOpen = false;
   final Set<String> _handledVerificationFlows = {};
   rust.ChatRoom? _selectedRoom;
+  GlobalKey _selectedChatKey = GlobalKey();
+  String? _selectedMessageId;
+  bool _waitingForSelectedRoomSync = false;
+  late final DesktopRoomNavigation _desktopRoomNavigation;
   rust.Space? _selectedDesktopSpace;
   _DesktopRoomSource _desktopRoomSource = _DesktopRoomSource.directMessages;
   bool _showRoomDetails = false;
+  bool _usesDesktopLayout = false;
   String? _lastActiveUserId;
   final _selectedRoomNameEdit = RoomStateEditTracker();
   final _selectedRoomAvatarEdit = RoomStateEditTracker();
@@ -79,6 +85,8 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   @override
   void initState() {
     super.initState();
+    _desktopRoomNavigation = ref.read(desktopRoomNavigationProvider)
+      ..open = _openRoomInPane;
     _verificationTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _checkIncomingVerification(),
@@ -91,6 +99,9 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   @override
   void dispose() {
     _verificationTimer?.cancel();
+    if (_desktopRoomNavigation.open == _openRoomInPane) {
+      _desktopRoomNavigation.open = null;
+    }
     _tabPosition.dispose();
     _dockLift.dispose();
     super.dispose();
@@ -194,14 +205,35 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     );
   }
 
-  void _selectRoom(rust.ChatRoom room) {
+  bool _openRoomInPane(rust.ChatRoom room, {String? messageId}) {
+    if (!mounted || !_usesDesktopLayout) {
+      return false;
+    }
+    ref.read(navigationIndexProvider.notifier).value = 0;
+    _desktopRoomSource = room.roomType == 'dm'
+        ? _DesktopRoomSource.directMessages
+        : _DesktopRoomSource.ungroupedRooms;
+    _selectedDesktopSpace = null;
+    _selectRoom(room, messageId: messageId);
+    // A newly created DM can arrive before its first sync snapshot.
+    setState(() => _waitingForSelectedRoomSync = true);
+    final shellRoute = ModalRoute.of(context);
+    Navigator.of(context).popUntil((route) => route == shellRoute);
+    return true;
+  }
+
+  void _selectRoom(rust.ChatRoom room, {String? messageId}) {
     if (room.roomType == 'space') {
       _showSpace(
         rust.Space(id: room.id, name: room.name, avatarUrl: room.avatarUrl),
       );
       return;
     }
+    _waitingForSelectedRoomSync = false;
     if (_selectedRoom?.id == room.id) {
+      if (_selectedMessageId != messageId) {
+        setState(() => _selectedMessageId = messageId);
+      }
       final selectedRoom = _selectedRoom!;
       final refreshedRoom = _reconcileSelectedRoomDetails(selectedRoom, room);
       if (selectedRoom != refreshedRoom) {
@@ -222,7 +254,11 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       return;
     }
     _clearSelectedRoomDetailsEdits();
-    setState(() => _selectedRoom = room);
+    setState(() {
+      _selectedChatKey = GlobalKey();
+      _selectedMessageId = messageId;
+      _selectedRoom = room;
+    });
   }
 
   Future<void> _markSelectedRoomAsRead(rust.ChatRoom room) async {
@@ -371,6 +407,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= _desktopBreakpoint;
+        _usesDesktopLayout = isDesktop;
         if (isDesktop) {
           // Only the desktop layout keeps a selected room whose metadata
           // must follow the room sources; watching them on mobile would
@@ -401,6 +438,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     if (previousUserId == null || previousUserId == activeUserId) return;
 
     _selectedRoom = null;
+    _selectedChatKey = GlobalKey();
     _clearSelectedRoomDetailsEdits();
     _selectedDesktopSpace = null;
     _desktopRoomSource = _DesktopRoomSource.directMessages;
@@ -420,6 +458,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       }
     }
     if (refreshedRoom == null) {
+      if (_waitingForSelectedRoomSync) return;
       // The selected room no longer exists (e.g. the user left it from the
       // management page while the desktop panel was open). Clear the stale
       // selection so the panel does not keep showing a departed room.
@@ -441,6 +480,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       _clearSelectedRoomDetailsEdits();
       return;
     }
+    _waitingForSelectedRoomSync = false;
     _selectedRoom = _reconcileSelectedRoomDetails(selectedRoom, refreshedRoom);
   }
 
@@ -487,6 +527,15 @@ class _MatterAppState extends ConsumerState<MatterApp> {
 
   Widget _buildMobileLayout() {
     final navigationIndex = ref.watch(navigationIndexProvider);
+    if (_selectedRoom != null && navigationIndex == 0) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _clearSelectedRoom();
+        },
+        child: _buildSelectedChat(embedded: false),
+      );
+    }
     if (context.isMaterial) {
       return Scaffold(
         extendBody: true,
@@ -615,19 +664,6 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   Widget _buildDesktopLayout(BuildContext context, BoxConstraints constraints) {
     final navigationIndex = ref.watch(navigationIndexProvider);
     final selectedRoom = _selectedRoom;
-    // Match the room list's unread display (including the local override
-    // for pending mark-read/unread writes) so the pane subtitle and the
-    // list's red dot never disagree during the echo window.
-    final unreadOverride = selectedRoom == null
-        ? null
-        : ref.watch(roomUnreadOverrideProvider(selectedRoom.id));
-    final syncedHasUnread = selectedRoom == null
-        ? false
-        : selectedRoom.unreadCount > 0 || selectedRoom.isMarkedUnread;
-    final overrideApplies = unreadOverride?.appliesTo(selectedRoom!) ?? false;
-    final hasUnread = overrideApplies
-        ? unreadOverride!.unread
-        : syncedHasUnread;
     final canShowRoomDetails =
         constraints.maxWidth >= _desktopDetailsPaneBreakpoint;
     final showRoomDetails =
@@ -673,65 +709,65 @@ class _MatterAppState extends ConsumerState<MatterApp> {
           Expanded(
             child: withTabTransition(
               navigationIndex == 0
-                  ? Row(
-                      children: [
-                        SizedBox(width: 348, child: _buildDesktopRoomList()),
-                        const VerticalDivider(width: 1, thickness: 1),
-                        Expanded(
-                          child: selectedRoom == null
-                              ? const _DesktopEmptyChat()
-                              : ChatDetailPage(
-                                  key: ValueKey(selectedRoom.id),
-                                  roomId: selectedRoom.id,
-                                  roomName: selectedRoom.name,
-                                  avatarUrl: selectedRoom.avatarUrl,
-                                  nameEventId: selectedRoom.nameEventId,
-                                  avatarEventId: selectedRoom.avatarEventId,
-                                  isDm: selectedRoom.roomType == 'dm',
-                                  subtitle: hasUnread
-                                      ? (selectedRoom.unreadCount > 0
-                                            ? '${selectedRoom.unreadCount} 条未读消息'
-                                            : '已标记未读')
-                                      : '在线',
-                                  embedded: true,
-                                  detailsPanelOpen: showRoomDetails,
-                                  onToggleDetailsPanel: canShowRoomDetails
-                                      ? () => setState(
-                                          () => _showRoomDetails =
-                                              !_showRoomDetails,
-                                        )
-                                      : null,
-                                  onRoomLeft: _clearSelectedRoom,
-                                  onRoomDetailsChanged:
-                                      _updateSelectedRoomDetails,
-                                  onRegisterRoomDetailsHandler:
-                                      _registerDesktopRoomDetailsHandler,
-                                ),
-                        ),
-                        if (showRoomDetails) ...[
-                          const VerticalDivider(width: 1, thickness: 1),
-                          SizedBox(
-                            width: 300,
-                            child: DesktopRoomDetailsPanel(
+                  ? DesktopSplitView(
+                      roomList: _buildDesktopRoomList(),
+                      chat: selectedRoom == null
+                          ? const _DesktopEmptyChat()
+                          : _buildSelectedChat(
+                              embedded: true,
+                              canShowRoomDetails: canShowRoomDetails,
+                              showRoomDetails: showRoomDetails,
+                            ),
+                      details: showRoomDetails
+                          ? DesktopRoomDetailsPanel(
                               roomId: selectedRoom.id,
                               roomName: selectedRoom.name,
                               avatarUrl: selectedRoom.avatarUrl,
                               onRoomLeft: _clearSelectedRoom,
-                              // Route through the selected page's handler so
-                              // the edit arms its sync-echo tracker (the page
-                              // then forwards to _updateSelectedRoomDetails).
                               onRoomDetailsChanged: (patch) =>
                                   _desktopRoomDetailsHandler?.call(patch),
-                            ),
-                          ),
-                        ],
-                      ],
+                            )
+                          : null,
                     )
                   : MaxContentWidth(child: _pages[navigationIndex]),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSelectedChat({
+    required bool embedded,
+    bool canShowRoomDetails = false,
+    bool showRoomDetails = false,
+  }) {
+    final room = _selectedRoom!;
+    final unreadOverride = ref.watch(roomUnreadOverrideProvider(room.id));
+    final hasUnread = unreadOverride?.appliesTo(room) == true
+        ? unreadOverride!.unread
+        : room.unreadCount > 0 || room.isMarkedUnread;
+    return ChatDetailPage(
+      key: _selectedChatKey,
+      roomId: room.id,
+      roomName: room.name,
+      avatarUrl: room.avatarUrl,
+      nameEventId: room.nameEventId,
+      avatarEventId: room.avatarEventId,
+      isDm: room.roomType == 'dm',
+      initialMessageId: _selectedMessageId,
+      subtitle: hasUnread
+          ? (room.unreadCount > 0 ? '${room.unreadCount} 条未读消息' : '已标记未读')
+          : '在线',
+      embedded: embedded,
+      onBack: embedded ? null : _clearSelectedRoom,
+      detailsPanelOpen: showRoomDetails,
+      onToggleDetailsPanel: canShowRoomDetails
+          ? () => setState(() => _showRoomDetails = !_showRoomDetails)
+          : null,
+      onRoomLeft: _clearSelectedRoom,
+      onRoomDetailsChanged: _updateSelectedRoomDetails,
+      onRegisterRoomDetailsHandler: _registerDesktopRoomDetailsHandler,
     );
   }
 

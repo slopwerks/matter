@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/navigation_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../src/rust/api/matrix.dart' hide redactMessage;
@@ -422,6 +423,32 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
         return;
       }
       if (context.mounted) {
+        final room = ref
+            .read(allChatRoomsProvider)
+            .asData
+            ?.value
+            .where((room) => room.id == roomId)
+            .firstOrNull;
+        final destination =
+            room ??
+            ChatRoom(
+              id: roomId,
+              name: widget.contact.name,
+              avatarUrl: _resolvedAvatarUrl,
+              lastMessage: '',
+              lastMessageTime: '',
+              lastEventId: '',
+              unreadCount: 0,
+              isMarkedUnread: false,
+              roomType: 'dm',
+              isEncrypted: false,
+              isMuted: false,
+              roomState: 'joined',
+            );
+        if (ref.read(desktopRoomNavigationProvider).open?.call(destination) ??
+            false) {
+          return;
+        }
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => ChatDetailPage(

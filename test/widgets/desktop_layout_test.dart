@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
+import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/pages/chat/desktop_split_view.dart';
 import 'package:matter/pages/chat/chat_detail_page.dart';
 import 'package:matter/pages/chat/desktop_room_details_panel.dart';
 import 'package:matter/pages/chat/room_metadata_patch.dart';
 import 'package:matter/providers/auth_provider.dart';
+import 'package:matter/providers/navigation_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
@@ -56,6 +59,19 @@ class _FakeRustApi implements RustLibApi {
     required String subscriptionId,
     String? accountUserId,
   }) async {}
+
+  @override
+  Future<void> crateApiMatrixSendTypingNotice({
+    required String accountUserId,
+    required String roomId,
+    required bool typing,
+  }) async {}
+
+  @override
+  Future<String> crateApiMatrixCreateDm({
+    required String accountUserId,
+    required String userId,
+  }) async => '!new-dm:example.org';
 
   @override
   dynamic noSuchMethod(Invocation invocation) {
@@ -142,9 +158,8 @@ void main() {
             _room(id: childId, name: 'Child space', roomType: 'space'),
           ],
         ),
-        spaceChildrenProvider(
-          childId,
-        ).overrideWith((ref) async => [nestedRoom]),
+        spaceChildrenProvider(childId)
+            .overrideWith((ref) async => [nestedRoom]),
       ],
     );
     addTearDown(container.dispose);
@@ -159,6 +174,152 @@ void main() {
     expect(find.text('Child space'), findsOneWidget);
     expect(detail.roomId, nestedRoom.id);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('selected room and input survive desktop and narrow layouts', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final room = _room(
+      id: '!resize:example.org',
+      name: 'Resize room',
+      roomType: 'dm',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
+        spacesProvider.overrideWith((ref) async => const []),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pumpApp(tester, container);
+    final state = tester.state(find.byType(ChatDetailPage));
+    final input = find.descendant(
+      of: find.byType(MessageInput),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(input, 'draft while resizing');
+    for (final width in [1024.0, 960.0, 840.0, 1200.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 800));
+      await tester.pump();
+      expect(tester.state(find.byType(ChatDetailPage)), same(state));
+      expect(
+        tester.widget<TextField>(input).controller!.text,
+        'draft while resizing',
+      );
+      expect(tester.takeException(), isNull);
+    }
+    await tester.tap(find.byTooltip('显示详情'));
+    await tester.pump();
+    await tester.binding.setSurfaceSize(const Size(1024, 800));
+    await tester.pump();
+    final detail = find.byType(ChatDetailPage);
+    expect(tester.getSize(detail).width, greaterThanOrEqualTo(360));
+    expect(
+      MediaQuery.sizeOf(tester.element(detail)).width,
+      tester.getSize(detail).width,
+    );
+    expect(find.byType(DesktopSplitView), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'desktop room navigation returns to the pane and retains drafts',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final first = _room(
+        id: '!first:example.org',
+        name: 'First',
+        roomType: 'dm',
+      );
+      final second = _room(
+        id: '!second:example.org',
+        name: 'Second',
+        roomType: 'dm',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          allChatRoomsProvider.overrideWith((ref) async => [first, second]),
+          spacesProvider.overrideWith((ref) async => const []),
+        ],
+      );
+      addTearDown(container.dispose);
+      await _pumpApp(tester, container);
+      final navigation = container.read(desktopRoomNavigationProvider);
+      expect(navigation.open!(first), isTrue);
+      await tester.pump();
+      final input = find.descendant(
+        of: find.byType(MessageInput),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(input, 'first room draft');
+      final shellContext = tester.element(find.byType(MatterApp));
+      Navigator.of(shellContext).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('Search route')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(navigation.open!(second), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.text('Search route'), findsNothing);
+      expect(
+        tester.widget<ChatDetailPage>(find.byType(ChatDetailPage)).roomId,
+        second.id,
+      );
+      expect(
+        tester.widget<ChatDetailPage>(find.byType(ChatDetailPage)).embedded,
+        isTrue,
+      );
+      expect(navigation.open!(first), isTrue);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(input).controller!.text,
+        'first room draft',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(navigation.open, isNull);
+    },
+  );
+
+  testWidgets('a new contact DM opens the desktop pane before sync arrives', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => const []),
+        spacesProvider.overrideWith((ref) async => const []),
+        contactsProvider.overrideWith(
+          (ref) async => const [
+            rust.Contact(
+              id: '@bob:example.org',
+              name: 'Bob',
+              status: 'offline',
+            ),
+          ],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = '@alice:example.org';
+    await _pumpApp(tester, container);
+    container.read(navigationIndexProvider.notifier).value = 2;
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bob'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('发消息'));
+    await tester.pumpAndSettle();
+    final page = tester.widget<ChatDetailPage>(find.byType(ChatDetailPage));
+    expect(page.roomId, '!new-dm:example.org');
+    expect(page.isDm, isTrue);
+    expect(page.embedded, isTrue);
+    expect(container.read(navigationIndexProvider), 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('hides the desktop details pane below its safe width', (
