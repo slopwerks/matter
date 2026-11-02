@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +10,7 @@ import '../../features/markdown/markdown_text_editing_controller.dart';
 import '../../features/markdown/markdown_source_store.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/composer_keyboard_settings_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
@@ -506,6 +506,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
     _wasComposingText = _isComposingText;
     _autocompleteMatch = composerAutocompleteMatch(_controller.value);
     _controller.addListener(_onTextChanged);
+    ref.read(composerKeyboardSettingsProvider);
     _focusNode.onKeyEvent = _handleKeyEvent;
     _focusNode.addListener(() {
       if (!mounted) return;
@@ -676,17 +677,37 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (!_isComposingText && _handleAutocompleteKey(event)) {
+    if (_isComposingText) return KeyEventResult.ignored;
+    // Configured newlines bypass autocomplete and are handled here to avoid
+    // either losing the newline or inserting it twice through native input.
+    if (_isEnterKey(event)) {
+      final keyboard = HardwareKeyboard.instance;
+      final desktop = switch (Theme.of(context).platform) {
+        TargetPlatform.linux ||
+        TargetPlatform.macOS ||
+        TargetPlatform.windows => true,
+        _ => false,
+      };
+      final shortcut = keyboard.isShiftPressed
+          ? ComposerEnterShortcut.shiftEnter
+          : keyboard.isAltPressed
+          ? ComposerEnterShortcut.altEnter
+          : ComposerEnterShortcut.enter;
+      final action = desktop
+          ? ref.read(composerKeyboardSettingsProvider).actionFor(shortcut)
+          : keyboard.isShiftPressed
+          ? ComposerEnterAction.newline
+          : ComposerEnterAction.send;
+      if (action == ComposerEnterAction.newline) {
+        if (!desktop) return KeyEventResult.ignored;
+        if (event is KeyDownEvent) _insertComposerText('\n');
+        return KeyEventResult.handled;
+      }
+    }
+    if (_handleAutocompleteKey(event)) {
       return KeyEventResult.handled;
     }
-    // Keep Linux's existing multiline Enter behavior. The handler is still
-    // installed there so Tab and arrow-key autocomplete remain available.
-    if (defaultTargetPlatform == TargetPlatform.linux) {
-      return KeyEventResult.ignored;
-    }
-    if (!_isEnterKey(event) ||
-        HardwareKeyboard.instance.isShiftPressed ||
-        _isComposingText) {
+    if (!_isEnterKey(event)) {
       return KeyEventResult.ignored;
     }
 

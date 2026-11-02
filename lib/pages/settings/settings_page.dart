@@ -31,6 +31,7 @@ import '../login/login_page.dart';
 import 'encryption_page.dart';
 import 'blur_settings_page.dart';
 import 'code_block_settings_page.dart';
+import 'composer_keyboard_settings_page.dart';
 import 'log_viewer_page.dart';
 import 'material_color_settings_page.dart';
 import 'notification_settings_page.dart';
@@ -736,6 +737,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                     ),
                                   ),
                                 ),
+                        ),
+                        _SettingItem(
+                          icon: Icons.keyboard_rounded,
+                          title: '键盘发送与换行',
+                          subtitle: 'Enter · Shift+Enter · Alt+Enter',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const ComposerKeyboardSettingsPage(),
+                            ),
+                          ),
                         ),
                         _SettingItem(
                           icon: Icons.language_rounded,
