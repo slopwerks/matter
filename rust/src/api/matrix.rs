@@ -45,11 +45,13 @@ use std::time::SystemTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+pub mod history;
 mod image_caption;
 pub mod notifications;
 pub mod push;
 mod sdk_timeline;
 mod sticker_packs;
+pub mod unread;
 
 // ── App-wide log system ─────────────────────────────────────────────
 
@@ -14563,6 +14565,20 @@ pub async fn get_messages_before(
         sdk_timeline::get_messages_before(&client, &room, &from_event_id, limit).await
     })
     .await
+}
+
+/// Load the next room-ordered history page, including a cursor for hidden events.
+#[frb]
+pub async fn get_messages_after(
+    room_id: String,
+    from_event_id: String,
+    limit: u32,
+) -> Result<history::HistoryPage, String> {
+    let client = get_client()
+        .await
+        .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
+    let room = get_room_by_id(&client, &room_id)?;
+    run_bounded(async move { history::messages_after(&room, &from_event_id, limit).await }).await
 }
 
 #[cfg(test)]

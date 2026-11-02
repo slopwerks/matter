@@ -59,7 +59,10 @@ pub(super) async fn clear_for_user(user_id: &str) {
         .retain(|key, _| !key.starts_with(&prefix));
 }
 
-async fn get_or_create_timeline(client: &Client, room: &Room) -> Result<Arc<Timeline>, String> {
+pub(super) async fn get_or_create_timeline(
+    client: &Client,
+    room: &Room,
+) -> Result<Arc<Timeline>, String> {
     let key = timeline_key(client, room)?;
     if let Some(timeline) = TIMELINES.lock().await.get(&key).cloned() {
         return Ok(timeline);
@@ -541,7 +544,7 @@ pub(super) async fn get_pinned_messages(room: &Room) -> Result<Vec<ChatMessage>,
     complete_pinned_messages(&pinned_ids, &by_id, &failed_ids, focused_error)
 }
 
-async fn load_focused_message(
+pub(super) async fn load_focused_message(
     room: &Room,
     event_id: matrix_sdk::ruma::OwnedEventId,
 ) -> Result<Option<ChatMessage>, String> {
@@ -786,6 +789,7 @@ pub(super) async fn get_messages_before(
     // the window holds), an empty return would end history loading with
     // older messages still reachable — paginate until the page is full or
     // history ends instead.
+    let mut reached_start = false;
     for _ in 0..4 {
         if before.len() >= limit {
             break;
@@ -798,11 +802,12 @@ pub(super) async fn get_messages_before(
         let position = raw_event_position(&items, from_event_id)
             .ok_or_else(|| api_err("rooms", "分页锚点已离开当前时间线窗口，请重试。".to_owned()))?;
         before = convert_snapshot(room, &items[..position]).await;
+        reached_start = hit_start;
         if hit_start {
             break;
         }
     }
-    Ok(before[before.len().saturating_sub(limit)..].to_vec())
+    checked_history_page(before, limit, reached_start)
 }
 
 fn raw_event_position(items: &[Arc<TimelineItem>], event_id: &str) -> Option<usize> {
@@ -838,7 +843,40 @@ async fn focused_messages_before(
     let items = snapshot(&timeline).await;
     let position = raw_event_position(&items, from_event_id)
         .ok_or_else(|| api_err("rooms", "分页锚点不可用，请重试。".to_owned()))?;
-    let before = convert_snapshot(room, &items[..position]).await;
+    let mut before = convert_snapshot(room, &items[..position]).await;
+    let mut reached_start = false;
+    for _ in 0..4 {
+        if !before.is_empty() {
+            break;
+        }
+        reached_start = timeline
+            .paginate_backwards(100)
+            .await
+            .map_err(|error| api_err("rooms", format!("分页加载房间时间线失败: {error}")))?;
+        let items = snapshot(&timeline).await;
+        let position = raw_event_position(&items, from_event_id)
+            .ok_or_else(|| api_err("rooms", "分页锚点不可用，请重试。".to_owned()))?;
+        before = convert_snapshot(room, &items[..position]).await;
+        if reached_start {
+            break;
+        }
+    }
+    checked_history_page(before, limit, reached_start)
+}
+
+fn checked_history_page(
+    before: Vec<ChatMessage>,
+    limit: usize,
+    reached_start: bool,
+) -> Result<Vec<ChatMessage>, String> {
+    // A budget exhausted by reactions/filtered events (or a pending SDK
+    // update) is not proof that history ended. Keep Dart's retry path open.
+    if before.is_empty() && !reached_start {
+        return Err(api_err(
+            "rooms",
+            "尚未取得更早消息，历史未到头，请重试。".to_owned(),
+        ));
+    }
     Ok(before[before.len().saturating_sub(limit)..].to_vec())
 }
 
@@ -847,31 +885,10 @@ pub(super) async fn get_messages_around(
     event_id: &str,
     limit: usize,
 ) -> Result<Vec<ChatMessage>, String> {
-    let target = matrix_sdk::ruma::EventId::parse(event_id)
-        .map_err(|error| api_err("rooms", format!("无效的目标事件 ID: {error}")))?;
-    let timeline = tokio::time::timeout(
-        Duration::from_secs(25),
-        TimelineBuilder::new(room)
-            .with_focus(TimelineFocus::Event {
-                target,
-                num_context_events: limit.clamp(20, 100) as u16,
-                thread_mode: TimelineEventFocusThreadMode::Automatic {
-                    hide_threaded_events: false,
-                },
-            })
-            .build(),
-    )
-    .await
-    .map_err(|_| api_err("rooms", "加载目标消息超时，请重试。".to_owned()))?
-    .map_err(|error| api_err("rooms", format!("加载目标消息失败: {error}")))?;
-    let messages = convert_snapshot(room, &snapshot(&timeline).await).await;
-    if !messages.iter().any(|message| message.id == event_id) {
-        return Err(api_err("rooms", "目标消息不可用或已被删除。".to_owned()));
-    }
-    Ok(messages)
+    super::history::messages_around(room, event_id, limit).await
 }
 
-async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatMessage> {
+pub(super) async fn convert_snapshot(room: &Room, items: &[Arc<TimelineItem>]) -> Vec<ChatMessage> {
     let my_user_id = room.client().user_id().map(ToString::to_string);
     let event_items: Vec<&EventTimelineItem> =
         items.iter().filter_map(|item| item.as_event()).collect();
@@ -1710,13 +1727,28 @@ fn state_event_label(item: &EventTimelineItem) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_pinned_messages, loaded_expected_event_count, missing_pinned_event_ids,
-        newest_receipt_position, ordered_pinned_messages, pinned_events_ready,
-        reader_ids_for_position, record_latest_receipt_position, resolve_receipt_position,
+        checked_history_page, complete_pinned_messages, loaded_expected_event_count,
+        missing_pinned_event_ids, newest_receipt_position, ordered_pinned_messages,
+        pinned_events_ready, reader_ids_for_position, record_latest_receipt_position,
+        resolve_receipt_position,
     };
     use crate::api::matrix::uint_to_i32;
     use crate::api::matrix::{ChatMessage, MessageType};
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn empty_history_page_requires_a_confirmed_start() {
+        assert!(checked_history_page(Vec::new(), 100, false).is_err());
+        assert!(checked_history_page(Vec::new(), 100, true)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn partial_history_page_still_advances_the_anchor() {
+        let page = checked_history_page(vec![message("$older")], 100, false).unwrap();
+        assert_eq!(page[0].id, "$older");
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn reaction_toggle_updates_count_and_cancels_before_sync() {

@@ -17,6 +17,7 @@ import 'connection_provider.dart';
 import 'hidden_rooms_provider.dart';
 import 'ignored_users_persistence.dart';
 import 'message_cache_persistence.dart';
+import 'message_history_cursor.dart';
 import 'message_ordering.dart';
 import 'mutable_state.dart';
 
@@ -1489,6 +1490,13 @@ Future<void> refreshMessagesFromNetwork(WidgetRef ref, String roomId) async {
     if ((ref.read(activeUserIdProvider) ?? 'anonymous') != namespace) return;
     ref.read(messageCacheOwnerProvider(roomId).notifier).value = namespace;
     final reconciled = updateMessageCache(ref, roomId, latest);
+    final history = ref.read(
+      messageHistoryCursorProvider((roomId: roomId, userId: namespace))
+          .notifier,
+    );
+    history.value = history.value.refreshed(
+      latest.map((message) => message.id),
+    );
     // Persist off the widget tree so a slow disk write never blocks the UI.
     Future.microtask(
       () => saveCachedMessages(
@@ -2084,6 +2092,13 @@ Future<void> _refreshMessagesShared(
     if (!equal) {
       read(messageCacheProvider(roomId).notifier).value = reconciled;
     }
+    final history = read(
+      messageHistoryCursorProvider((roomId: roomId, userId: namespace))
+          .notifier,
+    );
+    history.value = history.value.refreshed(
+      latest.map((message) => message.id),
+    );
     unawaited(
       saveCachedMessages(
         namespace: namespace,
