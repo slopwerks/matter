@@ -180,6 +180,9 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
           ),
         );
       },
+      onSecondaryTap: room.roomState == 'joined' && room.roomType != 'space'
+          ? () => _showRoomListActions(context, ref, room)
+          : null,
       onLongPress: room.roomState == 'joined' && room.roomType != 'space'
           ? () => _showRoomListActions(context, ref, room)
           : null,
