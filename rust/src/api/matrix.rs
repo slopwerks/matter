@@ -46,11 +46,19 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
 pub mod desktop_notifications;
+pub mod history;
 mod image_caption;
 pub mod notifications;
 pub mod push;
 mod sdk_timeline;
+mod search_hydration;
+#[cfg(test)]
+mod search_index_tests;
+mod search_metrics;
+#[cfg(test)]
+mod search_performance_tests;
 mod sticker_packs;
+pub mod unread;
 
 // ── App-wide log system ─────────────────────────────────────────────
 
@@ -13516,6 +13524,8 @@ async fn index_search_events(
     room_cache: &matrix_sdk::event_cache::RoomEventCache,
     events: Vec<matrix_sdk::deserialized_responses::TimelineEvent>,
 ) -> Result<(), String> {
+    let mut metrics = search_metrics::SearchMetrics::new("index", true);
+    metrics.count("raw_events", events.len());
     let redaction_rules = room.clone_info().room_version_rules_or_default().redaction;
     if events.is_empty() {
         return Ok(());
@@ -13523,10 +13533,11 @@ async fn index_search_events(
     // One remote/cache page becomes one Tantivy transaction. Splitting a page
     // into tiny batches forced a commit, reader reload, and merge wait for each
     // slice and dominated first-search latency.
-    client
-        .search_index()
-        .lock()
-        .await
+    let started = std::time::Instant::now();
+    let mut index = client.search_index().lock().await;
+    metrics.phase("index_lock_wait", started);
+    let parsing = std::time::Instant::now();
+    let result = index
         .bulk_handle_timeline_event(
             events.into_iter(),
             room_cache,
@@ -13539,7 +13550,10 @@ async fn index_search_events(
                 "search",
                 format!("Failed to index cached messages: {error}"),
             )
-        })
+        });
+    metrics.phase("index_parse_and_write", parsing);
+    metrics.phase("index_wait_and_commit", started);
+    result
 }
 
 async fn persisted_search_backfill_marker(
@@ -13745,12 +13759,14 @@ async fn backfill_cached_search_index_page(
 }
 
 async fn load_older_search_history(client: &Client, room: &Room) -> Result<(bool, usize), String> {
+    let mut metrics = search_metrics::SearchMetrics::new("history_page", true);
     let (room_cache, _drop_handles) = room.event_cache().await.map_err(|error| {
         api_err(
             "search",
             format!("Failed to open the room search cache: {error}"),
         )
     })?;
+    let started = std::time::Instant::now();
     let outcome = room_cache
         .pagination()
         .run_backwards_once(SEARCH_HISTORY_BATCH_SIZE)
@@ -13761,7 +13777,9 @@ async fn load_older_search_history(client: &Client, room: &Room) -> Result<(bool
                 format!("Failed to load older messages for search: {error}"),
             )
         })?;
+    metrics.phase("history_fetch_decrypt_cache", started);
     let event_count = outcome.events.len();
+    metrics.count("raw_events", event_count);
     if event_count > 0 {
         index_search_events(client, room, &room_cache, outcome.events).await?;
     }
@@ -13798,7 +13816,7 @@ async fn message_search_backfill_lock(key: &str) -> Arc<Mutex<()>> {
         .clone()
 }
 
-async fn backfill_global_cached_search_index_page(
+async fn backfill_global_search_history_page(
     client: &Client,
 ) -> Result<MessageSearchBackfill, String> {
     let rooms = searchable_rooms(client);
@@ -13820,24 +13838,22 @@ async fn backfill_global_cached_search_index_page(
     for distance in 0..rooms.len() {
         let index = (start + distance) % rooms.len();
         let room = &rooms[index];
-        if cached_search_backfill_complete(client, room).await? {
+        let room_key = message_search_room_key(client, room)?;
+        if cached_search_backfill_complete(client, room).await?
+            && SEARCH_HISTORY_COMPLETE.lock().await.contains(&room_key)
+        {
             continue;
         }
-
-        let room_key = message_search_room_key(client, room)?;
         let room_backfill_lock = message_search_backfill_lock(&room_key).await;
         let _room_backfill = room_backfill_lock.lock().await;
-        if cached_search_backfill_complete(client, room).await? {
-            continue;
-        }
-        let (complete, loaded_events) = backfill_cached_search_index_page(client, room).await?;
+        let progress = backfill_room_search_history(client, room).await?;
         SEARCH_CACHE_BACKFILL_PROGRESS
             .lock()
             .await
             .insert(key.clone(), (index + 1) % rooms.len());
-        if loaded_events > 0 || !complete {
+        if progress.loaded_events > 0 || !progress.reached_start {
             return Ok(MessageSearchBackfill {
-                loaded_events: loaded_events.min(u32::MAX as usize) as u32,
+                loaded_events: progress.loaded_events,
                 reached_start: false,
             });
         }
@@ -13854,15 +13870,27 @@ async fn backfill_message_search_with_client(
     client: &Client,
     room_id: Option<String>,
 ) -> Result<MessageSearchBackfill, String> {
+    let mut metrics = search_metrics::SearchMetrics::new("backfill", room_id.is_some());
+    metrics.count("steps", 1);
     let key = message_search_scope_key(client, room_id.as_deref())?;
     let backfill_lock = message_search_backfill_lock(&key).await;
     let _backfill = backfill_lock.lock().await;
 
     let Some(room_id) = room_id else {
-        return backfill_global_cached_search_index_page(client).await;
+        return backfill_global_search_history_page(client).await;
     };
     let room = get_room_by_id(client, &room_id)?;
-    let (cache_complete, cached_events) = backfill_cached_search_index_page(client, &room).await?;
+    backfill_room_search_history(client, &room).await
+}
+
+// Both scopes must complete the same cache and remote-history walk. A cache
+// indexing marker says nothing about messages not yet downloaded from the room.
+async fn backfill_room_search_history(
+    client: &Client,
+    room: &Room,
+) -> Result<MessageSearchBackfill, String> {
+    let key = message_search_room_key(client, room)?;
+    let (cache_complete, cached_events) = backfill_cached_search_index_page(client, room).await?;
     if !cache_complete {
         return Ok(MessageSearchBackfill {
             loaded_events: cached_events.min(u32::MAX as usize) as u32,
@@ -13877,7 +13905,7 @@ async fn backfill_message_search_with_client(
         });
     }
 
-    let (reached_start, remote_events) = load_older_search_history(client, &room).await?;
+    let (reached_start, remote_events) = load_older_search_history(client, room).await?;
     if reached_start {
         SEARCH_HISTORY_COMPLETE.lock().await.insert(key);
     }
@@ -13890,8 +13918,8 @@ async fn backfill_message_search_with_client(
 
 /// Load and index one older room-history page. The search UI calls this in the
 /// background and refreshes visible local results after every bounded step.
-/// Global search only fills already-cached room history; room search continues
-/// with one homeserver pagination request after its cache is indexed.
+/// Both scopes index cached events, then continue homeserver pagination. Global
+/// search advances one room per bounded step so no large room monopolizes it.
 #[frb]
 pub async fn backfill_message_search(
     room_id: Option<String>,
@@ -13934,6 +13962,7 @@ async fn search_result_from_event(
     terms: &[String],
     ignored_user_ids: Option<&HashSet<String>>,
     is_dm: bool,
+    sender_names: &search_hydration::SenderNames,
 ) -> Option<(MessageSearchResult, u64, String)> {
     if event.kind.is_utd() {
         return None;
@@ -13983,12 +14012,7 @@ async fn search_result_from_event(
     {
         "我".to_string()
     } else {
-        room.get_member_no_sync(&original.sender)
-            .await
-            .ok()
-            .flatten()
-            .map(|member| member.name().to_string())
-            .unwrap_or_else(|| original.sender.localpart().to_owned())
+        sender_names.get(room, &original.sender).await
     };
 
     Some((
@@ -14055,6 +14079,7 @@ async fn search_messages_with_client(
     limit: u32,
     ignored_user_ids: Option<Vec<String>>,
 ) -> Result<MessageSearchPage, String> {
+    let mut metrics = search_metrics::SearchMetrics::new("query", room_id.is_some());
     let terms = message_search_terms(query.trim());
     if terms.is_empty() {
         return Ok(MessageSearchPage {
@@ -14074,16 +14099,8 @@ async fn search_messages_with_client(
     };
     let ignored_user_ids = ignored_user_ids.map(|ids| ids.into_iter().collect::<HashSet<_>>());
     let index_query = message_search_index_query(&terms);
-    let offset = offset.min(500) as usize;
-    if offset == 500 {
-        return Ok(MessageSearchPage {
-            results: Vec::new(),
-            has_more: false,
-            terms,
-            history_complete: true,
-        });
-    }
-    let limit = limit.clamp(1, (500 - offset) as u32) as usize;
+    let offset = offset as usize;
+    let limit = limit.max(1) as usize;
     let result_target = offset.saturating_add(limit).saturating_add(1);
     let room_target = result_target;
     let batch_size = room_target.clamp(32, 128);
@@ -14093,6 +14110,7 @@ async fn search_messages_with_client(
     let mut history_complete = true;
 
     for room in rooms {
+        metrics.count("rooms", 1);
         if !message_search_is_current(&search_key, search_generation).await {
             return Err(message_search_cancelled());
         }
@@ -14110,16 +14128,13 @@ async fn search_messages_with_client(
                 false
             }
         };
-        history_complete &= if room_scoped {
-            let key = message_search_room_key(client, &room)?;
-            cache_complete && SEARCH_HISTORY_COMPLETE.lock().await.contains(&key)
-        } else {
-            cache_complete
-        };
+        let key = message_search_room_key(client, &room)?;
+        history_complete &= cache_complete && SEARCH_HISTORY_COMPLETE.lock().await.contains(&key);
         let is_dm = match room.is_direct().await {
             Ok(true) => true,
             Ok(false) | Err(_) => is_dm_by_members(&room).await,
         };
+        let sender_names = search_hydration::SenderNames::new();
         let mut raw_offset = 0usize;
         let mut room_result_ids = HashSet::new();
         let mut room_succeeded = false;
@@ -14127,10 +14142,13 @@ async fn search_messages_with_client(
             if !message_search_is_current(&search_key, search_generation).await {
                 return Err(message_search_cancelled());
             }
-            let event_ids = match room
+            let started = std::time::Instant::now();
+            let searched = room
                 .search(&index_query, batch_size, Some(raw_offset))
-                .await
-            {
+                .await;
+            metrics.phase("index_query", started);
+            metrics.count("index_batches", 1);
+            let event_ids = match searched {
                 Ok(event_ids) => event_ids,
                 Err(error) => {
                     let error = api_err("search", format!("Message search failed: {error}"));
@@ -14149,31 +14167,37 @@ async fn search_messages_with_client(
             room_succeeded = true;
             let raw_exhausted = event_ids.len() < batch_size;
             raw_offset = raw_offset.saturating_add(event_ids.len());
-            for (_score, event_id) in event_ids {
-                // Search hits come from the local EventCache-backed index. Read that
-                // cache first so offline or server-rejected /event requests don't
-                // discard otherwise valid matches.
-                let event = match room.load_or_fetch_event(&event_id, None).await {
-                    Ok(event) => event,
-                    Err(error) => {
-                        app_log(
-                            "warn",
-                            "search",
-                            format!("Skipping unavailable search result {event_id}: {error}"),
-                        );
-                        continue;
-                    }
-                };
-                if let Some((result, source_timestamp, source_event_id)) = search_result_from_event(
-                    client,
-                    &room,
-                    event,
-                    &terms,
-                    ignored_user_ids.as_ref(),
-                    is_dm,
-                )
-                .await
-                {
+            let batch_started = std::time::Instant::now();
+            let hydrated = search_hydration::HydrationContext {
+                client,
+                room: &room,
+                terms: &terms,
+                ignored: ignored_user_ids.as_ref(),
+                is_dm,
+                sender_names: &sender_names,
+                search_key: &search_key,
+                generation: search_generation,
+            }
+            .hydrate(event_ids.into_iter().map(|(_, id)| id).collect())
+            .await;
+            metrics.phase("hydration_batch_wall", batch_started);
+            if !message_search_is_current(&search_key, search_generation).await {
+                return Err(message_search_cancelled());
+            }
+            for candidate in hydrated {
+                if candidate.attempted {
+                    metrics.count("candidate_events", 1);
+                }
+                if candidate.cache_hit {
+                    metrics.count("cache_hits", 1);
+                }
+                if candidate.remote_fetch {
+                    metrics.count("remote_fetches", 1);
+                }
+                // Concurrent work durations are sums, not additive wall time.
+                metrics.accumulated_us("event_hydration_sum", candidate.hydration_us);
+                metrics.accumulated_us("filter_and_metadata_sum", candidate.conversion_us);
+                if let Some((result, source_timestamp, source_event_id)) = candidate.result {
                     room_result_ids.insert(result.event_id.clone());
                     insert_latest_search_result(
                         &mut results,
@@ -14201,6 +14225,7 @@ async fn search_messages_with_client(
         }
     }
 
+    let started = std::time::Instant::now();
     let mut results = results
         .into_values()
         .map(|(result, _, _)| result)
@@ -14214,7 +14239,9 @@ async fn search_messages_with_client(
             .then_with(|| right.event_id.cmp(&left.event_id))
     });
 
+    metrics.phase("result_merge_sort", started);
     let (page, has_more) = paginate_message_search_results(results, offset, limit);
+    metrics.count("returned_results", page.len());
     Ok(MessageSearchPage {
         results: page,
         has_more,
@@ -14229,9 +14256,9 @@ mod message_search_tests {
 
     use super::{
         backfill_message_search_with_client, insert_latest_search_result,
-        message_matches_search_terms, message_search_index_query, message_search_terms,
-        ordered_event_cache_chunk_ids, paginate_message_search_results,
-        search_messages_with_client, MessageSearchResult,
+        message_matches_search_terms, message_search_index_query, message_search_room_key,
+        message_search_terms, ordered_event_cache_chunk_ids, paginate_message_search_results,
+        search_messages_with_client, MessageSearchResult, SEARCH_HISTORY_COMPLETE,
     };
     use matrix_sdk::{
         ruma::{event_id, room_id, user_id},
@@ -14391,6 +14418,252 @@ mod message_search_tests {
             ordered_event_cache_chunk_ids(chunks).unwrap(),
             [id(0), id(1), id(2)]
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bounded_hydration_preserves_ignored_filters_and_page_order() {
+        let server = MatrixMockServer::new().await;
+        let client = server
+            .client_builder()
+            .on_builder(|builder| builder.search_index_store(SearchIndexStoreKind::InMemory))
+            .build()
+            .await;
+        client.event_cache().subscribe().unwrap();
+        let room_id = room_id!("!parallel-search:localhost");
+        let events = EventFactory::new()
+            .room(room_id)
+            .sender(user_id!("@alice:localhost"));
+        let ids = [
+            event_id!("$parallel-0"),
+            event_id!("$parallel-1"),
+            event_id!("$parallel-2"),
+            event_id!("$parallel-3"),
+        ];
+        let mut builder = JoinedRoomBuilder::new(room_id);
+        for (index, id) in ids.iter().enumerate() {
+            builder = builder.add_timeline_event(
+                events
+                    .text_msg("needle body")
+                    .event_id(id)
+                    .server_ts((index as u64 + 1) * 1000),
+            );
+        }
+        server.sync_room(&client, builder).await;
+        let ignored = search_messages_with_client(
+            &client,
+            "needle".to_owned(),
+            Some(room_id.to_string()),
+            0,
+            2,
+            Some(vec!["@alice:localhost".to_owned()]),
+        )
+        .await
+        .unwrap();
+        assert!(ignored.results.is_empty());
+        let first = search_messages_with_client(
+            &client,
+            "needle".to_owned(),
+            Some(room_id.to_string()),
+            0,
+            2,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        let second = search_messages_with_client(
+            &client,
+            "needle".to_owned(),
+            Some(room_id.to_string()),
+            2,
+            2,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        assert!(first.has_more);
+        assert!(!second.has_more);
+        assert_eq!(
+            first
+                .results
+                .iter()
+                .map(|result| result.event_id.as_str())
+                .collect::<Vec<_>>(),
+            ["$parallel-3", "$parallel-2"]
+        );
+        assert_eq!(
+            second
+                .results
+                .iter()
+                .map(|result| result.event_id.as_str())
+                .collect::<Vec<_>>(),
+            ["$parallel-1", "$parallel-0"]
+        );
+        server.verify_and_reset().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bounded_hydration_stops_before_fetching_a_superseded_query() {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let room_id = room_id!("!cancel-parallel:localhost");
+        let room = server
+            .sync_room(&client, JoinedRoomBuilder::new(room_id))
+            .await;
+        let (key, generation) = super::begin_message_search(&client, Some(room_id.as_str())).await;
+        let _ = super::begin_message_search(&client, Some(room_id.as_str())).await;
+        let names = super::search_hydration::SenderNames::new();
+        let candidates = super::search_hydration::HydrationContext {
+            client: &client,
+            room: &room,
+            terms: &["needle".to_owned()],
+            ignored: Some(&HashSet::new()),
+            is_dm: false,
+            sender_names: &names,
+            search_key: &key,
+            generation,
+        }
+        .hydrate(vec![event_id!("$must-not-fetch").to_owned()])
+        .await;
+        assert_eq!(candidates.len(), 1);
+        assert!(!candidates[0].attempted);
+        assert!(candidates[0].result.is_none());
+        server.verify_and_reset().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn loaded_search_window_can_refresh_more_than_one_hundred_hits() {
+        let server = MatrixMockServer::new().await;
+        let client = server
+            .client_builder()
+            .on_builder(|builder| builder.search_index_store(SearchIndexStoreKind::InMemory))
+            .build()
+            .await;
+        client.event_cache().subscribe().unwrap();
+        let room_id = room_id!("!large-search-window:localhost");
+        let events = EventFactory::new()
+            .room(room_id)
+            .sender(user_id!("@alice:localhost"));
+        let mut builder = JoinedRoomBuilder::new(room_id);
+        for index in 0..140u64 {
+            let id = matrix_sdk::ruma::EventId::parse(format!("$large-window-{index}:localhost"))
+                .unwrap();
+            builder = builder.add_timeline_event(
+                events
+                    .text_msg("needle body")
+                    .event_id(&id)
+                    .server_ts((index + 1) * 1000),
+            );
+        }
+        server.sync_room(&client, builder).await;
+        let prefix = search_messages_with_client(
+            &client,
+            "needle".to_owned(),
+            Some(room_id.to_string()),
+            0,
+            125,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(prefix.results.len(), 125);
+        assert!(prefix.has_more);
+        let tail = search_messages_with_client(
+            &client,
+            "needle".to_owned(),
+            Some(room_id.to_string()),
+            125,
+            30,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tail.results.len(), 15);
+        assert!(!tail.has_more);
+        let ids: HashSet<_> = prefix
+            .results
+            .iter()
+            .chain(tail.results.iter())
+            .map(|result| result.event_id.as_str())
+            .collect();
+        assert_eq!(ids.len(), 140);
+        server.verify_and_reset().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn global_search_fetches_remote_history_after_its_cache_is_indexed() {
+        let server = MatrixMockServer::new().await;
+        let client = server
+            .client_builder()
+            .on_builder(|builder| builder.search_index_store(SearchIndexStoreKind::InMemory))
+            .build()
+            .await;
+        client.event_cache().subscribe().unwrap();
+        let room_id = room_id!("!global-search-history:localhost");
+        let events = EventFactory::new()
+            .room(room_id)
+            .sender(user_id!("@alice:localhost"));
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(room_id)
+                    .set_timeline_limited()
+                    .set_timeline_prev_batch("global-older")
+                    .add_timeline_event(
+                        events
+                            .text_msg("history match")
+                            .event_id(event_id!("$global-new:localhost"))
+                            .server_ts(2000),
+                    ),
+            )
+            .await;
+        server
+            .mock_room_messages()
+            .match_from("global-older")
+            .ok(RoomMessagesResponseTemplate::default().events(vec![events
+                .text_msg("history match")
+                .event_id(event_id!("$global-old:localhost"))
+                .server_ts(1000)]))
+            .mock_once()
+            .mount()
+            .await;
+        // An in-memory client has no cache-backfill marker to migrate. Even
+        // then, global search must not confuse cache completion with history.
+        let before = search_messages_with_client(
+            &client,
+            "history".to_owned(),
+            None,
+            0,
+            30,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        assert!(!before.history_complete);
+        let progress = backfill_message_search_with_client(&client, None)
+            .await
+            .unwrap();
+        assert_eq!(progress.loaded_events, 1);
+        let after = search_messages_with_client(
+            &client,
+            "history".to_owned(),
+            None,
+            0,
+            30,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        assert!(after
+            .results
+            .iter()
+            .any(|result| result.event_id == "$global-old:localhost"));
+        assert!(after.history_complete);
+        let room = client.get_room(room_id).unwrap();
+        SEARCH_HISTORY_COMPLETE
+            .lock()
+            .await
+            .remove(&message_search_room_key(&client, &room).unwrap());
+        server.verify_and_reset().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -14567,6 +14840,20 @@ pub async fn get_messages_before(
         sdk_timeline::get_messages_before(&client, &room, &from_event_id, limit).await
     })
     .await
+}
+
+/// Load the next room-ordered history page, including a cursor for hidden events.
+#[frb]
+pub async fn get_messages_after(
+    room_id: String,
+    from_event_id: String,
+    limit: u32,
+) -> Result<history::HistoryPage, String> {
+    let client = get_client()
+        .await
+        .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
+    let room = get_room_by_id(&client, &room_id)?;
+    run_bounded(async move { history::messages_after(&room, &from_event_id, limit).await }).await
 }
 
 #[cfg(test)]

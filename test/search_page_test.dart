@@ -166,6 +166,14 @@ void main() {
         ProviderScope(
           overrides: [
             messageSearchProvider.overrideWith((ref, request) async {
+              if (historyCompleteForNextPage) {
+                return const rust.MessageSearchPage(
+                  results: [_cjkResult, _olderCjkResult],
+                  hasMore: false,
+                  terms: ['开会'],
+                  historyComplete: true,
+                );
+              }
               if (request.offset == 0) {
                 return const rust.MessageSearchPage(
                   results: [_cjkResult],
@@ -477,12 +485,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
     expect(requests.single.offset, 0);
-    expect(requests.single.limit, 30);
+    expect(requests.single.limit, 60);
     expect(find.text('今晚八点开会', findRichText: true), findsOneWidget);
 
     await tester.tap(find.text('加载更多'));
     await tester.pump();
-    expect(requests.last.offset, 30);
+    expect(requests.last.offset, 60);
     expect(requests.last.limit, 30);
     expect(find.text('今晚八点开会', findRichText: true), findsOneWidget);
 

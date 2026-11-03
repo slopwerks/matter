@@ -53,7 +53,9 @@ void main() {
   late Directory root;
   late HttpServer upstream;
   late AudioPlaybackSession session;
+  late Completer<void> cacheReady;
   setUp(() async {
+    cacheReady = Completer<void>();
     SharedPreferences.setMockInitialValues({});
     root = await Directory.systemTemp.createTemp('matter-audio-latency-');
     installTempPathProvider(root);
@@ -62,7 +64,12 @@ void main() {
         AudioPlaybackSession(
           createPlayer: () =>
               MediaPlayback(player: Player(platformPlayer: _ReadablePlayer())),
-          waveformLoader: (_, preparation) async => const [],
+          waveformLoader: (_, preparation) async {
+            // The session awaits waveformFile (including cache finalization)
+            // before invoking this loader, even while playback starts early.
+            if (!cacheReady.isCompleted) cacheReady.complete();
+            return const [];
+          },
         )..setAccount(
           AudioAccount(
             '@alice:example.org',
@@ -172,31 +179,41 @@ void main() {
     },
   );
 
-  test(
-    'switching A to B to A reuses A instead of downloading it twice',
-    () async {
-      final counts = <String, int>{};
-      upstream.listen((request) async {
-        final path = request.uri.path;
-        counts[path] = (counts[path] ?? 0) + 1;
-        request.response.contentLength = 4096;
-        request.response.headers.contentType = ContentType('audio', 'ogg');
-        request.response.add(Uint8List(4096)..setAll(0, [79, 103, 103, 83]));
-        await request.response.close();
-      });
-      await HttpOverrides.runWithHttpOverrides(() async {
-        final a = track('one');
-        await session.playTrack(a);
-        // Ensure completed downloads are eligible for reuse before switching.
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        await session.playTrack(track('two'));
-        await session.playTrack(a);
-        expect(
-          counts[Uri.parse(a.url!).path],
-          1,
-          reason: 'A completed account-scoped file must survive switching away',
-        );
-      }, _RealHttp());
-    },
-  );
+  for (final tailDelay in [Duration.zero, const Duration(milliseconds: 250)]) {
+    test(
+      'switching A to B to A reuses A instead of downloading it twice tailDelay=$tailDelay',
+      () async {
+        final counts = <String, int>{};
+        upstream.listen((request) async {
+          final path = request.uri.path;
+          counts[path] = (counts[path] ?? 0) + 1;
+          request.response.bufferOutput = false;
+          request.response.contentLength = 8192;
+          request.response.headers.contentType = ContentType('audio', 'ogg');
+          request.response.add(Uint8List(4096)..setAll(0, [79, 103, 103, 83]));
+          await request.response.flush();
+          await Future<void>.delayed(tailDelay);
+          try {
+            request.response.add(Uint8List(4096));
+            await request.response.close();
+          } catch (_) {
+            // Switching before completion may cancel this response.
+          }
+        });
+        await HttpOverrides.runWithHttpOverrides(() async {
+          final a = track('one');
+          await session.playTrack(a);
+          await cacheReady.future.timeout(const Duration(seconds: 5));
+          await session.playTrack(track('two'));
+          await session.playTrack(a);
+          expect(
+            counts[Uri.parse(a.url!).path],
+            1,
+            reason:
+                'A completed account-scoped file must survive switching away',
+          );
+        }, _RealHttp());
+      },
+    );
+  }
 }
