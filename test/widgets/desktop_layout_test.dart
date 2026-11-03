@@ -115,6 +115,16 @@ Future<void> _pumpApp(WidgetTester tester, ProviderContainer container) async {
   for (var i = 0; i < 4; i++) {
     await tester.pump();
   }
+  final rooms =
+      container.read(allChatRoomsProvider).asData?.value ??
+      const <rust.ChatRoom>[];
+  final first = rooms.where((room) => room.roomType != 'space').firstOrNull;
+  if (first != null && find.byType(ChatDetailPage).evaluate().isEmpty) {
+    container.read(desktopRoomNavigationProvider).open!(first);
+    for (var i = 0; i < 4; i++) {
+      await tester.pump();
+    }
+  }
 }
 
 void main() {
@@ -885,6 +895,8 @@ void main() {
       await tester.pump();
     }
 
+    container.read(desktopRoomNavigationProvider).open!(bobRoom);
+    await tester.pump();
     expect(
       tester.widget<ChatDetailPage>(find.byType(ChatDetailPage)).roomId,
       bobRoom.id,
