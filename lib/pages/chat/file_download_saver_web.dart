@@ -7,9 +7,12 @@ Future<bool> openDownloadedFile({
   required Uint8List bytes,
 }) => saveDownloadedFile(filename: filename, bytes: bytes);
 
+const supportsSaveAs = false;
+
 Future<bool> saveDownloadedFile({
   required String filename,
   required Uint8List bytes,
+  bool chooseLocation = false,
 }) async {
   final location = await getSaveLocation(suggestedName: filename);
   if (location == null) return false;

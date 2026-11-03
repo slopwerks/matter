@@ -112,7 +112,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
     return name.endsWith('.md') || name.endsWith('.markdown');
   }
 
-  Future<void> _download({bool preview = false}) async {
+  Future<void> _download({bool preview = false, bool saveAs = false}) async {
     if (_downloading) return;
     final fileSize = widget.fileSize;
     if (preview &&
@@ -165,7 +165,11 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
         return;
       }
 
-      if (!await saveDownloadedFile(filename: _safeFilename, bytes: bytes)) {
+      if (!await saveDownloadedFile(
+        filename: _safeFilename,
+        bytes: bytes,
+        chooseLocation: saveAs,
+      )) {
         await notification?.cancel();
         return;
       }
@@ -261,6 +265,18 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                               ),
                             ),
                             const SizedBox(width: 8),
+                            if (supportsSaveAs)
+                              IconButton(
+                                tooltip: '另存为',
+                                onPressed: _downloading
+                                    ? null
+                                    : () => _download(saveAs: true),
+                                icon: Icon(
+                                  Icons.save_alt,
+                                  size: 18,
+                                  color: secondary,
+                                ),
+                              ),
                             if (_isMarkdown)
                               IconButton(
                                 tooltip: '下载文件',
