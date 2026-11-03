@@ -112,7 +112,7 @@ pub(super) async fn messages_around(
     Ok(messages)
 }
 
-async fn convert_room_events(
+pub(super) async fn convert_room_events(
     room: &Room,
     events: &[TimelineEvent],
 ) -> Result<Vec<ChatMessage>, String> {

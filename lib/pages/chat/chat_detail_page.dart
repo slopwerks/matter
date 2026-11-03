@@ -47,6 +47,7 @@ import 'room_state_edit_tracker.dart';
 import 'search_page.dart';
 import 'send_flight.dart';
 import 'unread_messages_banner.dart';
+import 'unread_navigation.dart';
 
 final chatRouteObserver = _ChatRouteObserver();
 
@@ -226,6 +227,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   unread.RoomUnreadState? _entryUnread;
   String? _entryUnreadOwner;
   bool _jumpingToUnread = false;
+  UnreadNavigation? _unreadNavigation;
+  int _unreadScanGeneration = 0;
+  bool _unreadScanRunning = false;
+  String? _unreadNextBatch;
+  Object? _unreadScanError;
+  bool _unreadObservationScheduled = false;
+  bool _showUnreadNavigation = false;
+  double _unreadTopInset = 0;
+  double _unreadBottomInset = 0;
+  final _unreadPageTokens = <String>{};
   bool _olderLoadArmed = true;
   bool _automaticOlderLoadBlocked = false;
   bool _olderLoadBlockedByError = false;
@@ -402,6 +413,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
         _activateRoom(resetAutoReadSuppression: true);
       } else if (next != null) {
+        _cancelUnreadScan();
         // Switched to another account: drop the view ownership so no
         // auto-read or subscription runs under the new account.
         _exitFocusedBrowsing(scrollToLatest: false);
@@ -411,6 +423,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
         _setSubscriptionsDesired(false);
       } else {
+        _cancelUnreadScan();
         // Logged out entirely: same teardown as switching away.
         _exitFocusedBrowsing(scrollToLatest: false);
         if (_currentRoomIdNotifier.value == widget.roomId) {
@@ -549,6 +562,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (_currentRoomIdNotifier.value != widget.roomId) return;
     _setRoomViewOwner(null);
     _viewSuspended = true;
+    _cancelUnreadScan();
   }
 
   void _setRoomViewOwner(String? accountUserId) {
@@ -572,6 +586,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _deactivateRoom() {
+    _cancelUnreadScan();
     _viewSuspended = false;
     if (_currentRoomIdNotifier.value == widget.roomId) {
       _currentRoomIdNotifier.value = null;
@@ -718,9 +733,17 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           return;
         }
         setState(() {
-          if (_entryUnreadOwner != account) _entryUnread = null;
+          if (_entryUnreadOwner != account) _clearUnreadNavigation();
           _entryUnreadOwner = account;
-          if (entry.unreadCount > 0) _entryUnread = entry;
+          if (entry.unreadCount > 0) {
+            _entryUnread = entry;
+            _unreadNavigation = UnreadNavigation(
+              boundaryResolved: entry.boundaryResolved == true,
+              eventIds: entry.unreadEventIds ?? const [],
+              unresolvedIds: entry.unresolvedEventIds ?? const [],
+              complete: entry.unreadEventIds != null,
+            );
+          }
         });
       } catch (error) {
         debugPrint('capture unread position failed: $error');
@@ -743,6 +766,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       unawaited(_markRoomReadAndRefreshList());
     }
     await refreshMessagesFromNetwork(ref, widget.roomId);
+    if (mounted &&
+        activation == _activationId &&
+        ref.read(activeUserIdProvider) == account &&
+        !_viewSuspended) {
+      unawaited(_loadUnreadPages());
+      _scheduleUnreadObservation();
+    }
   }
 
   Future<void> _markRoomReadAndRefreshList() async {
@@ -793,6 +823,187 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
   }
 
+  void _cancelUnreadScan() {
+    _unreadScanGeneration++;
+    _unreadScanRunning = false;
+  }
+
+  void _clearUnreadNavigation() {
+    _cancelUnreadScan();
+    _entryUnread = null;
+    _unreadNavigation = null;
+    _showUnreadNavigation = false;
+    _unreadNextBatch = null;
+    _unreadScanError = null;
+    _unreadPageTokens.clear();
+  }
+
+  Future<void> _loadUnreadPages() async {
+    final entry = _entryUnread;
+    final navigation = _unreadNavigation;
+    final account = _entryUnreadOwner;
+    if (entry == null ||
+        navigation == null ||
+        account == null ||
+        navigation.complete ||
+        _unreadScanRunning ||
+        _unreadScanError != null ||
+        entry.readEventId == null ||
+        entry.throughEventId == null) {
+      return;
+    }
+    final generation = ++_unreadScanGeneration;
+    _unreadScanRunning = true;
+    bool current() =>
+        mounted &&
+        generation == _unreadScanGeneration &&
+        identical(_entryUnread, entry) &&
+        !_viewSuspended &&
+        _currentRoomIdNotifier.value == widget.roomId &&
+        ref.read(activeUserIdProvider) == account;
+    try {
+      final ignored = await ref.read(ignoredUserIdsProvider.future);
+      while (current() && !navigation.complete) {
+        final page = await unread.getUnreadPage(
+          accountUserId: account,
+          roomId: widget.roomId,
+          readEventId: entry.readEventId!,
+          throughEventId: entry.throughEventId!,
+          nextBatch: _unreadNextBatch,
+          ignoredUserIds: ignored.toList(),
+        );
+        if (!current()) return;
+        if (!page.reachedEnd) {
+          final token = page.nextBatch;
+          if (token == null || !_unreadPageTokens.add(token)) {
+            throw StateError('未读分页没有前进，请重试');
+          }
+        }
+        setState(() {
+          navigation.addPage(
+            page.eventIds,
+            unresolvedIds: page.unresolvedEventIds,
+            reachedEnd: page.reachedEnd,
+          );
+          _unreadNextBatch = page.nextBatch;
+        });
+        _scheduleUnreadObservation();
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    } catch (error) {
+      if (current()) setState(() => _unreadScanError = error);
+    } finally {
+      if (mounted && generation == _unreadScanGeneration) {
+        _unreadScanRunning = false;
+        _scheduleUnreadObservation();
+      }
+    }
+  }
+
+  bool _unreadMessagePainted(RenderBox box, RenderBox viewport) {
+    RenderObject? node = box;
+    while (node != null && !identical(node, viewport)) {
+      if ((node is RenderOffstage && node.offstage) ||
+          (node is RenderOpacity && node.opacity == 0) ||
+          (node is RenderAnimatedOpacity && node.opacity.value == 0) ||
+          (node is RenderIgnorePointer && node.ignoring) ||
+          (node is RenderExcludeSemantics && node.excluding)) {
+        return false;
+      }
+      node = node.parent;
+    }
+    return node != null;
+  }
+
+  void _scheduleUnreadObservation() {
+    if (_unreadObservationScheduled || _entryUnread == null) return;
+    _unreadObservationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _unreadObservationScheduled = false;
+      final navigation = _unreadNavigation;
+      if (!mounted ||
+          navigation == null ||
+          _entryUnread == null ||
+          _viewSuspended ||
+          _isJumpingToMessage ||
+          _jumpingToUnread ||
+          _initialMessageJumpPending ||
+          _currentRoomIdNotifier.value != widget.roomId ||
+          ref.read(activeUserIdProvider) != _entryUnreadOwner ||
+          !(_route?.isCurrent ?? true)) {
+        return;
+      }
+      final ignored = ref.read(ignoredUserIdsProvider).value;
+      if (ignored == null) return;
+      final previousCount = navigation.remainingCount;
+      final previousTarget = navigation.firstNavigableId;
+      final redacted = ref.read(
+        redactedMessageIdsProvider(activeRoomAccountKey(ref, widget.roomId)),
+      );
+      navigation.exclude(redacted);
+      if (ref.read(messageCacheOwnerProvider(widget.roomId)) !=
+          _entryUnreadOwner) {
+        return;
+      }
+      final known = <String, ChatMessage>{
+        for (final message in ref.read(messageCacheProvider(widget.roomId)))
+          message.id: message,
+        for (final message in _olderMessages) message.id: message,
+        for (final message in _displayedMessages) message.id: message,
+      };
+      for (final message in known.values) {
+        if (isUnableToDecryptPlaceholder(message)) continue;
+        navigation.resolve(
+          message.id,
+          candidate:
+              !message.isMe &&
+              message.msgType != MessageType.event &&
+              !ignored.contains(message.senderId),
+        );
+      }
+      final viewport = _scrollViewportKey.currentContext?.findRenderObject();
+      if (viewport is! RenderBox || !viewport.attached || !viewport.hasSize) {
+        return;
+      }
+      final readable = Rect.fromLTRB(
+        0,
+        _unreadTopInset +
+            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0),
+        viewport.size.width,
+        math.max(0, viewport.size.height - _unreadBottomInset),
+      );
+      final rects = <String, Rect>{};
+      for (final message in _displayedMessages) {
+        if (message.isMe ||
+            message.msgType == MessageType.event ||
+            ignored.contains(message.senderId) ||
+            redacted.contains(message.id) ||
+            isUnableToDecryptPlaceholder(message)) {
+          continue;
+        }
+        final id = message.id;
+        final box = _messageAnchorKeys[id]?.currentContext?.findRenderObject();
+        if (box is RenderBox &&
+            box.attached &&
+            box.hasSize &&
+            _unreadMessagePainted(box, viewport)) {
+          rects[id] =
+              box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
+        }
+      }
+      final changed = navigation.observe(rects, readable);
+      final show = navigation.firstNavigableId != null;
+      if (!navigation.hasRemaining && navigation.complete) {
+        setState(_clearUnreadNavigation);
+      } else if (changed ||
+          show != _showUnreadNavigation ||
+          previousCount != navigation.remainingCount ||
+          previousTarget != navigation.firstNavigableId) {
+        setState(() => _showUnreadNavigation = show);
+      }
+    });
+  }
+
   Future<void> _jumpToFirstUnread() async {
     final entry = _entryUnread;
     final account = _entryUnreadOwner;
@@ -805,29 +1016,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           ref.read(activeUserIdProvider) != account) {
         return;
       }
-      final messages = await unread.getUnreadContext(
-        accountUserId: account,
-        roomId: widget.roomId,
-        readEventId: entry.readEventId,
-        ignoredUserIds: ignored.toList(),
-      );
-      if (!mounted ||
-          _entryUnread != entry ||
-          ref.read(activeUserIdProvider) != account) {
+      final targetId = _unreadNavigation?.firstNavigableId;
+      if (targetId == null) return;
+      final target = _messageIndex[targetId];
+      if (target != null &&
+          (target.isMe || ignored.contains(target.senderId))) {
+        _unreadNavigation?.resolve(targetId, candidate: false);
+        _scheduleUnreadObservation();
         return;
       }
-      final target = messages
-          .where(
-            (message) => !message.isMe && !ignored.contains(message.senderId),
-          )
-          .firstOrNull;
-      if (target == null) throw StateError('未找到可显示的未读消息，请重试');
       _jumpHighlight.value = null;
-      await _jumpToMessage(target.id);
-      if (mounted &&
-          _entryUnread == entry &&
-          _jumpHighlight.value == target.id) {
-        setState(() => _entryUnread = null);
+      await _jumpToMessage(targetId, unreadTarget: true);
+      if (!mounted ||
+          !identical(_entryUnread, entry) ||
+          ref.read(activeUserIdProvider) != account) {
+        return;
       }
     } catch (error) {
       if (mounted && _entryUnread == entry) {
@@ -835,7 +1038,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             .showSnackBar(SnackBar(content: Text('无法定位未读消息: $error')));
       }
     } finally {
-      if (mounted) setState(() => _jumpingToUnread = false);
+      if (mounted) {
+        setState(() => _jumpingToUnread = false);
+        _scheduleUnreadObservation();
+      }
     }
   }
 
@@ -849,6 +1055,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   @override
   void dispose() {
+    _cancelUnreadScan();
     WidgetsBinding.instance.removeObserver(this);
     chatRouteObserver.unsubscribe(this);
     final currentRoomIdNotifier = _currentRoomIdNotifier;
@@ -915,6 +1122,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final metrics = notification.metrics;
     if (notification.depth != 0) return false;
     _updateLatestMessageControl(metrics);
+    _scheduleUnreadObservation();
     if (notification is UserScrollNotification) {
       _userScrollActive = notification.direction != ScrollDirection.idle;
     }
@@ -1000,6 +1208,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   ) {
     if (notification.depth != 0) return false;
     _updateLatestMessageControl(notification.metrics);
+    _scheduleUnreadObservation();
     if (_timelinePivotEndId == null) {
       _maybeLoadOlderMessages(notification.metrics);
     }
@@ -1201,7 +1410,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (scrollToLatest) _scrollToLatest();
   }
 
-  Future<void> _jumpToMessage(String messageId) async {
+  Future<void> _jumpToMessage(
+    String messageId, {
+    bool unreadTarget = false,
+  }) async {
     final generation = ++_messageJumpGeneration;
     _isJumpingToMessage = true;
     try {
@@ -1314,12 +1526,52 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       if (!targetContext.mounted) {
         throw StateError('目标消息已离开时间线');
       }
-      await Scrollable.ensureVisible(
-        targetContext,
-        alignment: 0.5,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-      );
+      if (unreadTarget) {
+        final navigation = _unreadNavigation;
+        if (navigation == null) return;
+        final box = targetContext.findRenderObject();
+        final viewport = _scrollViewportKey.currentContext?.findRenderObject();
+        if (box is! RenderBox ||
+            viewport is! RenderBox ||
+            !box.hasSize ||
+            !viewport.hasSize) {
+          throw StateError('目标消息尚未完成布局');
+        }
+        final readableTop =
+            _unreadTopInset +
+            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
+        final readableHeight =
+            viewport.size.height - _unreadBottomInset - readableTop;
+        if (readableHeight <= 0) return;
+        final fits = box.size.height <= readableHeight;
+        final gap = fits ? 0.0 : navigation.firstUnseenOffset(messageId);
+        // Position once in the same unobstructed rectangle used for reading.
+        // Oversized content keeps overlap around the next unseen section.
+        final destination =
+            readableTop +
+            (fits
+                ? (readableHeight - box.size.height) / 2
+                : gap > 0
+                ? readableHeight / 2
+                : 0);
+        final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+        final position = _scrollController.position;
+        await _scrollController.animateTo(
+          (position.pixels + destination - top - gap).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          ),
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        await Scrollable.ensureVisible(
+          targetContext,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
       if (!mounted || generation != _messageJumpGeneration) return;
       _jumpHighlight.value = null;
       _jumpHighlight.value = messageId;
@@ -1339,6 +1591,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     } finally {
       if (mounted && generation == _messageJumpGeneration) {
         _isJumpingToMessage = false;
+        _scheduleUnreadObservation();
       }
     }
   }
@@ -2401,7 +2654,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           scrollController: _scrollController,
           scrollViewportKey: _scrollViewportKey,
           stickyBottomInset: stickyBottomInset,
-          onImageLoaded: null,
+          onImageLoaded: _scheduleUnreadObservation,
           onReplyRequested: () => _setInputPanelMode(InputPanelMode.keyboard),
           onMentionRequested: _mentionUser,
           onMessageJumpRequested: (messageId) =>
@@ -2594,7 +2847,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final audioVisible = ref.watch(audioPlayerVisibleProvider);
     final audioHeight = audioVisible ? audioMessageBarHeight : 0.0;
     final entryUnread = _entryUnreadOwner == activeUserId ? _entryUnread : null;
-    final unreadHeight = entryUnread == null ? 0.0 : unreadMessagesBannerHeight;
+    final unreadHeight = entryUnread != null && _showUnreadNavigation
+        ? unreadMessagesBannerHeight
+        : 0.0;
     final audioSession = ref.read(audioPlaybackSessionProvider);
     final colors = context.neu;
     final visualSettings = ref.watch(chatVisualSettingsProvider);
@@ -2639,6 +2894,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
     final pinnedStackHeight =
         kPinnedMessageRowHeight * _pinnedStackVisibleCount;
+    _unreadTopInset = headerInset + pinnedStackHeight + audioHeight;
+    _unreadBottomInset =
+        inputChromeHeight + math.max(panelReservedHeight, keyboardHeight);
+    _scheduleUnreadObservation();
     // The timeline fills the whole screen and runs under the floating glass
     // header (like the prototype); its clip edge sits at the screen edge
     // where the gradient-blur layer is nearly opaque, so no hard clip line
@@ -2807,147 +3066,169 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           : Duration.zero,
                       curve: Curves.easeOutCubic,
                       builder: (context, animatedBottomPadding, _) {
-                        return NotificationListener<ScrollMetricsNotification>(
-                          onNotification: _handleScrollMetricsNotification,
-                          child: NotificationListener<ScrollNotification>(
-                            onNotification: _handleScrollNotification,
-                            child: CustomScrollView(
-                              key: _scrollViewportKey,
-                              reverse: true,
-                              controller: _scrollController,
-                              // Pages newer than the pivot grow below this
-                              // origin, without changing the reading offset.
-                              center: pivot == null ? null : _timelineCenterKey,
-                              slivers: [
-                                SliverPadding(
-                                  padding: EdgeInsets.only(
-                                    bottom: 8 + animatedBottomPadding,
-                                  ),
-                                ),
-                                if (_focusedBrowsing && _isLoadingNewer)
-                                  const SliverToBoxAdapter(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(12),
-                                      child: Center(
-                                        child: SizedBox.square(
-                                          dimension: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            final reserve = 8 + animatedBottomPadding;
+                            final anchor =
+                                pivot == null || constraints.maxHeight <= 0
+                                ? 0.0
+                                : (reserve / constraints.maxHeight).clamp(
+                                    0.0,
+                                    1.0,
+                                  );
+                            return NotificationListener<
+                              ScrollMetricsNotification
+                            >(
+                              onNotification: _handleScrollMetricsNotification,
+                              child: NotificationListener<ScrollNotification>(
+                                onNotification: _handleScrollNotification,
+                                child: CustomScrollView(
+                                  key: _scrollViewportKey,
+                                  reverse: true,
+                                  controller: _scrollController,
+                                  // Pages newer than the pivot grow below this
+                                  // origin, without changing the reading offset.
+                                  center: pivot == null
+                                      ? null
+                                      : _timelineCenterKey,
+                                  // In reverse layout, move the reading origin up
+                                  // with the real composer/keyboard reservation.
+                                  anchor: anchor,
+                                  slivers: [
+                                    SliverPadding(
+                                      padding: EdgeInsets.only(
+                                        bottom: 8 + animatedBottomPadding,
+                                      ),
+                                    ),
+                                    if (_focusedBrowsing && _isLoadingNewer)
+                                      const SliverToBoxAdapter(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: Center(
+                                            child: SizedBox.square(
+                                              dimension: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                if (_focusedBrowsing &&
-                                    !_isLoadingNewer &&
-                                    _hasMoreNewerMessages)
-                                  SliverToBoxAdapter(
-                                    child: Center(
-                                      child: TextButton.icon(
-                                        key: const ValueKey(
-                                          'newer-history-retry',
-                                        ),
-                                        onPressed: _retryNewerMessages,
-                                        icon: const Icon(
-                                          Icons.refresh_rounded,
-                                          size: 16,
-                                        ),
-                                        label: Text(
-                                          _newerLoadBlockedByError
-                                              ? '重试加载更新消息'
-                                              : '加载更新消息',
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                if (pivot != null)
-                                  SliverList(
-                                    delegate: SliverChildBuilderDelegate(
-                                      (context, index) => _buildTimelineEntry(
-                                        timelineEntries[pivotIndex - 1 - index],
-                                        avatarMap,
-                                        membersById,
-                                        messageIndex,
-                                        8 + animatedBottomPadding,
-                                      ),
-                                      childCount: pivotIndex,
-                                      findChildIndexCallback: (key) {
-                                        final index = _findTimelineEntryIndex(
-                                          key,
-                                        );
-                                        return index == null ||
-                                                index >= pivotIndex
-                                            ? null
-                                            : pivotIndex - 1 - index;
-                                      },
-                                    ),
-                                  ),
-                                SliverList(
-                                  key: _timelineCenterKey,
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) => _buildTimelineEntry(
-                                      timelineEntries[pivotIndex + index],
-                                      avatarMap,
-                                      membersById,
-                                      messageIndex,
-                                      8 + animatedBottomPadding,
-                                    ),
-                                    childCount:
-                                        timelineEntries.length - pivotIndex,
-                                    findChildIndexCallback: (key) {
-                                      final index = _findTimelineEntryIndex(
-                                        key,
-                                      );
-                                      return index == null || index < pivotIndex
-                                          ? null
-                                          : index - pivotIndex;
-                                    },
-                                  ),
-                                ),
-                                if (_automaticOlderLoadBlocked &&
-                                    _hasMoreMessages)
-                                  if (timelineEntries.isEmpty)
-                                    SliverFillRemaining(
-                                      hasScrollBody: false,
-                                      child: Center(
-                                        child: TextButton.icon(
-                                          onPressed: _retryOlderMessages,
-                                          icon: const Icon(
-                                            Icons.refresh_rounded,
+                                    if (_focusedBrowsing &&
+                                        !_isLoadingNewer &&
+                                        _hasMoreNewerMessages)
+                                      SliverToBoxAdapter(
+                                        child: Center(
+                                          child: TextButton.icon(
+                                            key: const ValueKey(
+                                              'newer-history-retry',
+                                            ),
+                                            onPressed: _retryNewerMessages,
+                                            icon: const Icon(
+                                              Icons.refresh_rounded,
+                                              size: 16,
+                                            ),
+                                            label: Text(
+                                              _newerLoadBlockedByError
+                                                  ? '重试加载更新消息'
+                                                  : '加载更新消息',
+                                            ),
                                           ),
-                                          label: const Text('重试加载更早消息'),
                                         ),
                                       ),
-                                    )
-                                  else
-                                    SliverToBoxAdapter(
-                                      child: Center(
-                                        child: TextButton.icon(
-                                          onPressed: _retryOlderMessages,
-                                          icon: const Icon(
-                                            Icons.refresh_rounded,
-                                            size: 16,
-                                          ),
-                                          label: const Text('加载更早消息'),
+                                    if (pivot != null)
+                                      SliverList(
+                                        delegate: SliverChildBuilderDelegate(
+                                          (context, index) =>
+                                              _buildTimelineEntry(
+                                                timelineEntries[pivotIndex -
+                                                    1 -
+                                                    index],
+                                                avatarMap,
+                                                membersById,
+                                                messageIndex,
+                                                8 + animatedBottomPadding,
+                                              ),
+                                          childCount: pivotIndex,
+                                          findChildIndexCallback: (key) {
+                                            final index =
+                                                _findTimelineEntryIndex(key);
+                                            return index == null ||
+                                                    index >= pivotIndex
+                                                ? null
+                                                : pivotIndex - 1 - index;
+                                          },
                                         ),
+                                      ),
+                                    SliverList(
+                                      key: _timelineCenterKey,
+                                      delegate: SliverChildBuilderDelegate(
+                                        (context, index) => _buildTimelineEntry(
+                                          timelineEntries[pivotIndex + index],
+                                          avatarMap,
+                                          membersById,
+                                          messageIndex,
+                                          8 + animatedBottomPadding,
+                                        ),
+                                        childCount:
+                                            timelineEntries.length - pivotIndex,
+                                        findChildIndexCallback: (key) {
+                                          final index = _findTimelineEntryIndex(
+                                            key,
+                                          );
+                                          return index == null ||
+                                                  index < pivotIndex
+                                              ? null
+                                              : index - pivotIndex;
+                                        },
                                       ),
                                     ),
-                                SliverPadding(
-                                  padding: EdgeInsets.only(
-                                    // The timeline runs under the floating
-                                    // header and the pinned stack; keep the
-                                    // oldest end clear of both layers.
-                                    top:
-                                        headerInset +
-                                        pinnedStackHeight +
-                                        audioHeight +
-                                        unreadHeight +
-                                        4,
-                                  ),
+                                    if (_automaticOlderLoadBlocked &&
+                                        _hasMoreMessages)
+                                      if (timelineEntries.isEmpty)
+                                        SliverFillRemaining(
+                                          hasScrollBody: false,
+                                          child: Center(
+                                            child: TextButton.icon(
+                                              onPressed: _retryOlderMessages,
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
+                                              ),
+                                              label: const Text('重试加载更早消息'),
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        SliverToBoxAdapter(
+                                          child: Center(
+                                            child: TextButton.icon(
+                                              onPressed: _retryOlderMessages,
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 16,
+                                              ),
+                                              label: const Text('加载更早消息'),
+                                            ),
+                                          ),
+                                        ),
+                                    SliverPadding(
+                                      padding: EdgeInsets.only(
+                                        // The timeline runs under the floating
+                                        // header and the pinned stack; keep the
+                                        // oldest end clear of both layers.
+                                        top:
+                                            headerInset +
+                                            pinnedStackHeight +
+                                            audioHeight +
+                                            unreadHeight +
+                                            4,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         );
                       },
                       child: const SizedBox.shrink(),
@@ -3022,17 +3303,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                         unawaited(showAudioPlayerPanel(context, audioSession)),
                   ),
                 ),
-              if (entryUnread != null)
+              if (entryUnread != null && _showUnreadNavigation)
                 Positioned(
                   left: context.isMaterial ? 0 : 12,
                   right: context.isMaterial ? 0 : 12,
                   top: headerInset + pinnedStackHeight + audioHeight,
                   child: UnreadMessagesBanner(
-                    count: entryUnread.unreadCount,
-                    hasReadMarker: entryUnread.readEventId != null,
+                    count: _unreadNavigation?.remainingCount,
                     loading: _jumpingToUnread,
                     onPressed: () => unawaited(_jumpToFirstUnread()),
-                    onDismiss: () => setState(() => _entryUnread = null),
+                    onDismiss: () => setState(_clearUnreadNavigation),
                   ),
                 ),
               // Telegram-style floating date that tracks the day at the top edge

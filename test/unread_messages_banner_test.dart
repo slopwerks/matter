@@ -20,7 +20,6 @@ void main() {
               home: Scaffold(
                 body: UnreadMessagesBanner(
                   count: 1234,
-                  hasReadMarker: true,
                   loading: false,
                   onPressed: () => jumps++,
                   onDismiss: () => dismisses++,
@@ -50,7 +49,6 @@ void main() {
         home: Scaffold(
           body: UnreadMessagesBanner(
             count: 99,
-            hasReadMarker: true,
             loading: true,
             onPressed: () => jumps++,
             onDismiss: () => dismissed = true,

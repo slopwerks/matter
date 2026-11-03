@@ -8,8 +8,8 @@ import '../matrix.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `newer_receipt`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `cached_entry_interval`, `classify_unread_events`, `newer_receipt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
 
 /// This is a local read. Call it before enabling the viewed room's auto-reads.
 Future<RoomUnreadState> getRoomUnreadState({
@@ -18,6 +18,24 @@ Future<RoomUnreadState> getRoomUnreadState({
 }) => RustLib.instance.api.crateApiMatrixUnreadGetRoomUnreadState(
   accountUserId: accountUserId,
   roomId: roomId,
+);
+
+/// Enumerate one finite room-ordered page against the saved entry receipt/tail.
+/// Never reads the current receipt, which auto-read may already have advanced.
+Future<UnreadPage> getUnreadPage({
+  required String accountUserId,
+  required String roomId,
+  required String readEventId,
+  required String throughEventId,
+  String? nextBatch,
+  required List<String> ignoredUserIds,
+}) => RustLib.instance.api.crateApiMatrixUnreadGetUnreadPage(
+  accountUserId: accountUserId,
+  roomId: roomId,
+  readEventId: readEventId,
+  throughEventId: throughEventId,
+  nextBatch: nextBatch,
+  ignoredUserIds: ignoredUserIds,
 );
 
 /// Resolve the first renderable successor in server order, not timestamp order.
@@ -40,10 +58,33 @@ class RoomUnreadState {
   final int unreadCount;
   final String? readEventId;
 
-  const RoomUnreadState({required this.unreadCount, this.readEventId});
+  /// Frozen remote tail for this visit; later sync events are not included.
+  final String? throughEventId;
+
+  /// True only when receipt scopes/order justify a whole-room boundary.
+  final bool? boundaryResolved;
+
+  /// Some means the complete, continuous entry interval was found locally.
+  final List<String>? unreadEventIds;
+  final List<String>? unresolvedEventIds;
+
+  const RoomUnreadState({
+    required this.unreadCount,
+    this.readEventId,
+    this.throughEventId,
+    this.boundaryResolved,
+    this.unreadEventIds,
+    this.unresolvedEventIds,
+  });
 
   @override
-  int get hashCode => unreadCount.hashCode ^ readEventId.hashCode;
+  int get hashCode =>
+      unreadCount.hashCode ^
+      readEventId.hashCode ^
+      throughEventId.hashCode ^
+      boundaryResolved.hashCode ^
+      unreadEventIds.hashCode ^
+      unresolvedEventIds.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -51,5 +92,40 @@ class RoomUnreadState {
       other is RoomUnreadState &&
           runtimeType == other.runtimeType &&
           unreadCount == other.unreadCount &&
-          readEventId == other.readEventId;
+          readEventId == other.readEventId &&
+          throughEventId == other.throughEventId &&
+          boundaryResolved == other.boundaryResolved &&
+          unreadEventIds == other.unreadEventIds &&
+          unresolvedEventIds == other.unresolvedEventIds;
+}
+
+class UnreadPage {
+  final List<String> eventIds;
+  final List<String> unresolvedEventIds;
+  final String? nextBatch;
+  final bool reachedEnd;
+
+  const UnreadPage({
+    required this.eventIds,
+    required this.unresolvedEventIds,
+    this.nextBatch,
+    required this.reachedEnd,
+  });
+
+  @override
+  int get hashCode =>
+      eventIds.hashCode ^
+      unresolvedEventIds.hashCode ^
+      nextBatch.hashCode ^
+      reachedEnd.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UnreadPage &&
+          runtimeType == other.runtimeType &&
+          eventIds == other.eventIds &&
+          unresolvedEventIds == other.unresolvedEventIds &&
+          nextBatch == other.nextBatch &&
+          reachedEnd == other.reachedEnd;
 }

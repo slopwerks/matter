@@ -8,14 +8,12 @@ class UnreadMessagesBanner extends StatelessWidget {
   const UnreadMessagesBanner({
     super.key,
     required this.count,
-    required this.hasReadMarker,
     required this.loading,
     required this.onPressed,
     required this.onDismiss,
   });
 
-  final int count;
-  final bool hasReadMarker;
+  final int? count;
   final bool loading;
   final VoidCallback onPressed;
   final VoidCallback onDismiss;
@@ -37,7 +35,9 @@ class UnreadMessagesBanner extends StatelessWidget {
             label: Text(
               loading
                   ? '正在定位未读消息…'
-                  : '$count 条未读 · ${hasReadMarker ? '跳到最早未读' : '查看较早消息'}',
+                  : count != null
+                  ? '$count 条未读 · 跳到最早未读'
+                  : '未读消息 · 跳到尚未读过的位置',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
