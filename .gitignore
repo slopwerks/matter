@@ -92,3 +92,6 @@ local.properties
 *.p12
 
 .zvec-grep/
+
+.pi/
+docs/
