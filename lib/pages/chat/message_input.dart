@@ -1165,17 +1165,38 @@ class MessageInputState extends ConsumerState<MessageInput> {
         Offset.zero & overlay.size,
       ),
       items: [
-        if (_isDesktop)
+        if (_isDesktop || _keyboardMouse) ...[
           const PopupMenuItem<String>(
-            value: 'attachments',
+            value: 'file',
             child: Row(
               children: [
                 Icon(Icons.attach_file_rounded, size: 22),
                 SizedBox(width: 12),
-                Text('其他附件'),
+                Text('发送文件'),
               ],
             ),
           ),
+          const PopupMenuItem<String>(
+            value: 'poll',
+            child: Row(
+              children: [
+                Icon(Icons.poll_outlined, size: 22),
+                SizedBox(width: 12),
+                Text('发起投票'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'location',
+            child: Row(
+              children: [
+                Icon(Icons.location_on_outlined, size: 22),
+                SizedBox(width: 12),
+                Text('发送位置'),
+              ],
+            ),
+          ),
+        ],
         if (_isDesktop)
           PopupMenuItem<String>(
             value: 'keyboard',
@@ -1207,8 +1228,14 @@ class MessageInputState extends ConsumerState<MessageInput> {
         ),
       ],
     );
-    if (action == 'attachments' && mounted) {
-      _toggleAttachmentPanel();
+    if (mounted && action == 'file') {
+      final files = await openFiles();
+      if (mounted && files.isNotEmpty) unawaited(previewExternalFiles(files));
+    }
+    if (mounted && (action == 'poll' || action == 'location')) {
+      await _openAttachmentTool(
+        action == 'poll' ? AttachmentTab.poll : AttachmentTab.location,
+      );
     }
     if (action == 'keyboard' && mounted) {
       await showDialog<void>(
@@ -1234,6 +1261,52 @@ class MessageInputState extends ConsumerState<MessageInput> {
     }
     if (action == 'markdown' && mounted) {
       _openMarkdownComposer();
+    }
+  }
+
+  Future<void> _openAttachmentTool(AttachmentTab tab) async {
+    if (_externalAttachmentsOpen) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final roomId = widget.roomId;
+    _focusNode.unfocus();
+    widget.onPanelModeChanged(InputPanelMode.none);
+    setState(() => _externalAttachmentsOpen = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          shape: composerControlShape,
+          child: ScaffoldMessenger(
+            child: SizedBox(
+              width: 720,
+              height: MediaQuery.sizeOf(dialogContext).height * .85,
+              child: Scaffold(
+                body: AttachmentPicker(
+                  initialTab: tab,
+                  enforceAccount: true,
+                  accountUserId: _draftKey.userId,
+                  roomId: roomId,
+                  height: MediaQuery.sizeOf(dialogContext).height * .85,
+                  maxHeight: MediaQuery.sizeOf(dialogContext).height * .85,
+                  totalMembers: widget.totalMembers,
+                  onRefresh: (_) => refreshMessagesContainer(container, roomId),
+                  resolveSendPresentation: widget.resolveSendPresentation,
+                  onMessageQueued: widget.onMessageQueued,
+                  onMessageSent: widget.onMessageSent,
+                  onHeightChanged: (_) {},
+                  onClose: () => navigator.pop(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _externalAttachmentsOpen = false);
+        _showKeyboard();
+      }
     }
   }
 

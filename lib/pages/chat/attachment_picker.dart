@@ -86,6 +86,8 @@ class AttachmentPicker extends StatefulWidget {
   final int totalMembers;
   final ValueChanged<double> onHeightChanged;
   final VoidCallback onClose;
+  final AttachmentTab initialTab;
+  final bool enforceAccount;
   final List<XFile>? initialFiles;
   final AttachmentMediaDraft? draft;
   final bool inline;
@@ -105,6 +107,8 @@ class AttachmentPicker extends StatefulWidget {
     required this.totalMembers,
     required this.onHeightChanged,
     required this.onClose,
+    this.initialTab = AttachmentTab.media,
+    this.enforceAccount = false,
     this.initialFiles,
     this.draft,
     this.inline = false,
@@ -165,6 +169,8 @@ class AttachmentPickerState extends State<AttachmentPicker> {
     _draftKey = (roomId: widget.roomId, userId: widget.accountUserId);
     _sheetController = DraggableScrollableController();
     _sheetExtent = ValueNotifier<double>(0);
+    _tab = widget.initialTab;
+    _visitedTabs.add(widget.initialTab);
     for (final file in widget.initialFiles ?? const <XFile>[]) {
       final item = _mediaDraft.forFile(file);
       if (!_mediaDraft.selected.contains(item)) _mediaDraft.toggle(item);
@@ -708,7 +714,9 @@ class AttachmentPickerState extends State<AttachmentPicker> {
 
   void _ensureCanSend() {
     if (!mounted) throw StateError('附件发送已取消');
-    if ((widget.initialFiles != null || widget.inline) &&
+    if ((widget.initialFiles != null ||
+            widget.inline ||
+            widget.enforceAccount) &&
         _container.read(activeUserIdProvider) != _draftKey.userId) {
       throw StateError('账号已切换，请重新选择附件');
     }
@@ -737,6 +745,7 @@ class AttachmentPickerState extends State<AttachmentPicker> {
       for (var i = 0; i < ops.length; i++) {
         if (!mounted) return;
         try {
+          _ensureCanSend();
           await ops[i]();
           sent++;
           if (!mounted && !_previewOpen && widget.draft == null) return;

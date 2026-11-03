@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/pages/chat/attachment_picker.dart';
 import 'package:matter/pages/chat/attachment_image_resize.dart';
 import 'package:matter/pages/chat/attachment_media_utils.dart';
 import 'package:matter/pages/chat/desktop_clipboard.dart';
@@ -37,6 +38,30 @@ class _Api implements RustLibApi {
           List<int> bytes,
         })
       >[];
+  final polls = <String>[];
+  final locations = <String>[];
+  @override
+  Future<void> crateApiMatrixSendPoll({
+    required String accountUserId,
+    required String roomId,
+    required String question,
+    required List<String> answers,
+    required bool disclosed,
+    required int maxSelections,
+  }) async {
+    polls.add('$accountUserId/$roomId/$question/${answers.join(",")}');
+  }
+
+  @override
+  Future<void> crateApiMatrixSendLocation({
+    required String accountUserId,
+    required String roomId,
+    required String body,
+    required String geoUri,
+  }) async {
+    locations.add('$accountUserId/$roomId/$geoUri');
+  }
+
   final files = <String>[];
   String? failFile;
   bool fail = false;
@@ -156,6 +181,8 @@ void main() {
     container = ProviderContainer();
     container.read(activeUserIdProvider.notifier).value = '@alice:example.org';
     api.images.clear();
+    api.polls.clear();
+    api.locations.clear();
     api.files.clear();
     api.failFile = null;
     api.fail = false;
@@ -640,6 +667,113 @@ void main() {
       await tester.tap(find.byTooltip('移除图片'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('移除图片'), findsNothing);
+      await disposeInput(tester);
+    },
+  );
+
+  testWidgets(
+    'desktop more opens poll directly and sends through the room pipeline',
+    (tester) async {
+      await tester.pumpWidget(_input(container));
+      await tester.enterText(find.byType(TextField), '保留草稿');
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      expect(find.text('发送文件'), findsOneWidget);
+      expect(find.text('发送位置'), findsOneWidget);
+      expect(find.text('其他附件'), findsNothing);
+      await tester.tap(find.text('发起投票'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AttachmentPicker>(find.byType(AttachmentPicker))
+            .initialTab,
+        AttachmentTab.poll,
+      );
+      final fields = find.descendant(
+        of: find.byType(AttachmentPicker),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(fields.at(0), '午饭吃什么');
+      await tester.enterText(fields.at(1), '面条');
+      await tester.enterText(fields.at(2), '米饭');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('attachment-send-button')));
+      await finishUpload(tester);
+      expect(api.polls, hasLength(1));
+      expect(api.polls.single, contains('午饭吃什么/面条,米饭'));
+      expect(find.byType(Dialog), findsNothing);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '保留草稿',
+      );
+      await disposeInput(tester);
+    },
+  );
+
+  testWidgets(
+    'desktop location entry opens location and blocks a stale account',
+    (tester) async {
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      final cache = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('matter-map-test-'),
+      ))!;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (_) async => cache.path);
+      addTearDown(() async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+        await cache.delete(recursive: true);
+      });
+      const location = MethodChannel('flutter.baseflow.com/geolocator');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            location,
+            (call) async => switch (call.method) {
+              'isLocationServiceEnabled' => true,
+              'checkPermission' => 2,
+              'getCurrentPosition' => <String, dynamic>{
+                'latitude': 39.9,
+                'longitude': 116.4,
+              },
+              _ => null,
+            },
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(location, null),
+      );
+      await tester.pumpWidget(_input(container));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('发送位置'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<AttachmentPicker>(find.byType(AttachmentPicker))
+            .initialTab,
+        AttachmentTab.location,
+      );
+      expect(find.text('正在获取当前位置'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('attachment-send-button')));
+      await finishUpload(tester);
+      expect(api.locations, hasLength(1));
+      expect(api.locations.single, contains('geo:39.9,116.4'));
+      expect(find.byType(Dialog), findsNothing);
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('发送位置'));
+      await tester.pumpAndSettle();
+      container.read(activeUserIdProvider.notifier).value = '@bob:example.org';
+      await tester.tap(find.byKey(const ValueKey('attachment-send-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(api.locations, hasLength(1));
+      expect(find.textContaining('账号已切换'), findsOneWidget);
+      Navigator.of(
+        tester.element(find.byType(AttachmentPicker)),
+        rootNavigator: true,
+      ).pop();
+      await tester.pumpAndSettle();
       await disposeInput(tester);
     },
   );
