@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/startup_page_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/grouped_rows.dart';
 import '../../widgets/max_content_width.dart';
@@ -27,23 +28,51 @@ class StartupPageSettingsPage extends ConsumerWidget {
             MediaQuery.paddingOf(context).bottom + 24,
           ),
           children: [
-            GroupedRows(
-              children: [
-                for (final page in StartupPage.values)
-                  ListTile(
-                    key: ValueKey('startup-page-${page.name}'),
-                    title: Text(page.label),
-                    subtitle: page == StartupPage.remember
-                        ? const Text('没有记录或记录失效时显示全部会话')
-                        : null,
-                    trailing: selected == page
-                        ? const Icon(Icons.check_rounded)
-                        : null,
-                    onTap: () =>
-                        ref.read(startupPageProvider.notifier).setPage(page),
-                  ),
-              ],
-            ),
+            if (context.isMaterial)
+              RadioGroup<StartupPage>(
+                groupValue: selected,
+                onChanged: (page) {
+                  if (page != null) {
+                    ref.read(startupPageProvider.notifier).setPage(page);
+                  }
+                },
+                child: GroupedRows(
+                  children: [
+                    for (final page in StartupPage.values)
+                      RadioListTile<StartupPage>(
+                        key: ValueKey('startup-page-${page.name}'),
+                        value: page,
+                        selected: selected == page,
+                        selectedTileColor: materialChoiceFill(
+                          Theme.of(context),
+                          selected: selected == page,
+                        ),
+                        title: Text(page.label),
+                        subtitle: page == StartupPage.remember
+                            ? const Text('没有记录或记录失效时显示全部会话')
+                            : null,
+                      ),
+                  ],
+                ),
+              )
+            else
+              GroupedRows(
+                children: [
+                  for (final page in StartupPage.values)
+                    ListTile(
+                      key: ValueKey('startup-page-${page.name}'),
+                      title: Text(page.label),
+                      subtitle: page == StartupPage.remember
+                          ? const Text('没有记录或记录失效时显示全部会话')
+                          : null,
+                      trailing: selected == page
+                          ? const Icon(Icons.check_rounded)
+                          : null,
+                      onTap: () =>
+                          ref.read(startupPageProvider.notifier).setPage(page),
+                    ),
+                ],
+              ),
             const SizedBox(height: 16),
             Text(
               '下次启动生效。记住的页面按账号分别保存，不会恢复上次打开的消息或自动发送已读回执。',

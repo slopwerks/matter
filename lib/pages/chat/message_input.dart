@@ -792,7 +792,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => Dialog(
-          shape: composerControlShape,
+          shape: context.isMaterial ? null : composerControlShape,
+          clipBehavior: Clip.antiAlias,
           child: ScaffoldMessenger(
             child: SizedBox(
               width: 720,
@@ -1158,7 +1159,11 @@ class MessageInputState extends ConsumerState<MessageInput> {
       return;
     }
     final action = await showMenu<String>(
-      shape: _isDesktop ? composerControlShape : null,
+      shape: context.isMaterial
+          ? null
+          : _isDesktop
+          ? composerControlShape
+          : null,
       context: context,
       position: RelativeRect.fromRect(
         buttonBox.localToGlobal(Offset.zero) & buttonBox.size,
@@ -1241,7 +1246,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          shape: composerControlShape,
+          shape: context.isMaterial ? null : composerControlShape,
           title: const Text('发送与换行按键'),
           content: const SizedBox(
             width: 420,
@@ -1276,7 +1281,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => Dialog(
-          shape: composerControlShape,
+          shape: context.isMaterial ? null : composerControlShape,
+          clipBehavior: Clip.antiAlias,
           child: ScaffoldMessenger(
             child: SizedBox(
               width: 720,
@@ -2283,7 +2289,10 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 sendButton: expanded
                     ? FilledButton.icon(
                         key: const ValueKey('send_only'),
-                        style: composerSendButtonStyle(compact: desktop),
+                        style: composerSendButtonStyle(
+                          Theme.of(context),
+                          compact: desktop,
+                        ),
                         icon: const Icon(Icons.send_rounded),
                         onPressed: sendBusy || (!_hasText && !hasImages)
                             ? null

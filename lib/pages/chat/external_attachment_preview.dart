@@ -99,7 +99,10 @@ class ExternalAttachmentPreview extends StatelessWidget {
                   const SizedBox(width: 8),
                   FilledButton(
                     key: const ValueKey('external-attachment-send'),
-                    style: composerSendButtonStyle(compact: true),
+                    style: composerSendButtonStyle(
+                      Theme.of(context),
+                      compact: true,
+                    ),
                     onPressed: draft.isSending || draft.selected.isEmpty
                         ? null
                         : () async {

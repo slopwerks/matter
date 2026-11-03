@@ -43,7 +43,7 @@ class ComposerAttachmentStrip extends ConsumerWidget {
               children: [
                 Material(
                   clipBehavior: Clip.antiAlias,
-                  shape: composerControlShape,
+                  shape: composerThumbnailShape(Theme.of(context)),
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: InkWell(
                     onTap: draft.isSending

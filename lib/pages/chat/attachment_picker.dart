@@ -20,6 +20,7 @@ import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
@@ -894,20 +895,28 @@ class AttachmentPickerState extends State<AttachmentPicker> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Container(
-        decoration: NeuDecoration(
-          colors: colors,
-          superellipseEnabled: ChatVisualSettingsScope.of(context)
-              .superellipseBorderEnabled,
-          radius: NeuRadius.surface,
-          intensity: .6,
-        ),
+        decoration: context.isMaterial
+            ? null
+            : NeuDecoration(
+                colors: colors,
+                superellipseEnabled: ChatVisualSettingsScope.of(context)
+                    .superellipseBorderEnabled,
+                radius: NeuRadius.surface,
+                intensity: .6,
+              ),
         child: Material(
-          type: MaterialType.transparency,
+          type: context.isMaterial
+              ? MaterialType.canvas
+              : MaterialType.transparency,
+          color: context.isMaterial
+              ? Theme.of(context).colorScheme.surfaceContainerLow
+              : null,
           clipBehavior: Clip.antiAlias,
-          shape:
-              (ChatVisualSettingsScope.maybeOf(context)
-                      ?.superellipseBorderEnabled ??
-                  true)
+          shape: context.isMaterial
+              ? materialListItemShape
+              : (ChatVisualSettingsScope.maybeOf(context)
+                        ?.superellipseBorderEnabled ??
+                    true)
               ? RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(NeuRadius.surface),
                 )
@@ -1092,6 +1101,35 @@ class _FrostedTabBar extends StatelessWidget {
       _TabItem(AttachmentTab.poll, Icons.poll_rounded, '投票'),
       _TabItem(AttachmentTab.location, Icons.location_on_rounded, '地址'),
     ];
+    if (context.isMaterial) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: SizedBox(
+          key: const ValueKey('attachment-tab-bar'),
+          height: _attachmentDockHeight - _attachmentDockGap,
+          child: NavigationBar(
+            height: _attachmentDockHeight - _attachmentDockGap,
+            selectedIndex: tab.index,
+            onDestinationSelected: onTabChanged == null
+                ? null
+                : (index) => onTabChanged!(AttachmentTab.values[index]),
+            destinations: [
+              for (final item in items)
+                NavigationDestination(
+                  enabled: onTabChanged != null,
+                  icon: item.tab == AttachmentTab.file && isFileBusy
+                      ? const SizedBox.square(
+                          dimension: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(item.icon),
+                  label: item.label,
+                ),
+            ],
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: SizedBox(
@@ -1202,23 +1240,38 @@ class _SendBar extends StatelessWidget {
           alignment: Alignment.centerRight,
           child: SizedBox(
             height: _attachmentSendButtonHeight,
-            child: NeuButton(
-              key: const ValueKey('attachment-send-button'),
-              accent: true,
-              radius: NeuRadius.nav,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              onPressed: active ? onSend : null,
-              icon: isSending
-                  ? SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: colors.onAccent,
-                      ),
-                    )
-                  : const Icon(Icons.send_rounded),
-              child: Text(label),
-            ),
+            child: context.isMaterial
+                ? FilledButton.icon(
+                    key: const ValueKey('attachment-send-button'),
+                    onPressed: active ? onSend : null,
+                    icon: isSending
+                        ? SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colors.onAccent,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded),
+                    label: Text(label),
+                  )
+                : NeuButton(
+                    key: const ValueKey('attachment-send-button'),
+                    accent: true,
+                    radius: NeuRadius.nav,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    onPressed: active ? onSend : null,
+                    icon: isSending
+                        ? SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colors.onAccent,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded),
+                    child: Text(label),
+                  ),
           ),
         ),
       ),

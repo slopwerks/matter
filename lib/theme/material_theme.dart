@@ -90,6 +90,19 @@ const composerControlShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.all(Radius.circular(4)),
 );
 
+OutlinedBorder composerButtonShape(ThemeData theme) =>
+    theme.extension<NeuColors>()?.isMaterial == true
+    ? const StadiumBorder()
+    : composerControlShape;
+
+ShapeBorder composerThumbnailShape(ThemeData theme) =>
+    theme.extension<NeuColors>()?.isMaterial == true
+    ? materialPreviewThumbnailShape
+    : composerControlShape;
+
+Color? materialChoiceFill(ThemeData theme, {required bool selected}) =>
+    selected ? theme.colorScheme.secondaryContainer : null;
+
 // Shared flat composer controls: mouse targets are compact; touch stays roomy.
 ButtonStyle composerIconButtonStyle(ThemeData theme, {required bool compact}) =>
     IconButton.styleFrom(
@@ -99,7 +112,7 @@ ButtonStyle composerIconButtonStyle(ThemeData theme, {required bool compact}) =>
           ? MaterialTapTargetSize.shrinkWrap
           : MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
-      shape: composerControlShape,
+      shape: composerButtonShape(theme),
     ).copyWith(
       foregroundColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected)
@@ -108,14 +121,14 @@ ButtonStyle composerIconButtonStyle(ThemeData theme, {required bool compact}) =>
       ),
     );
 
-ButtonStyle composerSendButtonStyle({required bool compact}) =>
+ButtonStyle composerSendButtonStyle(ThemeData theme, {required bool compact}) =>
     FilledButton.styleFrom(
       minimumSize: Size(64, compact ? 32 : 48),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       tapTargetSize: compact
           ? MaterialTapTargetSize.shrinkWrap
           : MaterialTapTargetSize.padded,
-      shape: composerControlShape,
+      shape: composerButtonShape(theme),
     );
 
 /// 页面标题字号。`buildFloatingAppBar` 和自绘标题行统一取它,不再各抄一个数字。

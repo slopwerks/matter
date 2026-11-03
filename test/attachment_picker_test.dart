@@ -175,18 +175,26 @@ void main() {
     expect(find.text('图片 / 视频'), findsNothing);
     expect(find.byIcon(Icons.close_rounded), findsNothing);
 
-    final outerSurface = tester.widget<Container>(
-      find
-          .descendant(
-            of: find.byType(AttachmentPicker),
-            matching: find.byWidgetPredicate(
-              (widget) => widget is Container && widget.decoration != null,
-            ),
-          )
-          .first,
-    );
-    final decoration = outerSurface.decoration! as NeuDecoration;
-    expect(decoration.radius, NeuRadius.surface);
+    final materialTheme = tester
+        .element(find.byType(AttachmentPicker))
+        .isMaterial;
+    if (!materialTheme) {
+      final outerSurface = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byType(AttachmentPicker),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Container && widget.decoration is NeuDecoration,
+              ),
+            )
+            .first,
+      );
+      expect(
+        (outerSurface.decoration! as NeuDecoration).radius,
+        NeuRadius.surface,
+      );
+    }
     final sheetMaterial = tester.widget<Material>(
       find
           .descendant(
@@ -196,6 +204,15 @@ void main() {
           .first,
     );
     expect(sheetMaterial.clipBehavior, Clip.antiAlias);
+    if (materialTheme) {
+      expect(
+        sheetMaterial.color,
+        Theme.of(tester.element(find.byType(AttachmentPicker)))
+            .colorScheme
+            .surfaceContainerLow,
+      );
+      expect(find.byType(NavigationBar), findsOneWidget);
+    }
   });
 
   testWidgets('attachment panel expands after an upward drag', (tester) async {
@@ -330,13 +347,16 @@ void main() {
     final sendButtonFinder = find.byKey(
       const ValueKey('attachment-send-button'),
     );
-    var sendButton = tester.widget<NeuButton>(sendButtonFinder);
-    expect(sendButton.onPressed, isNull);
+    VoidCallback? sendAction() => switch (tester.widget(sendButtonFinder)) {
+      FilledButton button => button.onPressed,
+      NeuButton button => button.onPressed,
+      _ => throw StateError('Unexpected attachment send control'),
+    };
+    expect(sendAction(), isNull);
 
     await tester.enterText(find.widgetWithText(TextField, '选项 2'), '米饭');
     await tester.pump();
-    sendButton = tester.widget<NeuButton>(sendButtonFinder);
-    expect(sendButton.onPressed, isNotNull);
+    expect(sendAction(), isNotNull);
     expect(tester.getSize(sendButtonFinder).height, 44);
     final tabBarTop = tester
         .getTopLeft(find.byKey(const ValueKey('attachment-tab-bar')))
