@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../features/push/push_runtime.dart';
+import '../../features/diagnostics/diagnostic_exporter.dart'
+    show redactLogMessage;
 import '../../features/audio/audio_playback_provider.dart';
 import '../../features/audio/audio_message_bar.dart';
 import '../../features/audio/audio_player_panel.dart';
@@ -31,6 +33,7 @@ import '../../widgets/sheets.dart';
 import 'attachment_caption_composer.dart' show attachmentCaptionClearance;
 import 'chat_timestamp.dart';
 import 'composer_picker_panel.dart';
+import 'desktop_file_drop.dart';
 import 'date_separator.dart';
 import 'floating_date_header.dart';
 import 'forward_message_sheet.dart';
@@ -115,6 +118,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final bool isDm;
   final String? initialMessageId;
   final bool embedded;
+  final VoidCallback? onBack;
   final bool detailsPanelOpen;
   final VoidCallback? onToggleDetailsPanel;
   final VoidCallback? onRoomLeft;
@@ -139,6 +143,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.isDm = false,
     this.initialMessageId,
     this.embedded = false,
+    this.onBack,
     this.detailsPanelOpen = false,
     this.onToggleDetailsPanel,
     this.onRoomLeft,
@@ -162,7 +167,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// The activation id this page last wrote (0 = never activated).
   int _activationId = 0;
 
-  final _scrollController = ScrollController();
+  Completer<void>? _timelineAttached;
+  late final _scrollController = ScrollController(
+    onAttach: (_) {
+      _timelineAttached?.complete();
+      _timelineAttached = null;
+    },
+  );
   final _scrollViewportKey = GlobalKey();
   final _timelineCenterKey = GlobalKey();
   String? _timelinePivotEndId;
@@ -449,6 +460,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
     if (oldWidget.avatarEventId != widget.avatarEventId) {
       _avatarEventId = widget.avatarEventId;
+    }
+    if (oldWidget.initialMessageId != widget.initialMessageId &&
+        widget.initialMessageId != null) {
+      final messageId = widget.initialMessageId!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_jumpToInitialMessage(messageId));
+      });
     }
   }
 
@@ -1082,6 +1100,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _sentNoticeTimer?.cancel();
     _forwardNoticeTimer?.cancel();
     _jumpHighlight.dispose();
+    _timelineAttached?.complete();
+    _timelineAttached = null;
     _scrollController.dispose();
     super.dispose();
   }
@@ -1410,6 +1430,17 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (scrollToLatest) _scrollToLatest();
   }
 
+  Future<bool> _waitForTimeline(int generation) async {
+    // Initial member/ignore-list/cache loads can keep the scroll view out of
+    // the tree. Resume on its actual attachment, including after a rebuild.
+    while (mounted &&
+        generation == _messageJumpGeneration &&
+        !_scrollController.hasClients) {
+      await (_timelineAttached ??= Completer<void>()).future;
+    }
+    return mounted && generation == _messageJumpGeneration;
+  }
+
   Future<void> _jumpToMessage(
     String messageId, {
     bool unreadTarget = false,
@@ -1417,6 +1448,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final generation = ++_messageJumpGeneration;
     _isJumpingToMessage = true;
     try {
+      if (!await _waitForTimeline(generation)) return;
       if (!_messageIndex.containsKey(messageId)) {
         final history = ref.read(
           messageHistoryCursorProvider(
@@ -1455,8 +1487,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       }
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || generation != _messageJumpGeneration) return;
+      if (!await _waitForTimeline(generation)) return;
       final targetIndex = _timelineEntryIndexForMessage(messageId);
-      if (targetIndex == null || !_scrollController.hasClients) {
+      if (targetIndex == null) {
         throw StateError('目标消息不可用或已被删除');
       }
 
@@ -1584,8 +1617,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           ),
         );
       }
-    } catch (error) {
+    } catch (error, stack) {
       if (!mounted || generation != _messageJumpGeneration) return;
+      logAppMessage(
+        level: 'error',
+        tag: 'message-jump',
+        message: redactLogMessage(
+          'jump_failed user_id=${ref.read(activeUserIdProvider)} '
+          'room_id=${widget.roomId} event_id=$messageId '
+          'timeline_attached=${_scrollController.hasClients} '
+          'target_loaded=${_messageIndex.containsKey(messageId)}\n'
+          '$error\n$stack',
+        ),
+      );
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('无法跳转到该消息: $error')));
     } finally {
@@ -3418,6 +3462,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   ),
                 ),
               ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DesktopFileDrop(
+                    enabled:
+                        _subscriptionsAccount == null ||
+                        activeUserId == _subscriptionsAccount,
+                    onFiles: (files) async => _messageInputKey.currentState
+                        ?.previewExternalFiles(files),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -3466,6 +3522,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final compact = MediaQuery.sizeOf(context).width < _headerCompactBreakpoint;
     return buildFloatingAppBar(
       automaticallyImplyLeading: !widget.embedded,
+      leading: widget.onBack == null
+          ? null
+          : BackButton(onPressed: widget.onBack),
       titleSpacing: widget.embedded ? 16 : 0,
       title: Row(
         children: [
@@ -3544,7 +3603,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       icon: Icons.arrow_back_rounded,
                       size: 38,
                       tooltip: '返回',
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed:
+                          widget.onBack ?? () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 4),
                   ],

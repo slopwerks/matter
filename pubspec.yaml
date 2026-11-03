@@ -88,6 +88,8 @@ dependencies:
   jni: ^1.0.3
   jni_flutter: ^1.0.3
   dynamic_color: ^2.1.0
+  pasteboard: ^0.6.0
+  desktop_drop: ^0.8.4
 # Keep the Apple native libraries on the same SPM-capable upstream revision.
 dependency_overrides:
   media_kit_libs_ios_video:

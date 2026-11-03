@@ -252,6 +252,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     for (var i = 0; i < 16; i++) {
+      final scrollable = tester.state<ScrollableState>(
+        find
+            .descendant(
+              of: find.byType(ListView).last,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pumpAndSettle();
       final more = find.text('加载更多');
       expect(more, findsOneWidget);
       await tester.ensureVisible(more);

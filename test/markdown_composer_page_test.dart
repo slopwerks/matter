@@ -530,6 +530,10 @@ void main() {
       tester,
     ) async {
       const roomId = '!composer-entry:example.org';
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final container = ProviderContainer();
       addTearDown(container.dispose);
       container.read(activeUserIdProvider.notifier).value =
@@ -1404,6 +1408,10 @@ void main() {
       tester,
     ) async {
       const roomId = '!edit-prefill-disabled:example.org';
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       const key = (roomId: roomId, userId: '@alice:example.org');
       final container = ProviderContainer();
       addTearDown(container.dispose);

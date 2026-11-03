@@ -6,6 +6,8 @@ import '../../features/push/fcm_push_runtime.dart';
 import '../../features/push/firebase_client_config.dart';
 import '../../features/push/notification_preferences.dart';
 import '../../features/push/push_providers.dart';
+import '../../features/push/desktop_notification_runtime.dart';
+import '../../features/push/desktop_notification_settings.dart';
 import '../../features/push/push_runtime.dart';
 import '../../features/push/push_settings.dart';
 import '../../src/rust/api/matrix/notifications.dart';
@@ -623,6 +625,9 @@ class _NotificationSettingsPageState
   }
 
   Widget _buildPushSettings(PushSettings settings) {
+    if (desktopNotificationsSupported) {
+      return DesktopNotificationSettingsTile(userId: widget.userId);
+    }
     if (!_loaded) {
       _loaded = true;
       _enabled = settings.enabled;

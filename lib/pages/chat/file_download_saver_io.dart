@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -40,11 +41,25 @@ Future<bool> openDownloadedFile({
   }
 }
 
+bool get supportsSaveAs => switch (defaultTargetPlatform) {
+  TargetPlatform.linux ||
+  TargetPlatform.macOS ||
+  TargetPlatform.windows => true,
+  _ => false,
+};
+
 Future<bool> saveDownloadedFile({
   required String filename,
   required Uint8List bytes,
+  bool chooseLocation = false,
 }) async {
   if (!Platform.isAndroid && !Platform.isIOS) {
+    if (chooseLocation) {
+      final location = await getSaveLocation(suggestedName: filename);
+      if (location == null) return false;
+      await File(location.path).writeAsBytes(bytes, flush: true);
+      return true;
+    }
     final directory = await getDownloadsDirectory();
     if (directory == null) throw const FileSystemException('无法获取下载目录');
     await directory.create(recursive: true);

@@ -91,6 +91,16 @@ CacheManager _newCacheManager(String scope) {
 class _AuthenticatedMediaCacheManager extends CacheManager
     with ImageCacheManager {
   _AuthenticatedMediaCacheManager(super.config);
+
+  @override
+  Future<void> emptyCache() async {
+    // IOFileSystem starts creating its directory in the constructor, but
+    // CacheManager.emptyCache/dispose only wait for the metadata repository.
+    // Resolving a file handle waits for that initialization without writing a
+    // file, so no directory work can outlive session cleanup.
+    await config.fileSystem.createFile('.cleanup');
+    await super.emptyCache();
+  }
 }
 
 String _homeserverScope(Uri uri, String? homeserver) {

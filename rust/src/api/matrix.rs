@@ -45,6 +45,7 @@ use std::time::SystemTime;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+pub mod desktop_notifications;
 pub mod history;
 mod image_caption;
 pub mod notifications;
@@ -3599,6 +3600,7 @@ async fn finalize_pending() -> Result<String, String> {
             };
             install_verification_event_handler(&new_client, identity.clone());
             install_live_update_event_handlers(&new_client, identity.clone());
+            desktop_notifications::install(&new_client, identity.clone()).await;
             let room_key_task = install_room_key_event_handler(&new_client, identity);
 
             // Phase 4: reacquire the lock and install the finalized client.
@@ -5304,6 +5306,7 @@ pub async fn resume_session_with_password(
     };
     install_verification_event_handler(&client, identity.clone());
     install_live_update_event_handlers(&client, identity.clone());
+    desktop_notifications::install(&client, identity.clone()).await;
     let room_key_task = install_room_key_event_handler(&client, identity);
     drop(lifecycle);
     {
@@ -5780,6 +5783,7 @@ pub async fn restore_session(
     };
     install_verification_event_handler(&client, identity.clone());
     install_live_update_event_handlers(&client, identity.clone());
+    desktop_notifications::install(&client, identity.clone()).await;
     let room_key_task = install_room_key_event_handler(&client, identity);
 
     // Reacquire the lock to install the client. Another restore/login may have

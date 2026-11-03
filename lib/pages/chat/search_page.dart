@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/navigation_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
@@ -899,6 +900,29 @@ class _MessageSearchTile extends ConsumerWidget {
       // list is temporarily unavailable.
     }
     if (!context.mounted) return;
+    final destination =
+        room ??
+        rust.ChatRoom(
+          id: result.roomId,
+          name: result.roomName,
+          avatarUrl: result.roomAvatarUrl,
+          lastMessage: '',
+          lastMessageTime: '',
+          lastEventId: '',
+          unreadCount: 0,
+          isMarkedUnread: false,
+          roomType: result.isDm ? 'dm' : 'group',
+          isEncrypted: false,
+          isMuted: false,
+          roomState: 'joined',
+        );
+    if (ref
+            .read(desktopRoomNavigationProvider)
+            .open
+            ?.call(destination, messageId: result.eventId) ??
+        false) {
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ChatDetailPage(

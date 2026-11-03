@@ -9,6 +9,7 @@
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
+#include "window_state.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -25,6 +26,13 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  GList* windows = gtk_application_get_windows(GTK_APPLICATION(application));
+  if (windows != nullptr) {
+    auto* existing = GTK_WINDOW(windows->data);
+    gtk_window_deiconify(existing);
+    gtk_window_present(existing);
+    return;
+  }
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -85,7 +93,7 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "Matter");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  restore_window_state(window);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
@@ -143,9 +151,10 @@ static void my_application_startup(GApplication* application) {
 
 // Implements GApplication::shutdown.
 static void my_application_shutdown(GApplication* application) {
-  // MyApplication* self = MY_APPLICATION(object);
-
-  // Perform any actions required at application shutdown.
+  for (GList* item = gtk_application_get_windows(GTK_APPLICATION(application));
+       item != nullptr; item = item->next) {
+    save_window_state(GTK_WINDOW(item->data));
+  }
 
   G_APPLICATION_CLASS(my_application_parent_class)->shutdown(application);
 }
@@ -177,5 +186,5 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     static_cast<GApplicationFlags>(0), nullptr));
 }

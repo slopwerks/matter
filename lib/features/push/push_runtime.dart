@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
+import 'desktop_notification_runtime.dart';
 import 'fcm_push_runtime.dart';
 import 'push_read_state.dart';
 import 'push_settings.dart';
@@ -46,6 +48,9 @@ Future<List<String>> _roomNotificationEvents(
   String userId,
   String roomId,
 ) async {
+  if (desktopNotificationsSupported) {
+    return desktopRoomNotificationEvents(userId, roomId);
+  }
   if (!pushSupported) return [];
   try {
     return kIsWeb
@@ -65,7 +70,9 @@ Future<void> _cancelRoomNotifications(
   List<String> eventIds,
 ) async {
   try {
-    if (kIsWeb) {
+    if (desktopNotificationsSupported) {
+      await cancelDesktopRoomNotifications(userId, roomId, eventIds);
+    } else if (kIsWeb) {
       await web_push.cancelRoomNotifications(userId, roomId, eventIds);
     } else if (fcmPushSupported) {
       await fcmPushRuntime.cancelRoomNotifications(userId, roomId, eventIds);
@@ -87,7 +94,7 @@ Future<bool> markRoomAsReadWithPushCleanup({
     roomId: roomId,
     explicit: explicit,
   );
-  if (!pushSupported) {
+  if (!pushSupported && !desktopNotificationsSupported) {
     return writeReceipt();
   }
   return () async {

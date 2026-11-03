@@ -376,11 +376,26 @@ TextEditingValue toggleMarkdownWrap(TextEditingValue value, String marker) {
 /// text cannot be mutated while sending or loading.
 Widget markdownSelectionContextMenuBuilder(
   BuildContext context,
-  EditableTextState editableTextState,
-) {
+  EditableTextState editableTextState, {
+  VoidCallback? onPaste,
+}) {
   final buttonItems = List<ContextMenuButtonItem>.of(
     editableTextState.contextMenuButtonItems,
   );
+  if (onPaste != null && !editableTextState.widget.readOnly) {
+    final index = buttonItems.indexWhere(
+      (item) => item.type == ContextMenuButtonType.paste,
+    );
+    final paste = ContextMenuButtonItem(
+      type: ContextMenuButtonType.paste,
+      onPressed: onPaste,
+    );
+    if (index < 0) {
+      buttonItems.add(paste);
+    } else {
+      buttonItems[index] = paste;
+    }
+  }
   final selection = editableTextState.textEditingValue.selection;
   if (!editableTextState.widget.readOnly &&
       selection.isValid &&

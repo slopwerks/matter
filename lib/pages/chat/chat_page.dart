@@ -34,6 +34,7 @@ class ChatPage extends ConsumerStatefulWidget {
   final bool directMessagesOnly;
   final bool ungroupedRoomsOnly;
   final bool showFloatingActionButton;
+  final bool autoSelectFirstRoom;
 
   const ChatPage({
     super.key,
@@ -46,6 +47,7 @@ class ChatPage extends ConsumerStatefulWidget {
     this.directMessagesOnly = false,
     this.ungroupedRoomsOnly = false,
     this.showFloatingActionButton = true,
+    this.autoSelectFirstRoom = true,
   }) : assert(!directMessagesOnly || !ungroupedRoomsOnly);
 
   @override
@@ -283,7 +285,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       skipLoadingOnReload: keepPreviousRooms,
       skipLoadingOnRefresh: keepPreviousRooms,
       data: (rooms) {
-        if (!roomsAsync.isLoading &&
+        if (widget.autoSelectFirstRoom &&
+            !roomsAsync.isLoading &&
             widget.onRoomSelected != null &&
             widget.selectedRoomId == null) {
           final firstJoinedRoom = rooms.where(

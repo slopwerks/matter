@@ -237,6 +237,133 @@ void main() {
     });
   });
 
+  for (final key in [
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.numpadEnter,
+  ]) {
+    for (final fail in [false, true]) {
+      testWidgets('Linux ${key.keyLabel} sends and retains focus ($fail)', (
+        tester,
+      ) async {
+        await _runWithTargetPlatform(TargetPlatform.linux, () async {
+          const roomId = '!linux-enter:example.org';
+          final container = ProviderContainer();
+          addTearDown(container.dispose);
+          container.read(activeUserIdProvider.notifier).value =
+              '@alice:example.org';
+
+          await tester.pumpWidget(_messageInput(container, roomId));
+          await tester.enterText(find.byType(TextField), 'first message');
+          await tester.sendKeyEvent(key);
+          await tester.pump();
+
+          expect(_inputText(tester), isEmpty);
+          expect(rustApi.pendingSend, isNotNull);
+          final input = tester.widget<TextField>(find.byType(TextField));
+          expect(input.focusNode!.hasFocus, isTrue);
+          await tester.enterText(find.byType(TextField), 'next draft');
+          if (fail) {
+            rustApi.pendingSend!.completeError(StateError('offline'));
+          } else {
+            rustApi.pendingSend!.complete(r'$sent');
+          }
+          await tester.pump();
+          await tester.pump();
+
+          expect(_inputText(tester), 'next draft');
+          expect(input.focusNode!.hasFocus, isTrue);
+          await tester.pumpWidget(_home(container));
+          await tester.pump(const Duration(seconds: 1));
+          await tester.pumpAndSettle();
+        });
+      });
+    }
+  }
+
+  testWidgets('Linux composing Enter does not send or select autocomplete', (
+    tester,
+  ) async {
+    await _runWithTargetPlatform(TargetPlatform.linux, () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      await tester.pumpWidget(
+        _messageInput(container, '!linux-ime:example.org'),
+      );
+      await tester.enterText(find.byType(TextField), ':thinking:');
+      final input = tester.widget<TextField>(find.byType(TextField));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: ':thinking:',
+          selection: TextSelection.collapsed(offset: 10),
+          composing: TextRange(start: 1, end: 9),
+        ),
+      );
+      await tester.pump();
+
+      final event = KeyDownEvent(
+        physicalKey: PhysicalKeyboardKey.enter,
+        logicalKey: LogicalKeyboardKey.enter,
+        timeStamp: Duration.zero,
+      );
+      expect(
+        input.focusNode!.onKeyEvent!(input.focusNode!, event),
+        KeyEventResult.ignored,
+      );
+      expect(_inputText(tester), ':thinking:');
+      expect(rustApi.pendingSend, isNull);
+      await tester.pumpWidget(_home(container));
+      await tester.pumpAndSettle();
+    });
+  });
+
+  testWidgets('Linux Enter selects autocomplete before sending', (
+    tester,
+  ) async {
+    await _runWithTargetPlatform(TargetPlatform.linux, () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      await tester.pumpWidget(
+        _messageInput(container, '!linux-emoji:example.org'),
+      );
+      await tester.enterText(find.byType(TextField), ':thinking:');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(_inputText(tester), '🤔');
+      expect(rustApi.pendingSend, isNull);
+      await tester.pumpWidget(_home(container));
+      await tester.pumpAndSettle();
+    });
+  });
+
+  testWidgets('Linux Shift+Enter inserts a newline even with autocomplete', (
+    tester,
+  ) async {
+    await _runWithTargetPlatform(TargetPlatform.linux, () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      await tester.pumpWidget(
+        _messageInput(container, '!linux-newline:example.org'),
+      );
+      await tester.enterText(find.byType(TextField), ':thinking:');
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(_inputText(tester), ':thinking:\n');
+      expect(rustApi.pendingSend, isNull);
+      await tester.pumpWidget(_home(container));
+      await tester.pumpAndSettle();
+    });
+  });
+
   testWidgets('edit prefill completion is ignored after unmount', (
     tester,
   ) async {
@@ -265,26 +392,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Shift+Enter does not send from an Android hardware keyboard', (
-    tester,
-  ) async {
-    await _runWithTargetPlatform(TargetPlatform.android, () async {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      container.read(activeUserIdProvider.notifier).value =
-          '@alice:example.org';
+  testWidgets(
+    'Shift+Enter inserts one newline without sending on Android hardware keyboards',
+    (tester) async {
+      await _runWithTargetPlatform(TargetPlatform.android, () async {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(activeUserIdProvider.notifier).value =
+            '@alice:example.org';
 
-      await tester.pumpWidget(_messageInput(container, '!newline:example.org'));
-      await tester.enterText(find.byType(TextField), 'first line');
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.pump();
+        await tester.pumpWidget(
+          _messageInput(container, '!newline:example.org'),
+        );
+        await tester.enterText(find.byType(TextField), 'first line');
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
 
-      expect(_inputText(tester), 'first line');
-      expect(rustApi.pendingSend, isNull);
-    });
-  });
+        expect(_inputText(tester), 'first line\n');
+        expect(rustApi.pendingSend, isNull);
+      });
+    },
+  );
 
   testWidgets('Tab replaces a named emoji without sending', (tester) async {
     await _runWithTargetPlatform(TargetPlatform.macOS, () async {

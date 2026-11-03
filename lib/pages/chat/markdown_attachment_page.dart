@@ -34,7 +34,7 @@ String _renderMarkdown(Uint8List bytes) {
 class _MarkdownAttachmentPageState extends State<MarkdownAttachmentPage> {
   bool _busy = false;
 
-  Future<void> _save() async {
+  Future<void> _save({bool chooseLocation = false}) async {
     setState(() => _busy = true);
     DownloadNotification? notification;
     try {
@@ -42,6 +42,7 @@ class _MarkdownAttachmentPageState extends State<MarkdownAttachmentPage> {
       final saved = await saveDownloadedFile(
         filename: widget.filename,
         bytes: widget.bytes,
+        chooseLocation: chooseLocation,
       );
       if (saved) {
         await notification.complete();
@@ -88,6 +89,13 @@ class _MarkdownAttachmentPageState extends State<MarkdownAttachmentPage> {
         size: 40,
         onPressed: _busy ? null : _save,
       ),
+      if (supportsSaveAs)
+        NeuIconButton(
+          icon: Icons.save_alt,
+          tooltip: '另存为',
+          size: 40,
+          onPressed: _busy ? null : () => _save(chooseLocation: true),
+        ),
       NeuIconButton(
         icon: Icons.open_in_new_rounded,
         tooltip: kIsWeb ? '下载后用其他应用打开' : '用其他应用打开',
