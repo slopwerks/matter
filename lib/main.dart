@@ -14,6 +14,7 @@ import 'features/app_update/update_dialog.dart';
 import 'features/auth/session_expiry_listener.dart';
 import 'features/audio/audio_playback_provider.dart';
 import 'features/push/push_runtime.dart';
+import 'features/push/desktop_notification_listener.dart';
 import 'features/push/push_notification_listener.dart';
 import 'pages/login/login_page.dart';
 import 'pages/chat/prepared_media_source.dart';
@@ -392,17 +393,20 @@ class _AppRootState extends ConsumerState<_AppRoot>
       darkTheme: darkTheme,
       themeMode: themeMode,
       builder: (context, child) => ChatVisualSettingsRoot(
-        child: PushNotificationListener(
+        child: DesktopNotificationListener(
           navigatorKey: _navigatorKey,
-          child: SessionExpiryListener(
+          child: PushNotificationListener(
             navigatorKey: _navigatorKey,
-            onRelogin: (canResume) {
-              _resumeSession = canResume;
-              _reloginUser = ref.read(currentUserProvider);
-              clearActiveSessionState(ref, markSessionReady: true);
-              _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-            },
-            child: AudioPlaybackRoot(child: child!),
+            child: SessionExpiryListener(
+              navigatorKey: _navigatorKey,
+              onRelogin: (canResume) {
+                _resumeSession = canResume;
+                _reloginUser = ref.read(currentUserProvider);
+                clearActiveSessionState(ref, markSessionReady: true);
+                _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+              },
+              child: AudioPlaybackRoot(child: child!),
+            ),
           ),
         ),
       ),

@@ -513,7 +513,21 @@ void main() {
     expect(find.text('此平台暂不支持消息推送'), findsOneWidget);
     expect(find.byType(TextFormField), findsNothing);
     expect(find.text('启用推送'), findsNothing);
-  }, variant: TargetPlatformVariant({TargetPlatform.linux}));
+  }, variant: TargetPlatformVariant({TargetPlatform.windows}));
+
+  testWidgets('Linux exposes local notifications without gateway controls', (
+    tester,
+  ) async {
+    await showPage(tester);
+    expect(find.text('全部静音'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('桌面消息通知'), 500);
+    await tester.pumpAndSettle();
+    expect(find.text('桌面消息通知'), findsOneWidget);
+    expect(find.text('推送服务与网关'), findsNothing);
+    expect(find.text('此平台暂不支持消息推送'), findsNothing);
+    expect(find.byType(TextFormField), findsNothing);
+    expect(find.text('启用推送'), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
 
   testWidgets(
     'offline disabling retains a retry and never requests an FCM token',
