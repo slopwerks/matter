@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/providers/authenticated_media_cache.dart';
@@ -78,6 +82,46 @@ void main() {
       ),
       isNull,
     );
+  });
+
+  test('session cleanup waits for media directory initialization', () async {
+    final temporary = await Directory.systemTemp.createTemp(
+      'matter-cache-lifecycle-',
+    );
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final requested = Completer<void>();
+    final release = Completer<void>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'getTemporaryDirectory') {
+            if (!requested.isCompleted) requested.complete();
+            await release.future;
+          }
+          return temporary.path;
+        });
+    addTearDown(() async {
+      if (!release.isCompleted) release.complete();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      await temporary.delete(recursive: true);
+    });
+    var finished = false;
+    final clearing = clearAuthenticatedMediaCacheForSession(
+      userId: '@cleanup:example.org',
+      homeserver: 'https://example.org',
+    ).then((_) => finished = true);
+    await requested.future;
+    // Let metadata cleanup settle while the file directory is still blocked.
+    await pumpEventQueue(times: 100);
+    expect(
+      finished,
+      isFalse,
+      reason:
+          'cleanup must not outlive the directory initialization it started',
+    );
+    release.complete();
+    await clearing;
+    expect(finished, isTrue);
   });
 
   test('authenticated media cache manager supports resized images', () {
