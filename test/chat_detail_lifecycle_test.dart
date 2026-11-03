@@ -8,6 +8,7 @@ import 'package:matter/pages/chat/emoji_picker_panel.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_insert_animation.dart';
+import 'package:matter/pages/chat/message_jump_highlight.dart';
 import 'package:matter/pages/chat/pinned_messages_page.dart';
 import 'package:matter/pages/chat/room_metadata_patch.dart';
 import 'package:matter/pages/chat/room_management_page.dart';
@@ -59,6 +60,15 @@ class _FakeRustApi implements RustLibApi {
   Completer<bool>? pendingRoomEncryption;
   List<rust.ChatRoom> chatRooms = const [];
   final sentMessages = <rust.FormattedMessageInput>[];
+  final logs = <({String level, String tag, String message})>[];
+
+  @override
+  void crateApiMatrixLogAppMessage({
+    required String level,
+    required String tag,
+    required String message,
+  }) => logs.add((level: level, tag: tag, message: message));
+
   @override
   Future<List<String>> crateApiMatrixGetPinnedEventIds({
     required String accountUserId,
@@ -764,6 +774,169 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ChatSearchPage), findsOneWidget);
+  });
+
+  for (final delayed in ['members', 'cache', 'ignore list']) {
+    testWidgets('notification target waits for the initial $delayed', (
+      tester,
+    ) async {
+      const roomId = '!notification-jump:example.org';
+      final target = _message(r'$notification-target');
+      final members = Completer<List<rust.Contact>>();
+      final ignored = Completer<Set<String>>();
+      rustApi.messagesAround = [target];
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith(
+            (ref) => delayed == 'ignore list'
+                ? ignored.future
+                : Future.value(const <String>{}),
+          ),
+          roomMembersProvider(roomId).overrideWith(
+            (ref) => delayed == 'members'
+                ? members.future
+                : Future.value(const <rust.Contact>[]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          'anonymous';
+      container.read(messageCachePrimedProvider(roomId).notifier).value =
+          delayed != 'cache';
+      if (delayed != 'cache') {
+        container.read(messageCacheProvider(roomId).notifier).value = [target];
+      }
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: ChatDetailPage(
+              roomId: roomId,
+              roomName: 'Room',
+              initialMessageId: target.id,
+            ),
+          ),
+        ),
+      );
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.textContaining('无法跳转到该消息'), findsNothing);
+      expect(rustApi.logs, isEmpty);
+
+      members.complete(const []);
+      ignored.complete(const {});
+      container.read(messageCacheProvider(roomId).notifier).value = [target];
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(ValueKey('text-bubble:${target.id}')), findsOneWidget);
+      expect(
+        tester
+            .widget<MessageJumpHighlight>(find.byType(MessageJumpHighlight))
+            .target
+            .value,
+        target.id,
+      );
+      expect(find.textContaining('无法跳转到该消息'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+  }
+
+  testWidgets('disposing a notification target cancels its layout wait', (
+    tester,
+  ) async {
+    const roomId = '!disposed-notification:example.org';
+    final members = Completer<List<rust.Contact>>();
+    final container = ProviderContainer(
+      overrides: [
+        ignoredUserIdsProvider.overrideWith((ref) async => const <String>{}),
+        roomMembersProvider(roomId).overrideWith((ref) => members.future),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(messageCacheOwnerProvider(roomId).notifier).value =
+        'anonymous';
+    container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const ChatDetailPage(
+            roomId: roomId,
+            roomName: 'Room',
+            initialMessageId: r'$disposed-target',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    members.complete(const []);
+    await tester.pumpAndSettle();
+    expect(rustApi.getMessagesAroundCalls, 0);
+    expect(rustApi.logs, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('message jump failure records the target, error and stack', (
+    tester,
+  ) async {
+    const roomId = '!failed-notification:example.org';
+    const eventId = r'$failed-target';
+    final pending = Completer<List<rust.ChatMessage>>();
+    rustApi.pendingMessagesAround[eventId] = pending;
+    final container = ProviderContainer(
+      overrides: [
+        ignoredUserIdsProvider.overrideWith((ref) async => const <String>{}),
+        roomMembersProvider(roomId).overrideWith((ref) async => const []),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(roomMembersProvider(roomId).future);
+    container.read(messageCacheOwnerProvider(roomId).notifier).value =
+        'anonymous';
+    container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+    container.read(messageCacheProvider(roomId).notifier).value = [
+      _message(r'$latest-message'),
+    ];
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const ChatDetailPage(
+            roomId: roomId,
+            roomName: 'Room',
+            initialMessageId: eventId,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    pending.completeError(
+      StateError('context request failed'),
+      StackTrace.fromString('message context test stack'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('context request failed'), findsOneWidget);
+    expect(rustApi.logs, hasLength(1));
+    expect(rustApi.logs.single.level, 'error');
+    expect(rustApi.logs.single.tag, 'message-jump');
+    for (final detail in [
+      roomId,
+      eventId,
+      'context request failed',
+      'message context test stack',
+    ]) {
+      expect(rustApi.logs.single.message, contains(detail));
+    }
   });
 
   testWidgets('an initial search result opens around the target message', (

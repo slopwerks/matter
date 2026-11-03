@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../features/push/push_runtime.dart';
+import '../../features/diagnostics/diagnostic_exporter.dart'
+    show redactLogMessage;
 import '../../features/audio/audio_playback_provider.dart';
 import '../../features/audio/audio_message_bar.dart';
 import '../../features/audio/audio_player_panel.dart';
@@ -161,7 +163,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// The activation id this page last wrote (0 = never activated).
   int _activationId = 0;
 
-  final _scrollController = ScrollController();
+  Completer<void>? _timelineAttached;
+  late final _scrollController = ScrollController(
+    onAttach: (_) {
+      _timelineAttached?.complete();
+      _timelineAttached = null;
+    },
+  );
   final _scrollViewportKey = GlobalKey();
   final _messageInputKey = GlobalKey<MessageInputState>();
   final Map<String, GlobalKey> _messageAnchorKeys = {};
@@ -783,6 +791,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _sentNoticeTimer?.cancel();
     _forwardNoticeTimer?.cancel();
     _jumpHighlight.dispose();
+    _timelineAttached?.complete();
+    _timelineAttached = null;
     _scrollController.dispose();
     super.dispose();
   }
@@ -983,9 +993,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (scrollToLatest) _scrollToLatest();
   }
 
+  Future<bool> _waitForTimeline(int generation) async {
+    // Initial member/ignore-list/cache loads can keep the scroll view out of
+    // the tree. Resume on its actual attachment, including after a rebuild.
+    while (mounted &&
+        generation == _messageJumpGeneration &&
+        !_scrollController.hasClients) {
+      await (_timelineAttached ??= Completer<void>()).future;
+    }
+    return mounted && generation == _messageJumpGeneration;
+  }
+
   Future<void> _jumpToMessage(String messageId) async {
     final generation = ++_messageJumpGeneration;
     try {
+      if (!await _waitForTimeline(generation)) return;
       if (!_messageIndex.containsKey(messageId)) {
         if (_focusedBrowsing &&
             ref
@@ -1016,8 +1038,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       }
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || generation != _messageJumpGeneration) return;
+      if (!await _waitForTimeline(generation)) return;
       final targetIndex = _timelineEntryIndexForMessage(messageId);
-      if (targetIndex == null || !_scrollController.hasClients) {
+      if (targetIndex == null) {
         throw StateError('目标消息不可用或已被删除');
       }
 
@@ -1101,8 +1124,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           ),
         );
       }
-    } catch (error) {
+    } catch (error, stack) {
       if (!mounted || generation != _messageJumpGeneration) return;
+      logAppMessage(
+        level: 'error',
+        tag: 'message-jump',
+        message: redactLogMessage(
+          'jump_failed user_id=${ref.read(activeUserIdProvider)} '
+          'room_id=${widget.roomId} event_id=$messageId '
+          'timeline_attached=${_scrollController.hasClients} '
+          'target_loaded=${_messageIndex.containsKey(messageId)}\n'
+          '$error\n$stack',
+        ),
+      );
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('无法跳转到该消息: $error')));
     }
