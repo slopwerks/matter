@@ -46,6 +46,11 @@ impl SearchIndexWriter {
         Ok(self.last_commit_opstamp)
     }
 
+    pub(crate) fn rollback(&mut self) -> Result<OpStamp, TantivyError> {
+        self.last_commit_opstamp = self.inner.rollback()?;
+        Ok(self.last_commit_opstamp)
+    }
+
     pub(crate) fn wait_merging_threads(self) -> Result<(), TantivyError> {
         self.inner.wait_merging_threads()
     }

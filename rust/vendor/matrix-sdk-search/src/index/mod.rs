@@ -18,6 +18,7 @@ pub mod builder;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use once_cell::sync::OnceCell;
@@ -25,8 +26,11 @@ use ruma::{
     EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UInt,
 };
 use tantivy::{
-    DateTime, Index, IndexReader, Order, ReloadPolicy, TantivyDocument, collector::TopDocs,
-    directory::error::OpenDirectoryError, query::QueryParser, schema::Value,
+    DateTime, Index, IndexReader, Order, ReloadPolicy, TantivyDocument, Term,
+    collector::{Count, TopDocs},
+    directory::error::OpenDirectoryError,
+    query::{QueryParser, TermQuery},
+    schema::{IndexRecordOption, Value},
 };
 use tracing::{debug, error, warn};
 
@@ -150,6 +154,7 @@ pub struct RoomIndex {
     /// It is costly to create one, so let's keep it in memory when needed; see
     /// [`RoomIndex::reader`] to learn more.
     reader: OnceCell<IndexReader>,
+    reader_needs_reload: AtomicBool,
 }
 
 impl fmt::Debug for RoomIndex {
@@ -172,6 +177,7 @@ impl RoomIndex {
             uncommitted_adds: HashMap::new(),
             uncommitted_removes: HashSet::new(),
             reader: OnceCell::new(),
+            reader_needs_reload: AtomicBool::new(false),
         }
     }
 
@@ -220,9 +226,18 @@ impl RoomIndex {
             "RoomIndex: committing and reloading: uncommitted: {:?}, {:?}",
             self.uncommitted_adds, self.uncommitted_removes
         );
+        self.reader_needs_reload.store(true, Ordering::Release);
         let last_commit_opstamp = self.commit(writer)?;
-        self.reader()?.reload()?;
+        self.ensure_reader_current()?;
         Ok(last_commit_opstamp)
+    }
+
+    fn ensure_reader_current(&self) -> Result<(), IndexError> {
+        if self.reader_needs_reload.load(Ordering::Acquire) {
+            self.reader()?.reload()?;
+            self.reader_needs_reload.store(false, Ordering::Release);
+        }
+        Ok(())
     }
 
     /// Search the [`RoomIndex`] for some query. Returns a list of
@@ -239,6 +254,7 @@ impl RoomIndex {
         pagination_offset: Option<usize>,
     ) -> Result<Vec<(f32, OwnedEventId)>, IndexError> {
         let query = self.query_parser.parse_query(query)?;
+        self.ensure_reader_current()?;
         let searcher = self.reader()?.searcher();
 
         let offset = pagination_offset.unwrap_or(0);
@@ -422,13 +438,7 @@ impl RoomIndex {
     /// Callers should invoke it from a multi-thread Tokio runtime to avoid
     /// blocking async worker threads.
     pub fn execute(&mut self, operation: RoomIndexOperation) -> Result<(), IndexError> {
-        block_in_place_or_direct(|| {
-            let mut writer = self.writer()?;
-            self.execute_with_retry(&mut writer, &operation, 5)?;
-            self.commit_and_reload(&mut writer)?;
-            writer.wait_merging_threads()?;
-            Ok(())
-        })
+        self.bulk_execute(vec![operation])
     }
 
     /// Bulk execute [`RoomIndexOperation`]s
@@ -444,45 +454,64 @@ impl RoomIndex {
     /// [`tokio::task::block_in_place`] when a Tokio runtime is present.
     pub fn bulk_execute(&mut self, operations: Vec<RoomIndexOperation>) -> Result<(), IndexError> {
         block_in_place_or_direct(|| {
-            let mut writer = self.writer()?;
-            let mut operations = operations.into_iter();
-            let mut next_operation = operations.next();
-
-            while let Some(ref operation) = next_operation {
-                self.execute_with_retry(&mut writer, operation, 5)?;
-                next_operation = operations.next();
+            self.ensure_reader_current()?;
+            let mut writer: Option<SearchIndexWriter> = None;
+            let result = (|| {
+                for operation in operations {
+                    match &operation {
+                        RoomIndexOperation::Noop => continue,
+                        RoomIndexOperation::Add(event) if self.contains(&event.event_id)? => {
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    // The automatic SDK indexer and explicit backfill can see
+                    // the same page. Only a genuine mutation needs a writer.
+                    if writer.is_none() {
+                        writer = Some(self.writer()?);
+                    }
+                    self.execute_with_retry(
+                        writer.as_mut().expect("writer created for mutation"),
+                        &operation,
+                        5,
+                    )?;
+                }
+                if let Some(active) = writer.as_mut() {
+                    self.commit_and_reload(active)?;
+                }
+                if let Some(active) = writer.take() {
+                    active.wait_merging_threads()?;
+                }
+                Ok(())
+            })();
+            if result.is_err() {
+                if let Some(active) = writer.as_mut() {
+                    if let Err(error) = active.rollback() {
+                        warn!("Failed to roll back an unsuccessful index batch: {error}");
+                    }
+                }
+                self.uncommitted_adds.clear();
+                self.uncommitted_removes.clear();
             }
-
-            self.commit_and_reload(&mut writer)?;
-            writer.wait_merging_threads()?;
-
-            Ok(())
+            result
         })
     }
 
     fn contains(&self, event_id: &EventId) -> Result<bool, IndexError> {
-        let search_result = self.search(
-            format!(
-                "{}:\"{}\"",
-                self.schema.get_field_name(self.schema.primary_key()),
-                // Matter patch: escape the id so a malformed value cannot break
-                // out of the quoted query term.
-                escape_event_id_for_query(event_id.as_str())
-            )
-            .as_str(),
-            1,
-            None,
-        );
-        match search_result {
-            Ok(results) => Ok(!self.uncommitted_removes.contains(event_id)
-                && (!results.is_empty() || self.uncommitted_adds.contains_key(event_id))),
-            // Matter patch: propagate the error instead of silently assuming the
-            // event is already indexed (which would drop it from the index).
-            Err(err) => {
-                warn!("Failed to check if event has been indexed: {err}");
-                Err(err)
-            }
+        if self.uncommitted_removes.contains(event_id) {
+            return Ok(false);
         }
+        if self.uncommitted_adds.contains_key(event_id) {
+            return Ok(true);
+        }
+        self.ensure_reader_current()?;
+        // The primary key is STRING (untokenized). Do not run the user's
+        // parser/date sorting/document hydration pipeline for existence.
+        let query = TermQuery::new(
+            Term::from_field_text(self.schema.primary_key(), event_id.as_str()),
+            IndexRecordOption::Basic,
+        );
+        Ok(self.reader()?.searcher().search(&query, &Count)? > 0)
     }
 }
 
