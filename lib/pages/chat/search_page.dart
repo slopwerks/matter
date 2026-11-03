@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
@@ -17,6 +18,9 @@ import 'chat_detail_page.dart';
 import 'chat_list_item.dart';
 import 'chat_timestamp.dart';
 
+import 'search_results_refresh.dart';
+
+const _searchInitialPageSize = 60;
 const _searchPageSize = 30;
 const _searchHistoryEmptyPageLimit = 8;
 
@@ -323,13 +327,24 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
   int _backfillGeneration = 0;
   bool _backfillRunning = false;
   Object? _backfillError;
+  Object? _refreshError;
   rust.MessageSearchPage? _progressivePage;
+  SearchResultsRefresh? _resultRefresh;
+  bool _historyExhausted = false;
+  bool _autoLoadScheduled = false;
+  bool _userScrolling = false;
   String? _searchAccount;
 
   void _resetSearch() {
+    _resultRefresh?.dispose();
+    _resultRefresh = null;
+    _historyExhausted = false;
+    _autoLoadScheduled = false;
+    _userScrolling = false;
     _backfillGeneration++;
     _backfillRunning = false;
     _backfillError = null;
+    _refreshError = null;
     _progressivePage = null;
     _completedResults.clear();
     _terms = const [];
@@ -348,6 +363,7 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
 
   @override
   void dispose() {
+    _resultRefresh?.dispose();
     _backfillGeneration++;
     super.dispose();
   }
@@ -357,8 +373,30 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
       query: widget.query,
       roomId: widget.roomId,
       offset: _offset,
-      limit: _searchPageSize,
+      limit: _offset == 0 ? _searchInitialPageSize : _searchPageSize,
     );
+  }
+
+  void _scheduleLoadMore(MessageSearchRequest request) {
+    if (_autoLoadScheduled ||
+        ref.read(messageSearchProvider(request)).isLoading) {
+      return;
+    }
+    _autoLoadScheduled = true;
+    final generation = _backfillGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoLoadScheduled = false;
+      if (!mounted ||
+          !widget.active ||
+          generation != _backfillGeneration ||
+          request != _request) {
+        return;
+      }
+      final current = ref.read(messageSearchProvider(request));
+      if (current.isLoading || current.hasError) return;
+      final page = _progressivePage ?? current.asData?.value;
+      if (page?.hasMore == true) _loadMore(page!, request);
+    });
   }
 
   void _loadMore(rust.MessageSearchPage page, MessageSearchRequest request) {
@@ -366,74 +404,184 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
     setState(() {
       _progressivePage = null;
       _backfillError = null;
+      _refreshError = null;
       for (final result in page.results) {
         _completedResults['${result.roomId}\n${result.eventId}'] = result;
       }
       _terms = page.terms;
       _offset = nextOffset;
     });
+    if (_backfillRunning || _resultRefresh?.hasPending == true) {
+      _resultRefresh?.request(immediate: true);
+    }
   }
 
   void _startHistoryBackfill(rust.MessageSearchPage page) {
-    if (page.historyComplete || _backfillRunning || _backfillError != null) {
+    if (page.historyComplete ||
+        _historyExhausted ||
+        _backfillRunning ||
+        _backfillError != null) {
       return;
     }
     _progressivePage ??= page;
     _backfillRunning = true;
     _backfillError = null;
     final generation = ++_backfillGeneration;
+    final account = ref.read(activeUserIdProvider);
+    _resultRefresh?.dispose();
+    _resultRefresh = SearchResultsRefresh(
+      refresh: () => _refreshHistoryResults(widget.roomId, generation, account),
+      onError: (error) {
+        if (_searchStillCurrent(generation, account)) {
+          setState(() => _refreshError = error);
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || generation != _backfillGeneration) return;
       unawaited(_runHistoryBackfill(widget.roomId, generation));
     });
   }
 
-  Future<void> _runHistoryBackfill(String? roomId, int generation) async {
-    final account = ref.read(activeUserIdProvider);
-    var emptyPages = 0;
-    bool current() =>
-        mounted &&
-        widget.active &&
-        generation == _backfillGeneration &&
-        ref.read(activeUserIdProvider) == account;
-    try {
-      while (current()) {
-        final progress = await ref.read(messageSearchHistoryBackfillProvider)(
-          roomId,
-        );
-        if (!current()) return;
+  bool _searchStillCurrent(int generation, String? account) =>
+      mounted &&
+      widget.active &&
+      generation == _backfillGeneration &&
+      ref.read(activeUserIdProvider) == account;
 
-        final request = _request;
+  Future<void> _refreshHistoryResults(
+    String? roomId,
+    int generation,
+    String? account,
+  ) async {
+    if (!_searchStillCurrent(generation, account)) return;
+    final request = _request;
+    if (_historyExhausted && request.offset > 0) {
+      await _refreshLoadedPrefix(request, generation, account);
+      return;
+    }
+    try {
+      final provider = messageSearchProvider(request);
+      if (!ref.read(provider).isLoading) {
         try {
           await rust.cancelMessageSearch(roomId: roomId).catchError((_) {});
         } catch (_) {
-          // Widget tests can run without initializing Rust; the superseded
-          // search cancellation is best-effort anyway.
+          // Provider-only widget fixtures do not initialize the bridge.
         }
-        if (!current()) return;
-        ref.invalidate(messageSearchProvider(request));
-        final refreshed = await ref.read(messageSearchProvider(request).future);
-        if (!current()) return;
-        setState(() {
-          _progressivePage = refreshed;
-          _terms = refreshed.terms;
-        });
-        await WidgetsBinding.instance.endOfFrame;
+        if (!_searchStillCurrent(generation, account) || request != _request) {
+          return;
+        }
+        ref.invalidate(provider);
+      }
+      // A user-requested next page may already be loading. Share that future
+      // instead of canceling/restarting it when history also changes.
+      final refreshed = await ref.read(provider.future);
+      if (!_searchStillCurrent(generation, account)) return;
+      if (request != _request) {
+        _resultRefresh?.request(immediate: true);
+        return;
+      }
+      setState(() {
+        _progressivePage = refreshed;
+        _terms = refreshed.terms;
+        _refreshError = null;
+      });
+    } catch (error) {
+      if (_searchStillCurrent(generation, account) && request == _request) {
+        rethrow;
+      }
+    }
+  }
 
+  Future<void> _refreshLoadedPrefix(
+    MessageSearchRequest request,
+    int generation,
+    String? account,
+  ) async {
+    final end = request.offset + request.limit;
+    final window = MessageSearchRequest(
+      query: request.query,
+      roomId: request.roomId,
+      limit: end,
+    );
+    ProviderSubscription<AsyncValue<rust.MessageSearchPage>>? subscription;
+    try {
+      final active = messageSearchProvider(request);
+      if (ref.read(active).isLoading) await ref.read(active.future);
+      if (!_searchStillCurrent(generation, account) || request != _request) {
+        if (_searchStillCurrent(generation, account)) {
+          _resultRefresh?.request(immediate: true);
+        }
+        return;
+      }
+      final provider = messageSearchProvider(window);
+      subscription = ref.listenManual(provider, (_, _) {});
+      if (!ref.read(provider).isLoading) ref.invalidate(provider);
+      final refreshed = await ref.read(provider.future);
+      if (!_searchStillCurrent(generation, account)) return;
+      if (request != _request) {
+        _resultRefresh?.request(immediate: true);
+        return;
+      }
+      if (refreshed.hasMore && refreshed.results.length < end) {
+        throw StateError('搜索结果窗口未完整返回，请重试');
+      }
+      setState(() {
+        _completedResults
+          ..clear()
+          ..addEntries(
+            refreshed.results
+                .take(request.offset)
+                .map(
+                  (result) =>
+                      MapEntry('${result.roomId}\n${result.eventId}', result),
+                ),
+          );
+        _progressivePage = rust.MessageSearchPage(
+          results: refreshed.results.skip(request.offset).toList(),
+          hasMore: refreshed.hasMore,
+          terms: refreshed.terms,
+          historyComplete: refreshed.historyComplete,
+        );
+        _terms = refreshed.terms;
+        _refreshError = null;
+      });
+    } catch (error) {
+      if (_searchStillCurrent(generation, account) && request == _request) {
+        rethrow;
+      }
+    } finally {
+      subscription?.close();
+    }
+  }
+
+  Future<void> _runHistoryBackfill(String? roomId, int generation) async {
+    final account = ref.read(activeUserIdProvider);
+    var emptyPages = 0;
+    try {
+      while (_searchStillCurrent(generation, account)) {
+        final progress = await ref.read(messageSearchHistoryBackfillProvider)(
+          roomId,
+        );
+        if (!_searchStillCurrent(generation, account)) return;
+        if (progress.reachedStart) {
+          setState(() => _historyExhausted = true);
+        }
+        _resultRefresh?.request(immediate: progress.reachedStart);
         if (progress.reachedStart) break;
-        // The SDK may advance a gap while returning no events. A bounded
-        // series of empty steps is retryable, not proof that history ended.
         emptyPages = progress.loadedEvents == 0 ? emptyPages + 1 : 0;
         if (emptyPages >= _searchHistoryEmptyPageLimit) {
           throw StateError('搜索较早消息暂未取得进展，请重试继续');
         }
+        // Let the first results paint, without waiting for a query to finish.
+        await WidgetsBinding.instance.endOfFrame;
       }
     } catch (error) {
-      if (mounted && generation == _backfillGeneration) {
+      if (_searchStillCurrent(generation, account)) {
         setState(() => _backfillError = error);
       }
     } finally {
-      if (mounted && generation == _backfillGeneration) {
+      if (_searchStillCurrent(generation, account)) {
         setState(() => _backfillRunning = false);
       }
     }
@@ -442,8 +590,15 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
   void _retryHistoryBackfill() {
     final page = _progressivePage;
     if (page == null) return;
-    setState(() => _backfillError = null);
-    _startHistoryBackfill(page);
+    setState(() {
+      _backfillError = null;
+      _refreshError = null;
+    });
+    if (_historyExhausted || _backfillRunning) {
+      _resultRefresh?.request(immediate: true);
+    } else {
+      _startHistoryBackfill(page);
+    }
   }
 
   Widget _pageAction({
@@ -535,7 +690,7 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
     }
     final results = resultsById.values.toList(growable: false);
     if (results.isEmpty && page != null && !page.historyComplete) {
-      if (_backfillError != null) {
+      if (_backfillError != null || _refreshError != null) {
         return _SearchStatus(
           icon: Icons.error_outline_rounded,
           text: '搜索较早消息失败，请重试',
@@ -562,61 +717,86 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
     final canLoadMore = page?.hasMore == true;
     final historyIncomplete = page != null && !page.historyComplete;
     final showPageAction = loadingMore || loadMoreError != null || canLoadMore;
-    return ListView.builder(
-      key: PageStorageKey(
-        Object.hash('message-search-results', widget.roomId, widget.query),
-      ),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: EdgeInsets.fromLTRB(
-        NeuSpacing.lg,
-        widget.topInset + NeuSpacing.sm,
-        NeuSpacing.lg,
-        NeuSpacing.xl,
-      ),
-      itemCount: results.length + (showPageAction || historyIncomplete ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == results.length) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (historyIncomplete)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: _backfillError != null
-                      ? NeuButton(
-                          icon: const Icon(Icons.refresh_rounded),
-                          onPressed: _retryHistoryBackfill,
-                          child: const Text('搜索较早消息失败，点击重试'),
-                        )
-                      : const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            SizedBox(height: 8),
-                            Text('正在搜索较早消息…'),
-                          ],
-                        ),
-                ),
-              if (showPageAction)
-                _pageAction(
-                  loading: loadingMore,
-                  error: loadMoreError,
-                  canLoadMore: canLoadMore,
-                  request: request,
-                  page: page,
-                ),
-            ],
-          );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.depth != 0) return false;
+        if (notification is ScrollStartNotification) {
+          _userScrolling = notification.dragDetails != null;
+        } else if (notification is UserScrollNotification) {
+          _userScrolling = notification.direction != ScrollDirection.idle;
         }
-        return _MessageSearchTile(
-          result: results[index],
-          terms: page?.terms ?? _terms,
-          roomScoped: widget.roomId != null,
-        );
+        if (_userScrolling &&
+            canLoadMore &&
+            !loadingMore &&
+            loadMoreError == null &&
+            notification is ScrollUpdateNotification &&
+            (notification.scrollDelta ?? 0) > 0 &&
+            notification.metrics.extentAfter <=
+                notification.metrics.viewportDimension) {
+          _scheduleLoadMore(request);
+        }
+        if (notification is ScrollEndNotification) _userScrolling = false;
+        return false;
       },
+      child: ListView.builder(
+        key: PageStorageKey(
+          Object.hash('message-search-results', widget.roomId, widget.query),
+        ),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.fromLTRB(
+          NeuSpacing.lg,
+          widget.topInset + NeuSpacing.sm,
+          NeuSpacing.lg,
+          NeuSpacing.xl,
+        ),
+        itemCount:
+            results.length + (showPageAction || historyIncomplete ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == results.length) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (historyIncomplete)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: _backfillError != null || _refreshError != null
+                        ? NeuButton(
+                            icon: const Icon(Icons.refresh_rounded),
+                            onPressed: _retryHistoryBackfill,
+                            child: const Text('搜索较早消息失败，点击重试'),
+                          )
+                        : const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text('正在搜索较早消息…'),
+                            ],
+                          ),
+                  ),
+                if (showPageAction)
+                  _pageAction(
+                    loading: loadingMore,
+                    error: loadMoreError,
+                    canLoadMore: canLoadMore,
+                    request: request,
+                    page: page,
+                  ),
+              ],
+            );
+          }
+          return _MessageSearchTile(
+            result: results[index],
+            terms: page?.terms ?? _terms,
+            roomScoped: widget.roomId != null,
+          );
+        },
+      ),
     );
   }
 }

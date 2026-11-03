@@ -127,8 +127,10 @@ void main() {
         overrides: [
           messageSearchProvider.overrideWith(
             (ref, request) async => rust.MessageSearchPage(
-              results: [_result(request.offset)],
-              hasMore: request.offset == 0,
+              results: gate.isCompleted && request.offset == 0
+                  ? [_result(0), _result(60)]
+                  : [_result(request.offset)],
+              hasMore: !gate.isCompleted && request.offset == 0,
               terms: const ['匹配'],
               historyComplete: gate.isCompleted,
             ),
@@ -152,13 +154,13 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('旧消息匹配 0', findRichText: true), findsOneWidget);
-    expect(find.text('旧消息匹配 30', findRichText: true), findsOneWidget);
+    expect(find.text('旧消息匹配 60', findRichText: true), findsOneWidget);
     gate.complete(
       const rust.MessageSearchBackfill(loadedEvents: 1, reachedStart: true),
     );
     await tester.pumpAndSettle();
     expect(find.text('旧消息匹配 0', findRichText: true), findsOneWidget);
-    expect(find.text('旧消息匹配 30', findRichText: true), findsOneWidget);
+    expect(find.text('旧消息匹配 60', findRichText: true), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
@@ -249,7 +251,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
-    for (var i = 0; i < 17; i++) {
+    for (var i = 0; i < 16; i++) {
       final more = find.text('加载更多');
       expect(more, findsOneWidget);
       await tester.ensureVisible(more);
