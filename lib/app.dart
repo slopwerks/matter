@@ -892,7 +892,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       _selectedDesktopSpace?.id,
     )),
     title: switch (_desktopRoomSource) {
-      _DesktopRoomSource.allChats => '全部会话',
+      _DesktopRoomSource.allChats => null,
       _DesktopRoomSource.directMessages => '私聊',
       _DesktopRoomSource.ungroupedRooms => '未归属群组',
       _DesktopRoomSource.space => _selectedDesktopSpace?.name,

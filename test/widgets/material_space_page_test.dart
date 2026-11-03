@@ -12,6 +12,7 @@ import 'package:matter/pages/chat/space_page.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/providers/navigation_provider.dart';
+import 'package:matter/providers/startup_page_provider.dart';
 import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/widgets/material_tab_navigation_bar.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
@@ -84,6 +85,10 @@ Future<void> _pumpPage(
   List<rust.ChatRoom> rooms = const [],
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 700));
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = Size(width, 700);
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final container = ProviderContainer(
     overrides: [
@@ -104,7 +109,12 @@ Future<void> _pumpPage(
   );
   addTearDown(container.dispose);
   container.read(activeUserIdProvider.notifier).value = '@me:example.org';
-  if (fullApp) container.read(navigationIndexProvider.notifier).value = 1;
+  if (fullApp) {
+    await container
+        .read(startupPageProvider.notifier)
+        .setPage(StartupPage.spaces);
+    container.read(navigationIndexProvider.notifier).value = 1;
+  }
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,

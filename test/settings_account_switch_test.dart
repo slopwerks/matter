@@ -437,6 +437,9 @@ void main() {
       // removed would queue a switch to a session that is about to be
       // deleted. Migrated rows only wrap in NeuAction while interactive, so
       // a disabled tile exposes no tappable action at all.
+      await tester.scrollUntilVisible(find.text('bob (example.org)'), -300);
+      await tester.ensureVisible(find.text('bob (example.org)'));
+      await tester.pump();
       expect(find.widgetWithText(NeuAction, 'bob (example.org)'), findsNothing);
       await tester.tap(find.text('bob (example.org)'));
       await tester.pump();
