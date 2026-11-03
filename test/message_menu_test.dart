@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/providers/interaction_mode_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 
@@ -48,6 +50,41 @@ Widget _message({bool formatted = false}) {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('mode switches message selection without disabling right-click', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_message());
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MessageGroupWidget)),
+    );
+    await container
+        .read(interactionModeProvider.notifier)
+        .setMode(InteractionMode.keyboardMouse);
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectionArea), findsOneWidget);
+    await container
+        .read(interactionModeProvider.notifier)
+        .setMode(InteractionMode.touch);
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectionArea), findsNothing);
+    final rect = tester.getRect(
+      find.byKey(const ValueKey(r'text-bubble:$read')),
+    );
+    await tester.tapAt(
+      Offset(rect.right - 6, rect.top + 6),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('回复'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('回复'), findsNothing);
+  });
+
   testWidgets('long-press on the bubble edge opens the message menu', (
     tester,
   ) async {

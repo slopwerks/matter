@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/image_view_history.dart';
+import '../../providers/interaction_mode_provider.dart';
 import 'action_failure_message.dart';
 import '../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../theme/neu_colors.dart';
@@ -1899,7 +1900,7 @@ class _SwipeToReplyState extends State<_SwipeToReply>
   }
 }
 
-class _AdaptiveTextMetadata extends StatelessWidget {
+class _AdaptiveTextMetadata extends ConsumerWidget {
   final String text;
   final TextStyle textStyle;
   final Widget metadata;
@@ -1926,7 +1927,7 @@ class _AdaptiveTextMetadata extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final content = _AdaptiveTextMetadataRenderWidget(
       minWidth: minWidth,
       text: MessageText(
@@ -1941,12 +1942,9 @@ class _AdaptiveTextMetadata extends StatelessWidget {
       ),
       metadata: metadata,
     );
-    final desktop = switch (Theme.of(context).platform) {
-      TargetPlatform.linux ||
-      TargetPlatform.macOS ||
-      TargetPlatform.windows => true,
-      _ => false,
-    };
+    final desktop = ref
+        .watch(interactionModeProvider)
+        .usesKeyboardMouse(Theme.of(context).platform);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
       child: desktop ? SelectionArea(child: content) : content,

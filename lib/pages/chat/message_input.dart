@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/composer_keyboard_settings_provider.dart';
 import '../../providers/composer_attachment_provider.dart';
+import '../../providers/interaction_mode_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
@@ -693,17 +694,25 @@ class MessageInputState extends ConsumerState<MessageInput> {
     _ => false,
   };
 
-  bool get _expandedComposer =>
-      _isDesktop || MediaQuery.sizeOf(context).width >= 600;
+  bool get _keyboardMouse => ref
+      .read(interactionModeProvider)
+      .usesKeyboardMouse(Theme.of(context).platform);
+
+  bool get _inlineImages =>
+      _isDesktop ||
+      _keyboardMouse ||
+      ref.read(composerAttachmentDraftProvider(_draftKey)).selected.isNotEmpty;
+
+  bool get _expandedComposer => MediaQuery.sizeOf(context).width >= 600;
 
   Widget _composerToolButton({
     required IconData icon,
     String? tooltip,
     bool selected = false,
     VoidCallback? onPressed,
-  }) => _expandedComposer
+  }) => _expandedComposer || _keyboardMouse || _isDesktop
       ? ComposerToolButton(
-          compact: _isDesktop,
+          compact: _keyboardMouse,
           icon: icon,
           tooltip: tooltip,
           selected: selected,
@@ -731,7 +740,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
         return;
       }
       if (image != null) {
-        if (_isDesktop) {
+        if (_inlineImages) {
           unawaited(previewExternalFiles([image]));
         } else {
           await previewExternalFiles([image]);
@@ -757,7 +766,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
         _draftKey.userId.isEmpty) {
       return;
     }
-    if (_isDesktop &&
+    if (_inlineImages &&
         files.every(
           (file) =>
               classifyAttachmentMime(
@@ -820,7 +829,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final pasteModifier = Theme.of(context).platform == TargetPlatform.macOS
         ? keyboard.isMetaPressed
         : keyboard.isControlPressed;
-    if (_isDesktop &&
+    if ((_isDesktop || _keyboardMouse) &&
         event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.keyV &&
         pasteModifier &&
@@ -833,19 +842,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
     // either losing the newline or inserting it twice through native input.
     if (_isEnterKey(event)) {
       final keyboard = HardwareKeyboard.instance;
-      final desktop = _isDesktop;
       final shortcut = keyboard.isShiftPressed
           ? ComposerEnterShortcut.shiftEnter
           : keyboard.isAltPressed
           ? ComposerEnterShortcut.altEnter
           : ComposerEnterShortcut.enter;
-      final action = desktop
-          ? ref.read(composerKeyboardSettingsProvider).actionFor(shortcut)
-          : keyboard.isShiftPressed
-          ? ComposerEnterAction.newline
-          : ComposerEnterAction.send;
+      final action = ref
+          .read(composerKeyboardSettingsProvider)
+          .actionFor(shortcut);
       if (action == ComposerEnterAction.newline) {
-        if (!desktop) return KeyEventResult.ignored;
         if (event is KeyDownEvent) _insertComposerText('\n');
         return KeyEventResult.handled;
       }
@@ -1106,7 +1111,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   Future<void> _sendMessage() async {
-    if (_isDesktop &&
+    if (_inlineImages &&
         ref.read(editingMessageProvider(_draftKey)) == null &&
         ref
             .read(composerAttachmentDraftProvider(_draftKey))
@@ -1623,7 +1628,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   void _toggleAttachmentPicker() {
-    if (_isDesktop) {
+    if (_inlineImages) {
       unawaited(_pickDesktopImages());
       return;
     }
@@ -1921,7 +1926,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final desktop = _isDesktop;
+    final desktop = ref
+        .watch(interactionModeProvider)
+        .usesKeyboardMouse(Theme.of(context).platform);
+    final pendingImages = ref.watch(composerAttachmentDraftProvider(_draftKey));
+    final inlineImages =
+        _isDesktop ||
+        desktop ||
+        pendingImages.selected.isNotEmpty ||
+        pendingImages.isSending;
     final expanded = _expandedComposer;
     final replyTo = ref.watch(replyingToProvider(_draftKey));
     final editing = ref.watch(editingMessageProvider(_draftKey));
@@ -1942,15 +1955,12 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final editingSendInFlight = editing != null && editingSendId == editing.id;
     final editingSourceLoading =
         editing != null && _editingSourceLoadingId == editing.id;
-    final pendingImages = desktop
-        ? ref.watch(composerAttachmentDraftProvider(_draftKey))
-        : null;
-    final hasImages = pendingImages?.selected.isNotEmpty == true;
+    final hasImages = pendingImages.selected.isNotEmpty;
     final sendBusy =
         _isSending ||
         editingSendInFlight ||
         editingSourceLoading ||
-        pendingImages?.isSending == true;
+        pendingImages.isSending;
     final autocompleteMatch = _focusNode.hasFocus && !_isComposingText
         ? _autocompleteMatch
         : null;
@@ -2038,7 +2048,9 @@ class MessageInputState extends ConsumerState<MessageInput> {
               compact: desktop,
               child: ComposerLayout(
                 desktop: expanded,
-                attachments: desktop && (hasImages || pendingImages!.isSending)
+                showMore: _isDesktop || desktop,
+                attachments:
+                    inlineImages && (hasImages || pendingImages.isSending)
                     ? AttachmentPicker(
                         key: _pendingImagesKey,
                         inline: true,
@@ -2107,7 +2119,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                         markdownSelectionContextMenuBuilder(
                           context,
                           editable,
-                          onPaste: _isDesktop
+                          onPaste: (_isDesktop || desktop)
                               ? () {
                                   ContextMenuController.removeAny();
                                   unawaited(
@@ -2166,7 +2178,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 ),
                 attachmentButton: Builder(
                   builder: (buttonContext) => Tooltip(
-                    message: desktop ? '选择图片' : '附件',
+                    message: inlineImages ? '选择图片' : '附件',
                     // Desktop hover still shows the tooltip; its
                     // long-press trigger belongs to the outer
                     // GestureDetector so it can open the tools menu
@@ -2177,7 +2189,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                           ? null
                           : () => _showComposerToolsMenu(buttonContext),
                       child: _composerToolButton(
-                        icon: desktop
+                        icon: inlineImages
                             ? Icons.image_outlined
                             : Icons.add_rounded,
                         selected: widget.panelMode == InputPanelMode.attachment,
@@ -2217,7 +2229,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                         duration: _toolbarAnimationDuration,
                         switchInCurve: _toolbarAnimationCurve,
                         switchOutCurve: Curves.easeInCubic,
-                        child: _hasText
+                        child: _hasText || hasImages
                             ? SizedBox.square(
                                 key: const ValueKey('send_only'),
                                 dimension: 44,

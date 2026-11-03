@@ -1,11 +1,14 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../providers/interaction_mode_provider.dart';
 
 import '../../theme/material_theme.dart';
 import 'attachment_media_draft.dart';
 
-class ComposerAttachmentStrip extends StatelessWidget {
+class ComposerAttachmentStrip extends ConsumerWidget {
   const ComposerAttachmentStrip({
     super.key,
     required this.draft,
@@ -16,7 +19,10 @@ class ComposerAttachmentStrip extends StatelessWidget {
   final void Function(AttachmentMediaItem, List<AttachmentMediaItem>) onPreview;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final compact = ref
+        .watch(interactionModeProvider)
+        .usesKeyboardMouse(Theme.of(context).platform);
     if (draft.selected.isEmpty) return const SizedBox.shrink();
     final images = draft.selected.where((item) => item.isImage).toList();
     return SizedBox(
@@ -56,7 +62,7 @@ class ComposerAttachmentStrip extends StatelessWidget {
                     tooltip: '移除图片',
                     style: composerIconButtonStyle(
                       Theme.of(context),
-                      compact: true,
+                      compact: compact,
                     ),
                     onPressed: draft.isSending
                         ? null

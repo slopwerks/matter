@@ -16,6 +16,7 @@ import 'package:matter/pages/chat/external_attachment_preview.dart';
 import 'package:matter/pages/chat/composer_attachment_strip.dart';
 import 'package:matter/pages/chat/attachment_image_preview_page.dart';
 import 'package:matter/providers/composer_attachment_provider.dart';
+import 'package:matter/providers/interaction_mode_provider.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
 import 'package:matter/providers/auth_provider.dart';
@@ -604,6 +605,44 @@ void main() {
     expect(find.byTooltip('移除图片'), findsNothing);
     await disposeInput(tester);
   });
+
+  testWidgets(
+    'pending images remain visible after keyboard-to-touch mode switch',
+    (tester) async {
+      await container
+          .read(interactionModeProvider.notifier)
+          .setMode(InteractionMode.keyboardMouse);
+      await tester.pumpWidget(
+        _input(container, platform: TargetPlatform.android),
+      );
+      await tester.enterText(find.byType(TextField), '保留说明');
+      final input = tester.state<MessageInputState>(find.byType(MessageInput));
+      unawaited(
+        input.previewExternalFiles([
+          XFile.fromData(
+            png,
+            path: 'touch.png',
+            name: 'touch.png',
+            mimeType: 'image/png',
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await container
+          .read(interactionModeProvider.notifier)
+          .setMode(InteractionMode.touch);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('移除图片'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '保留说明',
+      );
+      await tester.tap(find.byTooltip('移除图片'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('移除图片'), findsNothing);
+      await disposeInput(tester);
+    },
+  );
 
   testWidgets('mixed dropped batch retries only the unsent files', (
     tester,

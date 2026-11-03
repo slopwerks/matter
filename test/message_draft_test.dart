@@ -392,26 +392,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Shift+Enter does not send from an Android hardware keyboard', (
-    tester,
-  ) async {
-    await _runWithTargetPlatform(TargetPlatform.android, () async {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      container.read(activeUserIdProvider.notifier).value =
-          '@alice:example.org';
+  testWidgets(
+    'Shift+Enter inserts one newline without sending on Android hardware keyboards',
+    (tester) async {
+      await _runWithTargetPlatform(TargetPlatform.android, () async {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(activeUserIdProvider.notifier).value =
+            '@alice:example.org';
 
-      await tester.pumpWidget(_messageInput(container, '!newline:example.org'));
-      await tester.enterText(find.byType(TextField), 'first line');
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.pump();
+        await tester.pumpWidget(
+          _messageInput(container, '!newline:example.org'),
+        );
+        await tester.enterText(find.byType(TextField), 'first line');
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
 
-      expect(_inputText(tester), 'first line');
-      expect(rustApi.pendingSend, isNull);
-    });
-  });
+        expect(_inputText(tester), 'first line\n');
+        expect(rustApi.pendingSend, isNull);
+      });
+    },
+  );
 
   testWidgets('Tab replaces a named emoji without sending', (tester) async {
     await _runWithTargetPlatform(TargetPlatform.macOS, () async {

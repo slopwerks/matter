@@ -235,12 +235,18 @@ a theme transition instead of switching the whole palette halfway through.
 
 ## Desktop and tablet composers
 
-Desktop chat input uses one flat surface with a top divider, an unframed editor,
-and compact rectangular controls. Do not nest glass, raised cards and a recessed
+Wide chat input uses one flat surface with a top divider, an unframed editor,
+and rectangular controls. Do not nest glass, raised cards and a recessed
 field around the same editor. Composer control shapes live in
-`material_theme.dart` and are shared by both skins. Mouse targets are 32 dp;
-touch targets remain 48 dp. Wide tablet panes can expand the editor without
-switching to mouse density; narrow phone panes keep the compact touch layout.
+`material_theme.dart` and are shared by both skins. The device-local interaction
+setting offers automatic, touch and keyboard/mouse modes. Automatic uses
+keyboard/mouse on Linux, Windows and macOS, and touch on Android and iOS.
+Keyboard/mouse targets are 32 dp; touch targets remain 48 dp. The mode also
+controls plain-message drag selection, not hardware keyboard shortcuts or
+secondary-click actions, which remain available in every mode.
+
+Pane widths alone control single/split layouts and the expanded editor
+(600 dp or wider); changing interaction mode never forces a wide layout.
 Tablets follow system rotation, while phones retain the portrait preference.
 
 ## Checking a change

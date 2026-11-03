@@ -191,6 +191,10 @@ void main() {
           'desktop editor and quick settings retain draft ($material, $dark, $width)',
           (tester) async {
             await tester.binding.setSurfaceSize(Size(width, 600));
+            tester.view.devicePixelRatio = 1;
+            tester.view.physicalSize = Size(width, 600);
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetDevicePixelRatio);
             addTearDown(() => tester.binding.setSurfaceSize(null));
             final container = ProviderContainer();
             addTearDown(container.dispose);
@@ -200,20 +204,26 @@ void main() {
             await tester.pumpAndSettle();
             final field = find.byType(TextField);
             final emptyRect = tester.getRect(field);
-            final toolbarRect = tester.getRect(
-              find.byKey(const ValueKey('desktop-composer-toolbar')),
+            final toolbar = find.byKey(
+              const ValueKey('desktop-composer-toolbar'),
             );
-            expect(emptyRect.height, greaterThanOrEqualTo(80));
-            expect(emptyRect.height, lessThan(96));
-            expect(find.byType(GlassPanel), findsNothing);
-            expect(find.byType(BackdropFilter), findsNothing);
-            expect(tester.getSize(find.byType(IconButton).first).height, 32);
-            expect(
-              tester.widget<TextField>(field).decoration!.border,
-              InputBorder.none,
-            );
-            expect(emptyRect.width, greaterThan(width - 90));
-            expect(toolbarRect.top, greaterThanOrEqualTo(emptyRect.bottom));
+            if (width >= 600) {
+              final toolbarRect = tester.getRect(toolbar);
+              expect(emptyRect.height, greaterThanOrEqualTo(80));
+              expect(emptyRect.height, lessThan(96));
+              expect(emptyRect.width, greaterThan(width - 90));
+              expect(toolbarRect.top, greaterThanOrEqualTo(emptyRect.bottom));
+              expect(find.byType(GlassPanel), findsNothing);
+              expect(find.byType(BackdropFilter), findsNothing);
+              expect(tester.getSize(find.byType(IconButton).first).height, 32);
+              expect(
+                tester.widget<TextField>(field).decoration!.border,
+                InputBorder.none,
+              );
+            } else {
+              expect(toolbar, findsNothing);
+              expect(emptyRect.height, lessThan(96));
+            }
             await tester.enterText(
               field,
               List.filled(12, 'long draft').join('\n'),

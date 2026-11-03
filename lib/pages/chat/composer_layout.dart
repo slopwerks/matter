@@ -90,6 +90,7 @@ class ComposerLayout extends StatelessWidget {
     required this.moreButton,
     required this.sendButton,
     this.attachments,
+    this.showMore = false,
   });
 
   final bool desktop;
@@ -99,6 +100,7 @@ class ComposerLayout extends StatelessWidget {
   final Widget moreButton;
   final Widget sendButton;
   final Widget? attachments;
+  final bool showMore;
 
   @override
   Widget build(BuildContext context) {
@@ -124,20 +126,35 @@ class ComposerLayout extends StatelessWidget {
         ],
       );
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        emojiButton,
-        SizedBox(width: context.isMaterial ? 2 : 6),
-        Expanded(child: editor),
-        SizedBox(width: context.isMaterial ? 2 : 6),
-        SizedBox(
-          width: context.isMaterial ? 92 : 94,
-          height: 44,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [attachmentButton, sendButton],
-          ),
+        ?attachments,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            emojiButton,
+            SizedBox(width: context.isMaterial ? 2 : 6),
+            Expanded(child: editor),
+            SizedBox(width: context.isMaterial ? 2 : 6),
+            SizedBox(
+              width: showMore
+                  ? 140
+                  : context.isMaterial
+                  ? 92
+                  : 94,
+              height: showMore ? 48 : 44,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  attachmentButton,
+                  if (showMore) moreButton,
+                  sendButton,
+                ],
+              ),
+            ),
+          ],
         ),
       ],
     );
