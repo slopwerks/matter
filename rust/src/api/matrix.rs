@@ -13796,7 +13796,7 @@ async fn message_search_backfill_lock(key: &str) -> Arc<Mutex<()>> {
         .clone()
 }
 
-async fn backfill_global_cached_search_index_page(
+async fn backfill_global_search_history_page(
     client: &Client,
 ) -> Result<MessageSearchBackfill, String> {
     let rooms = searchable_rooms(client);
@@ -13818,24 +13818,22 @@ async fn backfill_global_cached_search_index_page(
     for distance in 0..rooms.len() {
         let index = (start + distance) % rooms.len();
         let room = &rooms[index];
-        if cached_search_backfill_complete(client, room).await? {
+        let room_key = message_search_room_key(client, room)?;
+        if cached_search_backfill_complete(client, room).await?
+            && SEARCH_HISTORY_COMPLETE.lock().await.contains(&room_key)
+        {
             continue;
         }
-
-        let room_key = message_search_room_key(client, room)?;
         let room_backfill_lock = message_search_backfill_lock(&room_key).await;
         let _room_backfill = room_backfill_lock.lock().await;
-        if cached_search_backfill_complete(client, room).await? {
-            continue;
-        }
-        let (complete, loaded_events) = backfill_cached_search_index_page(client, room).await?;
+        let progress = backfill_room_search_history(client, room).await?;
         SEARCH_CACHE_BACKFILL_PROGRESS
             .lock()
             .await
             .insert(key.clone(), (index + 1) % rooms.len());
-        if loaded_events > 0 || !complete {
+        if progress.loaded_events > 0 || !progress.reached_start {
             return Ok(MessageSearchBackfill {
-                loaded_events: loaded_events.min(u32::MAX as usize) as u32,
+                loaded_events: progress.loaded_events,
                 reached_start: false,
             });
         }
@@ -13857,10 +13855,20 @@ async fn backfill_message_search_with_client(
     let _backfill = backfill_lock.lock().await;
 
     let Some(room_id) = room_id else {
-        return backfill_global_cached_search_index_page(client).await;
+        return backfill_global_search_history_page(client).await;
     };
     let room = get_room_by_id(client, &room_id)?;
-    let (cache_complete, cached_events) = backfill_cached_search_index_page(client, &room).await?;
+    backfill_room_search_history(client, &room).await
+}
+
+// Both scopes must complete the same cache and remote-history walk. A cache
+// indexing marker says nothing about messages not yet downloaded from the room.
+async fn backfill_room_search_history(
+    client: &Client,
+    room: &Room,
+) -> Result<MessageSearchBackfill, String> {
+    let key = message_search_room_key(client, room)?;
+    let (cache_complete, cached_events) = backfill_cached_search_index_page(client, room).await?;
     if !cache_complete {
         return Ok(MessageSearchBackfill {
             loaded_events: cached_events.min(u32::MAX as usize) as u32,
@@ -13875,7 +13883,7 @@ async fn backfill_message_search_with_client(
         });
     }
 
-    let (reached_start, remote_events) = load_older_search_history(client, &room).await?;
+    let (reached_start, remote_events) = load_older_search_history(client, room).await?;
     if reached_start {
         SEARCH_HISTORY_COMPLETE.lock().await.insert(key);
     }
@@ -13888,8 +13896,8 @@ async fn backfill_message_search_with_client(
 
 /// Load and index one older room-history page. The search UI calls this in the
 /// background and refreshes visible local results after every bounded step.
-/// Global search only fills already-cached room history; room search continues
-/// with one homeserver pagination request after its cache is indexed.
+/// Both scopes index cached events, then continue homeserver pagination. Global
+/// search advances one room per bounded step so no large room monopolizes it.
 #[frb]
 pub async fn backfill_message_search(
     room_id: Option<String>,
@@ -14072,16 +14080,8 @@ async fn search_messages_with_client(
     };
     let ignored_user_ids = ignored_user_ids.map(|ids| ids.into_iter().collect::<HashSet<_>>());
     let index_query = message_search_index_query(&terms);
-    let offset = offset.min(500) as usize;
-    if offset == 500 {
-        return Ok(MessageSearchPage {
-            results: Vec::new(),
-            has_more: false,
-            terms,
-            history_complete: true,
-        });
-    }
-    let limit = limit.clamp(1, (500 - offset) as u32) as usize;
+    let offset = offset as usize;
+    let limit = limit.clamp(1, 100) as usize;
     let result_target = offset.saturating_add(limit).saturating_add(1);
     let room_target = result_target;
     let batch_size = room_target.clamp(32, 128);
@@ -14108,12 +14108,8 @@ async fn search_messages_with_client(
                 false
             }
         };
-        history_complete &= if room_scoped {
-            let key = message_search_room_key(client, &room)?;
-            cache_complete && SEARCH_HISTORY_COMPLETE.lock().await.contains(&key)
-        } else {
-            cache_complete
-        };
+        let key = message_search_room_key(client, &room)?;
+        history_complete &= cache_complete && SEARCH_HISTORY_COMPLETE.lock().await.contains(&key);
         let is_dm = match room.is_direct().await {
             Ok(true) => true,
             Ok(false) | Err(_) => is_dm_by_members(&room).await,
@@ -14227,9 +14223,9 @@ mod message_search_tests {
 
     use super::{
         backfill_message_search_with_client, insert_latest_search_result,
-        message_matches_search_terms, message_search_index_query, message_search_terms,
-        ordered_event_cache_chunk_ids, paginate_message_search_results,
-        search_messages_with_client, MessageSearchResult,
+        message_matches_search_terms, message_search_index_query, message_search_room_key,
+        message_search_terms, ordered_event_cache_chunk_ids, paginate_message_search_results,
+        search_messages_with_client, MessageSearchResult, SEARCH_HISTORY_COMPLETE,
     };
     use matrix_sdk::{
         ruma::{event_id, room_id, user_id},
@@ -14389,6 +14385,83 @@ mod message_search_tests {
             ordered_event_cache_chunk_ids(chunks).unwrap(),
             [id(0), id(1), id(2)]
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn global_search_fetches_remote_history_after_its_cache_is_indexed() {
+        let server = MatrixMockServer::new().await;
+        let client = server
+            .client_builder()
+            .on_builder(|builder| builder.search_index_store(SearchIndexStoreKind::InMemory))
+            .build()
+            .await;
+        client.event_cache().subscribe().unwrap();
+        let room_id = room_id!("!global-search-history:localhost");
+        let events = EventFactory::new()
+            .room(room_id)
+            .sender(user_id!("@alice:localhost"));
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(room_id)
+                    .set_timeline_limited()
+                    .set_timeline_prev_batch("global-older")
+                    .add_timeline_event(
+                        events
+                            .text_msg("history match")
+                            .event_id(event_id!("$global-new:localhost"))
+                            .server_ts(2000),
+                    ),
+            )
+            .await;
+        server
+            .mock_room_messages()
+            .match_from("global-older")
+            .ok(RoomMessagesResponseTemplate::default().events(vec![events
+                .text_msg("history match")
+                .event_id(event_id!("$global-old:localhost"))
+                .server_ts(1000)]))
+            .mock_once()
+            .mount()
+            .await;
+        // An in-memory client has no cache-backfill marker to migrate. Even
+        // then, global search must not confuse cache completion with history.
+        let before = search_messages_with_client(
+            &client,
+            "history".to_owned(),
+            None,
+            0,
+            30,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        assert!(!before.history_complete);
+        let progress = backfill_message_search_with_client(&client, None)
+            .await
+            .unwrap();
+        assert_eq!(progress.loaded_events, 1);
+        let after = search_messages_with_client(
+            &client,
+            "history".to_owned(),
+            None,
+            0,
+            30,
+            Some(Vec::new()),
+        )
+        .await
+        .unwrap();
+        assert!(after
+            .results
+            .iter()
+            .any(|result| result.event_id == "$global-old:localhost"));
+        assert!(after.history_complete);
+        let room = client.get_room(room_id).unwrap();
+        SEARCH_HISTORY_COMPLETE
+            .lock()
+            .await
+            .remove(&message_search_room_key(&client, &room).unwrap());
+        server.verify_and_reset().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]

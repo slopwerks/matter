@@ -18,7 +18,7 @@ import 'chat_list_item.dart';
 import 'chat_timestamp.dart';
 
 const _searchPageSize = 30;
-const _maxSearchResults = 500;
+const _searchHistoryEmptyPageLimit = 8;
 
 /// 搜索框行的实测高度:上下内边距 8/4 加输入框自身高度 50。
 const _searchFieldRowHeight = 62.0;
@@ -324,18 +324,25 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
   bool _backfillRunning = false;
   Object? _backfillError;
   rust.MessageSearchPage? _progressivePage;
+  String? _searchAccount;
+
+  void _resetSearch() {
+    _backfillGeneration++;
+    _backfillRunning = false;
+    _backfillError = null;
+    _progressivePage = null;
+    _completedResults.clear();
+    _terms = const [];
+    _offset = 0;
+  }
 
   @override
   void didUpdateWidget(covariant _MessageSearchResults oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.query != widget.query || oldWidget.roomId != widget.roomId) {
-      _backfillGeneration++;
-      _backfillRunning = false;
-      _backfillError = null;
-      _progressivePage = null;
-      _completedResults.clear();
-      _terms = const [];
-      _offset = 0;
+    if (oldWidget.query != widget.query ||
+        oldWidget.roomId != widget.roomId ||
+        oldWidget.active != widget.active) {
+      _resetSearch();
     }
   }
 
@@ -346,18 +353,16 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
   }
 
   MessageSearchRequest get _request {
-    final remaining = _maxSearchResults - _offset;
     return MessageSearchRequest(
       query: widget.query,
       roomId: widget.roomId,
       offset: _offset,
-      limit: remaining < _searchPageSize ? remaining : _searchPageSize,
+      limit: _searchPageSize,
     );
   }
 
   void _loadMore(rust.MessageSearchPage page, MessageSearchRequest request) {
     final nextOffset = request.offset + request.limit;
-    if (nextOffset >= _maxSearchResults) return;
     setState(() {
       _progressivePage = null;
       _backfillError = null;
@@ -384,12 +389,19 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
   }
 
   Future<void> _runHistoryBackfill(String? roomId, int generation) async {
+    final account = ref.read(activeUserIdProvider);
+    var emptyPages = 0;
+    bool current() =>
+        mounted &&
+        widget.active &&
+        generation == _backfillGeneration &&
+        ref.read(activeUserIdProvider) == account;
     try {
-      while (mounted && generation == _backfillGeneration) {
+      while (current()) {
         final progress = await ref.read(messageSearchHistoryBackfillProvider)(
           roomId,
         );
-        if (!mounted || generation != _backfillGeneration) return;
+        if (!current()) return;
 
         final request = _request;
         try {
@@ -398,9 +410,10 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
           // Widget tests can run without initializing Rust; the superseded
           // search cancellation is best-effort anyway.
         }
+        if (!current()) return;
         ref.invalidate(messageSearchProvider(request));
         final refreshed = await ref.read(messageSearchProvider(request).future);
-        if (!mounted || generation != _backfillGeneration) return;
+        if (!current()) return;
         setState(() {
           _progressivePage = refreshed;
           _terms = refreshed.terms;
@@ -408,8 +421,11 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
         await WidgetsBinding.instance.endOfFrame;
 
         if (progress.reachedStart) break;
-        if (progress.loadedEvents == 0) {
-          throw StateError('搜索历史分页没有取得进展');
+        // The SDK may advance a gap while returning no events. A bounded
+        // series of empty steps is retryable, not proof that history ended.
+        emptyPages = progress.loadedEvents == 0 ? emptyPages + 1 : 0;
+        if (emptyPages >= _searchHistoryEmptyPageLimit) {
+          throw StateError('搜索较早消息暂未取得进展，请重试继续');
         }
       }
     } catch (error) {
@@ -478,6 +494,11 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final account = ref.watch(activeUserIdProvider);
+    if (_searchAccount != account) {
+      _searchAccount = account;
+      _resetSearch();
+    }
     if (!widget.active || widget.query.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -538,9 +559,7 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
 
     final loadingMore = _completedResults.isNotEmpty && search.isLoading;
     final loadMoreError = _completedResults.isNotEmpty ? search.error : null;
-    final canLoadMore =
-        page?.hasMore == true &&
-        request.offset + request.limit < _maxSearchResults;
+    final canLoadMore = page?.hasMore == true;
     final historyIncomplete = page != null && !page.historyComplete;
     final showPageAction = loadingMore || loadMoreError != null || canLoadMore;
     return ListView.builder(
@@ -557,35 +576,39 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
       itemCount: results.length + (showPageAction || historyIncomplete ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == results.length) {
-          if (historyIncomplete) {
-            if (_backfillError != null) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Center(
-                  child: NeuIconButton(
-                    icon: Icons.refresh_rounded,
-                    tooltip: '重新搜索较早消息',
-                    onPressed: _retryHistoryBackfill,
-                  ),
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (historyIncomplete)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: _backfillError != null
+                      ? NeuButton(
+                          icon: const Icon(Icons.refresh_rounded),
+                          onPressed: _retryHistoryBackfill,
+                          child: const Text('搜索较早消息失败，点击重试'),
+                        )
+                      : const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            SizedBox(height: 8),
+                            Text('正在搜索较早消息…'),
+                          ],
+                        ),
                 ),
-              );
-            }
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Center(
-                child: SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              if (showPageAction)
+                _pageAction(
+                  loading: loadingMore,
+                  error: loadMoreError,
+                  canLoadMore: canLoadMore,
+                  request: request,
+                  page: page,
                 ),
-              ),
-            );
-          }
-          return _pageAction(
-            loading: loadingMore,
-            error: loadMoreError,
-            canLoadMore: canLoadMore,
-            request: request,
-            page: page,
+            ],
           );
         }
         return _MessageSearchTile(
