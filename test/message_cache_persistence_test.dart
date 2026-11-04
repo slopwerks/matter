@@ -27,6 +27,42 @@ void main() {
     totalMembers: 2,
   );
 
+  test(
+    'declared media duration survives cache, copy, and message reconciliation',
+    () {
+      final raw = chatMessageToMap(message(r'$audio', '100'))
+        ..['msgType'] = 'file'
+        ..['durationMs'] = 65432;
+      final audio = chatMessageFromMap(raw);
+      expect(audio.durationMs, 65432);
+      expect(chatMessageFromMap(chatMessageToMap(audio)).durationMs, 65432);
+      final copied = copyLocalOutgoingMessageWithId(
+        LocalOutgoingMessage(message: audio),
+        'sent:audio',
+      );
+      expect(copied.message.durationMs, 65432);
+      final changed = chatMessageFromMap({...raw, 'durationMs': 70000});
+      expect(chatMessageContentEquals(audio, changed), isFalse);
+      final video = chatMessageFromMap({...raw, 'msgType': 'video'});
+      expect(chatMessageFromMap(chatMessageToMap(video)).durationMs, 65432);
+    },
+  );
+
+  test(
+    'old or invalid cache durations are unknown without dropping the message',
+    () {
+      final raw = chatMessageToMap(message(r'$old', '100'))
+        ..remove('durationMs');
+      expect(chatMessageFromMap(raw).durationMs, isNull);
+      for (final value in [0, -1, '123', 1.2, 0x80000000]) {
+        expect(
+          chatMessageFromMap({...raw, 'durationMs': value}).durationMs,
+          isNull,
+        );
+      }
+    },
+  );
+
   test('an empty refresh cannot erase a visible message snapshot', () {
     final current = [message(r'$old', '100')];
 

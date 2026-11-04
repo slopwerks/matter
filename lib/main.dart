@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:material_ui/material_ui.dart' as material_ui;
 import 'package:path_provider/path_provider.dart';
 
@@ -11,10 +12,12 @@ import 'app.dart';
 import 'features/app_update/app_update_service.dart';
 import 'features/app_update/update_dialog.dart';
 import 'features/auth/session_expiry_listener.dart';
+import 'features/audio/audio_playback_provider.dart';
 import 'features/push/push_runtime.dart';
+import 'features/push/desktop_notification_listener.dart';
 import 'features/push/push_notification_listener.dart';
 import 'pages/login/login_page.dart';
-import 'pages/chat/decrypted_video_source.dart';
+import 'pages/chat/prepared_media_source.dart';
 import 'pages/chat/chat_detail_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
@@ -30,7 +33,8 @@ import 'theme/neu_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await cleanupStaleDecryptedVideoSources();
+  MediaKit.ensureInitialized();
+  await cleanupStaleMediaSources();
   await RustLib.init();
   _installDartErrorLogging();
   await initializePush();
@@ -86,10 +90,17 @@ Future<void> main() async {
     ),
   );
 
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  // Keep phones in portrait; tablets follow the user's system rotation setting.
+  final display = ui.PlatformDispatcher.instance.implicitView?.display;
+  final displayWidth = display == null
+      ? 0
+      : display.size.shortestSide / display.devicePixelRatio;
+  if (displayWidth < 600) {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
 
   runApp(
     ProviderScope(
@@ -382,17 +393,20 @@ class _AppRootState extends ConsumerState<_AppRoot>
       darkTheme: darkTheme,
       themeMode: themeMode,
       builder: (context, child) => ChatVisualSettingsRoot(
-        child: PushNotificationListener(
+        child: DesktopNotificationListener(
           navigatorKey: _navigatorKey,
-          child: SessionExpiryListener(
+          child: PushNotificationListener(
             navigatorKey: _navigatorKey,
-            onRelogin: (canResume) {
-              _resumeSession = canResume;
-              _reloginUser = ref.read(currentUserProvider);
-              clearActiveSessionState(ref, markSessionReady: true);
-              _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-            },
-            child: child!,
+            child: SessionExpiryListener(
+              navigatorKey: _navigatorKey,
+              onRelogin: (canResume) {
+                _resumeSession = canResume;
+                _reloginUser = ref.read(currentUserProvider);
+                clearActiveSessionState(ref, markSessionReady: true);
+                _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+              },
+              child: AudioPlaybackRoot(child: child!),
+            ),
           ),
         ),
       ),

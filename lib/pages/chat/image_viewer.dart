@@ -237,7 +237,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
     }
   }
 
-  Future<void> _download(ImageViewerMedia media) async {
+  Future<void> _download(ImageViewerMedia media, {bool saveAs = false}) async {
     final source = media.source;
     if (_downloading.contains(source.id)) return;
     setState(() => _downloading.add(source.id));
@@ -258,7 +258,11 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
       final filename = sanitizeAttachmentFilename(
         source.filename ?? 'image.png',
       );
-      final saved = await saveDownloadedFile(filename: filename, bytes: bytes);
+      final saved = await saveDownloadedFile(
+        filename: filename,
+        bytes: bytes,
+        chooseLocation: saveAs,
+      );
       if (mounted && saved) _notify('图片已保存');
     } catch (error) {
       if (mounted) _notify('下载失败: $error');
@@ -400,7 +404,11 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                 )
               : const Icon(CupertinoIcons.arrow_down_to_line, size: 22),
         ),
-        if (canReply || canForward || canJump || _menuMedia != null)
+        if (supportsSaveAs ||
+            canReply ||
+            canForward ||
+            canJump ||
+            _menuMedia != null)
           PopupMenuButton<_ViewerAction>(
             key: const ValueKey('image-viewer-more'),
             tooltip: '更多操作',
@@ -411,6 +419,8 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
               final target = _menuMedia ?? media;
               setState(() => _menuMedia = null);
               switch (action) {
+                case _ViewerAction.saveAs:
+                  unawaited(_download(target, saveAs: true));
                 case _ViewerAction.reply:
                   _reply(target);
                 case _ViewerAction.forward:
@@ -420,6 +430,12 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
               }
             },
             itemBuilder: (context) => [
+              if (supportsSaveAs)
+                PopupMenuItem(
+                  value: _ViewerAction.saveAs,
+                  enabled: !_downloading.contains(source.id),
+                  child: const Text('另存为…'),
+                ),
               if (canReply)
                 const PopupMenuItem(
                   value: _ViewerAction.reply,
@@ -651,7 +667,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
   }
 }
 
-enum _ViewerAction { reply, forward, jump }
+enum _ViewerAction { reply, forward, jump, saveAs }
 
 class _ImageViewerPage extends StatefulWidget {
   final ImageViewerMedia media;

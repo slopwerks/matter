@@ -16,12 +16,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : FlutterActivity() {
-
     override fun provideFlutterEngine(context: Context): FlutterEngine? = DownloadRuntime.engine
 
     override fun shouldDestroyEngineWithHost(): Boolean = !DownloadRuntime.ownsEngine(flutterEngine)
 
     override fun onDestroy() {
+        AudioRuntime.detachHost(this)
         DownloadRuntime.detachHost(this)
         super.onDestroy()
     }
@@ -56,6 +56,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         DownloadRuntime.attachHost(this, flutterEngine)
+        AudioRuntime.attachHost(this, flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "moe.aks.matter/downloads",
@@ -148,16 +149,20 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun requestFileOpen(path: String, result: MethodChannel.Result) {
+    private fun requestFileOpen(
+        path: String,
+        result: MethodChannel.Result,
+    ) {
         try {
             val file = File(path).canonicalFile
             val root = File(cacheDir, "matter_open_files").canonicalFile
             require(file.isFile && file.parentFile?.parentFile == root) { "找不到待打开的文件" }
             val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-            val view = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "text/markdown")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+            val view =
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "text/markdown")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
             startActivity(Intent.createChooser(view, "用其他应用打开"))
             result.success(true)
         } catch (error: Exception) {

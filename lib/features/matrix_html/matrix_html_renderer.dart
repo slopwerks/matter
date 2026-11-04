@@ -5,40 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:re_highlight/languages/bash.dart';
-import 'package:re_highlight/languages/c.dart';
-import 'package:re_highlight/languages/cpp.dart';
-import 'package:re_highlight/languages/css.dart';
-import 'package:re_highlight/languages/dart.dart';
-import 'package:re_highlight/languages/diff.dart';
-import 'package:re_highlight/languages/go.dart';
-import 'package:re_highlight/languages/java.dart';
-import 'package:re_highlight/languages/javascript.dart';
-import 'package:re_highlight/languages/json.dart';
-import 'package:re_highlight/languages/kotlin.dart';
-import 'package:re_highlight/languages/lua.dart';
-import 'package:re_highlight/languages/markdown.dart';
-import 'package:re_highlight/languages/php.dart';
-import 'package:re_highlight/languages/python.dart';
-import 'package:re_highlight/languages/ruby.dart';
-import 'package:re_highlight/languages/rust.dart';
-import 'package:re_highlight/languages/shell.dart';
-import 'package:re_highlight/languages/sql.dart';
-import 'package:re_highlight/languages/swift.dart';
-import 'package:re_highlight/languages/typescript.dart';
-import 'package:re_highlight/languages/xml.dart';
-import 'package:re_highlight/languages/yaml.dart';
-import 'package:re_highlight/re_highlight.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../widgets/app_avatar.dart';
+import 'matrix_code_block.dart';
 import 'matrix_html_node.dart';
 import 'matrix_html_parser.dart';
 import 'matrix_link_router.dart';
 
-typedef MatrixHtmlImageResolver =
-    Future<String?> Function(WidgetRef ref, String src);
+typedef MatrixHtmlImageResolver = Future<String?> Function(
+  WidgetRef ref,
+  String src,
+);
 
 class MatrixHtmlMessage extends StatefulWidget {
   final String html;
@@ -386,29 +364,17 @@ class _MatrixNodeRenderer {
       case 'ol':
         return _renderList(element, ordered: element.tag == 'ol');
       case 'pre':
-        final codeStyle = baseStyle.copyWith(
-          fontFamily: 'monospace',
-          fontSize: baseStyle.fontSize == null ? 13 : baseStyle.fontSize! - 1,
-        );
         return LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth.isFinite
                 ? constraints.maxWidth
                 : 520.0;
-            return Container(
+            return MatrixCodeBlock(
+              code: element.textContent,
+              language: extractCodeLanguage(element),
               width: width,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Text.rich(
-                  _codeSpan(element, codeStyle),
-                  softWrap: false,
-                ),
-              ),
+              baseStyle: baseStyle,
+              accentColor: accentColor,
             );
           },
         );
@@ -742,22 +708,6 @@ class _MatrixNodeRenderer {
       fontSize: style.fontSize ?? 15,
       color: style.color ?? Colors.black87,
     );
-  }
-
-  TextSpan _codeSpan(MatrixElementNode pre, TextStyle style) {
-    return _highlightedCodeSpan(pre.textContent, _preLanguage(pre), style);
-  }
-
-  String? _preLanguage(MatrixElementNode pre) {
-    for (final child in pre.children) {
-      if (child is MatrixElementNode && child.tag == 'code') {
-        final className = child.attributes['class'];
-        if (className != null && className.startsWith('language-')) {
-          return className.substring('language-'.length);
-        }
-      }
-    }
-    return null;
   }
 
   /// Detects a task-list checkbox leading the item (direct child, or inside
@@ -1133,90 +1083,6 @@ class _MatrixNodeRenderer {
     }
     return spans;
   }
-}
-
-const _codeLanguageAliases = {
-  'js': 'javascript',
-  'jsx': 'javascript',
-  'mjs': 'javascript',
-  'ts': 'typescript',
-  'tsx': 'typescript',
-  'py': 'python',
-  'rb': 'ruby',
-  'sh': 'bash',
-  'zsh': 'bash',
-  'c++': 'cpp',
-  'kt': 'kotlin',
-  'rs': 'rust',
-  'golang': 'go',
-  'yml': 'yaml',
-  'html': 'xml',
-  'md': 'markdown',
-};
-
-final _highlightLanguages = <String, Mode>{
-  'bash': langBash,
-  'c': langC,
-  'cpp': langCpp,
-  'css': langCss,
-  'dart': langDart,
-  'diff': langDiff,
-  'go': langGo,
-  'java': langJava,
-  'javascript': langJavascript,
-  'json': langJson,
-  'kotlin': langKotlin,
-  'lua': langLua,
-  'markdown': langMarkdown,
-  'php': langPhp,
-  'python': langPython,
-  'ruby': langRuby,
-  'rust': langRust,
-  'shell': langShell,
-  'sql': langSql,
-  'swift': langSwift,
-  'typescript': langTypescript,
-  'xml': langXml,
-  'yaml': langYaml,
-};
-
-Highlight? _codeHighlighter;
-final _highlightCache = <String, TextSpan>{};
-
-/// Highlighted [code] as a span tree, or a plain span when the language is
-/// unknown or highlighting fails. The atom-one-dark token styles only carry
-/// colors, so each is merged over [base] to keep the monospace family and
-/// size; the root background is dropped (the block has its own backdrop).
-TextSpan _highlightedCodeSpan(String code, String? language, TextStyle base) {
-  if (language == null) return TextSpan(text: code, style: base);
-  final normalized =
-      _codeLanguageAliases[language.toLowerCase()] ?? language.toLowerCase();
-  if (!_highlightLanguages.containsKey(normalized)) {
-    return TextSpan(text: code, style: base);
-  }
-  final cacheKey = '$normalized\u0000$base\u0000$code';
-  final cached = _highlightCache[cacheKey];
-  if (cached != null) return cached;
-  var span = TextSpan(text: code, style: base);
-  try {
-    final highlighter = _codeHighlighter ??= Highlight()
-      ..registerLanguages(_highlightLanguages);
-    final result = highlighter.highlight(code: code, language: normalized);
-    final theme = <String, TextStyle>{
-      for (final entry in atomOneDarkTheme.entries)
-        entry.key: entry.key == 'root'
-            ? base.merge(entry.value.copyWith(backgroundColor: null))
-            : base.merge(entry.value),
-    };
-    final renderer = TextSpanRenderer(base, theme);
-    result.render(renderer);
-    span = renderer.span ?? span;
-  } catch (_) {
-    // Unknown or unparseable code: fall back to unhighlighted text.
-  }
-  if (_highlightCache.length > 200) _highlightCache.clear();
-  _highlightCache[cacheKey] = span;
-  return span;
 }
 
 /// An image referenced by message HTML. `mxc://` sources are resolved to

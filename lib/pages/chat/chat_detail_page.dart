@@ -8,6 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../features/push/push_runtime.dart';
+import '../../features/diagnostics/diagnostic_exporter.dart'
+    show redactLogMessage;
+import '../../features/audio/audio_playback_provider.dart';
+import '../../features/audio/audio_message_bar.dart';
+import '../../features/audio/audio_player_panel.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/connection_provider.dart';
@@ -15,9 +20,11 @@ import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/timeline_event_settings_provider.dart';
 import '../../providers/message_cache_persistence.dart';
 import '../../providers/message_ordering.dart';
+import '../../providers/message_history_cursor.dart';
 import '../../providers/image_view_history.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart';
+import '../../src/rust/api/matrix/unread.dart' as unread;
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
@@ -27,6 +34,7 @@ import '../../widgets/sheets.dart';
 import 'attachment_caption_composer.dart' show attachmentCaptionClearance;
 import 'chat_timestamp.dart';
 import 'composer_picker_panel.dart';
+import 'desktop_file_drop.dart';
 import 'date_separator.dart';
 import 'floating_date_header.dart';
 import 'forward_message_sheet.dart';
@@ -42,6 +50,8 @@ import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
 import 'search_page.dart';
 import 'send_flight.dart';
+import 'unread_messages_banner.dart';
+import 'unread_navigation.dart';
 
 final chatRouteObserver = _ChatRouteObserver();
 
@@ -109,6 +119,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final bool isDm;
   final String? initialMessageId;
   final bool embedded;
+  final VoidCallback? onBack;
   final bool detailsPanelOpen;
   final VoidCallback? onToggleDetailsPanel;
   final VoidCallback? onRoomLeft;
@@ -133,6 +144,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.isDm = false,
     this.initialMessageId,
     this.embedded = false,
+    this.onBack,
     this.detailsPanelOpen = false,
     this.onToggleDetailsPanel,
     this.onRoomLeft,
@@ -156,8 +168,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// The activation id this page last wrote (0 = never activated).
   int _activationId = 0;
 
-  final _scrollController = ScrollController();
+  Completer<void>? _timelineAttached;
+  late final _scrollController = ScrollController(
+    onAttach: (_) {
+      _timelineAttached?.complete();
+      _timelineAttached = null;
+    },
+  );
   final _scrollViewportKey = GlobalKey();
+  final _timelineCenterKey = GlobalKey();
+  String? _timelinePivotEndId;
+  Set<String> _timelinePivotRunIds = const {};
+  bool _timelinePivotAlbum = false;
+  bool _timelinePivotEndsCluster = true;
+  bool _isJumpingToMessage = false;
+  bool _userScrollActive = false;
   final _messageInputKey = GlobalKey<MessageInputState>();
   final Map<String, GlobalKey> _messageAnchorKeys = {};
   final Map<String, GlobalKey> _stableMessageAnchorKeys = {};
@@ -210,6 +235,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   int _lastDerivedSortOverrideRevision = -1;
   bool _isLoadingOlder = false;
   bool _hasMoreMessages = true;
+  int _liveHistoryGeneration = 0;
+  RoomAccountKey? _liveHistoryKey;
+  unread.RoomUnreadState? _entryUnread;
+  String? _entryUnreadOwner;
+  bool _jumpingToUnread = false;
+  UnreadNavigation? _unreadNavigation;
+  int _unreadScanGeneration = 0;
+  bool _unreadScanRunning = false;
+  String? _unreadNextBatch;
+  Object? _unreadScanError;
+  bool _unreadObservationScheduled = false;
+  bool _showUnreadNavigation = false;
+  double _unreadTopInset = 0;
+  double _unreadBottomInset = 0;
+  final _unreadPageTokens = <String>{};
   bool _olderLoadArmed = true;
   bool _automaticOlderLoadBlocked = false;
   bool _olderLoadBlockedByError = false;
@@ -234,6 +274,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   final Set<String> _insertionAnimationIds = {};
   final Set<String> _lateralInsertionAnimationIds = {};
   int _messageJumpGeneration = 0;
+  final _jumpHighlight = ValueNotifier<String?>(null);
   int _pinnedStackVisibleCount = 0;
 
   /// Measured height of the floating top bar (SafeArea + panel included).
@@ -243,10 +284,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   /// True while the timeline shows a detached history slice loaded by
   /// [_loadMessageContext] instead of the live window. The slice does not
-  /// connect to the live window (pagination only walks backwards, so the gap
-  /// between them could never be filled), therefore the live window stays
-  /// hidden until [_exitFocusedBrowsing] runs.
+  /// connect to the live window yet. Forward pages fill that gap; only an
+  /// actual event overlap reconnects it, unless the user explicitly returns
+  /// to the latest window.
   bool _focusedBrowsing = false;
+  int _focusedWindowGeneration = 0;
+  String? _focusedOlderAnchorId;
+  String? _focusedNewerAnchorId;
+  MessageHistoryCursor? _focusedLiveCursor;
+  bool _isLoadingNewer = false;
+  bool _hasMoreNewerMessages = true;
+  bool _newerLoadArmed = true;
+  bool _newerLoadBlocked = false;
+  bool _newerLoadBlockedByError = false;
+  bool _newerLoadBlockedWithUnknownList = false;
+  bool _isJoiningFocusedHistory = false;
   bool _initialMessageJumpPending = false;
   bool _searchRouteOpen = false;
 
@@ -374,6 +426,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
         _activateRoom(resetAutoReadSuppression: true);
       } else if (next != null) {
+        _cancelUnreadScan();
         // Switched to another account: drop the view ownership so no
         // auto-read or subscription runs under the new account.
         _exitFocusedBrowsing(scrollToLatest: false);
@@ -383,6 +436,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
         _setSubscriptionsDesired(false);
       } else {
+        _cancelUnreadScan();
         // Logged out entirely: same teardown as switching away.
         _exitFocusedBrowsing(scrollToLatest: false);
         if (_currentRoomIdNotifier.value == widget.roomId) {
@@ -408,6 +462,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
     if (oldWidget.avatarEventId != widget.avatarEventId) {
       _avatarEventId = widget.avatarEventId;
+    }
+    if (oldWidget.initialMessageId != widget.initialMessageId &&
+        widget.initialMessageId != null) {
+      final messageId = widget.initialMessageId!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_jumpToInitialMessage(messageId));
+      });
     }
   }
 
@@ -494,6 +555,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     switch (state) {
       case AppLifecycleState.resumed:
         if (mounted) {
+          // A new foreground visit may have accumulated unread messages.
+          // Ordinary route returns retain the original entry boundary.
+          if (_entryUnread == null) _entryUnreadOwner = null;
           if (_viewSuspended) {
             _resumeSuspendedRoom();
           } else if (_currentRoomIdNotifier.value != widget.roomId) {
@@ -518,6 +582,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (_currentRoomIdNotifier.value != widget.roomId) return;
     _setRoomViewOwner(null);
     _viewSuspended = true;
+    _cancelUnreadScan();
   }
 
   void _setRoomViewOwner(String? accountUserId) {
@@ -537,15 +602,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         activeAccount != _subscriptionsAccount) {
       return;
     }
-    _viewSuspended = false;
-    _activationId = ++_activationCounter;
-    _setRoomViewOwner(activeAccount);
-    if (!ref.read(roomAutoReadSuppressedProvider(widget.roomId))) {
-      unawaited(_markRoomReadAndRefreshList());
-    }
+    _activateRoom();
   }
 
   void _deactivateRoom() {
+    _cancelUnreadScan();
     _viewSuspended = false;
     if (_currentRoomIdNotifier.value == widget.roomId) {
       _currentRoomIdNotifier.value = null;
@@ -580,7 +641,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _currentRoomIdNotifier.value = widget.roomId;
     _viewSuspended = false;
     _activationId = ++_activationCounter;
-    _setRoomViewOwner(activeAccount);
+    // Capture the existing read position before sync-driven auto-reads may
+    // advance it. Subscriptions and cached rendering need not wait for this.
+    _setRoomViewOwner(null);
     if (resetAutoReadSuppression) {
       setRoomAutoReadSuppressed(ref, widget.roomId, suppressed: false);
     }
@@ -675,8 +738,46 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   Future<void> _primeAndRefreshMessages() async {
+    final account = ref.read(activeUserIdProvider);
+    final activation = _activationId;
+    if (account != null && _entryUnreadOwner != account) {
+      try {
+        final entry = await unread.getRoomUnreadState(
+          accountUserId: account,
+          roomId: widget.roomId,
+        );
+        if (!mounted ||
+            activation != _activationId ||
+            ref.read(activeUserIdProvider) != account ||
+            _viewSuspended) {
+          return;
+        }
+        setState(() {
+          if (_entryUnreadOwner != account) _clearUnreadNavigation();
+          _entryUnreadOwner = account;
+          if (entry.unreadCount > 0) {
+            _entryUnread = entry;
+            _unreadNavigation = UnreadNavigation(
+              boundaryResolved: entry.boundaryResolved == true,
+              eventIds: entry.unreadEventIds ?? const [],
+              unresolvedIds: entry.unresolvedEventIds ?? const [],
+              complete: entry.unreadEventIds != null,
+            );
+          }
+        });
+      } catch (error) {
+        debugPrint('capture unread position failed: $error');
+      }
+    }
     await primeMessageCache(ref, widget.roomId);
-    if (!mounted || _currentRoomIdNotifier.value != widget.roomId) return;
+    if (!mounted ||
+        _currentRoomIdNotifier.value != widget.roomId ||
+        activation != _activationId ||
+        _viewSuspended ||
+        ref.read(activeUserIdProvider) != account) {
+      return;
+    }
+    _setRoomViewOwner(account);
     // Fire the read marker without blocking the timeline: awaiting it first
     // delays message rendering on a slow network, and awaiting the refresh
     // first would leave the room marked unread for the whole refresh
@@ -685,6 +786,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       unawaited(_markRoomReadAndRefreshList());
     }
     await refreshMessagesFromNetwork(ref, widget.roomId);
+    if (mounted &&
+        activation == _activationId &&
+        ref.read(activeUserIdProvider) == account &&
+        !_viewSuspended) {
+      unawaited(_loadUnreadPages());
+      _scheduleUnreadObservation();
+    }
   }
 
   Future<void> _markRoomReadAndRefreshList() async {
@@ -735,6 +843,228 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
   }
 
+  void _cancelUnreadScan() {
+    _unreadScanGeneration++;
+    _unreadScanRunning = false;
+  }
+
+  void _clearUnreadNavigation() {
+    _cancelUnreadScan();
+    _entryUnread = null;
+    _unreadNavigation = null;
+    _showUnreadNavigation = false;
+    _unreadNextBatch = null;
+    _unreadScanError = null;
+    _unreadPageTokens.clear();
+  }
+
+  Future<void> _loadUnreadPages() async {
+    final entry = _entryUnread;
+    final navigation = _unreadNavigation;
+    final account = _entryUnreadOwner;
+    if (entry == null ||
+        navigation == null ||
+        account == null ||
+        navigation.complete ||
+        _unreadScanRunning ||
+        _unreadScanError != null ||
+        entry.readEventId == null ||
+        entry.throughEventId == null) {
+      return;
+    }
+    final generation = ++_unreadScanGeneration;
+    _unreadScanRunning = true;
+    bool current() =>
+        mounted &&
+        generation == _unreadScanGeneration &&
+        identical(_entryUnread, entry) &&
+        !_viewSuspended &&
+        _currentRoomIdNotifier.value == widget.roomId &&
+        ref.read(activeUserIdProvider) == account;
+    try {
+      final ignored = await ref.read(ignoredUserIdsProvider.future);
+      while (current() && !navigation.complete) {
+        final page = await unread.getUnreadPage(
+          accountUserId: account,
+          roomId: widget.roomId,
+          readEventId: entry.readEventId!,
+          throughEventId: entry.throughEventId!,
+          nextBatch: _unreadNextBatch,
+          ignoredUserIds: ignored.toList(),
+        );
+        if (!current()) return;
+        if (!page.reachedEnd) {
+          final token = page.nextBatch;
+          if (token == null || !_unreadPageTokens.add(token)) {
+            throw StateError('未读分页没有前进，请重试');
+          }
+        }
+        setState(() {
+          navigation.addPage(
+            page.eventIds,
+            unresolvedIds: page.unresolvedEventIds,
+            reachedEnd: page.reachedEnd,
+          );
+          _unreadNextBatch = page.nextBatch;
+        });
+        _scheduleUnreadObservation();
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    } catch (error) {
+      if (current()) setState(() => _unreadScanError = error);
+    } finally {
+      if (mounted && generation == _unreadScanGeneration) {
+        _unreadScanRunning = false;
+        _scheduleUnreadObservation();
+      }
+    }
+  }
+
+  bool _unreadMessagePainted(RenderBox box, RenderBox viewport) {
+    RenderObject? node = box;
+    while (node != null && !identical(node, viewport)) {
+      if ((node is RenderOffstage && node.offstage) ||
+          (node is RenderOpacity && node.opacity == 0) ||
+          (node is RenderAnimatedOpacity && node.opacity.value == 0) ||
+          (node is RenderIgnorePointer && node.ignoring) ||
+          (node is RenderExcludeSemantics && node.excluding)) {
+        return false;
+      }
+      node = node.parent;
+    }
+    return node != null;
+  }
+
+  void _scheduleUnreadObservation() {
+    if (_unreadObservationScheduled || _entryUnread == null) return;
+    _unreadObservationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _unreadObservationScheduled = false;
+      final navigation = _unreadNavigation;
+      if (!mounted ||
+          navigation == null ||
+          _entryUnread == null ||
+          _viewSuspended ||
+          _isJumpingToMessage ||
+          _jumpingToUnread ||
+          _initialMessageJumpPending ||
+          _currentRoomIdNotifier.value != widget.roomId ||
+          ref.read(activeUserIdProvider) != _entryUnreadOwner ||
+          !(_route?.isCurrent ?? true)) {
+        return;
+      }
+      final ignored = ref.read(ignoredUserIdsProvider).value;
+      if (ignored == null) return;
+      final previousCount = navigation.remainingCount;
+      final previousTarget = navigation.firstNavigableId;
+      final redacted = ref.read(
+        redactedMessageIdsProvider(activeRoomAccountKey(ref, widget.roomId)),
+      );
+      navigation.exclude(redacted);
+      if (ref.read(messageCacheOwnerProvider(widget.roomId)) !=
+          _entryUnreadOwner) {
+        return;
+      }
+      final known = <String, ChatMessage>{
+        for (final message in ref.read(messageCacheProvider(widget.roomId)))
+          message.id: message,
+        for (final message in _olderMessages) message.id: message,
+        for (final message in _displayedMessages) message.id: message,
+      };
+      for (final message in known.values) {
+        if (isUnableToDecryptPlaceholder(message)) continue;
+        navigation.resolve(
+          message.id,
+          candidate:
+              !message.isMe &&
+              message.msgType != MessageType.event &&
+              !ignored.contains(message.senderId),
+        );
+      }
+      final viewport = _scrollViewportKey.currentContext?.findRenderObject();
+      if (viewport is! RenderBox || !viewport.attached || !viewport.hasSize) {
+        return;
+      }
+      final readable = Rect.fromLTRB(
+        0,
+        _unreadTopInset +
+            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0),
+        viewport.size.width,
+        math.max(0, viewport.size.height - _unreadBottomInset),
+      );
+      final rects = <String, Rect>{};
+      for (final message in _displayedMessages) {
+        if (message.isMe ||
+            message.msgType == MessageType.event ||
+            ignored.contains(message.senderId) ||
+            redacted.contains(message.id) ||
+            isUnableToDecryptPlaceholder(message)) {
+          continue;
+        }
+        final id = message.id;
+        final box = _messageAnchorKeys[id]?.currentContext?.findRenderObject();
+        if (box is RenderBox &&
+            box.attached &&
+            box.hasSize &&
+            _unreadMessagePainted(box, viewport)) {
+          rects[id] =
+              box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
+        }
+      }
+      final changed = navigation.observe(rects, readable);
+      final show = navigation.firstNavigableId != null;
+      if (!navigation.hasRemaining && navigation.complete) {
+        setState(_clearUnreadNavigation);
+      } else if (changed ||
+          show != _showUnreadNavigation ||
+          previousCount != navigation.remainingCount ||
+          previousTarget != navigation.firstNavigableId) {
+        setState(() => _showUnreadNavigation = show);
+      }
+    });
+  }
+
+  Future<void> _jumpToFirstUnread() async {
+    final entry = _entryUnread;
+    final account = _entryUnreadOwner;
+    if (entry == null || account == null || _jumpingToUnread) return;
+    setState(() => _jumpingToUnread = true);
+    try {
+      final ignored = await ref.read(ignoredUserIdsProvider.future);
+      if (!mounted ||
+          _entryUnread != entry ||
+          ref.read(activeUserIdProvider) != account) {
+        return;
+      }
+      final targetId = _unreadNavigation?.firstNavigableId;
+      if (targetId == null) return;
+      final target = _messageIndex[targetId];
+      if (target != null &&
+          (target.isMe || ignored.contains(target.senderId))) {
+        _unreadNavigation?.resolve(targetId, candidate: false);
+        _scheduleUnreadObservation();
+        return;
+      }
+      _jumpHighlight.value = null;
+      await _jumpToMessage(targetId, unreadTarget: true);
+      if (!mounted ||
+          !identical(_entryUnread, entry) ||
+          ref.read(activeUserIdProvider) != account) {
+        return;
+      }
+    } catch (error) {
+      if (mounted && _entryUnread == entry) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法定位未读消息: $error')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _jumpingToUnread = false);
+        _scheduleUnreadObservation();
+      }
+    }
+  }
+
   Map<String, String?> _buildAvatarMap(List<Contact> members) {
     final map = <String, String?>{};
     for (final m in members) {
@@ -745,6 +1075,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   @override
   void dispose() {
+    _cancelUnreadScan();
     WidgetsBinding.instance.removeObserver(this);
     chatRouteObserver.unsubscribe(this);
     final currentRoomIdNotifier = _currentRoomIdNotifier;
@@ -770,6 +1101,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _pickerResizeTimer?.cancel();
     _sentNoticeTimer?.cancel();
     _forwardNoticeTimer?.cancel();
+    _jumpHighlight.dispose();
+    _timelineAttached?.complete();
+    _timelineAttached = null;
     _scrollController.dispose();
     super.dispose();
   }
@@ -808,12 +1142,36 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   bool _handleScrollNotification(ScrollNotification notification) {
     final metrics = notification.metrics;
+    if (notification.depth != 0) return false;
     _updateLatestMessageControl(metrics);
-    _maybeLoadOlderMessages(metrics);
+    _scheduleUnreadObservation();
+    if (notification is UserScrollNotification) {
+      _userScrollActive = notification.direction != ScrollDirection.idle;
+    }
+    if (notification is ScrollStartNotification) {
+      _userScrollActive = notification.dragDetails != null || _userScrollActive;
+      if (_userScrollActive) {
+        _newerLoadArmed = true;
+        _olderLoadArmed = true;
+      }
+    }
+    if (_userScrollActive) {
+      final delta = switch (notification) {
+        ScrollUpdateNotification() => notification.scrollDelta ?? 0,
+        OverscrollNotification() => notification.overscroll,
+        _ => 0.0,
+      };
+      if (delta < 0) _maybeLoadNewerMessages(metrics);
+      if (delta > 0) _maybeLoadOlderMessages(metrics);
+    } else if (_timelinePivotEndId == null) {
+      _maybeLoadOlderMessages(metrics);
+    }
+    if (notification is ScrollEndNotification) _userScrollActive = false;
     return false;
   }
 
   void _maybeLoadOlderMessages(ScrollMetrics metrics) {
+    if (_isJumpingToMessage) return;
     final distanceFromOlderEdge = _distanceFromOlderEdge(metrics);
     final triggerDistance = _olderLoadTriggerDistance(metrics);
     if (distanceFromOlderEdge > triggerDistance + _olderLoadRearmDistance) {
@@ -823,7 +1181,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       // scrolling away must not let each return to the top pull another
       // page. The manual retry entry and the ignore-list arrival re-arm
       // it instead.
-      _olderLoadArmed = true;
+      if (_timelinePivotEndId == null) _olderLoadArmed = true;
       if (_olderLoadBlockedByError) {
         _olderLoadBlockedByError = false;
         _automaticOlderLoadBlocked = false;
@@ -837,19 +1195,52 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         _paginationAnchorId() != null &&
         distanceFromOlderEdge <= triggerDistance) {
       _olderLoadArmed = false;
+      if (_timelinePivotEndId != null) _newerLoadArmed = false;
       unawaited(_loadOlderMessages());
+    }
+  }
+
+  void _maybeLoadNewerMessages(ScrollMetrics metrics) {
+    if (!_focusedBrowsing ||
+        _initialMessageJumpPending ||
+        _isJumpingToMessage) {
+      return;
+    }
+    final distance = _distanceFromLatest(metrics);
+    final trigger = _olderLoadTriggerDistance(metrics);
+    if (distance > trigger + _olderLoadRearmDistance) {
+      if (_newerLoadBlockedByError) {
+        _newerLoadBlocked = false;
+        _newerLoadBlockedByError = false;
+      }
+    }
+    if (_newerLoadArmed &&
+        !_newerLoadBlocked &&
+        !_isLoadingNewer &&
+        _hasMoreNewerMessages &&
+        distance <= trigger) {
+      _newerLoadArmed = false;
+      _olderLoadArmed = false;
+      unawaited(_loadNewerMessages());
     }
   }
 
   bool _handleScrollMetricsNotification(
     ScrollMetricsNotification notification,
   ) {
+    if (notification.depth != 0) return false;
     _updateLatestMessageControl(notification.metrics);
-    _maybeLoadOlderMessages(notification.metrics);
+    _scheduleUnreadObservation();
+    if (_timelinePivotEndId == null) {
+      _maybeLoadOlderMessages(notification.metrics);
+    }
     return false;
   }
 
   void _scrollToLatest() {
+    if (_timelinePivotEndId != null) {
+      setState(() => _setTimelinePivot(null));
+    }
     _sentNoticeTimer?.cancel();
     if (_showSentNotice) {
       setState(() => _showSentNotice = false);
@@ -870,10 +1261,51 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _setInputPanelMode(InputPanelMode.keyboard);
   }
 
+  String _messageLayoutId(ChatMessage message) =>
+      messageSendFlightId(message.id, _remoteToLocalFlightId) ?? message.id;
+
+  void _setTimelinePivot(ChatImageRun? run, {bool endsCluster = true}) {
+    final ids = run?.messages.map(_messageLayoutId).toSet() ?? const <String>{};
+    final endId = run == null ? null : _messageLayoutId(run.messages.last);
+    final album = run?.album ?? false;
+    if (_timelinePivotEndId == endId &&
+        _timelinePivotEndsCluster == endsCluster &&
+        _timelinePivotAlbum == album &&
+        ids.length == _timelinePivotRunIds.length &&
+        ids.every(_timelinePivotRunIds.contains)) {
+      return;
+    }
+    _timelinePivotEndId = endId;
+    _timelinePivotRunIds = ids;
+    _timelinePivotAlbum = album;
+    _timelinePivotEndsCluster = endsCluster;
+    _lastDerivedMessagesInput = null;
+  }
+
+  void _anchorTimelineAtMessage(String messageId) {
+    final runs = chatImageRuns(_displayedMessages);
+    for (var i = 0; i < runs.length; i++) {
+      final run = runs[i];
+      if (!run.messages.any((message) => message.id == messageId)) continue;
+      final last = run.messages.last;
+      final next = i + 1 < runs.length ? runs[i + 1].messages.first : null;
+      _setTimelinePivot(
+        run,
+        endsCluster:
+            next == null ||
+            next.senderId != last.senderId ||
+            chatDateKey(next.timestamp) != chatDateKey(last.timestamp),
+      );
+      return;
+    }
+  }
+
   int? _timelineEntryIndexForMessage(String messageId) {
     for (var index = 0; index < _timelineEntries.length; index++) {
       if (_timelineEntries[index].group?.messages.any(
-            (message) => message.id == messageId,
+            (message) =>
+                message.id == messageId ||
+                _messageLayoutId(message) == messageId,
           ) ??
           false) {
         return index;
@@ -906,12 +1338,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       return false;
     }
     if (!mounted || generation != _messageJumpGeneration) return false;
+    final history = ref.read(
+      messageHistoryCursorProvider(activeRoomAccountKey(ref, widget.roomId)),
+    );
     final knownIds = {
       ..._displayedMessages.map((message) => message.id),
       ..._olderMessages.map((message) => message.id),
-      ...ref
-          .read(messageCacheProvider(widget.roomId))
-          .map((message) => message.id),
+      if (!_focusedBrowsing)
+        ...ref
+            .read(messageCacheProvider(widget.roomId))
+            .where(
+              (message) =>
+                  history.anchorId == null ||
+                  history.connectedEventIds.contains(message.id),
+            )
+            .map((message) => message.id),
     };
     final connected = contextMessages.any(
       (message) => knownIds.contains(message.id),
@@ -929,12 +1370,22 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         await WidgetsBinding.instance.endOfFrame;
       }
     } else {
-      // The slice does not touch the loaded window. Merging it in would leave
-      // a permanent gap between the slice and the live messages (pagination
-      // only walks backwards), so detach into a focused history view: the
-      // live window stays hidden until _exitFocusedBrowsing.
+      // Keep the detached slice separate until forward pages really overlap
+      // the live window. The two pagination anchors use server order, not the
+      // timestamp order used to lay out bubbles.
       setState(() {
+        _setTimelinePivot(null);
         _focusedBrowsing = true;
+        _focusedWindowGeneration++;
+        _focusedOlderAnchorId = contextMessages.first.id;
+        _focusedNewerAnchorId = contextMessages.last.id;
+        _focusedLiveCursor = history;
+        _isLoadingNewer = false;
+        _hasMoreNewerMessages = true;
+        _newerLoadArmed = true;
+        _newerLoadBlocked = false;
+        _newerLoadBlockedByError = false;
+        _newerLoadBlockedWithUnknownList = false;
         _olderMessages
           ..clear()
           ..addAll(contextMessages);
@@ -956,10 +1407,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     bool scrollToLatest = true,
     bool cancelPendingJump = true,
   }) {
-    if (cancelPendingJump) _messageJumpGeneration++;
-    if (!_focusedBrowsing) return;
+    if (cancelPendingJump) {
+      _messageJumpGeneration++;
+      _isJumpingToMessage = false;
+    }
+    if (!_focusedBrowsing) {
+      if (_timelinePivotEndId != null) setState(() => _setTimelinePivot(null));
+      return;
+    }
     setState(() {
+      _setTimelinePivot(null);
       _focusedBrowsing = false;
+      _focusedWindowGeneration++;
+      _focusedOlderAnchorId = null;
+      _focusedNewerAnchorId = null;
+      _isLoadingNewer = false;
       // Drop the detached slice so the merged timeline is the pure live
       // window again — keeping it would re-expose the gap below the slice.
       _olderMessages.clear();
@@ -970,14 +1432,37 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (scrollToLatest) _scrollToLatest();
   }
 
-  Future<void> _jumpToMessage(String messageId) async {
+  Future<bool> _waitForTimeline(int generation) async {
+    // Initial member/ignore-list/cache loads can keep the scroll view out of
+    // the tree. Resume on its actual attachment, including after a rebuild.
+    while (mounted &&
+        generation == _messageJumpGeneration &&
+        !_scrollController.hasClients) {
+      await (_timelineAttached ??= Completer<void>()).future;
+    }
+    return mounted && generation == _messageJumpGeneration;
+  }
+
+  Future<void> _jumpToMessage(
+    String messageId, {
+    bool unreadTarget = false,
+  }) async {
     final generation = ++_messageJumpGeneration;
+    _isJumpingToMessage = true;
     try {
+      if (!await _waitForTimeline(generation)) return;
       if (!_messageIndex.containsKey(messageId)) {
+        final history = ref.read(
+          messageHistoryCursorProvider(
+            activeRoomAccountKey(ref, widget.roomId),
+          ),
+        );
         if (_focusedBrowsing &&
             ref
                 .read(messageCacheProvider(widget.roomId))
-                .any((message) => message.id == messageId)) {
+                .any((message) => message.id == messageId) &&
+            (history.anchorId == null ||
+                history.connectedEventIds.contains(messageId))) {
           // The target lives in the live window that focused browsing hides:
           // return to the live timeline instead of detaching again.
           _exitFocusedBrowsing(scrollToLatest: false, cancelPendingJump: false);
@@ -991,6 +1476,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           }
         }
       }
+      setState(() => _anchorTimelineAtMessage(messageId));
       if (_messageIndex[messageId]?.msgType == MessageType.image) {
         ref
             .read(
@@ -1003,8 +1489,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       }
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || generation != _messageJumpGeneration) return;
+      if (!await _waitForTimeline(generation)) return;
       final targetIndex = _timelineEntryIndexForMessage(messageId);
-      if (targetIndex == null || !_scrollController.hasClients) {
+      if (targetIndex == null) {
         throw StateError('目标消息不可用或已被删除');
       }
 
@@ -1013,8 +1500,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       if (targetContext == null) {
         final position = _scrollController.position;
         final denominator = math.max(1, _timelineEntries.length - 1);
-        final estimatedOffset =
-            position.maxScrollExtent * targetIndex / denominator;
+        final estimatedOffset = _timelinePivotEndId != null
+            ? 0.0
+            : position.minScrollExtent +
+                  (position.maxScrollExtent - position.minScrollExtent) *
+                      targetIndex /
+                      denominator;
         _scrollController.jumpTo(
           estimatedOffset.clamp(
             position.minScrollExtent,
@@ -1070,26 +1561,84 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       if (!targetContext.mounted) {
         throw StateError('目标消息已离开时间线');
       }
-      await Scrollable.ensureVisible(
-        targetContext,
-        alignment: 0.5,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-      );
+      if (unreadTarget) {
+        final navigation = _unreadNavigation;
+        if (navigation == null) return;
+        final box = targetContext.findRenderObject();
+        final viewport = _scrollViewportKey.currentContext?.findRenderObject();
+        if (box is! RenderBox ||
+            viewport is! RenderBox ||
+            !box.hasSize ||
+            !viewport.hasSize) {
+          throw StateError('目标消息尚未完成布局');
+        }
+        final readableTop =
+            _unreadTopInset +
+            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
+        final readableHeight =
+            viewport.size.height - _unreadBottomInset - readableTop;
+        if (readableHeight <= 0) return;
+        final fits = box.size.height <= readableHeight;
+        final gap = fits ? 0.0 : navigation.firstUnseenOffset(messageId);
+        // Position once in the same unobstructed rectangle used for reading.
+        // Oversized content keeps overlap around the next unseen section.
+        final destination =
+            readableTop +
+            (fits
+                ? (readableHeight - box.size.height) / 2
+                : gap > 0
+                ? readableHeight / 2
+                : 0);
+        final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+        final position = _scrollController.position;
+        await _scrollController.animateTo(
+          (position.pixels + destination - top - gap).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          ),
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        await Scrollable.ensureVisible(
+          targetContext,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
       if (!mounted || generation != _messageJumpGeneration) return;
+      _jumpHighlight.value = null;
+      _jumpHighlight.value = messageId;
       HapticFeedback.selectionClick();
       if (_focusedBrowsing) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('正在浏览历史消息，点右下角按钮回到最新'),
+            content: Text('正在浏览历史消息，可继续滚动或回到最新'),
             duration: Duration(seconds: 2),
           ),
         );
       }
-    } catch (error) {
+    } catch (error, stack) {
       if (!mounted || generation != _messageJumpGeneration) return;
+      logAppMessage(
+        level: 'error',
+        tag: 'message-jump',
+        message: redactLogMessage(
+          'jump_failed user_id=${ref.read(activeUserIdProvider)} '
+          'room_id=${widget.roomId} event_id=$messageId '
+          'timeline_attached=${_scrollController.hasClients} '
+          'target_loaded=${_messageIndex.containsKey(messageId)}\n'
+          '$error\n$stack',
+        ),
+      );
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('无法跳转到该消息: $error')));
+    } finally {
+      if (mounted && generation == _messageJumpGeneration) {
+        _isJumpingToMessage = false;
+        _scheduleUnreadObservation();
+      }
     }
   }
 
@@ -1121,6 +1670,29 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     } finally {
       _searchRouteOpen = false;
     }
+  }
+
+  Future<void> _openAudioSource() async {
+    final track = ref.read(audioPlaybackSessionProvider).current;
+    if (track?.roomId == null || track?.messageId == null) return;
+    if (track!.roomId == widget.roomId) {
+      await _jumpToMessage(track.messageId!);
+      return;
+    }
+    final rooms =
+        ref.read(allChatRoomsProvider).asData?.value ?? const <ChatRoom>[];
+    final room = rooms.where((room) => room.id == track.roomId).firstOrNull;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatDetailPage(
+          roomId: track.roomId!,
+          roomName: room?.name ?? '音频消息',
+          avatarUrl: room?.avatarUrl,
+          isDm: room?.roomType == 'dm',
+          initialMessageId: track.messageId,
+        ),
+      ),
+    );
   }
 
   Future<void> _openPinnedMessages() async {
@@ -1286,7 +1858,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   Future<void> _loadOlderMessages() async {
-    if (_isLoadingOlder || !_hasMoreMessages) {
+    if (_isJumpingToMessage || _isLoadingOlder || !_hasMoreMessages) {
       return;
     }
 
@@ -1294,6 +1866,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (fromEventId == null) return;
     final revisionAtStart = _olderMessagesRevision;
     final accountAtStart = ref.read(activeUserIdProvider);
+    final historyKey = (
+      roomId: widget.roomId,
+      userId: accountAtStart ?? 'anonymous',
+    );
+    final historyAtStart = ref.read(messageHistoryCursorProvider(historyKey));
+    final tracksLiveHistory =
+        !_focusedBrowsing && historyAtStart.anchorId != null;
     setState(() => _isLoadingOlder = true);
     try {
       final older = await getMessagesBefore(
@@ -1303,7 +1882,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       );
       if (!mounted) return;
       if (_olderMessagesRevision != revisionAtStart ||
-          ref.read(activeUserIdProvider) != accountAtStart) {
+          ref.read(activeUserIdProvider) != accountAtStart ||
+          (tracksLiveHistory &&
+              ref.read(messageHistoryCursorProvider(historyKey)).generation !=
+                  historyAtStart.generation)) {
         // A jump entered/exited focused browsing mid-flight and replaced the
         // window: this page is relative to the old anchor and would not
         // connect to the new one. Drop it; the next trigger refetches.
@@ -1311,6 +1893,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         return;
       }
 
+      if (older.isNotEmpty && older.first.id == fromEventId) {
+        throw StateError('历史分页没有前进，请重试');
+      }
       final knownIds = {
         ..._displayedMessages.map((message) => message.id),
         ..._olderMessages.map((message) => message.id),
@@ -1327,7 +1912,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       final ignoredUserIds = ref.read(ignoredUserIdsProvider).value;
       final producedVisibleMessages =
           ignoredUserIds != null &&
-          newMessages.any(
+          (tracksLiveHistory || _focusedBrowsing ? older : newMessages).any(
             (message) =>
                 message.isMe || !ignoredUserIds.contains(message.senderId),
           );
@@ -1342,7 +1927,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       }
       if (!mounted) return;
       if (_olderMessagesRevision != revisionAtStart ||
-          ref.read(activeUserIdProvider) != accountAtStart) {
+          ref.read(activeUserIdProvider) != accountAtStart ||
+          (tracksLiveHistory &&
+              ref.read(messageHistoryCursorProvider(historyKey)).generation !=
+                  historyAtStart.generation)) {
         setState(() => _isLoadingOlder = false);
         return;
       }
@@ -1368,12 +1956,23 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           ),
         );
       }
+      if (tracksLiveHistory) {
+        ref.read(messageHistoryCursorProvider(historyKey).notifier).value = ref
+            .read(messageHistoryCursorProvider(historyKey))
+            .advanced(older.map((message) => message.id));
+      }
+      final progressed = tracksLiveHistory || _focusedBrowsing
+          ? older.isNotEmpty
+          : newMessages.isNotEmpty;
       setState(() {
+        if (_focusedBrowsing && older.isNotEmpty) {
+          _focusedOlderAnchorId = older.first.id;
+        }
         _olderMessages.insertAll(0, newMessages);
         if (newMessages.isNotEmpty) {
           _olderMessagesRevision++;
-          _olderLoadArmed = true;
         }
+        if (progressed) _olderLoadArmed = _timelinePivotEndId == null;
         // Stop automatic back-pagination once a page yields nothing visible;
         // an empty timeline then shows the manual retry affordance instead of
         // looping through the whole room history.
@@ -1384,18 +1983,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         // once the list arrives.
         _olderLoadBlockedWithUnknownList =
             ignoredUserIds == null && _automaticOlderLoadBlocked;
-        // A page whose messages are ALL already known (the bounded
-        // anchor-fallback page can sit entirely within the caller's loaded
-        // set) makes no progress: end history loading instead of looping
-        // on the same page forever. (A page that yields new but invisible
-        // messages — every sender ignored — still counts as progress: the
-        // anchor advances and manual retries keep working.)
-        _hasMoreMessages = older.isNotEmpty && newMessages.isNotEmpty;
+        // Cached duplicates still advance the continuous history cursor.
+        // Only an empty server page ends tracked pagination.
+        _hasMoreMessages = older.isNotEmpty && progressed;
         _isLoadingOlder = false;
       });
-      if (newMessages.isNotEmpty) {
+      if (progressed && _timelinePivotEndId == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_scrollController.hasClients) return;
+          if (!mounted ||
+              !_scrollController.hasClients ||
+              _timelinePivotEndId != null) {
+            return;
+          }
           _maybeLoadOlderMessages(_scrollController.position);
         });
       }
@@ -1410,6 +2009,171 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('加载更早消息失败: $error')));
     }
+  }
+
+  Future<void> _loadNewerMessages() async {
+    final fromEventId = _focusedNewerAnchorId;
+    if (!_focusedBrowsing ||
+        _isLoadingNewer ||
+        !_hasMoreNewerMessages ||
+        fromEventId == null) {
+      return;
+    }
+    final generation = _focusedWindowGeneration;
+    final account = ref.read(activeUserIdProvider);
+    final key = activeRoomAccountKey(ref, widget.roomId);
+    final liveAtStart = ref.read(messageHistoryCursorProvider(key));
+    setState(() => _isLoadingNewer = true);
+    try {
+      final page = await getMessagesAfter(
+        roomId: widget.roomId,
+        fromEventId: fromEventId,
+        limit: 100,
+      );
+      if (!mounted ||
+          !_focusedBrowsing ||
+          generation != _focusedWindowGeneration ||
+          ref.read(activeUserIdProvider) != account) {
+        return;
+      }
+      final next = page.nextEventId;
+      if (page.hasMore && (next == null || next == fromEventId)) {
+        throw StateError('更新消息分页没有前进，请重试');
+      }
+      final ignored = ref.read(ignoredUserIdsProvider).value;
+      final visible =
+          ignored != null &&
+          (ignored.isEmpty ||
+              page.messages.any(
+                (message) =>
+                    message.isMe || !ignored.contains(message.senderId),
+              ));
+      final merged = mergeMessageSnapshotAdditions(
+        _olderMessages,
+        page.messages,
+      );
+      setState(() {
+        if (!identical(merged, _olderMessages)) {
+          _olderMessages
+            ..clear()
+            ..addAll(merged);
+          _olderMessagesRevision++;
+        }
+        if (next != null) _focusedNewerAnchorId = next;
+        _hasMoreNewerMessages =
+            page.hasMore ||
+            !identical(
+              liveAtStart,
+              ref.read(messageHistoryCursorProvider(key)),
+            );
+        _newerLoadArmed = false;
+        _newerLoadBlockedByError = false;
+        _newerLoadBlocked = !visible && _hasMoreNewerMessages;
+        _newerLoadBlockedWithUnknownList = ignored == null && _newerLoadBlocked;
+      });
+      await _joinFocusedHistoryToLive();
+    } catch (error) {
+      if (!mounted ||
+          generation != _focusedWindowGeneration ||
+          ref.read(activeUserIdProvider) != account) {
+        return;
+      }
+      setState(() {
+        _newerLoadArmed = false;
+        _newerLoadBlocked = true;
+        _newerLoadBlockedByError = true;
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('加载更新消息失败: $error')));
+    } finally {
+      if (mounted && generation == _focusedWindowGeneration) {
+        setState(() => _isLoadingNewer = false);
+      }
+    }
+  }
+
+  Future<void> _joinFocusedHistoryToLive() async {
+    if (!_focusedBrowsing || _isJoiningFocusedHistory) return;
+    final generation = _focusedWindowGeneration;
+    final account = ref.read(activeUserIdProvider);
+    final key = activeRoomAccountKey(ref, widget.roomId);
+    if (ref.read(messageCacheOwnerProvider(widget.roomId)) != key.userId) {
+      return;
+    }
+    var history = ref.read(messageHistoryCursorProvider(key));
+    if (!_olderMessages.any(
+      (message) => history.connectedEventIds.contains(message.id),
+    )) {
+      return;
+    }
+    _isJoiningFocusedHistory = true;
+    try {
+      var allowDiskCache = false;
+      try {
+        allowDiskCache = !await isRoomEncrypted(roomId: widget.roomId);
+      } catch (_) {
+        // This only controls disk persistence, not the verified in-memory page.
+      }
+      if (!mounted ||
+          !_focusedBrowsing ||
+          generation != _focusedWindowGeneration ||
+          ref.read(activeUserIdProvider) != account ||
+          ref.read(messageCacheOwnerProvider(widget.roomId)) != key.userId) {
+        return;
+      }
+      history = ref.read(messageHistoryCursorProvider(key));
+      if (!_olderMessages.any(
+        (message) => history.connectedEventIds.contains(message.id),
+      )) {
+        return;
+      }
+      final oldest = _focusedOlderAnchorId;
+      if (oldest == null) return;
+      final merged = mergeMessageSnapshotAdditions(
+        ref.read(messageCacheProvider(widget.roomId)),
+        _olderMessages,
+      );
+      final joined = history.joined(
+        _olderMessages.map((message) => message.id),
+        oldestEventId: oldest,
+        hitStart: !_hasMoreMessages,
+      );
+      ref.read(messageCacheProvider(widget.roomId).notifier).value = merged;
+      ref.read(messageHistoryCursorProvider(key).notifier).value = joined;
+      setState(() {
+        _focusedBrowsing = false;
+        _focusedWindowGeneration++;
+        _focusedOlderAnchorId = null;
+        _focusedNewerAnchorId = null;
+        _isLoadingNewer = false;
+        _olderMessages.clear();
+        _olderMessagesRevision++;
+        _hasMoreMessages = !joined.reachedStart;
+        _olderLoadArmed = _timelinePivotEndId == null;
+        _automaticOlderLoadBlocked = false;
+        _olderLoadBlockedByError = false;
+      });
+      unawaited(
+        saveCachedMessages(
+          namespace: key.userId,
+          roomId: widget.roomId,
+          messages: merged,
+          persistToDisk: allowDiskCache,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isJoiningFocusedHistory = false);
+    }
+  }
+
+  void _retryNewerMessages() {
+    setState(() {
+      _newerLoadBlocked = false;
+      _newerLoadBlockedByError = false;
+      _newerLoadBlockedWithUnknownList = false;
+      _newerLoadArmed = true;
+    });
+    unawaited(_loadNewerMessages());
   }
 
   Future<({List<ChatMessage> messages, bool hasMore})>
@@ -1432,6 +2196,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   String? _paginationAnchorId() {
+    if (_focusedBrowsing && _focusedOlderAnchorId != null) {
+      return _focusedOlderAnchorId;
+    }
+    if (!_focusedBrowsing) {
+      final history = ref.read(
+        messageHistoryCursorProvider(activeRoomAccountKey(ref, widget.roomId)),
+      );
+      if (history.anchorId != null) return history.anchorId;
+    }
     if (_olderMessages.isNotEmpty) return _olderMessages.first.id;
     final cachedMessages = ref.read(messageCacheProvider(widget.roomId));
     if (cachedMessages.isNotEmpty) return cachedMessages.first.id;
@@ -1558,9 +2331,40 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     return result;
   }
 
+  List<ChatImageRun> _imageRunsForTimeline(List<ChatMessage> messages) {
+    final runs = chatImageRuns(messages);
+    if (_timelinePivotRunIds.isEmpty) return runs;
+    bool anchored(ChatMessage message) =>
+        _timelinePivotRunIds.contains(_messageLayoutId(message));
+    final frozen = messages.where(anchored).toList();
+    final result = <ChatImageRun>[];
+    var emitted = false;
+    for (final run in runs) {
+      final first = run.messages.indexWhere(anchored);
+      if (first < 0) {
+        result.add(run);
+        continue;
+      }
+      // Explicit albums may span interleaved messages. Freeze actual members,
+      // not a timestamp interval, and retain the original album presentation.
+      final before = run.messages.take(first).toList();
+      final after = run.messages
+          .skip(first)
+          .where((message) => !anchored(message))
+          .toList();
+      if (before.isNotEmpty) result.add(ChatImageRun(before, album: run.album));
+      if (!emitted) {
+        result.add(ChatImageRun(frozen, album: _timelinePivotAlbum));
+        emitted = true;
+      }
+      if (after.isNotEmpty) result.add(ChatImageRun(after, album: run.album));
+    }
+    return result;
+  }
+
   List<MessageGroup> _groupMessages(List<ChatMessage> messages) {
     final groups = <MessageGroup>[];
-    for (final run in chatImageRuns(messages)) {
+    for (final run in _imageRunsForTimeline(messages)) {
       final message = run.messages.first;
       final startsNewCluster =
           groups.isEmpty ||
@@ -1569,6 +2373,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               chatDateKey(message.timestamp);
       final startsNewRenderGroup =
           startsNewCluster ||
+          _messageLayoutId(groups.last.messages.last) == _timelinePivotEndId ||
           groups.last.messages.length >= _maxMessagesPerRenderGroup;
       if (startsNewRenderGroup) {
         if (!startsNewCluster && groups.isNotEmpty) {
@@ -1589,6 +2394,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         groups.last.imageRuns!.add(run);
       }
     }
+    for (final group in groups) {
+      if (_messageLayoutId(group.messages.last) == _timelinePivotEndId) {
+        // Keep the trailing gap/radius fixed when a page extends the sender's
+        // cluster beyond the reading origin.
+        group.endsCluster = _timelinePivotEndsCluster;
+      }
+    }
     return groups;
   }
 
@@ -1606,6 +2418,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       ..write(latestMessages.length)
       ..write(';focused=')
       ..write(_focusedBrowsing ? 1 : 0)
+      ..write(';pivot=')
+      ..writeAll(_timelinePivotRunIds, ',')
+      ..write('/')
+      ..write(_timelinePivotAlbum)
+      ..write('/')
+      ..write(_timelinePivotEndId)
+      ..write('/')
+      ..write(_timelinePivotEndsCluster)
       ..write(';ignored=')
       ..writeAll(sortedIgnoredUserIds, ',')
       ..write(';redacted=')
@@ -1879,6 +2699,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           roomId: widget.roomId,
           messageIndex: messageIndex,
           messageAnchorKeys: _messageAnchorKeys,
+          jumpHighlight: _jumpHighlight,
           remoteToLocalFlightId: _remoteToLocalFlightId,
           insertionAnimationIds: _insertionAnimationIds,
           lateralInsertionAnimationIds: _lateralInsertionAnimationIds,
@@ -1890,7 +2711,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           scrollController: _scrollController,
           scrollViewportKey: _scrollViewportKey,
           stickyBottomInset: stickyBottomInset,
-          onImageLoaded: null,
+          onImageLoaded: _scheduleUnreadObservation,
           onReplyRequested: () => _setInputPanelMode(InputPanelMode.keyboard),
           onMentionRequested: _mentionUser,
           onMessageJumpRequested: (messageId) =>
@@ -1944,10 +2765,44 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       messageCacheOwnerProvider(widget.roomId),
     );
     final activeUserId = ref.watch(activeUserIdProvider) ?? 'anonymous';
+    final historyKey = (roomId: widget.roomId, userId: activeUserId);
+    final history = ref.watch(messageHistoryCursorProvider(historyKey));
+    if (_liveHistoryKey != historyKey ||
+        (!_focusedBrowsing &&
+            history.anchorId != null &&
+            _liveHistoryGeneration != history.generation)) {
+      _liveHistoryKey = historyKey;
+      _liveHistoryGeneration = history.generation;
+      _olderMessages.clear();
+      _olderMessagesRevision++;
+      _olderLoadArmed = true;
+      _automaticOlderLoadBlocked = false;
+      _olderLoadBlockedByError = false;
+    }
+    if (!_focusedBrowsing && history.anchorId != null) {
+      _hasMoreMessages = !history.reachedStart;
+    }
     final redactedIds = ref.watch(
       redactedMessageIdsProvider((roomId: widget.roomId, userId: activeUserId)),
     );
     final ignoredUserIdsAsync = ref.watch(ignoredUserIdsProvider);
+    if (_focusedBrowsing) {
+      if (!identical(_focusedLiveCursor, history)) {
+        _focusedLiveCursor = history;
+        _hasMoreNewerMessages = true;
+        _newerLoadBlocked = false;
+        _newerLoadBlockedByError = false;
+      }
+      if (_newerLoadBlockedWithUnknownList &&
+          ignoredUserIdsAsync.value != null) {
+        _newerLoadBlockedWithUnknownList = false;
+        _newerLoadBlocked = false;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_focusedBrowsing) return;
+        unawaited(_joinFocusedHistoryToLive());
+      });
+    }
     // Re-arm auto-pagination once the ignore list becomes known: the block
     // may have been decided without the filter (see _rebuildDerivedMessages),
     // and no further page load will happen on its own to re-decide it.
@@ -1966,7 +2821,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           // never re-arm).
           _olderLoadArmed = true;
         });
-        _maybeLoadOlderMessages(_scrollController.position);
+        if (_timelinePivotEndId == null) {
+          _maybeLoadOlderMessages(_scrollController.position);
+        }
       });
     }
     final membersAsync = ref.watch(roomMembersProvider(widget.roomId));
@@ -2044,6 +2901,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ? math.max(pickerBaseHeight, _expandedPickerHeight)
         : pickerBaseHeight;
     final mediaQuery = MediaQuery.of(context);
+    final audioVisible = ref.watch(audioPlayerVisibleProvider);
+    final audioHeight = audioVisible ? audioMessageBarHeight : 0.0;
+    final entryUnread = _entryUnreadOwner == activeUserId ? _entryUnread : null;
+    final unreadHeight = entryUnread != null && _showUnreadNavigation
+        ? unreadMessagesBannerHeight
+        : 0.0;
+    final audioSession = ref.read(audioPlaybackSessionProvider);
     final colors = context.neu;
     final visualSettings = ref.watch(chatVisualSettingsProvider);
     // The floating header hangs below the status bar; the pinned stack and
@@ -2064,6 +2928,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           mediaQuery.padding.top -
           mediaQuery.padding.bottom -
           _headerChromeHeight -
+          audioHeight -
           inputChromeHeight -
           8,
     );
@@ -2086,6 +2951,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
     final pinnedStackHeight =
         kPinnedMessageRowHeight * _pinnedStackVisibleCount;
+    _unreadTopInset = headerInset + pinnedStackHeight + audioHeight;
+    _unreadBottomInset =
+        inputChromeHeight + math.max(panelReservedHeight, keyboardHeight);
+    _scheduleUnreadObservation();
     // The timeline fills the whole screen and runs under the floating glass
     // header (like the prototype); its clip edge sits at the screen edge
     // where the gradient-blur layer is nearly opaque, so no hard clip line
@@ -2138,7 +3007,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 child: Builder(
                   builder: (context) {
                     final messages = messageCacheOwner == activeUserId
-                        ? cachedMessages
+                        ? history.anchorId == null
+                              ? cachedMessages
+                              : cachedMessages
+                                    .where(
+                                      (message) => history.connectedEventIds
+                                          .contains(message.id),
+                                    )
+                                    .toList()
                         : const <ChatMessage>[];
                     // The account switched while this page stayed mounted:
                     // the old account's messages must not render (the gate
@@ -2230,6 +3106,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       });
                     }
                     final timelineEntries = _timelineEntries;
+                    final pivot = _timelinePivotEndId == null
+                        ? null
+                        : _timelineEntryIndexForMessage(_timelinePivotEndId!);
+                    final pivotIndex = pivot ?? 0;
                     final messageIndex = _messageIndex;
                     final avatarMap = membersAsync.maybeWhen(
                       data: _buildAvatarMap,
@@ -2247,73 +3127,169 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           : Duration.zero,
                       curve: Curves.easeOutCubic,
                       builder: (context, animatedBottomPadding, _) {
-                        return NotificationListener<ScrollMetricsNotification>(
-                          onNotification: _handleScrollMetricsNotification,
-                          child: NotificationListener<ScrollNotification>(
-                            onNotification: _handleScrollNotification,
-                            child: CustomScrollView(
-                              key: _scrollViewportKey,
-                              reverse: true,
-                              controller: _scrollController,
-                              slivers: [
-                                SliverPadding(
-                                  padding: EdgeInsets.only(
-                                    bottom: 8 + animatedBottomPadding,
-                                  ),
-                                ),
-                                SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) => _buildTimelineEntry(
-                                      timelineEntries[index],
-                                      avatarMap,
-                                      membersById,
-                                      messageIndex,
-                                      8 + animatedBottomPadding,
-                                    ),
-                                    childCount: timelineEntries.length,
-                                    findChildIndexCallback:
-                                        _findTimelineEntryIndex,
-                                  ),
-                                ),
-                                if (_automaticOlderLoadBlocked &&
-                                    _hasMoreMessages)
-                                  if (timelineEntries.isEmpty)
-                                    SliverFillRemaining(
-                                      hasScrollBody: false,
-                                      child: Center(
-                                        child: TextButton.icon(
-                                          onPressed: _retryOlderMessages,
-                                          icon: const Icon(
-                                            Icons.refresh_rounded,
-                                          ),
-                                          label: const Text('重试加载更早消息'),
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    SliverToBoxAdapter(
-                                      child: Center(
-                                        child: TextButton.icon(
-                                          onPressed: _retryOlderMessages,
-                                          icon: const Icon(
-                                            Icons.refresh_rounded,
-                                            size: 16,
-                                          ),
-                                          label: const Text('加载更早消息'),
-                                        ),
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            final reserve = 8 + animatedBottomPadding;
+                            final anchor =
+                                pivot == null || constraints.maxHeight <= 0
+                                ? 0.0
+                                : (reserve / constraints.maxHeight).clamp(
+                                    0.0,
+                                    1.0,
+                                  );
+                            return NotificationListener<
+                              ScrollMetricsNotification
+                            >(
+                              onNotification: _handleScrollMetricsNotification,
+                              child: NotificationListener<ScrollNotification>(
+                                onNotification: _handleScrollNotification,
+                                child: CustomScrollView(
+                                  key: _scrollViewportKey,
+                                  reverse: true,
+                                  controller: _scrollController,
+                                  // Pages newer than the pivot grow below this
+                                  // origin, without changing the reading offset.
+                                  center: pivot == null
+                                      ? null
+                                      : _timelineCenterKey,
+                                  // In reverse layout, move the reading origin up
+                                  // with the real composer/keyboard reservation.
+                                  anchor: anchor,
+                                  slivers: [
+                                    SliverPadding(
+                                      padding: EdgeInsets.only(
+                                        bottom: 8 + animatedBottomPadding,
                                       ),
                                     ),
-                                SliverPadding(
-                                  padding: EdgeInsets.only(
-                                    // The timeline runs under the floating
-                                    // header and the pinned stack; keep the
-                                    // oldest end clear of both layers.
-                                    top: headerInset + pinnedStackHeight + 4,
-                                  ),
+                                    if (_focusedBrowsing && _isLoadingNewer)
+                                      const SliverToBoxAdapter(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: Center(
+                                            child: SizedBox.square(
+                                              dimension: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    if (_focusedBrowsing &&
+                                        !_isLoadingNewer &&
+                                        _hasMoreNewerMessages)
+                                      SliverToBoxAdapter(
+                                        child: Center(
+                                          child: TextButton.icon(
+                                            key: const ValueKey(
+                                              'newer-history-retry',
+                                            ),
+                                            onPressed: _retryNewerMessages,
+                                            icon: const Icon(
+                                              Icons.refresh_rounded,
+                                              size: 16,
+                                            ),
+                                            label: Text(
+                                              _newerLoadBlockedByError
+                                                  ? '重试加载更新消息'
+                                                  : '加载更新消息',
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    if (pivot != null)
+                                      SliverList(
+                                        delegate: SliverChildBuilderDelegate(
+                                          (context, index) =>
+                                              _buildTimelineEntry(
+                                                timelineEntries[pivotIndex -
+                                                    1 -
+                                                    index],
+                                                avatarMap,
+                                                membersById,
+                                                messageIndex,
+                                                8 + animatedBottomPadding,
+                                              ),
+                                          childCount: pivotIndex,
+                                          findChildIndexCallback: (key) {
+                                            final index =
+                                                _findTimelineEntryIndex(key);
+                                            return index == null ||
+                                                    index >= pivotIndex
+                                                ? null
+                                                : pivotIndex - 1 - index;
+                                          },
+                                        ),
+                                      ),
+                                    SliverList(
+                                      key: _timelineCenterKey,
+                                      delegate: SliverChildBuilderDelegate(
+                                        (context, index) => _buildTimelineEntry(
+                                          timelineEntries[pivotIndex + index],
+                                          avatarMap,
+                                          membersById,
+                                          messageIndex,
+                                          8 + animatedBottomPadding,
+                                        ),
+                                        childCount:
+                                            timelineEntries.length - pivotIndex,
+                                        findChildIndexCallback: (key) {
+                                          final index = _findTimelineEntryIndex(
+                                            key,
+                                          );
+                                          return index == null ||
+                                                  index < pivotIndex
+                                              ? null
+                                              : index - pivotIndex;
+                                        },
+                                      ),
+                                    ),
+                                    if (_automaticOlderLoadBlocked &&
+                                        _hasMoreMessages)
+                                      if (timelineEntries.isEmpty)
+                                        SliverFillRemaining(
+                                          hasScrollBody: false,
+                                          child: Center(
+                                            child: TextButton.icon(
+                                              onPressed: _retryOlderMessages,
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
+                                              ),
+                                              label: const Text('重试加载更早消息'),
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        SliverToBoxAdapter(
+                                          child: Center(
+                                            child: TextButton.icon(
+                                              onPressed: _retryOlderMessages,
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 16,
+                                              ),
+                                              label: const Text('加载更早消息'),
+                                            ),
+                                          ),
+                                        ),
+                                    SliverPadding(
+                                      padding: EdgeInsets.only(
+                                        // The timeline runs under the floating
+                                        // header and the pinned stack; keep the
+                                        // oldest end clear of both layers.
+                                        top:
+                                            headerInset +
+                                            pinnedStackHeight +
+                                            audioHeight +
+                                            unreadHeight +
+                                            4,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         );
                       },
                       child: const SizedBox.shrink(),
@@ -2365,6 +3341,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 right: context.isMaterial ? 0 : 12,
                 child: PinnedMessagesStack(
                   roomId: widget.roomId,
+                  onShowAll: () => unawaited(_openPinnedMessages()),
+                  jumpTarget: _jumpHighlight,
                   onMessageTap: (messageId) =>
                       unawaited(_jumpToMessage(messageId)),
                   onVisibleCountChanged: (count) {
@@ -2374,6 +3352,30 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   },
                 ),
               ),
+              if (audioVisible)
+                Positioned(
+                  left: context.isMaterial ? 0 : 12,
+                  right: context.isMaterial ? 0 : 12,
+                  top: headerInset + pinnedStackHeight,
+                  child: AudioMessageBar(
+                    session: audioSession,
+                    onSourceTap: () => unawaited(_openAudioSource()),
+                    onQueueTap: () =>
+                        unawaited(showAudioPlayerPanel(context, audioSession)),
+                  ),
+                ),
+              if (entryUnread != null && _showUnreadNavigation)
+                Positioned(
+                  left: context.isMaterial ? 0 : 12,
+                  right: context.isMaterial ? 0 : 12,
+                  top: headerInset + pinnedStackHeight + audioHeight,
+                  child: UnreadMessagesBanner(
+                    count: _unreadNavigation?.remainingCount,
+                    loading: _jumpingToUnread,
+                    onPressed: () => unawaited(_jumpToFirstUnread()),
+                    onDismiss: () => setState(_clearUnreadNavigation),
+                  ),
+                ),
               // Telegram-style floating date that tracks the day at the top edge
               // of the viewport while scrolling, then fades out.
               if (_hasTimelineGroups)
@@ -2382,7 +3384,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   scrollViewportKey: _scrollViewportKey,
                   boundaries: _floatingDateBoundariesCache,
                   separatorKeys: _floatingDateSeparatorKeysCache,
-                  topInset: headerInset + pinnedStackHeight,
+                  topInset:
+                      headerInset +
+                      pinnedStackHeight +
+                      audioHeight +
+                      unreadHeight,
                 ),
               AnimatedPositioned(
                 right: 16,
@@ -2395,9 +3401,17 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       (_showLatestMessageControl || _focusedBrowsing) &&
                       _forwardNoticeRoom == null,
                   showSentNotice: _showSentNotice,
-                  onPressed: _focusedBrowsing
-                      ? () => _exitFocusedBrowsing()
-                      : _scrollToLatest,
+                  onPressed: () {
+                    if (_focusedBrowsing) {
+                      _exitFocusedBrowsing();
+                    } else {
+                      // A pin's context may still be in flight before focused
+                      // browsing starts. Do not let it override this action.
+                      _messageJumpGeneration++;
+                      _isJumpingToMessage = false;
+                      _scrollToLatest();
+                    }
+                  },
                 ),
               ),
               if (_forwardNoticeRoom case final room?)
@@ -2465,6 +3479,18 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   ),
                 ),
               ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DesktopFileDrop(
+                    enabled:
+                        _subscriptionsAccount == null ||
+                        activeUserId == _subscriptionsAccount,
+                    onFiles: (files) async => _messageInputKey.currentState
+                        ?.previewExternalFiles(files),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -2513,6 +3539,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final compact = MediaQuery.sizeOf(context).width < _headerCompactBreakpoint;
     return buildFloatingAppBar(
       automaticallyImplyLeading: !widget.embedded,
+      leading: widget.onBack == null
+          ? null
+          : BackButton(onPressed: widget.onBack),
       titleSpacing: widget.embedded ? 16 : 0,
       title: Row(
         children: [
@@ -2591,7 +3620,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       icon: Icons.arrow_back_rounded,
                       size: 38,
                       tooltip: '返回',
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed:
+                          widget.onBack ?? () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 4),
                   ],

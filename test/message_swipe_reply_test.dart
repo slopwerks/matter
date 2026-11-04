@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/message_group.dart';
 import 'package:matter/providers/chat_provider.dart';
+import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 import 'package:matter/src/rust/frb_generated.dart';
+
 import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
@@ -170,9 +172,12 @@ void main() {
     expect(find.text('取消置顶'), findsNothing);
   });
 
-  testWidgets('pinning from the message menu calls the toggle', (tester) async {
+  testWidgets('pinning from the message menu requires confirmation', (
+    tester,
+  ) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = '@me:example.org';
     final message = _message(id: r'$pin-action', isMe: false);
     api.togglePinnedCalls = 0;
     api.toggleError = null;
@@ -189,6 +194,10 @@ void main() {
 
     await tester.tap(find.text('置顶'));
     await tester.pumpAndSettle();
+    expect(api.togglePinnedCalls, 0);
+    expect(find.text('置顶这条消息？'), findsOneWidget);
+    await tester.tap(find.text('置顶').last);
+    await tester.pumpAndSettle();
 
     expect(api.togglePinnedCalls, 1);
     expect(api.lastToggleRoomId, _roomId);
@@ -197,11 +206,44 @@ void main() {
     expect(find.text('消息已置顶'), findsOneWidget);
   });
 
+  for (final pinned in [false, true]) {
+    testWidgets('cancelling menu pin confirmation does not write ($pinned)', (
+      tester,
+    ) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value = '@me:example.org';
+      final message = _message(id: r'$pin-cancel', isMe: false);
+      api.togglePinnedCalls = 0;
+      api.toggleError = null;
+      api.pinnedIds = pinned ? [message.id] : const [];
+
+      await tester.pumpWidget(
+        _buildSubject(container: container, message: message),
+      );
+      await tester.longPress(
+        find.byKey(const ValueKey(r'text-bubble:$pin-cancel')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(pinned ? '取消置顶' : '置顶'));
+      await tester.pumpAndSettle();
+      expect(api.togglePinnedCalls, 0);
+      expect(find.text(pinned ? '取消置顶这条消息？' : '置顶这条消息？'), findsOneWidget);
+      await tester.tap(find.text('返回'));
+      await tester.pumpAndSettle();
+
+      expect(api.togglePinnedCalls, 0);
+      expect(find.text('消息已置顶'), findsNothing);
+      expect(find.text('已取消置顶'), findsNothing);
+    });
+  }
+
   testWidgets('the message menu unpins an already-pinned message', (
     tester,
   ) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = '@me:example.org';
     final message = _message(id: r'$pin-action', isMe: false);
     api.togglePinnedCalls = 0;
     api.toggleError = null;
@@ -218,6 +260,10 @@ void main() {
 
     expect(find.text('置顶'), findsNothing);
     await tester.tap(find.text('取消置顶'));
+    await tester.pumpAndSettle();
+    expect(api.togglePinnedCalls, 0);
+    expect(find.text('取消置顶这条消息？'), findsOneWidget);
+    await tester.tap(find.text('取消置顶').last);
     await tester.pumpAndSettle();
 
     // The server state decides the target: pinned -> unpin, reported as such.
@@ -253,6 +299,7 @@ void main() {
   testWidgets('a failed pin action surfaces the error', (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = '@me:example.org';
     final message = _message(id: r'$pin-fail', isMe: false);
     api.togglePinnedCalls = 0;
     api.toggleError = StateError('offline');
@@ -268,6 +315,10 @@ void main() {
 
     await tester.tap(find.text('置顶'));
     await tester.pumpAndSettle();
+    expect(api.togglePinnedCalls, 0);
+    expect(find.text('置顶这条消息？'), findsOneWidget);
+    await tester.tap(find.text('置顶').last);
+    await tester.pumpAndSettle();
 
     expect(api.togglePinnedCalls, 1);
     // Non-timeout failures go through the shared actionFailureMessage
@@ -280,6 +331,7 @@ void main() {
   ) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = '@me:example.org';
     final message = _message(id: r'$pin-after-dispose', isMe: false);
     api.toggleError = null;
     api.toggleResult = true;
@@ -321,6 +373,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('置顶'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('置顶').last);
     await tester.pump();
 
     updateHost(() => showMessage = false);

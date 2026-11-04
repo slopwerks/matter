@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'action_failure_message.dart';
 import '../../features/push/push_runtime.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/navigation_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/hidden_rooms_provider.dart';
@@ -148,6 +149,11 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
           onRoomSelected(room);
           return;
         }
+        if (room.roomType != 'space' &&
+            (ref.read(desktopRoomNavigationProvider).open?.call(room) ??
+                false)) {
+          return;
+        }
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => room.roomType == 'space'
@@ -180,6 +186,9 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
           ),
         );
       },
+      onSecondaryTap: room.roomState == 'joined' && room.roomType != 'space'
+          ? () => _showRoomListActions(context, ref, room)
+          : null,
       onLongPress: room.roomState == 'joined' && room.roomType != 'space'
           ? () => _showRoomListActions(context, ref, room)
           : null,

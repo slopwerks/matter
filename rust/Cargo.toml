@@ -1,6 +1,6 @@
 [package]
 name = "rust_lib_matter"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 
 [lib]
@@ -33,6 +33,7 @@ tokio = { version = "1", features = [
   "sync",
   "net",
   "io-util",
+  "fs",
   "time",
 ] }
 anyhow = "1"
@@ -45,6 +46,7 @@ log = "0.4"
 dirs = "6"
 futures-util = "0.3"
 mime = "0.3"
+tempfile = "3"
 
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.13", default-features = false }

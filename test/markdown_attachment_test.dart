@@ -58,13 +58,19 @@ void main() {
     PathProviderPlatform.instance = _Paths(directory);
     addTearDown(() => PathProviderPlatform.instance = previous);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(const MethodChannel('moe.aks.matter/downloads'), (call) async {
-          return call.method == 'start' ? 10001 : null;
-        });
+        .setMockMethodCallHandler(
+          const MethodChannel('moe.aks.matter/downloads'),
+          (call) async {
+            return call.method == 'start' ? 10001 : null;
+          },
+        );
   });
   tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(const MethodChannel('moe.aks.matter/downloads'), null);
+        .setMockMethodCallHandler(
+          const MethodChannel('moe.aks.matter/downloads'),
+          null,
+        );
     RustLib.dispose();
     await directory.delete(recursive: true);
   });
@@ -136,6 +142,59 @@ void main() {
     }
   }
 
+  for (final reader in [false, true]) {
+    testWidgets('desktop Save As uses the chosen path (reader=$reader)', (
+      tester,
+    ) async {
+      final selected = '${directory.path}/chosen.md';
+      const selector = MethodChannel('plugins.flutter.io/file_selector');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(selector, (call) async => selected);
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(selector, null),
+      );
+      await pumpAttachment(tester);
+      if (reader) {
+        await tester.tap(find.text('README.MD'));
+        await tester.pumpAndSettle();
+      }
+      final onPressed = reader
+          ? tester
+                .widget<NeuIconButton>(
+                  find.byWidgetPredicate(
+                    (widget) =>
+                        widget is NeuIconButton && widget.tooltip == '另存为',
+                  ),
+                )
+                .onPressed!
+          : tester
+                .widget<IconButton>(
+                  find.byWidgetPredicate(
+                    (widget) => widget is IconButton && widget.tooltip == '另存为',
+                  ),
+                )
+                .onPressed!;
+      await tester.runAsync(() async {
+        onPressed();
+        final file = File(selected);
+        for (var i = 0; i < 100; i++) {
+          if (await file.exists() && await file.length() == api.bytes.length) {
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(await file.readAsBytes(), api.bytes);
+        expect(
+          await Directory('${directory.path}/Downloads').exists(),
+          isFalse,
+        );
+      });
+      await tester.pumpAndSettle();
+      expect(api.requests, hasLength(1));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+  }
+
   testWidgets('plain Markdown still opens as readable text', (tester) async {
     api.bytes = Uint8List.fromList(utf8.encode('hello & welcome'));
     await pumpAttachment(tester, filename: 'notes.markdown');
@@ -159,16 +218,22 @@ void main() {
   );
 
   for (final declared in [false, true]) {
-    testWidgets('oversized Markdown preserves the download action (declared=$declared)', (tester) async {
-      if (!declared) api.bytes = Uint8List(2 * 1024 * 1024 + 1);
-      await pumpAttachment(tester, fileSize: declared ? 3 * 1024 * 1024 : null);
-      await tester.tap(find.text('README.MD'));
-      await tester.pumpAndSettle();
-      expect(find.byType(MessageReaderPage), findsNothing);
-      expect(find.textContaining('文件超过 2 MB'), findsOneWidget);
-      expect(find.byTooltip('下载文件'), findsOneWidget);
-      expect(api.requests.length, declared ? 0 : 1);
-    });
+    testWidgets(
+      'oversized Markdown preserves the download action (declared=$declared)',
+      (tester) async {
+        if (!declared) api.bytes = Uint8List(2 * 1024 * 1024 + 1);
+        await pumpAttachment(
+          tester,
+          fileSize: declared ? 3 * 1024 * 1024 : null,
+        );
+        await tester.tap(find.text('README.MD'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MessageReaderPage), findsNothing);
+        expect(find.textContaining('文件超过 2 MB'), findsOneWidget);
+        expect(find.byTooltip('下载文件'), findsOneWidget);
+        expect(api.requests.length, declared ? 0 : 1);
+      },
+    );
   }
 
   testWidgets('external opening receives the original Markdown file', (

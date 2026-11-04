@@ -416,6 +416,10 @@ void main() {
   testWidgets(
     'keyboard resize keeps the attachment draft and leaves the caption visible',
     (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final host = GlobalKey<_KeyboardHarnessState>();
       await tester.pumpWidget(
         ProviderScope(

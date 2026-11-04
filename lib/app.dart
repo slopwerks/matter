@@ -8,6 +8,7 @@ import 'pages/chat/chat_detail_page.dart';
 import 'pages/chat/create_chat_page.dart';
 import 'pages/chat/chat_page.dart';
 import 'pages/chat/desktop_room_details_panel.dart';
+import 'pages/chat/desktop_split_view.dart';
 import 'pages/chat/room_metadata_patch.dart';
 import 'pages/chat/room_state_edit_tracker.dart';
 import 'pages/chat/space_page.dart';
@@ -17,6 +18,7 @@ import 'pages/settings/settings_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/navigation_provider.dart';
+import 'providers/startup_page_provider.dart';
 import 'src/rust/api/matrix.dart' as rust;
 import 'theme/neu_colors.dart';
 import 'widgets/app_avatar.dart';
@@ -28,7 +30,7 @@ import 'widgets/neu_surface.dart';
 import 'widgets/max_content_width.dart';
 import 'widgets/sheets.dart';
 
-enum _DesktopRoomSource { directMessages, ungroupedRooms, space }
+enum _DesktopRoomSource { allChats, directMessages, ungroupedRooms, space }
 
 class MatterApp extends ConsumerStatefulWidget {
   const MatterApp({super.key});
@@ -48,9 +50,16 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   bool _verificationDialogOpen = false;
   final Set<String> _handledVerificationFlows = {};
   rust.ChatRoom? _selectedRoom;
+  GlobalKey _selectedChatKey = GlobalKey();
+  String? _selectedMessageId;
+  bool _waitingForSelectedRoomSync = false;
+  late final DesktopRoomNavigation _desktopRoomNavigation;
   rust.Space? _selectedDesktopSpace;
-  _DesktopRoomSource _desktopRoomSource = _DesktopRoomSource.directMessages;
+  _DesktopRoomSource _desktopRoomSource = _DesktopRoomSource.allChats;
+  int _navigationRevision = 0;
+  String? _startupAccount;
   bool _showRoomDetails = false;
+  bool _usesDesktopLayout = false;
   String? _lastActiveUserId;
   final _selectedRoomNameEdit = RoomStateEditTracker();
   final _selectedRoomAvatarEdit = RoomStateEditTracker();
@@ -79,6 +88,8 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   @override
   void initState() {
     super.initState();
+    _desktopRoomNavigation = ref.read(desktopRoomNavigationProvider)
+      ..open = _openRoomInPane;
     _verificationTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _checkIncomingVerification(),
@@ -91,6 +102,9 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   @override
   void dispose() {
     _verificationTimer?.cancel();
+    if (_desktopRoomNavigation.open == _openRoomInPane) {
+      _desktopRoomNavigation.open = null;
+    }
     _tabPosition.dispose();
     _dockLift.dispose();
     super.dispose();
@@ -158,9 +172,87 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   }
 
   void _onItemTapped(int index) {
+    _navigationRevision++;
+    if (!_usesDesktopLayout && index == 0) {
+      setState(() {
+        _desktopRoomSource = _DesktopRoomSource.allChats;
+        _selectedDesktopSpace = null;
+      });
+    }
     if (ref.read(navigationIndexProvider) != index) {
       ref.read(navigationIndexProvider.notifier).value = index;
     }
+    _rememberPage();
+  }
+
+  void _rememberPage() {
+    final userId = ref.read(activeUserIdProvider);
+    if (userId == null) return;
+    final index = ref.read(navigationIndexProvider);
+    final page = switch (index) {
+      1 => NavigationDestinationPage.spaces,
+      2 => NavigationDestinationPage.contacts,
+      3 => NavigationDestinationPage.settings,
+      _ => switch (_desktopRoomSource) {
+        _DesktopRoomSource.allChats => NavigationDestinationPage.allChats,
+        _DesktopRoomSource.directMessages =>
+          NavigationDestinationPage.directMessages,
+        _DesktopRoomSource.ungroupedRooms =>
+          NavigationDestinationPage.ungroupedRooms,
+        _DesktopRoomSource.space => NavigationDestinationPage.space,
+      },
+    };
+    unawaited(
+      rememberNavigationPage(
+        userId,
+        StartupLocation(page, spaceId: _selectedDesktopSpace?.id),
+      ),
+    );
+  }
+
+  Future<void> _restoreStartupPage(String userId, int revision) async {
+    var location = await loadStartupLocation(userId);
+    if (!mounted ||
+        ref.read(activeUserIdProvider) != userId ||
+        revision != _navigationRevision) {
+      return;
+    }
+    rust.Space? space;
+    if (location.page == NavigationDestinationPage.space) {
+      try {
+        final spaces = await ref.read(spacesProvider.future);
+        space = spaces.where((item) => item.id == location.spaceId).firstOrNull;
+      } catch (_) {
+        // A failed or stale saved space must not prevent opening conversations.
+      }
+      if (space == null) {
+        location = const StartupLocation(NavigationDestinationPage.allChats);
+      }
+    }
+    if (!mounted ||
+        ref.read(activeUserIdProvider) != userId ||
+        revision != _navigationRevision) {
+      return;
+    }
+    final index = switch (location.page) {
+      NavigationDestinationPage.spaces => 1,
+      NavigationDestinationPage.contacts => 2,
+      NavigationDestinationPage.settings => 3,
+      _ => 0,
+    };
+    setState(() {
+      _desktopRoomSource = switch (location.page) {
+        NavigationDestinationPage.directMessages =>
+          _DesktopRoomSource.directMessages,
+        NavigationDestinationPage.ungroupedRooms =>
+          _DesktopRoomSource.ungroupedRooms,
+        NavigationDestinationPage.space => _DesktopRoomSource.space,
+        _ => _DesktopRoomSource.allChats,
+      };
+      _selectedDesktopSpace = space;
+      _tabPosition.value = index.toDouble();
+    });
+    ref.read(navigationIndexProvider.notifier).value = index;
   }
 
   void _clearSelectedRoomDetailsEdits() {
@@ -194,14 +286,38 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     );
   }
 
-  void _selectRoom(rust.ChatRoom room) {
+  bool _openRoomInPane(rust.ChatRoom room, {String? messageId}) {
+    if (!mounted || !_usesDesktopLayout) {
+      return false;
+    }
+    _navigationRevision++;
+    ref.read(navigationIndexProvider.notifier).value = 0;
+    _desktopRoomSource = room.roomType == 'dm'
+        ? _DesktopRoomSource.directMessages
+        : _DesktopRoomSource.ungroupedRooms;
+    _selectedDesktopSpace = null;
+    _selectRoom(room, messageId: messageId);
+    // A newly created DM can arrive before its first sync snapshot.
+    setState(() => _waitingForSelectedRoomSync = true);
+    _rememberPage();
+    final shellRoute = ModalRoute.of(context);
+    Navigator.of(context).popUntil((route) => route == shellRoute);
+    return true;
+  }
+
+  void _selectRoom(rust.ChatRoom room, {String? messageId}) {
+    _navigationRevision++;
     if (room.roomType == 'space') {
       _showSpace(
         rust.Space(id: room.id, name: room.name, avatarUrl: room.avatarUrl),
       );
       return;
     }
+    _waitingForSelectedRoomSync = false;
     if (_selectedRoom?.id == room.id) {
+      if (_selectedMessageId != messageId) {
+        setState(() => _selectedMessageId = messageId);
+      }
       final selectedRoom = _selectedRoom!;
       final refreshedRoom = _reconcileSelectedRoomDetails(selectedRoom, room);
       if (selectedRoom != refreshedRoom) {
@@ -222,7 +338,11 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       return;
     }
     _clearSelectedRoomDetailsEdits();
-    setState(() => _selectedRoom = room);
+    setState(() {
+      _selectedChatKey = GlobalKey();
+      _selectedMessageId = messageId;
+      _selectedRoom = room;
+    });
   }
 
   Future<void> _markSelectedRoomAsRead(rust.ChatRoom room) async {
@@ -331,7 +451,20 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     });
   }
 
+  void _showAllChats() {
+    _navigationRevision++;
+    ref.read(navigationIndexProvider.notifier).value = 0;
+    setState(() {
+      _desktopRoomSource = _DesktopRoomSource.allChats;
+      _selectedDesktopSpace = null;
+      _selectedRoom = null;
+      _clearSelectedRoomDetailsEdits();
+    });
+    _rememberPage();
+  }
+
   void _showDirectMessages() {
+    _navigationRevision++;
     ref.read(navigationIndexProvider.notifier).value = 0;
     setState(() {
       _desktopRoomSource = _DesktopRoomSource.directMessages;
@@ -339,9 +472,11 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       _selectedRoom = null;
       _clearSelectedRoomDetailsEdits();
     });
+    _rememberPage();
   }
 
   void _showUngroupedRooms() {
+    _navigationRevision++;
     ref.read(navigationIndexProvider.notifier).value = 0;
     setState(() {
       _desktopRoomSource = _DesktopRoomSource.ungroupedRooms;
@@ -349,9 +484,11 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       _selectedRoom = null;
       _clearSelectedRoomDetailsEdits();
     });
+    _rememberPage();
   }
 
   void _showSpace(rust.Space space) {
+    _navigationRevision++;
     ref.read(navigationIndexProvider.notifier).value = 0;
     setState(() {
       _desktopRoomSource = _DesktopRoomSource.space;
@@ -359,6 +496,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       _selectedRoom = null;
       _clearSelectedRoomDetailsEdits();
     });
+    _rememberPage();
   }
 
   @override
@@ -371,6 +509,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= _desktopBreakpoint;
+        _usesDesktopLayout = isDesktop;
         if (isDesktop) {
           // Only the desktop layout keeps a selected room whose metadata
           // must follow the room sources; watching them on mobile would
@@ -398,12 +537,22 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   void _syncDesktopSelectionAfterAccountChange(String? activeUserId) {
     final previousUserId = _lastActiveUserId;
     _lastActiveUserId = activeUserId;
+    if (_startupAccount != activeUserId) {
+      _startupAccount = activeUserId;
+      final revision = ++_navigationRevision;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && activeUserId != null) {
+          unawaited(_restoreStartupPage(activeUserId, revision));
+        }
+      });
+    }
     if (previousUserId == null || previousUserId == activeUserId) return;
 
     _selectedRoom = null;
+    _selectedChatKey = GlobalKey();
     _clearSelectedRoomDetailsEdits();
     _selectedDesktopSpace = null;
-    _desktopRoomSource = _DesktopRoomSource.directMessages;
+    _desktopRoomSource = _DesktopRoomSource.allChats;
     _showRoomDetails = false;
   }
 
@@ -420,6 +569,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       }
     }
     if (refreshedRoom == null) {
+      if (_waitingForSelectedRoomSync) return;
       // The selected room no longer exists (e.g. the user left it from the
       // management page while the desktop panel was open). Clear the stale
       // selection so the panel does not keep showing a departed room.
@@ -441,6 +591,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       _clearSelectedRoomDetailsEdits();
       return;
     }
+    _waitingForSelectedRoomSync = false;
     _selectedRoom = _reconcileSelectedRoomDetails(selectedRoom, refreshedRoom);
   }
 
@@ -487,6 +638,15 @@ class _MatterAppState extends ConsumerState<MatterApp> {
 
   Widget _buildMobileLayout() {
     final navigationIndex = ref.watch(navigationIndexProvider);
+    if (_selectedRoom != null && navigationIndex == 0) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _clearSelectedRoom();
+        },
+        child: _buildSelectedChat(embedded: false),
+      );
+    }
     if (context.isMaterial) {
       return Scaffold(
         extendBody: true,
@@ -496,7 +656,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
           position: _tabPosition,
           onChanged: _onItemTapped,
           children: [
-            const ChatPage(showFloatingActionButton: false),
+            _buildMobileChatList(showFloatingActionButton: false),
             const SpacePage(showFloatingActionButton: false),
             _pages[2],
             _pages[3],
@@ -530,7 +690,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
         index: navigationIndex,
         position: _tabPosition,
         onChanged: _onItemTapped,
-        children: _pages,
+        children: [_buildMobileChatList(), ..._pages.skip(1)],
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -615,19 +775,6 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   Widget _buildDesktopLayout(BuildContext context, BoxConstraints constraints) {
     final navigationIndex = ref.watch(navigationIndexProvider);
     final selectedRoom = _selectedRoom;
-    // Match the room list's unread display (including the local override
-    // for pending mark-read/unread writes) so the pane subtitle and the
-    // list's red dot never disagree during the echo window.
-    final unreadOverride = selectedRoom == null
-        ? null
-        : ref.watch(roomUnreadOverrideProvider(selectedRoom.id));
-    final syncedHasUnread = selectedRoom == null
-        ? false
-        : selectedRoom.unreadCount > 0 || selectedRoom.isMarkedUnread;
-    final overrideApplies = unreadOverride?.appliesTo(selectedRoom!) ?? false;
-    final hasUnread = overrideApplies
-        ? unreadOverride!.unread
-        : syncedHasUnread;
     final canShowRoomDetails =
         constraints.maxWidth >= _desktopDetailsPaneBreakpoint;
     final showRoomDetails =
@@ -664,6 +811,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
             navigationIndex: navigationIndex,
             roomSource: _desktopRoomSource,
             selectedSpaceId: _selectedDesktopSpace?.id,
+            onAllChatsSelected: _showAllChats,
             onDirectMessagesSelected: _showDirectMessages,
             onUngroupedRoomsSelected: _showUngroupedRooms,
             onSpaceSelected: _showSpace,
@@ -673,59 +821,25 @@ class _MatterAppState extends ConsumerState<MatterApp> {
           Expanded(
             child: withTabTransition(
               navigationIndex == 0
-                  ? Row(
-                      children: [
-                        SizedBox(width: 348, child: _buildDesktopRoomList()),
-                        const VerticalDivider(width: 1, thickness: 1),
-                        Expanded(
-                          child: selectedRoom == null
-                              ? const _DesktopEmptyChat()
-                              : ChatDetailPage(
-                                  key: ValueKey(selectedRoom.id),
-                                  roomId: selectedRoom.id,
-                                  roomName: selectedRoom.name,
-                                  avatarUrl: selectedRoom.avatarUrl,
-                                  nameEventId: selectedRoom.nameEventId,
-                                  avatarEventId: selectedRoom.avatarEventId,
-                                  isDm: selectedRoom.roomType == 'dm',
-                                  subtitle: hasUnread
-                                      ? (selectedRoom.unreadCount > 0
-                                            ? '${selectedRoom.unreadCount} 条未读消息'
-                                            : '已标记未读')
-                                      : '在线',
-                                  embedded: true,
-                                  detailsPanelOpen: showRoomDetails,
-                                  onToggleDetailsPanel: canShowRoomDetails
-                                      ? () => setState(
-                                          () => _showRoomDetails =
-                                              !_showRoomDetails,
-                                        )
-                                      : null,
-                                  onRoomLeft: _clearSelectedRoom,
-                                  onRoomDetailsChanged:
-                                      _updateSelectedRoomDetails,
-                                  onRegisterRoomDetailsHandler:
-                                      _registerDesktopRoomDetailsHandler,
-                                ),
-                        ),
-                        if (showRoomDetails) ...[
-                          const VerticalDivider(width: 1, thickness: 1),
-                          SizedBox(
-                            width: 300,
-                            child: DesktopRoomDetailsPanel(
+                  ? DesktopSplitView(
+                      roomList: _buildDesktopRoomList(),
+                      chat: selectedRoom == null
+                          ? const _DesktopEmptyChat()
+                          : _buildSelectedChat(
+                              embedded: true,
+                              canShowRoomDetails: canShowRoomDetails,
+                              showRoomDetails: showRoomDetails,
+                            ),
+                      details: showRoomDetails
+                          ? DesktopRoomDetailsPanel(
                               roomId: selectedRoom.id,
                               roomName: selectedRoom.name,
                               avatarUrl: selectedRoom.avatarUrl,
                               onRoomLeft: _clearSelectedRoom,
-                              // Route through the selected page's handler so
-                              // the edit arms its sync-echo tracker (the page
-                              // then forwards to _updateSelectedRoomDetails).
                               onRoomDetailsChanged: (patch) =>
                                   _desktopRoomDetailsHandler?.call(patch),
-                            ),
-                          ),
-                        ],
-                      ],
+                            )
+                          : null,
                     )
                   : MaxContentWidth(child: _pages[navigationIndex]),
             ),
@@ -735,8 +849,70 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     );
   }
 
+  Widget _buildSelectedChat({
+    required bool embedded,
+    bool canShowRoomDetails = false,
+    bool showRoomDetails = false,
+  }) {
+    final room = _selectedRoom!;
+    final unreadOverride = ref.watch(roomUnreadOverrideProvider(room.id));
+    final hasUnread = unreadOverride?.appliesTo(room) == true
+        ? unreadOverride!.unread
+        : room.unreadCount > 0 || room.isMarkedUnread;
+    return ChatDetailPage(
+      key: _selectedChatKey,
+      roomId: room.id,
+      roomName: room.name,
+      avatarUrl: room.avatarUrl,
+      nameEventId: room.nameEventId,
+      avatarEventId: room.avatarEventId,
+      isDm: room.roomType == 'dm',
+      initialMessageId: _selectedMessageId,
+      subtitle: hasUnread
+          ? (room.unreadCount > 0 ? '${room.unreadCount} 条未读消息' : '已标记未读')
+          : '在线',
+      embedded: embedded,
+      onBack: embedded ? null : _clearSelectedRoom,
+      detailsPanelOpen: showRoomDetails,
+      onToggleDetailsPanel: canShowRoomDetails
+          ? () => setState(() => _showRoomDetails = !_showRoomDetails)
+          : null,
+      onRoomLeft: _clearSelectedRoom,
+      onRoomDetailsChanged: _updateSelectedRoomDetails,
+      onRegisterRoomDetailsHandler: _registerDesktopRoomDetailsHandler,
+    );
+  }
+
+  Widget _buildMobileChatList({
+    bool showFloatingActionButton = true,
+  }) => ChatPage(
+    key: ValueKey((
+      'mobile-chat-list',
+      _desktopRoomSource,
+      _selectedDesktopSpace?.id,
+    )),
+    title: switch (_desktopRoomSource) {
+      _DesktopRoomSource.allChats => null,
+      _DesktopRoomSource.directMessages => '私聊',
+      _DesktopRoomSource.ungroupedRooms => '未归属群组',
+      _DesktopRoomSource.space => _selectedDesktopSpace?.name,
+    },
+    directMessagesOnly: _desktopRoomSource == _DesktopRoomSource.directMessages,
+    ungroupedRoomsOnly: _desktopRoomSource == _DesktopRoomSource.ungroupedRooms,
+    spaceId: _selectedDesktopSpace?.id,
+    showFloatingActionButton: showFloatingActionButton,
+  );
+
   Widget _buildDesktopRoomList() {
     return switch (_desktopRoomSource) {
+      _DesktopRoomSource.allChats => ChatPage(
+        key: const ValueKey('desktop-all-chats'),
+        embedded: true,
+        title: '全部会话',
+        autoSelectFirstRoom: false,
+        selectedRoomId: _selectedRoom?.id,
+        onRoomSelected: _selectRoom,
+      ),
       _DesktopRoomSource.directMessages => ChatPage(
         key: const ValueKey('desktop-direct-messages'),
         embedded: true,
@@ -820,6 +996,7 @@ class _DesktopSidebar extends ConsumerWidget {
   final int navigationIndex;
   final _DesktopRoomSource roomSource;
   final String? selectedSpaceId;
+  final VoidCallback onAllChatsSelected;
   final VoidCallback onDirectMessagesSelected;
   final VoidCallback onUngroupedRoomsSelected;
   final ValueChanged<rust.Space> onSpaceSelected;
@@ -829,6 +1006,7 @@ class _DesktopSidebar extends ConsumerWidget {
     required this.navigationIndex,
     required this.roomSource,
     required this.selectedSpaceId,
+    required this.onAllChatsSelected,
     required this.onDirectMessagesSelected,
     required this.onUngroupedRoomsSelected,
     required this.onSpaceSelected,
@@ -845,18 +1023,21 @@ class _DesktopSidebar extends ConsumerWidget {
       return NavigationRail(
         selectedIndex: isRoomsPage
             ? switch (roomSource) {
-                _DesktopRoomSource.directMessages => 0,
-                _DesktopRoomSource.ungroupedRooms => 1,
+                _DesktopRoomSource.allChats => 0,
+                _DesktopRoomSource.directMessages => 1,
+                _DesktopRoomSource.ungroupedRooms => 2,
                 _DesktopRoomSource.space => null,
               }
-            : navigationIndex + 1,
+            : navigationIndex + 2,
         onDestinationSelected: (index) {
           if (index == 0) {
-            onDirectMessagesSelected();
+            onAllChatsSelected();
           } else if (index == 1) {
+            onDirectMessagesSelected();
+          } else if (index == 2) {
             onUngroupedRoomsSelected();
           } else {
-            onNavigate(index - 1);
+            onNavigate(index - 2);
           }
         },
         leading: IconButton(
@@ -896,6 +1077,11 @@ class _DesktopSidebar extends ConsumerWidget {
           ),
         ),
         destinations: const [
+          NavigationRailDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: Text('全部会话'),
+          ),
           NavigationRailDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
@@ -942,6 +1128,14 @@ class _DesktopSidebar extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 18),
+            NeuIconButton(
+              tooltip: '全部会话',
+              selected:
+                  isRoomsPage && roomSource == _DesktopRoomSource.allChats,
+              onPressed: onAllChatsSelected,
+              icon: Icons.chat_bubble_outline,
+            ),
+            const SizedBox(height: 10),
             NeuIconButton(
               tooltip: '私聊',
               selected:

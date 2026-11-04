@@ -4,6 +4,8 @@ import '../../features/downloads/download_notification.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/sheets.dart';
+import 'attachment_media_utils.dart';
+import 'audio_attachment_player.dart';
 import 'file_download_saver.dart';
 import 'markdown_attachment_page.dart';
 import 'message_group.dart' show enabledNeuBubbleShadows, neuBubbleShape;
@@ -59,6 +61,10 @@ class FileMessageBubble extends StatefulWidget {
   final String filename;
   final String? caption;
   final int? fileSize;
+  final String? mimeType;
+  final int? durationMs;
+  final String? roomId;
+  final String? messageId;
 
   /// Serialized Matrix MediaSource ([rust.ChatMessage.mediaSourceJson]);
   /// preferred because it also works for encrypted media.
@@ -73,6 +79,10 @@ class FileMessageBubble extends StatefulWidget {
     required this.filename,
     this.caption,
     this.fileSize,
+    this.mimeType,
+    this.durationMs,
+    this.roomId,
+    this.messageId,
     this.mediaSourceJson,
     this.imageUrl,
     required this.isMe,
@@ -91,12 +101,18 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
   bool _downloading = false;
 
   String get _safeFilename => sanitizeAttachmentFilename(widget.filename);
+  bool get _isAudio =>
+      resolveAttachmentMime(
+        widget.filename,
+        widget.mimeType,
+      )?.startsWith('audio/') ==
+      true;
   bool get _isMarkdown {
     final name = _safeFilename.toLowerCase();
     return name.endsWith('.md') || name.endsWith('.markdown');
   }
 
-  Future<void> _download({bool preview = false}) async {
+  Future<void> _download({bool preview = false, bool saveAs = false}) async {
     if (_downloading) return;
     final fileSize = widget.fileSize;
     if (preview &&
@@ -149,7 +165,11 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
         return;
       }
 
-      if (!await saveDownloadedFile(filename: _safeFilename, bytes: bytes)) {
+      if (!await saveDownloadedFile(
+        filename: _safeFilename,
+        bytes: bytes,
+        chooseLocation: saveAs,
+      )) {
         await notification?.cancel();
         return;
       }
@@ -245,6 +265,18 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                               ),
                             ),
                             const SizedBox(width: 8),
+                            if (supportsSaveAs)
+                              IconButton(
+                                tooltip: '另存为',
+                                onPressed: _downloading
+                                    ? null
+                                    : () => _download(saveAs: true),
+                                icon: Icon(
+                                  Icons.save_alt,
+                                  size: 18,
+                                  color: secondary,
+                                ),
+                              ),
                             if (_isMarkdown)
                               IconButton(
                                 tooltip: '下载文件',
@@ -263,6 +295,16 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                               ),
                           ],
                         ),
+                        if (_isAudio)
+                          AudioAttachmentPlayer(
+                            url: widget.imageUrl,
+                            mediaSourceJson: widget.mediaSourceJson,
+                            filename: _safeFilename,
+                            durationMs: widget.durationMs,
+                            roomId: widget.roomId,
+                            messageId: widget.messageId,
+                            foreground: foreground,
+                          ),
                         if (caption != null && caption.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Text(

@@ -233,6 +233,29 @@ desktop; iOS keeps its native back gesture. `NeuColors` is also used as the
 compatibility palette by shared widgets, so it interpolates every colour during
 a theme transition instead of switching the whole palette halfway through.
 
+## Desktop and tablet composers
+
+Wide chat input uses one flat surface with a top divider and an unframed editor.
+Do not nest glass, raised cards and a recessed field around the same editor.
+Composer control shapes live in `material_theme.dart`: Material uses circular
+icon controls and pill-shaped send buttons, while Neu retains its compact
+rectangular controls. Thumbnail corners follow each skin's preview shape.
+The device-local interaction
+setting offers automatic, touch and keyboard/mouse modes. Automatic uses
+keyboard/mouse on Linux, Windows and macOS, and touch on Android and iOS.
+Keyboard/mouse targets are 32 dp; touch targets remain 48 dp. The mode also
+controls plain-message drag selection, not hardware keyboard shortcuts or
+secondary-click actions, which remain available in every mode.
+
+Pane widths alone control single/split layouts and the expanded editor
+(600 dp or wider); changing interaction mode never forces a wide layout.
+Tablets follow system rotation, while phones retain the portrait preference.
+
+Material interaction/startup choices use grouped radio rows with a
+`secondaryContainer` selected fill. Attachment modes use the Material 3
+navigation indicator and filled send actions on tonal surfaces, not Neu
+shadows. Composer dialogs and menus inherit their theme's overlay shapes.
+
 ## Checking a change
 
 Render the touched screen in both brightnesses at a phone width before and after.

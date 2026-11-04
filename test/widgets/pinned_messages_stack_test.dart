@@ -13,6 +13,7 @@ import '../helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
   String? unpinnedEventId;
+  final states = <bool>[];
 
   @override
   Future<bool> crateApiMatrixSetPinnedMessage({
@@ -21,9 +22,9 @@ class _FakeRustApi implements RustLibApi {
     required String eventId,
     required bool pinned,
   }) async {
-    expect(pinned, isFalse);
-    unpinnedEventId = eventId;
-    return false;
+    states.add(pinned);
+    if (!pinned) unpinnedEventId = eventId;
+    return pinned;
   }
 
   @override
@@ -58,6 +59,10 @@ void main() {
   });
 
   tearDownAll(RustLib.dispose);
+  setUp(() {
+    api.unpinnedEventId = null;
+    api.states.clear();
+  });
 
   testWidgets('pinned messages stack, jump, and unpin in the chat header', (
     tester,
@@ -72,15 +77,17 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         ignoredUserIdsProvider.overrideWith((ref) async => const <String>{}),
-        pinnedMessagesProvider((
-          roomId: roomId,
-          userId: '@me:example.org',
-        )).overrideWith((ref) async => messages),
+        pinnedMessagesProvider((roomId: roomId, userId: '@me:example.org'))
+            .overrideWith((ref) async => messages),
       ],
     );
     addTearDown(container.dispose);
     container.read(activeUserIdProvider.notifier).value = '@me:example.org';
     String? jumpedTo;
+    final jumpTarget = ValueNotifier<String?>(null);
+    addTearDown(jumpTarget.dispose);
+    var openedAll = false;
+    int? visibleCount;
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -91,6 +98,9 @@ void main() {
             body: PinnedMessagesStack(
               roomId: roomId,
               onMessageTap: (messageId) => jumpedTo = messageId,
+              onShowAll: () => openedAll = true,
+              jumpTarget: jumpTarget,
+              onVisibleCountChanged: (count) => visibleCount = count,
             ),
           ),
         ),
@@ -103,17 +113,82 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('pinned-messages-stack')))
           .height,
-      138,
+      46,
     );
 
+    expect(visibleCount, 1);
+    expect(find.byKey(const ValueKey('pin-segment:0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pin-segment:3')), findsOneWidget);
+    await tester.tap(find.byTooltip('查看全部置顶消息'));
+    expect(openedAll, isTrue);
     await tester.tap(find.byKey(const ValueKey(r'pinned-message:$one')));
     expect(jumpedTo, r'$one');
 
+    await tester.pump();
+    expect(find.text('Alice：One'), findsOneWidget);
+    final currentSegment = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('pin-segment:0')),
+    );
+    final nextSegment = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('pin-segment:1')),
+    );
+    expect(
+      (currentSegment.decoration as BoxDecoration).color!.a,
+      greaterThan((nextSegment.decoration as BoxDecoration).color!.a),
+    );
+    await tester.tap(find.byKey(const ValueKey(r'pinned-message:$one')));
+    await tester.pump();
+    expect(jumpedTo, r'$two');
+    expect(find.text('Alice：Two'), findsOneWidget);
+    final firstSegment = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('pin-segment:0')),
+    );
+    final secondSegment = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('pin-segment:1')),
+    );
+    expect(
+      (firstSegment.decoration as BoxDecoration).color!.a,
+      lessThan((secondSegment.decoration as BoxDecoration).color!.a),
+    );
+    openedAll = false;
+    await tester.longPress(find.byKey(const ValueKey(r'pinned-message:$two')));
+    expect(openedAll, isTrue);
+    expect(find.text('Alice：One'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey(r'pinned-message:$two')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey(r'pinned-message:$three')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey(r'pinned-message:$four')));
+    await tester.pump();
+    // Returning from the full pinned list must select the same marker.
+    jumpTarget.value = r'$four';
+    await tester.pumpAndSettle();
+    expect(find.text('Alice：Four'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey(r'pinned-message:$four')));
+    await tester.pumpAndSettle();
+    expect(jumpedTo, r'$one');
+    expect(find.text('Alice：One'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey(r'unpin-message:$one')));
     await tester.pumpAndSettle();
 
+    expect(find.text('取消置顶这条消息？'), findsOneWidget);
+    expect(api.unpinnedEventId, isNull);
+    await tester.tap(find.text('返回'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey(r'pinned-message:$one')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey(r'unpin-message:$one')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消置顶').last);
+    await tester.pumpAndSettle();
     expect(api.unpinnedEventId, r'$one');
     expect(find.byKey(const ValueKey(r'pinned-message:$one')), findsNothing);
+    await tester.tap(find.text('撤销'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey(r'pinned-message:$one')), findsOneWidget);
+    await tester.tap(find.text('重做'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey(r'pinned-message:$one')), findsNothing);
+    expect(api.states, [false, true, false]);
   });
 
   testWidgets('account reload never exposes the previous account pins', (
@@ -130,10 +205,8 @@ void main() {
           roomId: roomId,
           userId: alice,
         )).overrideWith((ref) async => [_message(r'$alice-pin', 'Alice pin')]),
-        pinnedMessagesProvider((
-          roomId: roomId,
-          userId: bob,
-        )).overrideWith((ref) => bobPins.future),
+        pinnedMessagesProvider((roomId: roomId, userId: bob))
+            .overrideWith((ref) => bobPins.future),
       ],
     );
     addTearDown(container.dispose);
@@ -151,14 +224,19 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Alice pin'), findsOneWidget);
+    expect(find.text('Alice：Alice pin'), findsOneWidget);
 
+    await tester.tap(find.byTooltip('取消置顶'));
+    await tester.pumpAndSettle();
     container.read(activeUserIdProvider.notifier).value = bob;
     await tester.pump();
 
-    expect(find.text('Alice pin'), findsNothing);
+    expect(find.text('Alice：Alice pin'), findsNothing);
     expect(find.byKey(const ValueKey('pinned-messages-stack')), findsNothing);
 
+    await tester.tap(find.text('取消置顶').last);
+    await tester.pumpAndSettle();
+    expect(api.states, isEmpty);
     bobPins.complete(const []);
     await tester.pumpAndSettle();
   });

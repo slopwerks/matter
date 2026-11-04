@@ -18,6 +18,20 @@ flutter_rust_bridge_codegen generate
 
 A `flutter build` for a platform supported by your Flutter toolchain should generally work afterwards. The bridge component as a build product should be automatically configured for Android, iOS, Linux, macOS, and Windows. Web is untested.
 
+### Linux media playback
+
+Video and audio playback use media_kit. Linux builds need the libmpv and libepoxy development packages in addition to Flutter's GTK dependencies. On Debian/Ubuntu:
+
+```bash
+sudo apt install libmpv-dev libepoxy-dev
+```
+
+The installed application also needs the corresponding shared libraries at runtime; Linux distribution packages must declare them as dependencies or bundle them.
+
+Audio attachment waveforms are extracted on demand from verified local files. Android and iOS use their system audio decoders. Desktop extraction uses `ffmpeg` and `ffprobe` from `PATH`; without them, audio remains playable with a neutral seek line rather than a fabricated waveform. Extraction runs in bounded buffers and is cancelled before its temporary file is removed.
+
+On native platforms, ordinary HTTP audio is downloaded to an account-scoped spool and served to the player over a random loopback URL, so playable data can arrive before the download finishes even when the origin does not support Range requests. Completed audio files are reused across track changes and app restarts in a 256 MiB LRU cache; active playback and waveform extraction pin their files. Switching accounts or signing out invalidates the old account's files and removes them once its readers exit. Encrypted audio is only published after complete download, decryption and integrity verification. Waveform extraction waits for a complete local file and never delays switching to the next track. Web retains its existing Blob preparation path.
+
 ### macOS/iOS Specific notes
 
 If you are building on a macOS 27 host:

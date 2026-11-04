@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/image_view_history.dart';
+import '../../providers/interaction_mode_provider.dart';
 import 'action_failure_message.dart';
 import '../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../theme/neu_colors.dart';
@@ -22,6 +23,8 @@ import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/sheets.dart';
 import 'chat_timestamp.dart';
+import 'message_jump_highlight.dart';
+import 'message_pin_actions.dart';
 import 'emoji_picker_panel.dart';
 import 'message_input.dart'
     show editingDraftProvider, editingSendInFlightProvider;
@@ -151,6 +154,7 @@ class MessageGroupWidget extends ConsumerWidget {
   final String roomId;
   final Map<String, ChatMessage> messageIndex;
   final Map<String, GlobalKey> messageAnchorKeys;
+  final ValueNotifier<String?>? jumpHighlight;
   final Map<String, String> remoteToLocalFlightId;
   final Set<String> insertionAnimationIds;
   final Set<String> lateralInsertionAnimationIds;
@@ -178,6 +182,7 @@ class MessageGroupWidget extends ConsumerWidget {
     required this.roomId,
     required this.messageIndex,
     this.messageAnchorKeys = const {},
+    this.jumpHighlight,
     this.remoteToLocalFlightId = const {},
     this.insertionAnimationIds = const {},
     this.lateralInsertionAnimationIds = const {},
@@ -222,7 +227,16 @@ class MessageGroupWidget extends ConsumerWidget {
     ChatMessage message,
     Widget child, {
     bool collection = false,
+    Set<String> collectionIds = const {},
   }) {
+    if (jumpHighlight != null) {
+      child = MessageJumpHighlight(
+        messageId: message.id,
+        collectionIds: collectionIds,
+        target: jumpHighlight!,
+        child: child,
+      );
+    }
     final anchorKey = collection ? null : messageAnchorKeys[message.id];
     return KeyedSubtree(
       key: ValueKey(_messageRowKey(message)),
@@ -385,6 +399,9 @@ class MessageGroupWidget extends ConsumerWidget {
             imageRun: run.collection ? run : null,
           ),
           collection: run.collection,
+          collectionIds: run.collection
+              ? run.messages.map((m) => m.id).toSet()
+              : const {},
         ),
       );
     }
@@ -407,6 +424,8 @@ class MessageGroupWidget extends ConsumerWidget {
     if (message.msgType == MessageType.event) {
       BuildContext? eventContext;
       return GestureDetector(
+        onSecondaryTap: () =>
+            _showContextMenu(eventContext ?? context, ref, message),
         onLongPress: () =>
             _showContextMenu(eventContext ?? context, ref, message),
         child: Padding(
@@ -522,6 +541,7 @@ class MessageGroupWidget extends ConsumerWidget {
         },
         tileBuilder: (image, size, radius) => Builder(
           builder: (tileContext) => GestureDetector(
+            onSecondaryTap: () => _showContextMenu(tileContext, ref, image),
             onLongPress: () => _showContextMenu(tileContext, ref, image),
             child: ImageMessageBubble(
               key: ValueKey('image-bubble:${image.id}'),
@@ -563,6 +583,7 @@ class MessageGroupWidget extends ConsumerWidget {
                 filename: message.content,
                 videoWidth: message.imageWidth,
                 videoHeight: message.imageHeight,
+                durationMs: message.durationMs,
                 isMe: isMe,
                 heroTag: 'video-preview:$visualMessageId',
                 metadata: metadata,
@@ -624,9 +645,13 @@ class MessageGroupWidget extends ConsumerWidget {
                   (message.mediaSourceJson != null || message.imageUrl != null)
             ? FileMessageBubble(
                 key: ValueKey('file-bubble:${message.id}'),
+                roomId: roomId,
+                messageId: message.id,
                 filename: message.filename ?? message.content,
                 caption: message.caption,
                 fileSize: message.fileSize,
+                mimeType: message.mimeType,
+                durationMs: message.durationMs,
                 mediaSourceJson: message.mediaSourceJson,
                 imageUrl: message.imageUrl,
                 isMe: isMe,
@@ -668,21 +693,23 @@ class MessageGroupWidget extends ConsumerWidget {
           )
         : trackedBubble;
 
+    final VoidCallback? openMenu = isLocalOutgoing
+        ? (isLocalFailed
+              ? () => _showFailedMessageMenu(
+                  bubbleContext ?? context,
+                  ref,
+                  message,
+                )
+              : null)
+        : () => _showContextMenu(
+            bubbleContext ?? context,
+            ref,
+            message,
+            onReadFullScreen: onReadFullScreen,
+          );
     final messageRow = GestureDetector(
-      onLongPress: isLocalOutgoing
-          ? (isLocalFailed
-                ? () => _showFailedMessageMenu(
-                    bubbleContext ?? context,
-                    ref,
-                    message,
-                  )
-                : null)
-          : () => _showContextMenu(
-              bubbleContext ?? context,
-              ref,
-              message,
-              onReadFullScreen: onReadFullScreen,
-            ),
+      onSecondaryTap: openMenu,
+      onLongPress: openMenu,
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: EdgeInsets.only(
@@ -1470,6 +1497,7 @@ class MessageGroupWidget extends ConsumerWidget {
 
     late OverlayEntry entry;
     void close() {
+      if (!menuOpen) return;
       menuOpen = false;
       entry.remove();
     }
@@ -1528,6 +1556,15 @@ class MessageGroupWidget extends ConsumerWidget {
             : () async {
                 try {
                   final target = !isPinned!;
+                  final confirmed = await confirmMessagePinChange(
+                    overlayContext,
+                    pinned: target,
+                  );
+                  if (!confirmed ||
+                      !overlayContext.mounted ||
+                      container.read(activeUserIdProvider) != menuAccount) {
+                    return;
+                  }
                   final pinned = await setPinnedMessage(
                     accountUserId: menuAccount,
                     roomId: roomId,
@@ -1535,11 +1572,13 @@ class MessageGroupWidget extends ConsumerWidget {
                     pinned: target,
                   );
                   if (overlayContext.mounted) {
-                    ScaffoldMessenger.of(overlayContext).showSnackBar(
-                      SnackBar(
-                        content: Text(pinned ? '消息已置顶' : '已取消置顶'),
-                        duration: const Duration(seconds: 1),
-                      ),
+                    showMessagePinFeedback(
+                      context: overlayContext,
+                      container: container,
+                      accountUserId: menuAccount,
+                      roomId: roomId,
+                      eventId: message.id,
+                      pinned: pinned,
                     );
                   }
                   if (overlayContext.mounted) {
@@ -1882,7 +1921,7 @@ class _SwipeToReplyState extends State<_SwipeToReply>
   }
 }
 
-class _AdaptiveTextMetadata extends StatelessWidget {
+class _AdaptiveTextMetadata extends ConsumerWidget {
   final String text;
   final TextStyle textStyle;
   final Widget metadata;
@@ -1909,23 +1948,27 @@ class _AdaptiveTextMetadata extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final content = _AdaptiveTextMetadataRenderWidget(
+      minWidth: minWidth,
+      text: MessageText(
+        text,
+        style: textStyle,
+        mentionColor: linkColor,
+        linkColor: linkColor,
+        onUrlTap: onUrlTap,
+        mentionDisplayNames: mentionDisplayNames,
+        mentionedUserIds: mentionedUserIds,
+        onMentionTap: onMentionTap,
+      ),
+      metadata: metadata,
+    );
+    final desktop = ref
+        .watch(interactionModeProvider)
+        .usesKeyboardMouse(Theme.of(context).platform);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: _AdaptiveTextMetadataRenderWidget(
-        minWidth: minWidth,
-        text: MessageText(
-          text,
-          style: textStyle,
-          mentionColor: linkColor,
-          linkColor: linkColor,
-          onUrlTap: onUrlTap,
-          mentionDisplayNames: mentionDisplayNames,
-          mentionedUserIds: mentionedUserIds,
-          onMentionTap: onMentionTap,
-        ),
-        metadata: metadata,
-      ),
+      child: desktop ? SelectionArea(child: content) : content,
     );
   }
 }
@@ -1976,7 +2019,17 @@ class _RenderAdaptiveTextMetadata extends RenderBox
     markNeedsLayout();
   }
 
-  RenderParagraph get _text => firstChild! as RenderParagraph;
+  RenderBox get _text => firstChild!;
+
+  // Selectable Text.rich adds a MouseRegion around its paragraph. Layout
+  // the outer box, but measure the caret on the paragraph inside it.
+  RenderParagraph get _paragraph {
+    RenderBox child = _text;
+    while (child is RenderProxyBox) {
+      child = child.child!;
+    }
+    return child as RenderParagraph;
+  }
 
   RenderBox get _metadata => childAfter(_text)!;
 
@@ -1993,8 +2046,8 @@ class _RenderAdaptiveTextMetadata extends RenderBox
     _metadata.layout(childConstraints, parentUsesSize: true);
     _text.layout(childConstraints, parentUsesSize: true);
 
-    final textLength = _text.text.toPlainText().length;
-    final trailingOffset = _text.getOffsetForCaret(
+    final textLength = _paragraph.text.toPlainText().length;
+    final trailingOffset = _paragraph.getOffsetForCaret(
       TextPosition(offset: textLength),
       Rect.zero,
     );
@@ -2123,6 +2176,7 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
   static const _gap = 8.0;
 
   final _menuKey = GlobalKey();
+  final _focusNode = FocusNode();
   double? _left;
   double? _top;
   bool _ready = false;
@@ -2130,7 +2184,17 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureAndPosition());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNode.requestFocus();
+      _measureAndPosition();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
   }
 
   @override
@@ -2332,37 +2396,47 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // Full-screen dismiss barrier.
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onClose,
-            child: const SizedBox.expand(),
-          ),
-        ),
-        Positioned(
-          left: _left ?? 0,
-          top: _top ?? 0,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: _ready ? 1 : 0),
-            duration: const Duration(milliseconds: 90),
-            curve: Curves.easeOutCubic,
-            builder: (_, v, child) => Opacity(
-              opacity: v,
-              child: Transform.scale(
-                scale: 0.88 + 0.12 * v,
-                alignment: widget.isMe
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
-                child: child,
-              ),
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (_, event) {
+        if (event.logicalKey != LogicalKeyboardKey.escape) {
+          return KeyEventResult.ignored;
+        }
+        if (event is KeyDownEvent) widget.onClose();
+        return KeyEventResult.handled;
+      },
+      child: Stack(
+        children: [
+          // Full-screen dismiss barrier.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onClose,
+              child: const SizedBox.expand(),
             ),
-            child: _buildMenu(),
           ),
-        ),
-      ],
+          Positioned(
+            left: _left ?? 0,
+            top: _top ?? 0,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: _ready ? 1 : 0),
+              duration: const Duration(milliseconds: 90),
+              curve: Curves.easeOutCubic,
+              builder: (_, v, child) => Opacity(
+                opacity: v,
+                child: Transform.scale(
+                  scale: 0.88 + 0.12 * v,
+                  alignment: widget.isMe
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: child,
+                ),
+              ),
+              child: _buildMenu(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

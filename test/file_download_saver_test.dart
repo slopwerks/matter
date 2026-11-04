@@ -20,16 +20,18 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory directory;
   late int dialogs;
+  String? selectedPath;
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('matter-save-test');
     final previous = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _DownloadPaths(directory);
     addTearDown(() => PathProviderPlatform.instance = previous);
     dialogs = 0;
+    selectedPath = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_fileSelectorChannel, (call) async {
           dialogs++;
-          return null;
+          return call.method == 'getSavePath' ? selectedPath : null;
         });
   });
   tearDown(() async {
@@ -37,6 +39,57 @@ void main() {
         .setMockMethodCallHandler(_fileSelectorChannel, null);
     await directory.delete(recursive: true);
   });
+
+  test(
+    'Save As cancellation creates no file and no Downloads folder',
+    () async {
+      expect(
+        await saveDownloadedFile(
+          filename: 'report.pdf',
+          bytes: Uint8List.fromList([1]),
+          chooseLocation: true,
+        ),
+        isFalse,
+      );
+      expect(dialogs, 1);
+      expect(await directory.list().isEmpty, isTrue);
+    },
+  );
+
+  test(
+    'Save As writes exactly the chosen path, including confirmed overwrite',
+    () async {
+      selectedPath = '${directory.path}/renamed.pdf';
+      await File(selectedPath!).writeAsBytes([9]);
+      expect(
+        await saveDownloadedFile(
+          filename: 'report.pdf',
+          bytes: Uint8List.fromList([1, 2]),
+          chooseLocation: true,
+        ),
+        isTrue,
+      );
+      expect(await File(selectedPath!).readAsBytes(), [1, 2]);
+      expect(await Directory('${directory.path}/Downloads').exists(), isFalse);
+      expect(dialogs, 1);
+    },
+  );
+
+  test(
+    'Save As reports write errors without falling back to Downloads',
+    () async {
+      selectedPath = '${directory.path}/missing/renamed.pdf';
+      await expectLater(
+        saveDownloadedFile(
+          filename: 'report.pdf',
+          bytes: Uint8List.fromList([1]),
+          chooseLocation: true,
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await Directory('${directory.path}/Downloads').exists(), isFalse);
+    },
+  );
 
   test('saves straight to Downloads without a location picker', () async {
     expect(

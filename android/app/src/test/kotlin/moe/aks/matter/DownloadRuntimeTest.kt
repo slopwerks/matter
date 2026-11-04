@@ -81,6 +81,34 @@ class DownloadRuntimeTest {
     }
 
     @Test
+    fun completingAudioKeepsADownloadAlive() {
+        val engine = engine()
+        val host = FlutterActivity()
+        DownloadRuntime.retain(101, engine, host)
+        DownloadRuntime.retain(-1, engine, host)
+        DownloadRuntime.detachHost(host)
+        DownloadRuntime.finish(-1)
+        assertSame(engine, DownloadRuntime.engine)
+        assertFalse(destroyed(engine))
+        DownloadRuntime.finish(101)
+        assertTrue(destroyed(engine))
+    }
+
+    @Test
+    fun completingADownloadKeepsAudioAlive() {
+        val engine = engine()
+        val host = FlutterActivity()
+        DownloadRuntime.retain(101, engine, host)
+        DownloadRuntime.retain(-1, engine, host)
+        DownloadRuntime.detachHost(host)
+        DownloadRuntime.finish(101)
+        assertSame(engine, DownloadRuntime.engine)
+        assertFalse(destroyed(engine))
+        DownloadRuntime.finish(-1)
+        assertTrue(destroyed(engine))
+    }
+
+    @Test
     fun completionLeavesAnAttachedEngineForTheHostToDestroy() {
         val engine = engine()
         DownloadRuntime.retain(101, engine, FlutterActivity())

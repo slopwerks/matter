@@ -14,6 +14,8 @@ import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/material_color_provider.dart';
+import '../../providers/interaction_mode_provider.dart';
+import '../../providers/startup_page_provider.dart';
 import '../../providers/session_credential_store.dart';
 import '../../providers/theme_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
@@ -30,6 +32,10 @@ import '../../widgets/sheets.dart';
 import '../login/login_page.dart';
 import 'encryption_page.dart';
 import 'blur_settings_page.dart';
+import 'code_block_settings_page.dart';
+import 'composer_keyboard_settings_page.dart';
+import 'interaction_mode_settings_page.dart';
+import 'startup_page_settings_page.dart';
 import 'timeline_event_settings_page.dart';
 import 'log_viewer_page.dart';
 import 'material_color_settings_page.dart';
@@ -738,6 +744,38 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                 ),
                         ),
                         _SettingItem(
+                          icon: Icons.home_outlined,
+                          title: '启动页面',
+                          subtitle: ref.watch(startupPageProvider).label,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const StartupPageSettingsPage(),
+                            ),
+                          ),
+                        ),
+                        _SettingItem(
+                          icon: Icons.touch_app_rounded,
+                          title: '交互模式',
+                          subtitle: ref.watch(interactionModeProvider).label,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const InteractionModeSettingsPage(),
+                            ),
+                          ),
+                        ),
+                        _SettingItem(
+                          icon: Icons.keyboard_rounded,
+                          title: '键盘发送与换行',
+                          subtitle: 'Enter · Shift+Enter · Alt+Enter',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const ComposerKeyboardSettingsPage(),
+                            ),
+                          ),
+                        ),
+                        _SettingItem(
                           icon: Icons.language_rounded,
                           title: '语言',
                           subtitle: '当前固定为简体中文',
@@ -814,6 +852,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                 .setShortImageBlurredBackdropEnabled(value),
                           ),
                         ],
+                        _SettingItem(
+                          icon: Icons.code_rounded,
+                          title: '代码块显示设置',
+                          subtitle: '高亮主题 · 背景透明度 · 实时预览',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const CodeBlockSettingsPage(),
+                            ),
+                          ),
+                        ),
                         _buildChatVisualSwitch(
                           icon: Icons.account_circle_rounded,
                           title: '消息头像吸附',

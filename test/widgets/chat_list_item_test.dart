@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -83,12 +84,41 @@ void main() {
       roomState: roomState,
     );
 
+    testWidgets('right-click opens room actions without selecting the room', (
+      tester,
+    ) async {
+      var selected = false;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: Scaffold(
+              body: ChatListItem(
+                room: room(),
+                onRoomSelected: (_) => selected = true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(
+        find.byType(ChatListItem),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('标记为已读'), findsOneWidget);
+      expect(find.text('标记为未读'), findsOneWidget);
+      expect(find.text('隐藏聊天'), findsOneWidget);
+      expect(selected, isFalse);
+    });
+
     testWidgets('room row follows the superellipse setting', (tester) async {
       for (final enabled in [true, false]) {
         await tester.pumpWidget(
           ProviderScope(
             child: MaterialApp(
-              theme: neuTestTheme(),
+              theme: neuTestTheme(material: false),
               home: ChatVisualSettingsScope(
                 settings: ChatVisualSettings(
                   superellipseBorderEnabled: enabled,

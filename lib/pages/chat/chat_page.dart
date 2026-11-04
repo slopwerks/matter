@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../features/audio/audio_playback_provider.dart';
+import '../../features/audio/audio_message_bar.dart';
+import '../../features/audio/audio_player_panel.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
@@ -14,6 +19,7 @@ import '../../widgets/neu_action.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/neu_surface.dart';
 import 'create_chat_page.dart';
+import 'chat_detail_page.dart';
 import 'chat_list_item.dart';
 import 'hidden_rooms_page.dart';
 import 'search_page.dart';
@@ -28,6 +34,7 @@ class ChatPage extends ConsumerStatefulWidget {
   final bool directMessagesOnly;
   final bool ungroupedRoomsOnly;
   final bool showFloatingActionButton;
+  final bool autoSelectFirstRoom;
 
   const ChatPage({
     super.key,
@@ -40,6 +47,7 @@ class ChatPage extends ConsumerStatefulWidget {
     this.directMessagesOnly = false,
     this.ungroupedRoomsOnly = false,
     this.showFloatingActionButton = true,
+    this.autoSelectFirstRoom = true,
   }) : assert(!directMessagesOnly || !ungroupedRoomsOnly);
 
   @override
@@ -94,6 +102,25 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (show != _headerSearchVisible) {
       setState(() => _headerSearchVisible = show);
     }
+  }
+
+  Future<void> _openAudioSource() async {
+    final track = ref.read(audioPlaybackSessionProvider).current;
+    if (track?.roomId == null || track?.messageId == null) return;
+    final rooms =
+        ref.read(allChatRoomsProvider).asData?.value ?? const <ChatRoom>[];
+    final room = rooms.where((room) => room.id == track!.roomId).firstOrNull;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChatDetailPage(
+          roomId: track!.roomId!,
+          roomName: room?.name ?? '音频消息',
+          avatarUrl: room?.avatarUrl,
+          isDm: room?.roomType == 'dm',
+          initialMessageId: track.messageId,
+        ),
+      ),
+    );
   }
 
   void _openSearch() {
@@ -216,6 +243,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     AsyncValue<List<ChatRoom>> roomsAsync, {
     required bool underHeader,
     required bool keepPreviousRooms,
+    double audioHeight = 0,
   }) {
     final colors = context.neu;
     final topInset = MediaQuery.viewPaddingOf(context).top;
@@ -233,7 +261,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
       return Column(
         children: [
-          SizedBox(height: topInset + headerHeight),
+          SizedBox(height: topInset + headerHeight + audioHeight),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               NeuSpacing.lg,
@@ -257,7 +285,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       skipLoadingOnReload: keepPreviousRooms,
       skipLoadingOnRefresh: keepPreviousRooms,
       data: (rooms) {
-        if (!roomsAsync.isLoading &&
+        if (widget.autoSelectFirstRoom &&
+            !roomsAsync.isLoading &&
             widget.onRoomSelected != null &&
             widget.selectedRoomId == null) {
           final firstJoinedRoom = rooms.where(
@@ -334,7 +363,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             controller: _scrollController,
             padding: EdgeInsets.fromLTRB(
               NeuSpacing.lg,
-              topInset + headerHeight,
+              topInset + headerHeight + audioHeight,
               NeuSpacing.lg,
               context.isMaterial
                   ? NeuSpacing.floatingDockClearance +
@@ -401,6 +430,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final audioVisible =
+        ref.watch(audioPlayerVisibleProvider) &&
+        (!widget.embedded || widget.selectedRoomId == null);
+    final audioSession = ref.read(audioPlaybackSessionProvider);
+    final audioHeight = audioVisible ? audioMessageBarHeight : 0.0;
     final AsyncValue<List<ChatRoom>> roomsAsync;
     if (widget.spaceId case final spaceId?) {
       roomsAsync = ref.watch(spaceChildrenProvider(spaceId));
@@ -453,6 +487,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildHeader(titleText, hasHiddenRooms: hasHiddenRooms),
+            if (audioVisible)
+              AudioMessageBar(
+                session: audioSession,
+                onSourceTap: () => unawaited(_openAudioSource()),
+                onQueueTap: () =>
+                    unawaited(showAudioPlayerPanel(context, audioSession)),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 NeuSpacing.lg,
@@ -491,8 +532,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               roomsAsync,
               underHeader: true,
               keepPreviousRooms: keepPreviousRooms,
+              audioHeight: audioHeight,
             ),
           ),
+          if (audioVisible)
+            Positioned(
+              top: topInset + _headerHeight,
+              left: 0,
+              right: 0,
+              child: AudioMessageBar(
+                session: audioSession,
+                onSourceTap: () => unawaited(_openAudioSource()),
+                onQueueTap: () =>
+                    unawaited(showAudioPlayerPanel(context, audioSession)),
+              ),
+            ),
           // 渐变模糊头部:柔和过渡从下方滚过的内容,避免硬裁切感。
           Positioned(
             top: 0,

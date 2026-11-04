@@ -17,6 +17,7 @@ import 'connection_provider.dart';
 import 'hidden_rooms_provider.dart';
 import 'ignored_users_persistence.dart';
 import 'message_cache_persistence.dart';
+import 'message_history_cursor.dart';
 import 'message_ordering.dart';
 import 'mutable_state.dart';
 
@@ -1324,6 +1325,7 @@ bool chatMessageContentEquals(rust.ChatMessage a, rust.ChatMessage b) {
           a.filename == b.filename &&
           a.fileSize == b.fileSize &&
           a.mimeType == b.mimeType &&
+          a.durationMs == b.durationMs &&
           a.geoUri == b.geoUri &&
           _pollContentEquals(a.poll, b.poll) &&
           a.inReplyTo == b.inReplyTo &&
@@ -1488,6 +1490,13 @@ Future<void> refreshMessagesFromNetwork(WidgetRef ref, String roomId) async {
     if ((ref.read(activeUserIdProvider) ?? 'anonymous') != namespace) return;
     ref.read(messageCacheOwnerProvider(roomId).notifier).value = namespace;
     final reconciled = updateMessageCache(ref, roomId, latest);
+    final history = ref.read(
+      messageHistoryCursorProvider((roomId: roomId, userId: namespace))
+          .notifier,
+    );
+    history.value = history.value.refreshed(
+      latest.map((message) => message.id),
+    );
     // Persist off the widget tree so a slow disk write never blocks the UI.
     Future.microtask(
       () => saveCachedMessages(
@@ -1751,6 +1760,7 @@ Future<void> retryFailedLocalMessage(
       mediaSourceJson: message.mediaSourceJson,
       imageWidth: message.imageWidth,
       imageHeight: message.imageHeight,
+      durationMs: message.durationMs,
       inReplyTo: message.inReplyTo,
       isEdited: message.isEdited,
       editHistory: message.editHistory,
@@ -1937,6 +1947,7 @@ LocalOutgoingMessage copyLocalOutgoingMessageWithId(
       filename: message.filename,
       fileSize: message.fileSize,
       mimeType: message.mimeType,
+      durationMs: message.durationMs,
       inReplyTo: message.inReplyTo,
       isEdited: message.isEdited,
       editHistory: message.editHistory,
@@ -2081,6 +2092,13 @@ Future<void> _refreshMessagesShared(
     if (!equal) {
       read(messageCacheProvider(roomId).notifier).value = reconciled;
     }
+    final history = read(
+      messageHistoryCursorProvider((roomId: roomId, userId: namespace))
+          .notifier,
+    );
+    history.value = history.value.refreshed(
+      latest.map((message) => message.id),
+    );
     unawaited(
       saveCachedMessages(
         namespace: namespace,

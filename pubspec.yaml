@@ -16,7 +16,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.1.11+10
+version: 0.1.12+11
 
 environment:
   sdk: ^3.13.0
@@ -51,7 +51,15 @@ dependencies:
   flutter_secure_storage: ^11.0.0
   image: ^4.9.1
   cached_network_image: ^4.0.4
-  video_player: ^2.12.0
+  media_kit: ^1.2.6
+  # The published video plugin lacks Swift Package Manager support. Pin the
+  # upstream SPM implementation to match this project's Apple builds.
+  media_kit_video:
+    git:
+      url: https://github.com/media-kit/media-kit.git
+      ref: c533e446755f51cf53c7e57aea873f2aa5355f81
+      path: media_kit_video
+  media_kit_libs_video: ^1.0.7
   web: ^1.1.1
   markdown: ^7.3.1
   html: ^0.15.6
@@ -80,6 +88,21 @@ dependencies:
   jni: ^1.0.3
   jni_flutter: ^1.0.3
   dynamic_color: ^2.1.0
+  pasteboard: ^0.6.0
+  desktop_drop: ^0.8.4
+# Keep the Apple native libraries on the same SPM-capable upstream revision.
+dependency_overrides:
+  media_kit_libs_ios_video:
+    git:
+      url: https://github.com/media-kit/media-kit.git
+      ref: c533e446755f51cf53c7e57aea873f2aa5355f81
+      path: libs/ios/media_kit_libs_ios_video
+  media_kit_libs_macos_video:
+    git:
+      url: https://github.com/media-kit/media-kit.git
+      ref: c533e446755f51cf53c7e57aea873f2aa5355f81
+      path: libs/macos/media_kit_libs_macos_video
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

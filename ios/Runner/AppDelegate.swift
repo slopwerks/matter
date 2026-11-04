@@ -5,6 +5,7 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, UIDocumentPickerDelegate {
   private var pendingFileSaveResult: FlutterResult?
   private var openFileController: UIDocumentInteractionController?
+  private var audioPlaybackBridge: AudioPlaybackBridge?
 
   override func application(
     _ application: UIApplication,
@@ -15,6 +16,7 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    audioPlaybackBridge = AudioPlaybackBridge(messenger: engineBridge.applicationRegistrar.messenger())
     let channel = FlutterMethodChannel(
       name: "moe.aks.matter/file_saver",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()

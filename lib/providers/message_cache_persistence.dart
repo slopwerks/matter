@@ -95,6 +95,7 @@ Map<String, dynamic> chatMessageToMap(rust.ChatMessage message) {
     'filename': message.filename,
     'fileSize': message.fileSize,
     'mimeType': message.mimeType,
+    'durationMs': message.durationMs,
     'geoUri': message.geoUri,
     'poll': message.poll == null
         ? null
@@ -235,6 +236,12 @@ rust.ChatMessage chatMessageFromMap(Map<String, dynamic> map) {
     filename: map['filename'] as String?,
     fileSize: (map['fileSize'] as num?)?.toInt(),
     mimeType: map['mimeType'] as String?,
+    durationMs:
+        map['durationMs'] is int &&
+            (map['durationMs'] as int) > 0 &&
+            (map['durationMs'] as int) <= 0x7fffffff
+        ? map['durationMs'] as int
+        : null,
     geoUri: map['geoUri'] as String?,
     poll: poll,
     inReplyTo: map['inReplyTo'] as String?,

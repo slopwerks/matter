@@ -12,6 +12,15 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Install audio decoding test tools
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y ffmpeg
+        ffmpeg -version
+        ffprobe -version
+
     - name: Restore Flutter SDK
       id: flutter-cache
       uses: actions/cache/restore@v4

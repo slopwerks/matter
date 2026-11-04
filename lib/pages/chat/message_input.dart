@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -11,15 +11,22 @@ import '../../features/markdown/markdown_text_editing_controller.dart';
 import '../../features/markdown/markdown_source_store.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/composer_keyboard_settings_provider.dart';
+import '../../providers/composer_attachment_provider.dart';
+import '../../providers/interaction_mode_provider.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
+import '../settings/composer_keyboard_settings_page.dart';
 import 'attachment_picker.dart';
+import 'desktop_clipboard.dart';
+import 'composer_layout.dart';
 import 'composer_autocomplete.dart';
 import 'composer_picker_panel.dart';
 import 'latest_message_control.dart';
@@ -390,6 +397,7 @@ rust.ChatMessage _acceptedEditedMessage(
   filename: original.filename,
   fileSize: original.fileSize,
   mimeType: original.mimeType,
+  durationMs: original.durationMs,
   geoUri: original.geoUri,
   poll: original.poll,
   inReplyTo: original.inReplyTo,
@@ -462,9 +470,13 @@ class MessageInputState extends ConsumerState<MessageInput> {
   final _focusNode = FocusNode();
   final _autocompleteScrollController = ScrollController();
   final _textFieldKey = GlobalKey();
+  final _pendingImagesKey = GlobalKey<AttachmentPickerState>();
   late final RoomAccountKey _draftKey;
   bool _hasText = false;
   bool _isSending = false;
+  bool _readingClipboard = false;
+  bool _pickingImages = false;
+  bool _externalAttachmentsOpen = false;
   bool _wasComposingText = false;
   ComposerAutocompleteMatch? _autocompleteMatch;
   int _autocompleteIndex = 0;
@@ -505,6 +517,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
     _wasComposingText = _isComposingText;
     _autocompleteMatch = composerAutocompleteMatch(_controller.value);
     _controller.addListener(_onTextChanged);
+    ref.read(composerKeyboardSettingsProvider);
     _focusNode.onKeyEvent = _handleKeyEvent;
     _focusNode.addListener(() {
       if (!mounted) return;
@@ -674,18 +687,179 @@ class MessageInputState extends ConsumerState<MessageInput> {
         });
   }
 
+  bool get _isDesktop => switch (Theme.of(context).platform) {
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => true,
+    _ => false,
+  };
+
+  bool get _keyboardMouse => ref
+      .read(interactionModeProvider)
+      .usesKeyboardMouse(Theme.of(context).platform);
+
+  bool get _inlineImages =>
+      _isDesktop ||
+      _keyboardMouse ||
+      ref.read(composerAttachmentDraftProvider(_draftKey)).selected.isNotEmpty;
+
+  bool get _expandedComposer => MediaQuery.sizeOf(context).width >= 600;
+
+  Widget _composerToolButton({
+    required IconData icon,
+    String? tooltip,
+    bool selected = false,
+    VoidCallback? onPressed,
+  }) => _expandedComposer || _keyboardMouse || _isDesktop
+      ? ComposerToolButton(
+          compact: _keyboardMouse,
+          icon: icon,
+          tooltip: tooltip,
+          selected: selected,
+          onPressed: onPressed,
+        )
+      : NeuIconButton(
+          icon: icon,
+          tooltip: tooltip,
+          size: 44,
+          selected: selected,
+          onPressed: onPressed,
+        );
+
+  Future<void> _pasteClipboard(SelectionChangedCause cause) async {
+    if (_readingClipboard ||
+        _externalAttachmentsOpen ||
+        _editingSourceLoadingId != null) {
+      return;
+    }
+    _readingClipboard = true;
+    try {
+      final image = await readClipboardImage();
+      if (!mounted ||
+          (ref.read(activeUserIdProvider) ?? '') != _draftKey.userId) {
+        return;
+      }
+      if (image != null) {
+        if (_inlineImages) {
+          unawaited(previewExternalFiles([image]));
+        } else {
+          await previewExternalFiles([image]);
+        }
+      } else {
+        final editable = _focusNode.context
+            ?.findAncestorStateOfType<EditableTextState>();
+        await editable?.pasteText(cause);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('粘贴失败: $error')));
+      }
+    } finally {
+      _readingClipboard = false;
+    }
+  }
+
+  Future<void> previewExternalFiles(List<XFile> files) async {
+    if (_externalAttachmentsOpen || files.isEmpty || !mounted) return;
+    if ((ref.read(activeUserIdProvider) ?? '') != _draftKey.userId ||
+        _draftKey.userId.isEmpty) {
+      return;
+    }
+    if (_inlineImages &&
+        files.every(
+          (file) =>
+              classifyAttachmentMime(
+                resolveAttachmentMime(file.name, file.mimeType),
+              ) ==
+              AttachmentMediaKind.image,
+        )) {
+      final pending = ref.read(composerAttachmentDraftProvider(_draftKey));
+      if (pending.isSending) return;
+      final released = pending.stage(files);
+      _showKeyboard();
+      await released;
+      return;
+    }
+    final container = ProviderScope.containerOf(context, listen: false);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final roomId = widget.roomId;
+    _focusNode.unfocus();
+    widget.onPanelModeChanged(InputPanelMode.none);
+    setState(() => _externalAttachmentsOpen = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => Dialog(
+          shape: context.isMaterial ? null : composerControlShape,
+          clipBehavior: Clip.antiAlias,
+          child: ScaffoldMessenger(
+            child: SizedBox(
+              width: 720,
+              height: MediaQuery.sizeOf(dialogContext).height * .8,
+              child: AttachmentPicker(
+                initialFiles: files,
+                roomId: roomId,
+                accountUserId: _draftKey.userId,
+                height: 400,
+                maxHeight: 400,
+                totalMembers: widget.totalMembers,
+                onRefresh: (_) => refreshMessagesContainer(container, roomId),
+                resolveSendPresentation: widget.resolveSendPresentation,
+                onMessageQueued: widget.onMessageQueued,
+                onMessageSent: widget.onMessageSent,
+                onHeightChanged: (_) {},
+                onClose: () => navigator.pop(),
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _externalAttachmentsOpen = false);
+        _showKeyboard();
+      }
+    }
+  }
+
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (!_isComposingText && _handleAutocompleteKey(event)) {
+    if (_isComposingText) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    final pasteModifier = Theme.of(context).platform == TargetPlatform.macOS
+        ? keyboard.isMetaPressed
+        : keyboard.isControlPressed;
+    if ((_isDesktop || _keyboardMouse) &&
+        event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyV &&
+        pasteModifier &&
+        !keyboard.isShiftPressed &&
+        !keyboard.isAltPressed) {
+      unawaited(_pasteClipboard(SelectionChangedCause.keyboard));
       return KeyEventResult.handled;
     }
-    // Keep Linux's existing multiline Enter behavior. The handler is still
-    // installed there so Tab and arrow-key autocomplete remain available.
-    if (defaultTargetPlatform == TargetPlatform.linux) {
-      return KeyEventResult.ignored;
+    // Configured newlines bypass autocomplete and are handled here to avoid
+    // either losing the newline or inserting it twice through native input.
+    if (_isEnterKey(event)) {
+      final keyboard = HardwareKeyboard.instance;
+      final shortcut = keyboard.isShiftPressed
+          ? ComposerEnterShortcut.shiftEnter
+          : keyboard.isAltPressed
+          ? ComposerEnterShortcut.altEnter
+          : ComposerEnterShortcut.enter;
+      final action = ref
+          .read(composerKeyboardSettingsProvider)
+          .actionFor(shortcut);
+      if (action == ComposerEnterAction.newline) {
+        if (event is KeyDownEvent) _insertComposerText('\n');
+        return KeyEventResult.handled;
+      }
     }
-    if (!_isEnterKey(event) ||
-        HardwareKeyboard.instance.isShiftPressed ||
-        _isComposingText) {
+    if (_handleAutocompleteKey(event)) {
+      return KeyEventResult.handled;
+    }
+    if (!_isEnterKey(event)) {
       return KeyEventResult.ignored;
     }
 
@@ -937,10 +1111,44 @@ class MessageInputState extends ConsumerState<MessageInput> {
     _showKeyboard();
   }
 
-  Future<void> _sendMessage() => _sendMessageText(_controller.text);
+  Future<void> _sendMessage() async {
+    if (_inlineImages &&
+        ref.read(editingMessageProvider(_draftKey)) == null &&
+        ref
+            .read(composerAttachmentDraftProvider(_draftKey))
+            .selected
+            .isNotEmpty) {
+      await _sendPendingImages();
+      return;
+    }
+    await _sendMessageText(_controller.text);
+  }
 
-  /// Long-press on the attachment button: a small menu of extra composer
-  /// tools that don't deserve a permanent spot in the input row.
+  Future<bool> _sendPendingImages() async {
+    final pending = ref.read(composerAttachmentDraftProvider(_draftKey));
+    if (pending.isSending || _isSending) return false;
+    final sender = _pendingImagesKey.currentState;
+    if (sender == null) return false;
+    final text = _controller.text;
+    final draftState = ref.read(messageDraftProvider(_draftKey).notifier);
+    try {
+      final sent = await sender.sendSelectedMedia(description: text);
+      if (sent && draftState.mounted && draftState.value == text) {
+        draftState.value = '';
+      }
+      if (sent && mounted && _controller.text == text) _controller.clear();
+      if (mounted) _showKeyboard();
+      return sent;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('发送失败: $error')));
+      }
+      return false;
+    }
+  }
+
+  /// Click More on desktop, or long-press the attachment button on mobile.
   Future<void> _showComposerToolsMenu(BuildContext buttonContext) async {
     final buttonBox = buttonContext.findRenderObject();
     final overlay = Overlay.of(context).context.findRenderObject();
@@ -951,12 +1159,64 @@ class MessageInputState extends ConsumerState<MessageInput> {
       return;
     }
     final action = await showMenu<String>(
+      shape: context.isMaterial
+          ? null
+          : _isDesktop
+          ? composerControlShape
+          : null,
       context: context,
       position: RelativeRect.fromRect(
         buttonBox.localToGlobal(Offset.zero) & buttonBox.size,
         Offset.zero & overlay.size,
       ),
       items: [
+        if (_isDesktop || _keyboardMouse) ...[
+          const PopupMenuItem<String>(
+            value: 'file',
+            child: Row(
+              children: [
+                Icon(Icons.attach_file_rounded, size: 22),
+                SizedBox(width: 12),
+                Text('发送文件'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'poll',
+            child: Row(
+              children: [
+                Icon(Icons.poll_outlined, size: 22),
+                SizedBox(width: 12),
+                Text('发起投票'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<String>(
+            value: 'location',
+            child: Row(
+              children: [
+                Icon(Icons.location_on_outlined, size: 22),
+                SizedBox(width: 12),
+                Text('发送位置'),
+              ],
+            ),
+          ),
+        ],
+        if (_isDesktop)
+          PopupMenuItem<String>(
+            value: 'keyboard',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.keyboard_rounded,
+                  color: context.neu.textSecondary,
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                const Text('发送与换行按键'),
+              ],
+            ),
+          ),
         PopupMenuItem<String>(
           value: 'markdown',
           child: Row(
@@ -973,8 +1233,86 @@ class MessageInputState extends ConsumerState<MessageInput> {
         ),
       ],
     );
+    if (mounted && action == 'file') {
+      final files = await openFiles();
+      if (mounted && files.isNotEmpty) unawaited(previewExternalFiles(files));
+    }
+    if (mounted && (action == 'poll' || action == 'location')) {
+      await _openAttachmentTool(
+        action == 'poll' ? AttachmentTab.poll : AttachmentTab.location,
+      );
+    }
+    if (action == 'keyboard' && mounted) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: context.isMaterial ? null : composerControlShape,
+          title: const Text('发送与换行按键'),
+          content: const SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: ComposerKeyboardSettingsOptions(grouped: false),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('完成'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) _showKeyboard();
+    }
     if (action == 'markdown' && mounted) {
       _openMarkdownComposer();
+    }
+  }
+
+  Future<void> _openAttachmentTool(AttachmentTab tab) async {
+    if (_externalAttachmentsOpen) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final roomId = widget.roomId;
+    _focusNode.unfocus();
+    widget.onPanelModeChanged(InputPanelMode.none);
+    setState(() => _externalAttachmentsOpen = true);
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          shape: context.isMaterial ? null : composerControlShape,
+          clipBehavior: Clip.antiAlias,
+          child: ScaffoldMessenger(
+            child: SizedBox(
+              width: 720,
+              height: MediaQuery.sizeOf(dialogContext).height * .85,
+              child: Scaffold(
+                body: AttachmentPicker(
+                  initialTab: tab,
+                  enforceAccount: true,
+                  accountUserId: _draftKey.userId,
+                  roomId: roomId,
+                  height: MediaQuery.sizeOf(dialogContext).height * .85,
+                  maxHeight: MediaQuery.sizeOf(dialogContext).height * .85,
+                  totalMembers: widget.totalMembers,
+                  onRefresh: (_) => refreshMessagesContainer(container, roomId),
+                  resolveSendPresentation: widget.resolveSendPresentation,
+                  onMessageQueued: widget.onMessageQueued,
+                  onMessageSent: widget.onMessageSent,
+                  onHeightChanged: (_) {},
+                  onClose: () => navigator.pop(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _externalAttachmentsOpen = false);
+        _showKeyboard();
+      }
     }
   }
 
@@ -1369,6 +1707,52 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   void _toggleAttachmentPicker() {
+    if (_inlineImages) {
+      unawaited(_pickDesktopImages());
+      return;
+    }
+    _toggleAttachmentPanel();
+  }
+
+  Future<void> _pickDesktopImages() async {
+    if (_pickingImages) return;
+    _pickingImages = true;
+    try {
+      final files = await openFiles(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: '图片',
+            extensions: [
+              'png',
+              'jpg',
+              'jpeg',
+              'gif',
+              'webp',
+              'bmp',
+              'heic',
+              'heif',
+              'avif',
+            ],
+            mimeTypes: ['image/*'],
+            uniformTypeIdentifiers: ['public.image'],
+          ),
+        ],
+      );
+      if (mounted && files.isNotEmpty) {
+        unawaited(previewExternalFiles(files));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('选择图片失败: $error')));
+      }
+    } finally {
+      _pickingImages = false;
+      if (mounted) _showKeyboard();
+    }
+  }
+
+  void _toggleAttachmentPanel() {
     if (widget.panelMode == InputPanelMode.attachment) {
       widget.onPanelModeChanged(InputPanelMode.none);
       return;
@@ -1621,6 +2005,16 @@ class MessageInputState extends ConsumerState<MessageInput> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final desktop = ref
+        .watch(interactionModeProvider)
+        .usesKeyboardMouse(Theme.of(context).platform);
+    final pendingImages = ref.watch(composerAttachmentDraftProvider(_draftKey));
+    final inlineImages =
+        _isDesktop ||
+        desktop ||
+        pendingImages.selected.isNotEmpty ||
+        pendingImages.isSending;
+    final expanded = _expandedComposer;
     final replyTo = ref.watch(replyingToProvider(_draftKey));
     final editing = ref.watch(editingMessageProvider(_draftKey));
     // Do not expose a stale new-message draft as editable content while the
@@ -1640,7 +2034,12 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final editingSendInFlight = editing != null && editingSendId == editing.id;
     final editingSourceLoading =
         editing != null && _editingSourceLoadingId == editing.id;
-    final sendBusy = _isSending || editingSendInFlight || editingSourceLoading;
+    final hasImages = pendingImages.selected.isNotEmpty;
+    final sendBusy =
+        _isSending ||
+        editingSendInFlight ||
+        editingSourceLoading ||
+        pendingImages.isSending;
     final autocompleteMatch = _focusNode.hasFocus && !_isComposingText
         ? _autocompleteMatch
         : null;
@@ -1723,183 +2122,227 @@ class MessageInputState extends ConsumerState<MessageInput> {
                   viewportItemCount: _autocompleteViewportCount(context),
                 ),
               ),
-            Padding(
-              padding: context.isMaterial
-                  ? const EdgeInsets.all(4)
-                  : const EdgeInsets.fromLTRB(10, 4, 10, 12),
-              child: GlassPanel(
-                key: const ValueKey('message-input-surface'),
-                radius: NeuRadius.nav,
-                opacity: context.isMaterial ? 0 : 1,
-                blur: 18,
-                padding: EdgeInsets.symmetric(
-                  horizontal: context.isMaterial ? 0 : 6,
-                  vertical: 4,
+            ComposerSurface(
+              expanded: expanded,
+              compact: desktop,
+              child: ComposerLayout(
+                desktop: expanded,
+                showMore: _isDesktop || desktop,
+                attachments:
+                    inlineImages && (hasImages || pendingImages.isSending)
+                    ? AttachmentPicker(
+                        key: _pendingImagesKey,
+                        inline: true,
+                        draft: pendingImages,
+                        composerController: _controller,
+                        onInlineSend: _sendPendingImages,
+                        roomId: widget.roomId,
+                        accountUserId: _draftKey.userId,
+                        height: 0,
+                        maxHeight: 0,
+                        totalMembers: widget.totalMembers,
+                        onRefresh: (_) => refreshMessagesContainer(
+                          ProviderScope.containerOf(context, listen: false),
+                          widget.roomId,
+                        ),
+                        resolveSendPresentation: widget.resolveSendPresentation,
+                        onMessageQueued: widget.onMessageQueued,
+                        onMessageSent: widget.onMessageSent,
+                        onHeightChanged: (_) {},
+                        onClose: _showKeyboard,
+                      )
+                    : null,
+                emojiButton: _composerToolButton(
+                  icon: widget.panelMode == InputPanelMode.emoji
+                      ? Icons.keyboard_rounded
+                      : (_pickerTab == ComposerPickerTab.sticker
+                            ? Icons.interests_rounded
+                            : Icons.sentiment_satisfied_alt_rounded),
+                  selected: widget.panelMode == InputPanelMode.emoji,
+                  onPressed: sendBusy
+                      ? null
+                      : widget.panelMode == InputPanelMode.emoji
+                      ? _showKeyboard
+                      : _togglePicker,
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    NeuIconButton(
-                      icon: widget.panelMode == InputPanelMode.emoji
-                          ? Icons.keyboard_rounded
-                          : (_pickerTab == ComposerPickerTab.sticker
-                                ? Icons.interests_rounded
-                                : Icons.sentiment_satisfied_alt_rounded),
-                      size: 44,
-                      selected: widget.panelMode == InputPanelMode.emoji,
-                      onPressed: sendBusy
-                          ? null
-                          : widget.panelMode == InputPanelMode.emoji
-                          ? _showKeyboard
-                          : _togglePicker,
-                    ),
-                    SizedBox(width: context.isMaterial ? 2 : 6),
-                    Expanded(
-                      child: Container(
-                        key: _textFieldKey,
-                        constraints: const BoxConstraints(
-                          minHeight: 44,
-                          maxHeight: 120,
+                editor: Container(
+                  key: _textFieldKey,
+                  constraints: BoxConstraints(
+                    minHeight: expanded ? (desktop ? 80 : 96) : 44,
+                    maxHeight: expanded
+                        ? (MediaQuery.sizeOf(context).height * .3).clamp(
+                            desktop ? 80.0 : 96.0,
+                            240.0,
+                          )
+                        : 120,
+                  ),
+                  decoration: expanded || context.isMaterial
+                      ? null
+                      : NeuDecoration(
+                          colors: colors,
+                          superellipseEnabled: ChatVisualSettingsScope.of(
+                            context,
+                          ).superellipseBorderEnabled,
+                          depth: NeuDepth.pressed,
+                          radius: NeuRadius.content,
+                          intensity: .85,
+                          borderColor: _focusNode.hasFocus
+                              ? colors.accent
+                              : null,
                         ),
-                        decoration: context.isMaterial
-                            ? null
-                            : NeuDecoration(
-                                colors: colors,
-                                superellipseEnabled: ChatVisualSettingsScope.of(
-                                  context,
-                                ).superellipseBorderEnabled,
-                                depth: NeuDepth.pressed,
-                                radius: NeuRadius.content,
-                                intensity: .85,
-                                borderColor: _focusNode.hasFocus
-                                    ? colors.accent
-                                    : null,
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    readOnly: editingSourceLoading,
+                    contextMenuBuilder: (context, editable) =>
+                        markdownSelectionContextMenuBuilder(
+                          context,
+                          editable,
+                          onPaste: (_isDesktop || desktop)
+                              ? () {
+                                  ContextMenuController.removeAny();
+                                  unawaited(
+                                    _pasteClipboard(
+                                      SelectionChangedCause.toolbar,
+                                    ),
+                                  );
+                                }
+                              : null,
+                        ),
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    cursorColor: colors.accent,
+                    decoration: InputDecoration(
+                      hintText: '消息',
+                      hintStyle: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(color: colors.textTertiary),
+                      filled: expanded ? false : null,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: expanded ? 8 : 14,
+                        vertical: expanded ? 6 : 11,
+                      ),
+                      border: context.isMaterial && !expanded
+                          ? const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(28),
                               ),
-                        child: TextField(
-                          controller: _controller,
-                          focusNode: _focusNode,
-                          readOnly: editingSourceLoading,
-                          contextMenuBuilder:
-                              markdownSelectionContextMenuBuilder,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          cursorColor: colors.accent,
-                          decoration: InputDecoration(
-                            hintText: '消息',
-                            hintStyle: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(color: colors.textTertiary),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 11,
-                            ),
-                            border: context.isMaterial
-                                ? const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(28),
-                                    ),
-                                    borderSide: BorderSide.none,
-                                  )
-                                : InputBorder.none,
-                            enabledBorder: context.isMaterial
-                                ? const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(28),
-                                    ),
-                                    borderSide: BorderSide.none,
-                                  )
-                                : InputBorder.none,
-                            focusedBorder: context.isMaterial
-                                ? const OutlineInputBorder(
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(28),
-                                    ),
-                                    borderSide: BorderSide.none,
-                                  )
-                                : InputBorder.none,
-                            isDense: true,
-                          ),
-                          maxLines: null,
-                          textInputAction: TextInputAction.newline,
-                          keyboardType: TextInputType.multiline,
-                          onTap: () {
-                            widget.onPanelModeChanged(InputPanelMode.keyboard);
-                          },
-                        ),
+                              borderSide: BorderSide.none,
+                            )
+                          : InputBorder.none,
+                      enabledBorder: context.isMaterial && !expanded
+                          ? const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(28),
+                              ),
+                              borderSide: BorderSide.none,
+                            )
+                          : InputBorder.none,
+                      focusedBorder: context.isMaterial && !expanded
+                          ? const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(28),
+                              ),
+                              borderSide: BorderSide.none,
+                            )
+                          : InputBorder.none,
+                      isDense: true,
+                    ),
+                    minLines: expanded ? 3 : null,
+                    maxLines: null,
+                    textInputAction: TextInputAction.newline,
+                    keyboardType: TextInputType.multiline,
+                    onTap: () {
+                      widget.onPanelModeChanged(InputPanelMode.keyboard);
+                    },
+                  ),
+                ),
+                attachmentButton: Builder(
+                  builder: (buttonContext) => Tooltip(
+                    message: inlineImages ? '选择图片' : '附件',
+                    // Desktop hover still shows the tooltip; its
+                    // long-press trigger belongs to the outer
+                    // GestureDetector so it can open the tools menu
+                    // instead.
+                    triggerMode: TooltipTriggerMode.manual,
+                    child: GestureDetector(
+                      onLongPress: sendBusy
+                          ? null
+                          : () => _showComposerToolsMenu(buttonContext),
+                      child: _composerToolButton(
+                        icon: inlineImages
+                            ? Icons.image_outlined
+                            : Icons.add_rounded,
+                        selected: widget.panelMode == InputPanelMode.attachment,
+                        onPressed: sendBusy ? null : _toggleAttachmentPicker,
                       ),
                     ),
-                    SizedBox(width: context.isMaterial ? 2 : 6),
-                    SizedBox(
-                      width: context.isMaterial ? 92 : 94,
-                      height: 44,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Builder(
-                            builder: (buttonContext) => Tooltip(
-                              message: '附件',
-                              // Desktop hover still shows the tooltip; its
-                              // long-press trigger belongs to the outer
-                              // GestureDetector so it can open the tools menu
-                              // instead.
-                              triggerMode: TooltipTriggerMode.manual,
-                              child: GestureDetector(
-                                onLongPress: sendBusy
-                                    ? null
-                                    : () =>
-                                          _showComposerToolsMenu(buttonContext),
+                  ),
+                ),
+                moreButton: Builder(
+                  builder: (buttonContext) => _composerToolButton(
+                    tooltip: '更多',
+                    icon: Icons.more_horiz_rounded,
+                    onPressed: sendBusy
+                        ? null
+                        : () => _showComposerToolsMenu(buttonContext),
+                  ),
+                ),
+                sendButton: expanded
+                    ? FilledButton.icon(
+                        key: const ValueKey('send_only'),
+                        style: composerSendButtonStyle(
+                          Theme.of(context),
+                          compact: desktop,
+                        ),
+                        icon: const Icon(Icons.send_rounded),
+                        onPressed: sendBusy || (!_hasText && !hasImages)
+                            ? null
+                            : _sendMessage,
+                        label: sendBusy
+                            ? SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  color: colors.onAccent,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('发送'),
+                      )
+                    : AnimatedSwitcher(
+                        duration: _toolbarAnimationDuration,
+                        switchInCurve: _toolbarAnimationCurve,
+                        switchOutCurve: Curves.easeInCubic,
+                        child: _hasText || hasImages
+                            ? SizedBox.square(
+                                key: const ValueKey('send_only'),
+                                dimension: 44,
+                                child: sendBusy
+                                    ? Center(
+                                        child: SizedBox.square(
+                                          dimension: 20,
+                                          child: CircularProgressIndicator(
+                                            color: colors.accent,
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      )
+                                    : NeuIconButton(
+                                        icon: Icons.send_rounded,
+                                        size: 44,
+                                        accent: true,
+                                        onPressed: _sendMessage,
+                                      ),
+                              )
+                            : const SizedBox.square(
+                                key: ValueKey('voice_only'),
+                                dimension: 44,
                                 child: NeuIconButton(
-                                  icon: Icons.add_rounded,
+                                  tooltip: '语音消息暂未提供',
+                                  icon: Icons.mic_none_rounded,
                                   size: 44,
-                                  selected:
-                                      widget.panelMode ==
-                                      InputPanelMode.attachment,
-                                  onPressed: sendBusy
-                                      ? null
-                                      : _toggleAttachmentPicker,
+                                  onPressed: null,
                                 ),
                               ),
-                            ),
-                          ),
-                          AnimatedSwitcher(
-                            duration: _toolbarAnimationDuration,
-                            switchInCurve: _toolbarAnimationCurve,
-                            switchOutCurve: Curves.easeInCubic,
-                            child: _hasText
-                                ? SizedBox.square(
-                                    key: const ValueKey('send_only'),
-                                    dimension: 44,
-                                    child: sendBusy
-                                        ? Center(
-                                            child: SizedBox.square(
-                                              dimension: 20,
-                                              child: CircularProgressIndicator(
-                                                color: colors.accent,
-                                                strokeWidth: 2,
-                                              ),
-                                            ),
-                                          )
-                                        : NeuIconButton(
-                                            icon: Icons.send_rounded,
-                                            size: 44,
-                                            accent: true,
-                                            onPressed: _sendMessage,
-                                          ),
-                                  )
-                                : const SizedBox.square(
-                                    key: ValueKey('voice_only'),
-                                    dimension: 44,
-                                    child: NeuIconButton(
-                                      tooltip: '语音消息暂未提供',
-                                      icon: Icons.mic_none_rounded,
-                                      size: 44,
-                                      onPressed: null,
-                                    ),
-                                  ),
-                          ),
-                        ],
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
             AnimatedContainer(
@@ -1977,6 +2420,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
       ),
     );
 
+    if (expanded) return input;
     if (context.isMaterial) {
       return ColoredBox(color: colors.glassFill, child: input);
     }
