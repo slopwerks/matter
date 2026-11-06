@@ -1,5 +1,9 @@
 import 'dart:convert';
 
+import '../features/storage/managed_media.dart';
+import '../features/storage/storage_identity.dart';
+import '../features/storage/storage_image_cache.dart';
+
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 const _cachePrefix = 'matter-auth-media';
@@ -59,6 +63,7 @@ Future<void> clearAuthenticatedMediaCacheForSession({
   final manager = _cacheManagers.remove(scope) ?? _newCacheManager(scope);
   await manager.emptyCache();
   await manager.dispose();
+  await clearManagedMediaAccount(storageAccountKey(userId, homeserver));
 }
 
 /// Whether [dirName] (a basename under the system temp dir) belongs to an
@@ -88,8 +93,7 @@ CacheManager _newCacheManager(String scope) {
   );
 }
 
-class _AuthenticatedMediaCacheManager extends CacheManager
-    with ImageCacheManager {
+class _AuthenticatedMediaCacheManager extends StorageImageCacheManager {
   _AuthenticatedMediaCacheManager(super.config);
 
   @override

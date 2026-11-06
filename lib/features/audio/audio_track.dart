@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:media_kit/media_kit.dart';
 
+import '../../features/storage/managed_media.dart';
+import '../../features/storage/storage_models.dart';
 import '../../pages/chat/media_preparation.dart';
 import '../../pages/chat/prepared_media_source.dart';
 import '../../providers/authenticated_media_cache.dart';
@@ -49,6 +51,23 @@ Future<PreparedMediaSource> prepareAudioTrack(
   AudioSourceCache? cache,
 }) async {
   preparation.throwIfCancelled();
+  final accountKey = storageAccountKey(account.userId, account.homeserver);
+  final completed = await cachedManagedMedia(
+    account: accountKey,
+    key: track.mediaSourceJson ?? track.url ?? '',
+    filename: track.filename,
+    kind: StorageKind.audio,
+    owner: track.roomId == null
+        ? null
+        : StorageOwner(accountKey, track.roomId!),
+  );
+  if (completed != null) {
+    if (preparation.isCancelled) {
+      await completed.cleanup();
+      preparation.throwIfCancelled();
+    }
+    return completed;
+  }
   final source = track.mediaSourceJson == null
       ? null
       : jsonDecode(track.mediaSourceJson!);
@@ -64,6 +83,7 @@ Future<PreparedMediaSource> prepareAudioTrack(
       return cache.prepare(
         key: jsonEncode(['encrypted', source]),
         filename: track.filename,
+        roomId: track.roomId,
         preparation: preparation,
         verifiedLoader: verified,
       );
@@ -99,6 +119,7 @@ Future<PreparedMediaSource> prepareAudioTrack(
       return cache.prepare(
         key: jsonEncode(['plain', original]),
         filename: track.filename,
+        roomId: track.roomId,
         preparation: preparation,
         url: Uri.parse(resolved),
         headers: headers,

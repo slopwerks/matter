@@ -14,9 +14,47 @@ import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
 import 'package:matter/theme/neu_colors.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'helpers/neu_test_theme.dart';
+import 'support/storage_network.dart';
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await installStorageWifi();
+  });
+  testWidgets(
+    'unknown-size images require a click and retain manual download',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: const Scaffold(
+              body: ImageMessageBubble(
+                imageUrl: 'https://example.org/unknown.png',
+                imageWidth: 640,
+                imageHeight: 480,
+                isMe: false,
+                heroTag: 'unknown',
+                metadata: SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('点击下载图片'), findsOneWidget);
+      expect(find.byType(CachedNetworkImage), findsNothing);
+      await tester.tap(find.text('点击下载图片'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('点击下载图片'), findsNothing);
+      expect(find.byType(CachedNetworkImage), findsOneWidget);
+    },
+  );
+
   testWidgets('sticker uses a small repaint-isolated bubble without Hero', (
     tester,
   ) async {
@@ -27,6 +65,7 @@ void main() {
           home: Scaffold(
             body: ImageMessageBubble(
               imageUrl: 'https://example.org/sticker.png',
+              fileSize: 2 * 1024 * 1024,
               imageWidth: 512,
               imageHeight: 512,
               isMe: false,
@@ -67,6 +106,7 @@ void main() {
       isMe: true,
       msgType: MessageType.sticker,
       imageUrl: 'https://example.org/local-sticker.png',
+      fileSize: 2 * 1024 * 1024,
       imageWidth: 512,
       imageHeight: 512,
       isEdited: false,
@@ -86,6 +126,7 @@ void main() {
       isMe: true,
       msgType: MessageType.sticker,
       imageUrl: 'https://example.org/remote-sticker.png',
+      fileSize: 2 * 1024 * 1024,
       imageWidth: 512,
       imageHeight: 512,
       isEdited: false,
@@ -138,6 +179,7 @@ void main() {
       remoteToLocalFlightId = const {r'$remote-sticker': 'sticker-handoff'};
     });
     await tester.pump();
+    await tester.pump();
 
     expect(tester.state(find.byType(ImageMessageBubble)), same(localState));
     expect(
@@ -164,6 +206,7 @@ void main() {
               imageWidth: 640,
               imageHeight: 480,
               caption: '这里是图片描述',
+              fileSize: 2 * 1024 * 1024,
               isMe: false,
               heroTag: 'caption-test',
               metadata: SizedBox.shrink(),
@@ -200,6 +243,7 @@ void main() {
       isMe: true,
       msgType: MessageType.image,
       imageUrl: 'https://example.org/panorama.png',
+      fileSize: 2 * 1024 * 1024,
       imageWidth: 2400,
       imageHeight: 200,
       isEdited: false,
@@ -268,6 +312,7 @@ void main() {
               imageHeight: 480,
               isMe: false,
               heroTag: 'regular-photo',
+              fileSize: 2 * 1024 * 1024,
               metadata: SizedBox.shrink(),
             ),
           ),
@@ -294,6 +339,7 @@ void main() {
       isMe: true,
       msgType: MessageType.sticker,
       imageUrl: 'https://example.org/sticker.png',
+      fileSize: 2 * 1024 * 1024,
       isEdited: false,
       editHistory: [],
       reactions: [],
@@ -1136,6 +1182,7 @@ void main() {
         isMe: true,
         msgType: MessageType.image,
         imageUrl: 'https://example.org/uploaded.png',
+        fileSize: 2 * 1024 * 1024,
         imageWidth: 64,
         imageHeight: 64,
         isEdited: false,
@@ -1227,6 +1274,9 @@ void main() {
       // the local picture (that placeholder was the visible flash).
       // Both sources are present: the local bytes underneath, the server copy
       // on top waiting for its first frame.
+      // Wait for the saved automatic-download policy, keeping the picked
+      // image visible during that decision as well as the network load.
+      await tester.pump();
       expect(bubbleMedia(), findsNWidgets(2));
       expect(find.byKey(const ValueKey('msg-image-preview')), findsOneWidget);
       expect(find.byKey(const ValueKey('msg-image-server')), findsOneWidget);
@@ -1259,6 +1309,7 @@ void main() {
         isMe: false,
         msgType: MessageType.image,
         imageUrl: 'https://example.org/remote-blurhash.png',
+        fileSize: 2 * 1024 * 1024,
         imageWidth: 640,
         imageHeight: 480,
         isEdited: false,

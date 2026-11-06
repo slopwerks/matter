@@ -90,7 +90,9 @@ dependencies:
   dynamic_color: ^2.1.0
   pasteboard: ^0.6.0
   desktop_drop: ^0.8.4
+  connectivity_plus: ^7.0.0
 # Keep the Apple native libraries on the same SPM-capable upstream revision.
+  path: any
 dependency_overrides:
   media_kit_libs_ios_video:
     git:

@@ -21,6 +21,7 @@ import 'package:matter/src/rust/frb_generated.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/neu_test_theme.dart';
+import 'support/storage_network.dart';
 
 rust.ChatMessage picture(
   String id, {
@@ -42,6 +43,7 @@ rust.ChatMessage picture(
   isMe: false,
   msgType: type,
   imageUrl: 'mxc://example.org/$id',
+  fileSize: 2 * 1024 * 1024,
   imageWidth: 1200,
   imageHeight: 800,
   caption: caption,
@@ -76,7 +78,10 @@ class _Images implements RustLibApi {
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await installStorageWifi();
+  });
 
   test(
     'independent images fold only across adjacent five-minute intervals',

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/features/storage/storage_registry.dart';
 import 'package:matter/pages/chat/chat_media_source.dart';
 import 'package:matter/pages/chat/media_preparation.dart';
 import 'package:matter/providers/auth_provider.dart';
@@ -37,6 +38,7 @@ void main() {
   late _PlainMediaApi api;
   String? authorization;
   String? range;
+  var requests = 0;
 
   // Resource initialization runs outside the widget test's fake clock.
   setUp(() async {
@@ -49,7 +51,9 @@ void main() {
       '$homeserver/_matrix/client/v1/media/download/example.org/clip',
     );
     RustLib.initMock(api: api);
+    requests = 0;
     server.listen((request) async {
+      requests++;
       authorization = request.headers.value('authorization');
       range = request.headers.value('range');
       final chunk = Uint8List(64 * 1024);
@@ -61,6 +65,7 @@ void main() {
     });
   });
   tearDown(() async {
+    await storageRegistry.flush();
     RustLib.dispose();
     await server.close(force: true);
     await root.delete(recursive: true);
@@ -114,7 +119,18 @@ void main() {
       await tester.runAsync(() async {
         expect(await File(source!.media.uri).length(), 17 * 1024 * 1024);
         await source.cleanup();
-        expect(await File(source.media.uri).exists(), isFalse);
+        expect(await File(source.media.uri).exists(), isTrue);
+        expect(storageRegistry.isBusy(source.media.uri), isFalse);
+        final cached = await prepareChatMediaSource(
+          ref: owner,
+          url: null,
+          mediaSourceJson: jsonEncode({'url': 'mxc://example.org/clip'}),
+          filename: 'clip.mp4',
+          preparation: MediaPreparation(),
+        );
+        expect(cached.media.uri, source.media.uri);
+        expect(requests, 1);
+        await cached.cleanup();
       });
       preparation.cancel();
     },

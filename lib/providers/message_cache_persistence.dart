@@ -271,6 +271,17 @@ rust.ChatMessage chatMessageFromMap(Map<String, dynamic> map) {
   );
 }
 
+/// Enumerate disk snapshots without starting timeline providers or sync.
+Future<List<String>> cachedMessageRoomIds(String namespace) async {
+  final prefs = await SharedPreferences.getInstance();
+  final prefix = _msgStorageKey(namespace, '');
+  return prefs
+      .getKeys()
+      .where((key) => key.startsWith(prefix) && prefs.get(key) is String)
+      .map((key) => key.substring(prefix.length))
+      .toList();
+}
+
 /// Read the persisted snapshot for a room. Returns an empty list when there is
 /// no cache yet or the payload fails to decode (treated as a cache miss).
 Future<List<rust.ChatMessage>> loadCachedMessages({

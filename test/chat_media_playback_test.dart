@@ -10,6 +10,8 @@ import 'package:matter/pages/chat/file_message_bubble.dart';
 import 'package:matter/pages/chat/video_message_bubble.dart';
 import 'package:matter/src/rust/frb_generated.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'helpers/neu_test_theme.dart';
 import 'support/media_transfer_api.dart';
 import 'support/temp_path_provider.dart';
@@ -18,6 +20,7 @@ void main() {
   late MediaTransferApi api;
   late Directory root;
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     root = await Directory.systemTemp.createTemp('matter-chat-playback-');
     installTempPathProvider(root);
     api = MediaTransferApi();
@@ -84,6 +87,7 @@ void main() {
   Widget video(String source) => VideoMessageBubble(
     mediaSourceJson: jsonEncode({'file': jsonDecode(source)}),
     filename: 'clip.mp4',
+    fileSize: 2 * 1024 * 1024,
     isMe: false,
     heroTag: 'video',
     metadata: const SizedBox.shrink(),

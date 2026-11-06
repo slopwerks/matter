@@ -6,11 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/app_update_service.dart';
 import '../../features/app_update/update_dialog.dart';
-import '../../features/cache/image_cache_control.dart';
+import 'storage_page.dart';
 import '../../features/diagnostics/diagnostic_exporter.dart';
 import '../../features/push/push_providers.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/material_color_provider.dart';
@@ -311,10 +310,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   List<rust.AccountInfo> _accounts = [];
   Object? _accountsLoadError;
   String _versionLabel = '读取中…';
-  String _cacheSizeLabel = '计算中…';
   bool _checkingForUpdate = false;
   bool _exportingLogs = false;
-  bool _clearingCache = false;
   bool _credentialCompatibilityMode = false;
   bool _updatingCredentialCompatibilityMode = false;
   // The account being switched to (if any): shows progress on its tile and
@@ -333,7 +330,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _loadAccounts();
     _loadAppVersion();
     _loadCredentialCompatibilityMode();
-    if (!kIsWeb) _loadCacheSize();
     unawaited(refreshCurrentUserProfile(ref));
   }
 
@@ -429,44 +425,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           .showSnackBar(SnackBar(content: Text('导出日志包失败：$error')));
     } finally {
       if (mounted) setState(() => _exportingLogs = false);
-    }
-  }
-
-  Future<void> _loadCacheSize() async {
-    try {
-      final bytes = await imageCacheSizeBytes();
-      if (mounted) setState(() => _cacheSizeLabel = _formatCacheSize(bytes));
-    } catch (error) {
-      debugPrint('Failed to measure cache size: $error');
-      if (mounted) setState(() => _cacheSizeLabel = '大小未知');
-    }
-  }
-
-  Future<void> _clearCache() async {
-    if (_clearingCache) return;
-    final confirmed = await showNeuConfirm(
-      context,
-      title: '清理缓存',
-      message: '将删除已下载的图片与媒体缓存，下次查看时会重新加载。确定继续吗？',
-      confirmLabel: '清理',
-      danger: true,
-    );
-    if (!confirmed) return;
-
-    setState(() => _clearingCache = true);
-    try {
-      imageCache.clear();
-      await resetAuthenticatedMediaCacheManagers();
-      await clearImageCacheFiles();
-      if (!mounted) return;
-      neuToast(context, '缓存已清理');
-      await _loadCacheSize();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('清理缓存失败：$error')));
-    } finally {
-      if (mounted) setState(() => _clearingCache = false);
     }
   }
 
@@ -924,19 +882,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                   : _disableCredentialCompatibilityMode,
                             ),
                           _SettingItem(
-                            icon: Icons.cleaning_services_rounded,
-                            title: '清理缓存',
-                            subtitle: '图片与媒体缓存 · $_cacheSizeLabel',
-                            trailing: _clearingCache
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : null,
-                            onTap: _clearingCache ? null : _clearCache,
+                            icon: Icons.storage_rounded,
+                            title: '存储与数据',
+                            subtitle: '空间用量、分类清理、自动下载与保留策略',
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const StoragePage(),
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -1102,22 +1055,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
     );
-  }
-
-  String _formatCacheSize(int bytes) {
-    const kilobyte = 1024;
-    const megabyte = kilobyte * 1024;
-    const gigabyte = megabyte * 1024;
-    if (bytes >= gigabyte) {
-      return '${(bytes / gigabyte).toStringAsFixed(1)} GB';
-    }
-    if (bytes >= megabyte) {
-      return '${(bytes / megabyte).toStringAsFixed(1)} MB';
-    }
-    if (bytes >= kilobyte) {
-      return '${(bytes / kilobyte).toStringAsFixed(1)} KB';
-    }
-    return '$bytes B';
   }
 
   String _formatUserId(String userId) {

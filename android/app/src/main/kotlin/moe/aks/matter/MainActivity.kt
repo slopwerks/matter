@@ -16,6 +16,18 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : FlutterActivity() {
+    private var storageBridge: StorageBridge? = null
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+    ) {
+        if (storageBridge?.onActivityResult(requestCode, resultCode, data) == true) return
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun provideFlutterEngine(context: Context): FlutterEngine? = DownloadRuntime.engine
 
     override fun shouldDestroyEngineWithHost(): Boolean = !DownloadRuntime.ownsEngine(flutterEngine)
@@ -55,6 +67,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        storageBridge = StorageBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         DownloadRuntime.attachHost(this, flutterEngine)
         AudioRuntime.attachHost(this, flutterEngine)
         MethodChannel(
@@ -129,7 +142,7 @@ class MainActivity : FlutterActivity() {
                     if (path.isNullOrBlank()) {
                         result.error("invalid_path", "下载文件路径无效", null)
                     } else {
-                        requestFileSave(path, result)
+                        requestFileSave(path, call.argument<String>("directory"), result)
                     }
                 }
 
@@ -194,11 +207,12 @@ class MainActivity : FlutterActivity() {
 
     private fun requestFileSave(
         path: String,
+        directory: String?,
         result: MethodChannel.Result,
     ) {
         fileSaveExecutor.execute {
             try {
-                DownloadFileStore.save(applicationContext, path)
+                DownloadFileStore.save(applicationContext, path, directory)
                 runOnUiThread { result.success(true) }
             } catch (error: Exception) {
                 runOnUiThread {
