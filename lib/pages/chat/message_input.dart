@@ -26,6 +26,7 @@ import '../../widgets/neu_surface.dart';
 import '../settings/composer_keyboard_settings_page.dart';
 import 'attachment_picker.dart';
 import 'desktop_clipboard.dart';
+import 'composer/composer_draft_controller.dart';
 import 'composer_layout.dart';
 import 'composer_autocomplete.dart';
 import 'composer_picker_panel.dart';
@@ -34,31 +35,11 @@ import 'markdown_composer_page.dart';
 import 'send_flight.dart';
 import 'sticker_catalog.dart';
 
-/// In-memory draft text, isolated by both account and room.
-final messageDraftProvider =
-    NotifierProvider.family<MutableState<String>, String, RoomAccountKey>(
-      (key) => AccountScopedMutableState('', key.userId),
-    );
-
-/// In-progress edit text for [editingMessageProvider]'s message, isolated
-/// by account and room. The full-screen composer syncs here while editing
-/// so an edit survives the input widget being disposed (e.g. responsive
-/// layout switches); matched by message id so a stale edit never leaks
-/// into a different message's prefill.
-final editingDraftProvider =
-    NotifierProvider.family<
-      MutableState<({String editingId, String text})?>,
-      ({String editingId, String text})?,
-      RoomAccountKey
-    >((key) => AccountScopedMutableState(null, key.userId));
-
-/// The message edit currently being sent for this account and room. Unlike
-/// [_MessageInputState._isSending], this survives responsive layout switches,
-/// so a remounted input cannot submit or replace the same edit mid-flight.
-final editingSendInFlightProvider =
-    NotifierProvider.family<MutableState<String?>, String?, RoomAccountKey>(
-      (key) => AccountScopedMutableState(null, key.userId),
-    );
+export 'composer/composer_draft_controller.dart'
+    show
+        messageDraftProvider,
+        editingDraftProvider,
+        editingSendInFlightProvider;
 
 /// Typing notices owned by a full-screen composer after its opening input has
 /// been disposed. The route drives the active/idle lifecycle; this controller
@@ -464,7 +445,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   static const _toolbarAnimationDuration = Duration(milliseconds: 180);
   static const _toolbarAnimationCurve = Curves.easeOutCubic;
   static const _markdownComposer = MarkdownComposer();
-  static const _markdownSourceStore = MarkdownSourceStore();
+  late final ComposerDraftController _draftController;
 
   final _controller = MarkdownTextEditingController();
   final _focusNode = FocusNode();
@@ -493,11 +474,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
   int _pickerInstance = 0;
   InputPanelMode _lastPickerPanelMode = InputPanelMode.emoji;
 
-  /// Tracks the event id currently being edited, so we only prefill the input
-  /// when the edited message changes (not on every rebuild).
-  String? _lastEditingId;
-  String? _editingSourceLoadingId;
-
   @override
   void initState() {
     super.initState();
@@ -508,12 +484,18 @@ class MessageInputState extends ConsumerState<MessageInput> {
     if (widget.panelMode == InputPanelMode.attachment) {
       _lastPickerPanelMode = InputPanelMode.attachment;
     }
-    final draft = ref.read(messageDraftProvider(_draftKey));
-    _controller.value = TextEditingValue(
-      text: draft,
-      selection: TextSelection.collapsed(offset: draft.length),
+    _draftController = ComposerDraftController(
+      ref: ref,
+      draftKey: _draftKey,
+      textController: _controller,
+      onTextRestored: () {
+        setState(() => _hasText = _controller.text.trim().isNotEmpty);
+      },
+      onEditingCancelled: _stopTyping,
+      onTextChanged: _onTextChanged,
     );
-    _hasText = draft.trim().isNotEmpty;
+    _draftController.restoreInitialText();
+    _hasText = _controller.text.trim().isNotEmpty;
     _wasComposingText = _isComposingText;
     _autocompleteMatch = composerAutocompleteMatch(_controller.value);
     _controller.addListener(_onTextChanged);
@@ -554,6 +536,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   void dispose() {
     _typingTimer?.cancel();
     _typingKeepAliveTimer?.cancel();
+    _draftController.dispose();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -569,19 +552,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final composingChanged = isComposingText != _wasComposingText;
     final autocompleteMatch = composerAutocompleteMatch(_controller.value);
     final autocompleteChanged = autocompleteMatch != _autocompleteMatch;
-    final editing = ref.read(editingMessageProvider(_draftKey));
-    if (editing == null) {
-      ref.read(messageDraftProvider(_draftKey).notifier).value =
-          _controller.text;
-    } else {
-      // Keep the surviving edit draft in step with the inline text, so a
-      // layout switch never recovers an older full-screen edit over a
-      // newer inline one (or vice versa).
-      ref.read(editingDraftProvider(_draftKey).notifier).value = (
-        editingId: editing.id,
-        text: _controller.text,
-      );
-    }
+    _draftController.saveText();
     if (_hasText != hasText || autocompleteChanged || composingChanged) {
       setState(() {
         _hasText = hasText;
@@ -729,7 +700,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   Future<void> _pasteClipboard(SelectionChangedCause cause) async {
     if (_readingClipboard ||
         _externalAttachmentsOpen ||
-        _editingSourceLoadingId != null) {
+        _draftController.isSourceLoading) {
       return;
     }
     _readingClipboard = true;
@@ -1327,7 +1298,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   /// [editingDraftProvider] for edits — and a send after this state is gone
   /// goes through [sendDraftText] with provider state only.
   Future<void> _openMarkdownComposer() async {
-    if (_editingSourceLoadingId != null) return;
+    if (_draftController.isSourceLoading) return;
     _focusNode.unfocus();
     widget.onPanelModeChanged(InputPanelMode.none);
     _composerOpen = true;
@@ -1441,7 +1412,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final draftKey = _draftKey;
     if (text.isEmpty ||
         _isSending ||
-        _editingSourceLoadingId != null ||
+        _draftController.isSourceLoading ||
         ref.read(editingSendInFlightProvider(draftKey)) != null) {
       return false;
     }
@@ -2017,23 +1988,11 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final expanded = _expandedComposer;
     final replyTo = ref.watch(replyingToProvider(_draftKey));
     final editing = ref.watch(editingMessageProvider(_draftKey));
-    // Do not expose a stale new-message draft as editable content while the
-    // original source for a newly selected edit is still being restored.
-    if (editing != null && editing.id != _lastEditingId) {
-      _lastEditingId = editing.id;
-      _editingSourceLoadingId = editing.id;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _lastEditingId != editing.id) return;
-        _prefillEditingSource(editing);
-      });
-    } else if (editing == null) {
-      _lastEditingId = null;
-      _editingSourceLoadingId = null;
-    }
+    // Do not expose a stale draft while the selected edit source is loading.
+    _draftController.synchronize(editing);
     final editingSendId = ref.watch(editingSendInFlightProvider(_draftKey));
     final editingSendInFlight = editing != null && editingSendId == editing.id;
-    final editingSourceLoading =
-        editing != null && _editingSourceLoadingId == editing.id;
+    final editingSourceLoading = _draftController.isSourceLoading;
     final hasImages = pendingImages.selected.isNotEmpty;
     final sendBusy =
         _isSending ||
@@ -2059,34 +2018,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
           );
     final autocompleteLoading =
         membersAsync?.isLoading == true || roomsAsync?.isLoading == true;
-    // Follow external text writes: the full-screen composer syncs its text
-    // into these providers live, and a layout switch may mount a fresh
-    // input while the composer is still open. Our own writes echo back
-    // with identical text and no-op, so this cannot loop.
-    ref.listen(editingMessageProvider(_draftKey), (previous, next) {
-      if (previous != null && next == null) _restoreDraft();
-    });
-    ref.listen(messageDraftProvider(_draftKey), (_, next) {
-      if (ref.read(editingMessageProvider(_draftKey)) != null) return;
-      if (_controller.text != next) {
-        _controller.value = TextEditingValue(
-          text: next,
-          selection: TextSelection.collapsed(offset: next.length),
-        );
-      }
-    });
-    ref.listen(editingDraftProvider(_draftKey), (_, next) {
-      final editing = ref.read(editingMessageProvider(_draftKey));
-      if (editing == null || next == null || next.editingId != editing.id) {
-        return;
-      }
-      if (_controller.text != next.text) {
-        _controller.value = TextEditingValue(
-          text: next.text,
-          selection: TextSelection.collapsed(offset: next.text.length),
-        );
-      }
-    });
     final visiblePickerMode =
         widget.panelMode == InputPanelMode.emoji ||
             widget.panelMode == InputPanelMode.attachment
@@ -2433,71 +2364,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
         ],
       ),
     );
-  }
-
-  Future<void> _prefillEditingSource(rust.ChatMessage editing) async {
-    final draftKey = _draftKey;
-    final roomId = widget.roomId;
-    // An in-progress edit from a (possibly disposed) full-screen composer
-    // session takes precedence over the stored original. Captured before
-    // the awaits: after an unmount this state's ref is dead, the notifier
-    // is not.
-    final editDraftState = ref.read(editingDraftProvider(draftKey).notifier);
-    var pending = editDraftState.value;
-    String? source;
-    try {
-      if (pending != null && pending.editingId == editing.id) {
-        source = pending.text;
-      } else {
-        final allowPersistence = await _canPersistMarkdownSource(roomId);
-        source = await _markdownSourceStore.load(
-          userId: draftKey.userId,
-          roomId: roomId,
-          eventId: editing.id,
-          body: editing.content,
-          formattedBody: editing.formattedBody,
-          allowPersistence: allowPersistence,
-        );
-        // The full-screen composer may have synced a newer edit while the
-        // store read was in flight; re-check so it wins over the stored text.
-        pending = editDraftState.value;
-        if (pending != null && pending.editingId == editing.id) {
-          source = pending.text;
-        }
-      }
-    } catch (e) {
-      debugPrint('Failed to restore markdown source: $e');
-    }
-    if (!mounted || _lastEditingId != editing.id) return;
-    _controller.text = source ?? editing.content;
-    _controller.selection = TextSelection.fromPosition(
-      TextPosition(offset: _controller.text.length),
-    );
-    setState(() {
-      if (_editingSourceLoadingId == editing.id) {
-        _editingSourceLoadingId = null;
-      }
-      _hasText = _controller.text.trim().isNotEmpty;
-    });
-  }
-
-  void _restoreDraft() {
-    _lastEditingId = null;
-    _editingSourceLoadingId = null;
-    _stopTyping();
-    final draft = ref.read(messageDraftProvider(_draftKey));
-    _controller.removeListener(_onTextChanged);
-    _controller.value = TextEditingValue(
-      text: draft,
-      selection: TextSelection.collapsed(offset: draft.length),
-    );
-    _controller.addListener(_onTextChanged);
-    final hasText = draft.trim().isNotEmpty;
-    if (_hasText != hasText) {
-      setState(() {
-        _hasText = hasText;
-      });
-    }
   }
 
   Widget _buildReplyBar(rust.ChatMessage replyTo) {
