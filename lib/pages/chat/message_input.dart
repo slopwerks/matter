@@ -22,11 +22,12 @@ import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
-import '../../widgets/neu_surface.dart';
 import '../settings/composer_keyboard_settings_page.dart';
 import 'attachment_picker.dart';
 import 'desktop_clipboard.dart';
+import 'composer/composer_actions_bar.dart';
 import 'composer/composer_draft_controller.dart';
+import 'composer/composer_quote_banner.dart';
 import 'composer_layout.dart';
 import 'composer_autocomplete.dart';
 import 'composer_picker_panel.dart';
@@ -442,8 +443,6 @@ class MessageInput extends ConsumerStatefulWidget {
 }
 
 class MessageInputState extends ConsumerState<MessageInput> {
-  static const _toolbarAnimationDuration = Duration(milliseconds: 180);
-  static const _toolbarAnimationCurve = Curves.easeOutCubic;
   static const _markdownComposer = MarkdownComposer();
   late final ComposerDraftController _draftController;
 
@@ -675,27 +674,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
       ref.read(composerAttachmentDraftProvider(_draftKey)).selected.isNotEmpty;
 
   bool get _expandedComposer => MediaQuery.sizeOf(context).width >= 600;
-
-  Widget _composerToolButton({
-    required IconData icon,
-    String? tooltip,
-    bool selected = false,
-    VoidCallback? onPressed,
-  }) => _expandedComposer || _keyboardMouse || _isDesktop
-      ? ComposerToolButton(
-          compact: _keyboardMouse,
-          icon: icon,
-          tooltip: tooltip,
-          selected: selected,
-          onPressed: onPressed,
-        )
-      : NeuIconButton(
-          icon: icon,
-          tooltip: tooltip,
-          size: 44,
-          selected: selected,
-          onPressed: onPressed,
-        );
 
   Future<void> _pasteClipboard(SelectionChangedCause cause) async {
     if (_readingClipboard ||
@@ -2040,9 +2018,24 @@ class MessageInputState extends ConsumerState<MessageInput> {
           children: [
             // Edit bar takes precedence; otherwise show reply bar.
             if (editing != null)
-              _buildEditingBar(editing, sendInFlight: editingSendInFlight)
+              ComposerQuoteBanner.editing(
+                content: editing.content,
+                sendInFlight: editingSendInFlight,
+                onCancel: () {
+                  ref.read(editingMessageProvider(_draftKey).notifier).value =
+                      null;
+                  ref.read(editingDraftProvider(_draftKey).notifier).value =
+                      null;
+                },
+              )
             else if (replyTo != null)
-              _buildReplyBar(replyTo),
+              ComposerQuoteBanner.reply(
+                senderName: replyTo.senderName,
+                content: replyTo.content,
+                onCancel: () {
+                  ref.read(replyingToProvider(_draftKey).notifier).value = null;
+                },
+              ),
             if (autocompleteMatch != null &&
                 (autocompleteOptions.isNotEmpty || autocompleteLoading))
               Flexible(
@@ -2056,9 +2049,28 @@ class MessageInputState extends ConsumerState<MessageInput> {
             ComposerSurface(
               expanded: expanded,
               compact: desktop,
-              child: ComposerLayout(
-                desktop: expanded,
+              child: ComposerActionsBar(
+                expanded: expanded,
+                compact: desktop,
                 showMore: _isDesktop || desktop,
+                inlineImages: inlineImages,
+                emojiIcon: widget.panelMode == InputPanelMode.emoji
+                    ? Icons.keyboard_rounded
+                    : (_pickerTab == ComposerPickerTab.sticker
+                          ? Icons.interests_rounded
+                          : Icons.sentiment_satisfied_alt_rounded),
+                emojiSelected: widget.panelMode == InputPanelMode.emoji,
+                attachmentSelected:
+                    widget.panelMode == InputPanelMode.attachment,
+                sendBusy: sendBusy,
+                hasText: _hasText,
+                hasImages: hasImages,
+                onToggleEmoji: widget.panelMode == InputPanelMode.emoji
+                    ? _showKeyboard
+                    : _togglePicker,
+                onToggleAttachment: _toggleAttachmentPicker,
+                onShowTools: _showComposerToolsMenu,
+                onSend: _sendMessage,
                 attachments:
                     inlineImages && (hasImages || pendingImages.isSending)
                     ? AttachmentPicker(
@@ -2083,19 +2095,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
                         onClose: _showKeyboard,
                       )
                     : null,
-                emojiButton: _composerToolButton(
-                  icon: widget.panelMode == InputPanelMode.emoji
-                      ? Icons.keyboard_rounded
-                      : (_pickerTab == ComposerPickerTab.sticker
-                            ? Icons.interests_rounded
-                            : Icons.sentiment_satisfied_alt_rounded),
-                  selected: widget.panelMode == InputPanelMode.emoji,
-                  onPressed: sendBusy
-                      ? null
-                      : widget.panelMode == InputPanelMode.emoji
-                      ? _showKeyboard
-                      : _togglePicker,
-                ),
                 editor: Container(
                   key: _textFieldKey,
                   constraints: BoxConstraints(
@@ -2186,94 +2185,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
                     },
                   ),
                 ),
-                attachmentButton: Builder(
-                  builder: (buttonContext) => Tooltip(
-                    message: inlineImages ? '选择图片' : '附件',
-                    // Desktop hover still shows the tooltip; its
-                    // long-press trigger belongs to the outer
-                    // GestureDetector so it can open the tools menu
-                    // instead.
-                    triggerMode: TooltipTriggerMode.manual,
-                    child: GestureDetector(
-                      onLongPress: sendBusy
-                          ? null
-                          : () => _showComposerToolsMenu(buttonContext),
-                      child: _composerToolButton(
-                        icon: inlineImages
-                            ? Icons.image_outlined
-                            : Icons.add_rounded,
-                        selected: widget.panelMode == InputPanelMode.attachment,
-                        onPressed: sendBusy ? null : _toggleAttachmentPicker,
-                      ),
-                    ),
-                  ),
-                ),
-                moreButton: Builder(
-                  builder: (buttonContext) => _composerToolButton(
-                    tooltip: '更多',
-                    icon: Icons.more_horiz_rounded,
-                    onPressed: sendBusy
-                        ? null
-                        : () => _showComposerToolsMenu(buttonContext),
-                  ),
-                ),
-                sendButton: expanded
-                    ? FilledButton.icon(
-                        key: const ValueKey('send_only'),
-                        style: composerSendButtonStyle(
-                          Theme.of(context),
-                          compact: desktop,
-                        ),
-                        icon: const Icon(Icons.send_rounded),
-                        onPressed: sendBusy || (!_hasText && !hasImages)
-                            ? null
-                            : _sendMessage,
-                        label: sendBusy
-                            ? SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  color: colors.onAccent,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('发送'),
-                      )
-                    : AnimatedSwitcher(
-                        duration: _toolbarAnimationDuration,
-                        switchInCurve: _toolbarAnimationCurve,
-                        switchOutCurve: Curves.easeInCubic,
-                        child: _hasText || hasImages
-                            ? SizedBox.square(
-                                key: const ValueKey('send_only'),
-                                dimension: 44,
-                                child: sendBusy
-                                    ? Center(
-                                        child: SizedBox.square(
-                                          dimension: 20,
-                                          child: CircularProgressIndicator(
-                                            color: colors.accent,
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                      )
-                                    : NeuIconButton(
-                                        icon: Icons.send_rounded,
-                                        size: 44,
-                                        accent: true,
-                                        onPressed: _sendMessage,
-                                      ),
-                              )
-                            : const SizedBox.square(
-                                key: ValueKey('voice_only'),
-                                dimension: 44,
-                                child: NeuIconButton(
-                                  tooltip: '语音消息暂未提供',
-                                  icon: Icons.mic_none_rounded,
-                                  size: 44,
-                                  onPressed: null,
-                                ),
-                              ),
-                      ),
               ),
             ),
             AnimatedContainer(
@@ -2361,143 +2272,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
         children: [
           const Positioned.fill(child: BottomFadeBlur(useShader: true)),
           input,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReplyBar(rust.ChatMessage replyTo) {
-    final colors = context.neu;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
-      decoration: NeuDecoration(
-        colors: colors,
-        superellipseEnabled: ChatVisualSettingsScope.of(context)
-            .superellipseBorderEnabled,
-        depth: NeuDepth.pressed,
-        radius: NeuRadius.button,
-        intensity: .7,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 3,
-            height: 32,
-            decoration: BoxDecoration(
-              color: colors.accent,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  replyTo.senderName,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colors.accent,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  replyTo.content,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          NeuIconButton(
-            icon: Icons.close_rounded,
-            size: 30,
-            onPressed: () {
-              ref.read(replyingToProvider(_draftKey).notifier).value = null;
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEditingBar(
-    rust.ChatMessage editing, {
-    required bool sendInFlight,
-  }) {
-    final colors = context.neu;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
-      decoration: NeuDecoration(
-        colors: colors,
-        superellipseEnabled: ChatVisualSettingsScope.of(context)
-            .superellipseBorderEnabled,
-        depth: NeuDepth.pressed,
-        radius: NeuRadius.button,
-        intensity: .7,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 3,
-            height: 32,
-            decoration: BoxDecoration(
-              color: colors.warning,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '编辑中',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: colors.warning,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  editing.content,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (sendInFlight)
-            SizedBox.square(
-              dimension: 30,
-              child: Center(
-                child: SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(
-                    color: colors.accent,
-                    strokeWidth: 2,
-                  ),
-                ),
-              ),
-            )
-          else
-            NeuIconButton(
-              icon: Icons.close_rounded,
-              size: 30,
-              onPressed: () {
-                ref.read(editingMessageProvider(_draftKey).notifier).value =
-                    null;
-                ref.read(editingDraftProvider(_draftKey).notifier).value = null;
-              },
-            ),
         ],
       ),
     );
