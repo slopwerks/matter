@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,8 @@ import 'features/app_update/app_update_service.dart';
 import 'features/app_update/update_dialog.dart';
 import 'features/auth/session_expiry_listener.dart';
 import 'features/audio/audio_playback_provider.dart';
+import 'features/storage/storage_image_cache.dart';
+import 'features/storage/storage_providers.dart';
 import 'features/push/push_runtime.dart';
 import 'features/push/desktop_notification_listener.dart';
 import 'features/push/push_notification_listener.dart';
@@ -33,6 +36,7 @@ import 'theme/neu_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  CachedNetworkImageProvider.defaultCacheManager = managedDefaultImageCache;
   MediaKit.ensureInitialized();
   await cleanupStaleMediaSources();
   await RustLib.init();
@@ -405,7 +409,9 @@ class _AppRootState extends ConsumerState<_AppRoot>
                 clearActiveSessionState(ref, markSessionReady: true);
                 _navigatorKey.currentState?.popUntil((route) => route.isFirst);
               },
-              child: AudioPlaybackRoot(child: child!),
+              child: StorageMaintenanceRoot(
+                child: AudioPlaybackRoot(child: child!),
+              ),
             ),
           ),
         ),

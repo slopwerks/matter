@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../../features/storage/storage_download_policy.dart';
+import '../../features/storage/storage_models.dart';
+import '../../features/storage/storage_providers.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/neu_colors.dart';
+import 'cached_chat_media_source.dart';
 import 'chat_media_source.dart';
 import 'media_preparation.dart';
 import 'prepared_media_source.dart';
@@ -18,6 +22,8 @@ class VideoMessageBubble extends ConsumerStatefulWidget {
   final String? videoUrl;
   final String? mediaSourceJson;
   final String filename;
+  final String? roomId;
+  final int? fileSize;
   final int? videoWidth;
   final int? videoHeight;
   final int? durationMs;
@@ -31,6 +37,8 @@ class VideoMessageBubble extends ConsumerStatefulWidget {
     this.videoUrl,
     this.mediaSourceJson,
     required this.filename,
+    this.roomId,
+    this.fileSize,
     this.videoWidth,
     this.videoHeight,
     this.durationMs,
@@ -49,6 +57,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
   VideoController? _videoController;
   PreparedMediaSource? _preparedSource;
   Object? _error;
+  bool _downloadBlocked = false;
   int _initializationId = 0;
   double _previewVolume = 0;
   MediaPreparation? _preparation;
@@ -63,6 +72,10 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
     );
     ref.listenManual(sessionReadyProvider, (previous, next) {
       if (previous == true && !next) _accountChanged();
+    });
+    ref.listenManual(storageAutoDownloadPolicyProvider, (_, _) {
+      // A file already prepared for playback stays usable on every network.
+      if (_preparedSource == null) unawaited(_initialize());
     });
     _initialize();
   }
@@ -101,7 +114,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
     }
   }
 
-  Future<void> _initialize() async {
+  Future<void> _initialize({bool manual = false}) async {
     final initializationId = ++_initializationId;
     _preparation?.cancel();
     _closePreview();
@@ -117,15 +130,35 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
     _error = null;
     await _disposeVideoSource(oldController, oldPreparedSource);
     if (!mounted || initializationId != _initializationId) return;
-
     MediaPlayback? controller;
     PreparedMediaSource? preparedSource;
     try {
-      preparedSource = await prepareChatMediaSource(
+      preparedSource = await cachedChatMediaSource(
         ref: ref,
         url: videoUrl,
         mediaSourceJson: mediaSourceJson,
         filename: filename,
+        roomId: widget.roomId,
+      );
+      if (preparedSource == null &&
+          !manual &&
+          !await mayAutoDownload(StorageKind.video, widget.fileSize)) {
+        if (mounted && initializationId == _initializationId) {
+          setState(() => _downloadBlocked = true);
+        }
+        return;
+      }
+      if (!mounted || initializationId != _initializationId) {
+        await preparedSource?.cleanup();
+        return;
+      }
+      setState(() => _downloadBlocked = false);
+      preparedSource ??= await prepareChatMediaSource(
+        ref: ref,
+        url: videoUrl,
+        mediaSourceJson: mediaSourceJson,
+        filename: filename,
+        roomId: widget.roomId,
         preparation: preparation,
       );
       if (!mounted || initializationId != _initializationId) {
@@ -209,7 +242,17 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
           child: Stack(
             children: [
               Positioned.fill(
-                child: controller == null
+                child: _downloadBlocked
+                    ? TextButton.icon(
+                        onPressed: () => _initialize(manual: true),
+                        icon: const Icon(Icons.download_rounded),
+                        label: Text(
+                          widget.fileSize == null
+                              ? '点击下载视频'
+                              : '下载 ${formatStorageBytes(widget.fileSize!)}',
+                        ),
+                      )
+                    : controller == null
                     ? _buildPlaceholder(_error != null)
                     : controller.error != null
                     ? _buildPlaceholder(true)
@@ -267,7 +310,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
       onTap: failed
           ? () {
               setState(() => _error = null);
-              unawaited(_initialize());
+              unawaited(_initialize(manual: true));
             }
           : null,
       child: Center(

@@ -25,6 +25,7 @@ class AudioSourceCache {
     required String key,
     required String filename,
     required MediaPreparation preparation,
+    String? roomId,
     Uri? url,
     Map<String, String> headers = const {},
     Future<PreparedMediaSource> Function(MediaPreparation)? verifiedLoader,

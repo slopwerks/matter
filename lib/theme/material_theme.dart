@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 import 'neu_colors.dart';
+import 'storage_visual_theme.dart';
 
 const defaultMaterialSeedColor = Color(0xFF5B8DEF);
 
@@ -521,6 +522,10 @@ ThemeData buildMaterialTheme(
     ),
 
     extensions: [
+      StorageVisualTheme(
+        scheme: scheme,
+        previewShape: materialPreviewThumbnailShape,
+      ),
       NeuColors(
         isMaterial: true,
         base: surfaces.page,

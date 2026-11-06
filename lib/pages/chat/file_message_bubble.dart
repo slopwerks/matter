@@ -1,6 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/downloads/download_notification.dart';
+import '../../features/storage/automatic_attachment_cache.dart';
+import '../../features/storage/managed_media.dart';
+import '../../features/storage/storage_models.dart';
+import '../../providers/auth_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/sheets.dart';
@@ -139,16 +146,21 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
       if (!preview) {
         notification = await DownloadNotification.start(_safeFilename);
       }
-      final bytes = widget.mediaSourceJson != null
-          ? await rust.downloadMediaSourceBytes(
-              mediaSourceJson: widget.mediaSourceJson!,
-              maxSizeBytes: preview
-                  ? _maximumMarkdownPreviewBytes
-                  : maxSizeBytes,
-            )
-          : widget.imageUrl != null
-          ? await rust.downloadMediaBytes(mxcUrl: widget.imageUrl!)
-          : null;
+      final cached = await _cachedBytes(
+        preview ? _maximumMarkdownPreviewBytes : maxSizeBytes,
+      );
+      final bytes =
+          cached ??
+          (widget.mediaSourceJson != null
+              ? await rust.downloadMediaSourceBytes(
+                  mediaSourceJson: widget.mediaSourceJson!,
+                  maxSizeBytes: preview
+                      ? _maximumMarkdownPreviewBytes
+                      : maxSizeBytes,
+                )
+              : widget.imageUrl != null
+              ? await rust.downloadMediaBytes(mxcUrl: widget.imageUrl!)
+              : null);
       if (bytes == null || bytes.isEmpty) throw Exception('文件不可用');
       if (preview) {
         if (bytes.length > _maximumMarkdownPreviewBytes) {
@@ -197,6 +209,24 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
       title: '下载大文件？',
       message: '文件大小约 ${_formatFileSize(fileSize)}，下载时会占用较多内存和流量。',
       confirmLabel: '继续下载',
+    );
+  }
+
+  Future<Uint8List?> _cachedBytes(int maxBytes) async {
+    if (widget.roomId == null) return null;
+    final account = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(currentUserProvider);
+    if (account == null) return null;
+    final key = storageAccountKey(account.id, account.homeserver);
+    return readManagedMediaBytes(
+      account: key,
+      key: widget.mediaSourceJson ?? widget.imageUrl ?? '',
+      filename: _safeFilename,
+      kind: _isAudio ? StorageKind.audio : StorageKind.document,
+      owner: StorageOwner(key, widget.roomId!),
+      maxBytes: maxBytes,
     );
   }
 
@@ -318,6 +348,15 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                   ),
                 ),
               ),
+              if (widget.roomId != null)
+                AutomaticAttachmentCache(
+                  filename: _safeFilename,
+                  url: widget.imageUrl,
+                  source: widget.mediaSourceJson,
+                  roomId: widget.roomId!,
+                  bytes: widget.fileSize,
+                  kind: _isAudio ? StorageKind.audio : StorageKind.document,
+                ),
               widget.metadata,
             ],
           ),

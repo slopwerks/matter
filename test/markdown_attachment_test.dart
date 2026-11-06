@@ -10,6 +10,8 @@ import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/widgets/neu_surface.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'helpers/neu_test_theme.dart';
 import 'support/temp_path_provider.dart';
 
@@ -51,6 +53,7 @@ void main() {
   late _AttachmentApi api;
   late Directory directory;
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     api = _AttachmentApi();
     RustLib.initMock(api: api);
     directory = await Directory.systemTemp.createTemp('matter-md-test');

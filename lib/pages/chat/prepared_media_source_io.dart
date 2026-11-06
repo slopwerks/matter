@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../features/storage/storage_registry.dart';
 import '../../src/rust/api/media_transfer.dart' as rust;
 import 'media_preparation.dart';
 
@@ -115,6 +116,7 @@ Future<PreparedMediaSource> _prepareMediaFile(
   );
   await mediaDirectory.create(recursive: true);
   final sourceDirectory = await mediaDirectory.createTemp('media-');
+  final release = storageRegistry.pin(sourceDirectory.path);
   final file = File(
     '${sourceDirectory.path}/source.${_safeMediaExtension(filename)}',
   );
@@ -123,7 +125,11 @@ Future<PreparedMediaSource> _prepareMediaFile(
     await write(file);
     preparation?.throwIfCancelled();
   } catch (_) {
-    await sourceDirectory.delete(recursive: true);
+    try {
+      await sourceDirectory.delete(recursive: true);
+    } finally {
+      release();
+    }
     rethrow;
   }
   return PreparedMediaSource(
@@ -135,6 +141,8 @@ Future<PreparedMediaSource> _prepareMediaFile(
         }
       } catch (_) {
         // Best-effort cleanup; the OS may still hold the file during teardown.
+      } finally {
+        release();
       }
     },
   );

@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../pages/chat/media_preparation.dart';
 import '../../pages/chat/prepared_media_source.dart';
+import '../storage/storage_models.dart';
+import '../storage/storage_registry.dart';
 import 'audio_spool_server_io.dart';
 
 /// Completed, verified account-scoped files survive track changes and stop.
@@ -64,6 +66,7 @@ class AudioSourceCache {
     required String key,
     required String filename,
     required MediaPreparation preparation,
+    String? roomId,
     Uri? url,
     Map<String, String> headers = const {},
     Future<PreparedMediaSource> Function(MediaPreparation)? verifiedLoader,
@@ -108,7 +111,9 @@ class AudioSourceCache {
       }
     }
     final selected = entry;
+    if (roomId != null) selected.owners[roomId] = StorageOwner(account, roomId);
     selected.references++;
+    final unpin = storageRegistry.pin(selected.directory.path);
     selected.used = DateTime.now();
     String? localUrl;
     Future<void>? routeClosing;
@@ -125,6 +130,7 @@ class AudioSourceCache {
         await (routeClosing ??= _server.unregister(localUrl));
       }
       selected.references--;
+      unpin();
       if (selected.failed ||
           selected.invalidated ||
           (!selected.complete && selected.references == 0)) {
@@ -152,6 +158,7 @@ class AudioSourceCache {
           key: key,
           filename: filename,
           preparation: preparation,
+          roomId: roomId,
           url: url,
           headers: headers,
           verifiedLoader: verifiedLoader,
@@ -160,6 +167,7 @@ class AudioSourceCache {
       if (verifiedLoader != null || selected.complete) {
         await _ready(selected, preparation);
         checkAccount();
+        if (selected.complete) await _record(selected);
         if (selected.failed || selected.invalidated) {
           throw StateError('Audio download or verification failed');
         }
@@ -257,6 +265,7 @@ class AudioSourceCache {
       entry.digest = digest.toString();
       entry.checked = true;
       entry.complete = true;
+      await _record(entry);
     } catch (_) {
       entry.failed = true;
       try {
@@ -270,6 +279,23 @@ class AudioSourceCache {
         _retire(entry);
       }
       unawaited(_evict());
+    }
+  }
+
+  Future<void> _record(_Entry entry) async {
+    try {
+      await storageRegistry.record(
+        entry.file.path,
+        StorageKind.audio,
+        owners: entry.owners.values,
+      );
+      await storageRegistry.record(
+        entry.marker.path,
+        StorageKind.audio,
+        owners: entry.owners.values,
+      );
+    } catch (_) {
+      // Index persistence must not invalidate a verified media download.
     }
   }
 
@@ -478,6 +504,7 @@ class _Entry implements AudioSpool {
   final String key;
   final Directory directory;
   final preparation = MediaPreparation();
+  final owners = <String, StorageOwner>{};
   final headers = Completer<void>();
   final finished = Completer<void>();
   final disposed = Completer<void>();

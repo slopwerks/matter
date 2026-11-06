@@ -23,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 import 'helpers/neu_test_theme.dart';
+import 'support/storage_network.dart';
 import 'support/temp_path_provider.dart';
 
 class _DownloadPaths extends TempPathProvider {
@@ -146,7 +147,7 @@ class ImageApi implements RustLibApi {
 
 rust.ChatMessage imageMessage(
   String id, {
-  int? size,
+  int? size = 2 * 1024 * 1024,
   String? filename,
   String? mimeType,
   String? caption,
@@ -300,8 +301,9 @@ Future<void> chooseImageAction(
 
 void main() {
   late ImageApi api;
-  setUp(() {
+  setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    await installStorageWifi();
     api = ImageApi();
     RustLib.initMock(api: api);
   });
@@ -539,7 +541,7 @@ void main() {
                 'https://example.org/thumbnail/$i',
         }),
       });
-      await pumpImages(tester, [imageMessage('persisted')]);
+      await pumpImages(tester, [imageMessage('persisted', size: 512 * 1024)]);
       expect(api.thumbnails, isEmpty);
       expect(api.originals, isEmpty);
       expect(
@@ -562,13 +564,16 @@ void main() {
         isNotNull,
       );
       await tester.pumpWidget(const SizedBox());
-      await pumpImages(tester, [imageMessage('persisted')]);
+      await pumpImages(tester, [imageMessage('persisted', size: 512 * 1024)]);
       expect(api.thumbnails, isEmpty);
       await tester.pumpWidget(const SizedBox());
       await pumpImages(tester, [
-        imageMessage('persisted'),
+        imageMessage('persisted', size: 512 * 1024),
       ], account: 'other-account');
-      expect(api.thumbnails, ['mxc://example.org/persisted']);
+      // This account must resolve its own original, without reusing the first
+      // account's persisted URL. The image is below the new Wi-Fi limit.
+      expect(api.originals, ['mxc://example.org/persisted']);
+      expect(api.thumbnails, isEmpty);
     },
   );
 
@@ -883,7 +888,10 @@ void main() {
     'an original resolving during a swipe cannot change the selected image',
     (tester) async {
       api.originalPending = Completer<String?>();
-      await pumpImages(tester, [imageMessage('older'), imageMessage('latest')]);
+      await pumpImages(tester, [
+        imageMessage('older', size: 16 * 1024 * 1024),
+        imageMessage('latest', size: 16 * 1024 * 1024),
+      ]);
       await openImage(tester, 'latest');
       await tester.tap(find.text('原图').hitTestable());
       await tester.pump();
@@ -912,7 +920,7 @@ void main() {
     'original resolution failure leaves a retry that can load the image',
     (tester) async {
       api.originalPending = Completer<String?>();
-      await pumpImages(tester, [imageMessage('retry')]);
+      await pumpImages(tester, [imageMessage('retry', size: 16 * 1024 * 1024)]);
       await openImage(tester, 'retry');
       await tester.tap(find.text('原图'));
       await tester.pump();
@@ -958,7 +966,10 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     tester.view.padding = const FakeViewPadding(top: 24);
     addTearDown(tester.view.resetPadding);
-    await pumpImages(tester, [imageMessage('remember')], dark: false);
+    // Above the Wi-Fi original limit, so the explicit quality switch is visible.
+    await pumpImages(tester, [
+      imageMessage('remember', size: 16 * 1024 * 1024),
+    ], dark: false);
     await openImage(tester, 'remember');
     final qualityWidth = tester
         .getSize(find.widgetWithText(TextButton, '原图'))
@@ -993,6 +1004,43 @@ void main() {
     expect(api.originals, ['mxc://example.org/remember']);
   });
 
+  testWidgets('a slow automatic original leaves its thumbnail usable', (
+    tester,
+  ) async {
+    api.originalPending = Completer<String?>();
+    await pumpImages(tester, [imageMessage('slow', size: 512 * 1024)]);
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(api.originals, ['mxc://example.org/slow']);
+    expect(api.thumbnails, ['mxc://example.org/slow']);
+    expect(
+      find.byKey(const ValueKey('msg-image:image-preview:slow')),
+      findsOneWidget,
+    );
+    api.originalPending!.complete('https://example.org/original/slow');
+    await tester.pump();
+    expect(
+      tester
+          .widget<CachedNetworkImage>(find.byType(CachedNetworkImage))
+          .imageUrl,
+      'https://example.org/original/slow',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'over-limit images fetch a thumbnail without fetching the original',
+    (tester) async {
+      await pumpImages(tester, [imageMessage('large', size: 16 * 1024 * 1024)]);
+      expect(api.originals, isEmpty);
+      expect(api.thumbnails, ['mxc://example.org/large']);
+      expect(
+        find.byKey(const ValueKey('msg-image:image-preview:large')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('small image loads original despite large pixel dimensions', (
     tester,
   ) async {
@@ -1004,7 +1052,7 @@ void main() {
     expect(find.byTooltip('下载'), findsOneWidget);
   });
 
-  testWidgets('GIF uses the larger automatic original threshold', (
+  testWidgets('GIF loads original within the configured network limit', (
     tester,
   ) async {
     await pumpImages(tester, [

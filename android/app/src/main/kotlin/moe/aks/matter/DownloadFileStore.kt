@@ -9,7 +9,10 @@ import java.io.File
 import java.net.URLConnection
 
 internal object DownloadFileStore {
-    fun updateApk(context: Context, path: String): File {
+    fun updateApk(
+        context: Context,
+        path: String,
+    ): File {
         val source = File(path).canonicalFile
         val updates = File(context.cacheDir, "updates").canonicalFile
         require(source.isFile && source.parentFile == updates && source.extension == "apk") {
@@ -18,22 +21,30 @@ internal object DownloadFileStore {
         return source
     }
 
-    fun saveUpdate(context: Context, path: String): Uri =
-        publish(context, updateApk(context, path), "application/vnd.android.package-archive")
+    fun saveUpdate(
+        context: Context,
+        path: String,
+    ): Uri = publish(context, updateApk(context, path), "application/vnd.android.package-archive")
 
     fun save(
         context: Context,
         path: String,
+        directory: String? = null,
     ): Uri {
         val source = File(path).canonicalFile
         val stagingDirectory = File(context.cacheDir, "matter_downloads").canonicalFile
         require(source.isFile && source.parentFile?.parentFile == stagingDirectory) {
             "找不到待保存的下载文件"
         }
-        return publish(context, source, URLConnection.guessContentTypeFromName(source.name) ?: "application/octet-stream")
+        val mime = URLConnection.guessContentTypeFromName(source.name) ?: "application/octet-stream"
+        return if (directory == null) publish(context, source, mime) else StorageBridge.saveToTree(context, source, directory, mime)
     }
 
-    private fun publish(context: Context, source: File, mimeType: String): Uri {
+    private fun publish(
+        context: Context,
+        source: File,
+        mimeType: String,
+    ): Uri {
         val values =
             ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, source.name)

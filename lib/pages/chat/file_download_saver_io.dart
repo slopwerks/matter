@@ -4,6 +4,10 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../../features/storage/storage_settings.dart';
+import '../../features/storage/storage_locations.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 
 const _fileSaveChannel = MethodChannel('moe.aks.matter/file_saver');
@@ -53,6 +57,8 @@ Future<bool> saveDownloadedFile({
   required Uint8List bytes,
   bool chooseLocation = false,
 }) async {
+  final settings = await loadStorageSettings();
+  chooseLocation = chooseLocation || settings.askSaveLocation;
   if (!Platform.isAndroid && !Platform.isIOS) {
     if (chooseLocation) {
       final location = await getSaveLocation(suggestedName: filename);
@@ -60,7 +66,9 @@ Future<bool> saveDownloadedFile({
       await File(location.path).writeAsBytes(bytes, flush: true);
       return true;
     }
-    final directory = await getDownloadsDirectory();
+    final directory = settings.downloadDirectory == null
+        ? await getDownloadsDirectory()
+        : Directory(settings.downloadDirectory!);
     if (directory == null) throw const FileSystemException('无法获取下载目录');
     await directory.create(recursive: true);
     final dot = filename.lastIndexOf('.');
@@ -97,8 +105,15 @@ Future<bool> saveDownloadedFile({
   final file = File('${operationDirectory.path}/$filename');
   await file.writeAsBytes(bytes, flush: true);
   try {
+    var directory = settings.downloadDirectory;
+    if (Platform.isAndroid && chooseLocation) {
+      final selected = await chooseDownloadDirectory();
+      if (selected == null) return false;
+      directory = selected.path;
+    }
     return await _fileSaveChannel.invokeMethod<bool>('saveFile', {
           'path': file.path,
+          'directory': ?directory,
         }) ??
         false;
   } finally {

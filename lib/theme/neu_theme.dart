@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'neu_colors.dart';
+import 'storage_visual_theme.dart';
 
 /// 新拟物主题的 ThemeData 构建（移植自原型 app.dart）。
 ///
@@ -16,6 +17,17 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
         height: height,
       );
 
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: neu.accent,
+        brightness: brightness,
+        surface: neu.surface,
+      ).copyWith(
+        primary: neu.accent,
+        onPrimary: neu.onAccent,
+        surface: neu.surface,
+        error: neu.error,
+      );
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
@@ -24,18 +36,9 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
     splashFactory: NoSplash.splashFactory,
     highlightColor: Colors.transparent,
     hoverColor: Colors.transparent,
-    colorScheme:
-        ColorScheme.fromSeed(
-          seedColor: neu.accent,
-          brightness: brightness,
-          surface: neu.surface,
-        ).copyWith(
-          primary: neu.accent,
-          onPrimary: neu.onAccent,
-          surface: neu.surface,
-          error: neu.error,
-        ),
+    colorScheme: scheme,
     textTheme: TextTheme(
+      displaySmall: ts(36, FontWeight.w700, neu.text, 1.2),
       headlineMedium: ts(24, FontWeight.w700, neu.text),
       titleLarge: ts(20, FontWeight.w700, neu.text),
       titleMedium: ts(16, FontWeight.w600, neu.text),
@@ -56,7 +59,15 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
         TargetPlatform.windows: NeuPageTransitionsBuilder(),
       },
     ),
-    extensions: [neu],
+    extensions: [
+      neu,
+      StorageVisualTheme(
+        scheme: scheme,
+        previewShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(NeuRadius.button),
+        ),
+      ),
+    ],
   );
 }
 

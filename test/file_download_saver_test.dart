@@ -2,8 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/features/storage/storage_settings.dart';
 import 'package:matter/pages/chat/file_download_saver.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/temp_path_provider.dart';
 
@@ -22,6 +25,7 @@ void main() {
   late int dialogs;
   String? selectedPath;
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     directory = await Directory.systemTemp.createTemp('matter-save-test');
     final previous = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _DownloadPaths(directory);
@@ -124,6 +128,34 @@ void main() {
     expect(await File('${downloads.path}/report (2).pdf').readAsBytes(), [2]);
     expect(dialogs, 0);
   });
+
+  test('saved directory setting changes the actual destination', () async {
+    final chosen = Directory('${directory.path}/chosen');
+    await saveStorageSettings(StorageSettings(downloadDirectory: chosen.path));
+    await saveDownloadedFile(
+      filename: 'report.pdf',
+      bytes: Uint8List.fromList([7]),
+    );
+    expect(await File('${chosen.path}/report.pdf').readAsBytes(), [7]);
+    expect(await Directory('${directory.path}/Downloads').exists(), isFalse);
+    expect(dialogs, 0);
+  });
+
+  test(
+    'ask-every-time setting honors cancellation without writing a file',
+    () async {
+      await saveStorageSettings(const StorageSettings(askSaveLocation: true));
+      expect(
+        await saveDownloadedFile(
+          filename: 'report.pdf',
+          bytes: Uint8List.fromList([7]),
+        ),
+        isFalse,
+      );
+      expect(dialogs, 1);
+      expect(await directory.list().isEmpty, isTrue);
+    },
+  );
 
   test('simultaneous downloads never overwrite one another', () async {
     await Future.wait([

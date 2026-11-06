@@ -579,6 +579,8 @@ class MessageGroupWidget extends ConsumerWidget {
             ? VideoMessageBubble(
                 key: ValueKey('video-bubble:$visualMessageId'),
                 videoUrl: message.imageUrl,
+                roomId: roomId,
+                fileSize: message.fileSize,
                 mediaSourceJson: message.mediaSourceJson,
                 filename: message.content,
                 videoWidth: message.imageWidth,

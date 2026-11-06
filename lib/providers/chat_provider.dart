@@ -2143,6 +2143,25 @@ String _mxcStorageNamespace(WidgetRef ref) =>
 
 String _mxcStorageKey(String namespace) => '${_kMxcCachePrefix}_$namespace';
 
+/// Read saved resolutions without resolving media or mutating the live cache.
+Future<Map<String, String>> loadCachedMxcUrls(String namespace) async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_mxcStorageKey(namespace));
+  if (raw == null) return {};
+  try {
+    final decoded = jsonDecode(raw);
+    return decoded is Map
+        ? {
+            for (final entry in decoded.entries)
+              if (entry.key is String && entry.value is String)
+                entry.key as String: entry.value as String,
+          }
+        : {};
+  } on FormatException {
+    return {};
+  }
+}
+
 String _scopedMxcCacheKey(String namespace, String cacheKey) =>
     '$namespace::$cacheKey';
 
