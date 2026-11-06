@@ -17,6 +17,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/connection_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
+import '../../providers/timeline_event_settings_provider.dart';
 import '../../providers/message_cache_persistence.dart';
 import '../../providers/message_ordering.dart';
 import '../../providers/message_history_cursor.dart';
@@ -227,6 +228,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   List<ChatMessage> _lastTimelineMessages = const [];
   List<ChatMessage>? _lastDerivedMessagesInput;
   Set<String>? _lastDerivedRedactedIds;
+  TimelineEventSettings? _lastDerivedEventSettings;
   int _olderMessagesRevision = 0;
   int _lastDerivedOlderMessagesRevision = -1;
   int _sortOverrideRevision = 0;
@@ -2214,6 +2216,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     List<ChatMessage> latestMessages,
     Set<String> ignoredUserIds,
     Set<String> redactedIds,
+    TimelineEventSettings eventSettings,
   ) {
     final latestById = {
       for (final message in latestMessages) message.id: message,
@@ -2221,7 +2224,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final byId = <String, ChatMessage>{
       for (final message in _olderMessages)
         if (!redactedIds.contains(message.id) &&
-            (message.isMe || !ignoredUserIds.contains(message.senderId)))
+            (message.isMe || !ignoredUserIds.contains(message.senderId)) &&
+            eventSettings.isEventVisible(message))
           message.id: latestById[message.id] == null
               ? message
               : chooseMessageForSameEvent(message, latestById[message.id]!),
@@ -2230,7 +2234,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       if (!_focusedBrowsing)
         for (final message in latestMessages)
           if (!redactedIds.contains(message.id) &&
-              (message.isMe || !ignoredUserIds.contains(message.senderId)))
+              (message.isMe || !ignoredUserIds.contains(message.senderId)) &&
+              eventSettings.isEventVisible(message))
             message.id: message,
     };
     final messages = byId.values.toList()
@@ -2403,6 +2408,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     List<ChatMessage> latestMessages,
     Set<String> ignoredUserIds,
     Set<String> redactedIds,
+    TimelineEventSettings eventSettings,
   ) {
     final sortedIgnoredUserIds = ignoredUserIds.toList()..sort();
     final buffer = StringBuffer()
@@ -2423,7 +2429,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       ..write(';ignored=')
       ..writeAll(sortedIgnoredUserIds, ',')
       ..write(';redacted=')
-      ..writeAll(redactedIds.toList()..sort(), ',');
+      ..writeAll(redactedIds.toList()..sort(), ',')
+      ..write(';eventSettings=')
+      ..write(eventSettings.hashCode);
     for (final message in _olderMessages) {
       buffer
         ..write('|o:')
@@ -2521,18 +2529,22 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     List<ChatMessage> latestMessages,
     Set<String> ignoredUserIds,
     Set<String> redactedIds,
+    TimelineEventSettings eventSettings,
   ) {
     if (identical(_lastDerivedRedactedIds, redactedIds) &&
         identical(_lastDerivedMessagesInput, latestMessages) &&
+        _lastDerivedEventSettings == eventSettings &&
         _lastDerivedOlderMessagesRevision == _olderMessagesRevision &&
         _lastDerivedSortOverrideRevision == _sortOverrideRevision) {
       return;
     }
     _lastDerivedRedactedIds = redactedIds;
+    _lastDerivedEventSettings = eventSettings;
     final fingerprint = _messagesFingerprint(
       latestMessages,
       ignoredUserIds,
       redactedIds,
+      eventSettings,
     );
     if (_derivedMessagesFingerprint == fingerprint) {
       _lastDerivedMessagesInput = latestMessages;
@@ -2548,6 +2560,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       latestMessages,
       ignoredUserIds,
       redactedIds,
+      eventSettings,
     );
     _displayedMessages = displayedMessages;
     _messageIndex
@@ -3068,6 +3081,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                     !ignoredUserIds.contains(message.senderId),
                               )
                               .toList();
+                    final eventSettings = ref.watch(
+                      roomTimelineEventSettingsProvider(widget.roomId),
+                    );
                     final timelineMessages = _timelineMessagesFor(
                       visibleMessages,
                       localOutgoingMessages,
@@ -3077,6 +3093,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                       timelineMessages,
                       ignoredUserIds,
                       redactedIds,
+                      eventSettings,
                     );
                     if (_displayedMessages.isEmpty &&
                         !_initialMessageJumpPending &&
