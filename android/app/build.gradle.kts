@@ -72,8 +72,11 @@ android {
                 resValue("string", resource, pushDefines.getValue(define))
             }
         }
-        ndk {
-            abiFilters += listOf("arm64-v8a")
+        // Flutter's per-ABI splits configure the filters; AGP rejects both.
+        if (project.findProperty("split-per-abi")?.toString() != "true") {
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
         }
     }
 
