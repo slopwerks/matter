@@ -12,6 +12,8 @@ import '../../providers/authenticated_media_cache.dart';
 import '../../providers/chat_provider.dart' show loadCachedMxcUrls;
 import '../../providers/message_cache_persistence.dart';
 import '../../src/rust/api/matrix.dart' show ChatMessage, MessageType;
+import '../../src/rust/api/matrix/storage.dart' as history;
+import '../../src/rust/frb_generated.dart' show RustLib;
 import 'managed_media_io.dart' show managedMediaFile;
 import 'storage_models.dart';
 import 'storage_path_io.dart';
@@ -28,8 +30,8 @@ class _Reference {
   }
 }
 
-/// Reconcile existing files against saved messages and cache metadata.
-/// Never resolve, download, play, decrypt, or refresh last-use here.
+/// Reconcile existing files against SDK history, saved messages and cache
+/// metadata. Never resolve, download, play, decrypt, or refresh last-use here.
 Future<void> restoreStorageAttribution({
   required String userId,
   required String homeserver,
@@ -40,11 +42,23 @@ Future<void> restoreStorageAttribution({
   final account = storageAccountKey(userId, homeserver);
   final resolutions = await loadCachedMxcUrls(userId);
   final rooms = <String, List<ChatMessage>>{};
+  Object? historyError;
+  StackTrace? historyStack;
+  if (RustLib.instance.initialized) {
+    try {
+      rooms.addAll(
+        await history.getCachedMediaMessages(expectedUserId: userId),
+      );
+    } catch (error, stack) {
+      historyError = error;
+      historyStack = stack;
+    }
+  }
   for (final roomId in await cachedMessageRoomIds(userId)) {
-    rooms[roomId] = await loadCachedMessages(
-      namespace: userId,
-      roomId: roomId,
-    );
+    rooms[roomId] = [
+      ...?rooms[roomId],
+      ...await loadCachedMessages(namespace: userId, roomId: roomId),
+    ];
   }
   final managed = <String, _Reference>{};
   final audio = <String, _Reference>{};
@@ -264,6 +278,9 @@ Future<void> restoreStorageAttribution({
     }
   }
   await registry.flush();
+  if (historyError != null) {
+    Error.throwWithStackTrace(historyError, historyStack!);
+  }
 }
 
 String? _mxcFromCacheUrl(String url) {

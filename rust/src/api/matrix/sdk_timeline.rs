@@ -1533,7 +1533,8 @@ fn media_duration_ms(duration: Option<std::time::Duration>) -> Option<i32> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn base_message(
+#[flutter_rust_bridge::frb(ignore)]
+pub(super) fn base_message(
     event_id: &str,
     sender_id: &str,
     sender_name: &str,

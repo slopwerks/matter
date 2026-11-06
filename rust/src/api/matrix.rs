@@ -58,6 +58,7 @@ mod search_metrics;
 #[cfg(test)]
 mod search_performance_tests;
 mod sticker_packs;
+pub mod storage;
 pub mod unread;
 
 // ── App-wide log system ─────────────────────────────────────────────
