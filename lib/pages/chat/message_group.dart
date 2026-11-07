@@ -12,7 +12,6 @@ import '../../features/matrix_html/matrix_html_renderer.dart';
 import '../../features/matrix_html/matrix_link_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
-import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/image_view_history.dart';
 import '../../providers/interaction_mode_provider.dart';
 import 'action_failure_message.dart';
@@ -20,7 +19,6 @@ import '../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/glass.dart';
-import '../../widgets/neu_decoration.dart';
 import '../../widgets/sheets.dart';
 import 'chat_timestamp.dart';
 import 'message_jump_highlight.dart';
@@ -44,6 +42,8 @@ import 'video_message_bubble.dart';
 import 'send_flight.dart';
 import 'timeline/timeline_clustering.dart' show MessageGroup;
 import 'timeline/timeline_bubble_frame.dart';
+import 'timeline/timeline_reactions_bar.dart';
+import 'timeline/timeline_read_receipts.dart';
 
 export 'timeline/timeline_bubble_frame.dart'
     show
@@ -669,7 +669,17 @@ class MessageGroupWidget extends ConsumerWidget {
             ),
             for (final reactionMessage in imageRun?.messages ?? [message])
               if (reactionMessage.reactions.isNotEmpty)
-                _buildReactionsRow(context, ref, reactionMessage, isMe),
+                TimelineReactionsBar(
+                  message: reactionMessage,
+                  isMe: isMe,
+                  onToggle: (emoji) => toggleTimelineReaction(
+                    context,
+                    ref,
+                    roomId: roomId,
+                    eventId: reactionMessage.id,
+                    emoji: emoji,
+                  ),
+                ),
           ],
         ),
       ),
@@ -732,34 +742,6 @@ class MessageGroupWidget extends ConsumerWidget {
           strokeWidth: 1.6,
           color: colors.textTertiary.withValues(alpha: 0.72),
         ),
-      ),
-    );
-  }
-
-  /// Renders the aggregated emoji reactions below a bubble.
-  Widget _buildReactionsRow(
-    BuildContext context,
-    WidgetRef ref,
-    ChatMessage message,
-    bool isMe,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        alignment: isMe ? WrapAlignment.end : WrapAlignment.start,
-        children: message.reactions.map((reaction) {
-          final userId = ref.watch(activeUserIdProvider);
-          final reacted = reaction.senders.contains(userId);
-          return _ReactionChip(
-            key: ValueKey('${message.id}:${reaction.key}'),
-            reaction: reaction,
-            reacted: reacted,
-            onTap: () =>
-                _toggleReaction(context, ref, message.id, reaction.key),
-          );
-        }).toList(),
       ),
     );
   }
@@ -1212,7 +1194,11 @@ class MessageGroupWidget extends ConsumerWidget {
         ),
         if (message.isMe) ...[
           const SizedBox(width: 4),
-          _buildReadIndicator(context, ref, message, color: foreground),
+          TimelineReadIndicator(
+            message: message,
+            roomId: roomId,
+            color: foreground,
+          ),
         ],
       ],
     );
@@ -1236,80 +1222,6 @@ class MessageGroupWidget extends ConsumerWidget {
         child: content,
       ),
     );
-  }
-
-  Widget _buildReadIndicator(
-    BuildContext context,
-    WidgetRef ref,
-    ChatMessage message, {
-    required Color color,
-  }) {
-    final others = message.totalMembers - 1;
-    if (others <= 0) {
-      return const SizedBox.square(dimension: 15);
-    }
-
-    final readCount = message.readers.length;
-    final icon = readCount == 0 ? Icons.done_rounded : Icons.done_all_rounded;
-    final label = readCount == 0 ? '尚未已读' : '已读 $readCount/$others，点击查看';
-    return Tooltip(
-      message: label,
-      child: GestureDetector(
-        key: ValueKey('message-read-receipt:${message.id}'),
-        onTap: readCount > 0
-            ? () => _showReadReceipts(context, ref, message)
-            : null,
-        behavior: HitTestBehavior.opaque,
-        child: Icon(icon, size: 15, color: color),
-      ),
-    );
-  }
-
-  /// Bottom sheet listing the members who read a message and when.
-  void _showReadReceipts(
-    BuildContext context,
-    WidgetRef ref,
-    ChatMessage message,
-  ) {
-    showNeuSheet(
-      context: context,
-      child: _ReadReceiptsSheet(message: message, roomId: roomId),
-    );
-  }
-
-  Future<void> _toggleReaction(
-    BuildContext context,
-    WidgetRef ref,
-    String eventId,
-    String emoji,
-  ) async {
-    try {
-      final userId = ref.read(activeUserIdProvider) ?? '';
-      final updated = await toggleReaction(
-        accountUserId: userId,
-        roomId: roomId,
-        eventId: eventId,
-        key: emoji,
-      );
-      if (!context.mounted || !ref.context.mounted) return;
-      if (ref.read(activeUserIdProvider) != userId) return;
-      updateMessageCache(
-        ref,
-        roomId,
-        mergeMessageSnapshotAdditions(ref.read(messageCacheProvider(roomId)), [
-          updated,
-        ]),
-      );
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('回应失败: $e'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    }
   }
 
   /// Full emoji picker panel (pure-Dart, no native plugin).
@@ -1346,7 +1258,13 @@ class MessageGroupWidget extends ConsumerWidget {
             child: EmojiPickerPanel(
               onEmojiSelected: (emoji) async {
                 Navigator.of(context).pop();
-                await _toggleReaction(context, ref, message.id, emoji);
+                await toggleTimelineReaction(
+                  context,
+                  ref,
+                  roomId: roomId,
+                  eventId: message.id,
+                  emoji: emoji,
+                );
               },
             ),
           ),
@@ -1499,8 +1417,13 @@ class MessageGroupWidget extends ConsumerWidget {
                   );
                 }
               },
-        onReact: (emoji) =>
-            _toggleReaction(overlayContext, ref, message.id, emoji),
+        onReact: (emoji) => toggleTimelineReaction(
+          overlayContext,
+          ref,
+          roomId: roomId,
+          eventId: message.id,
+          emoji: emoji,
+        ),
         onShowFullEmojiPicker: () =>
             _showEmojiPicker(overlayContext, ref, message),
       ),
@@ -2323,111 +2246,6 @@ class _FloatingMessageMenuState extends State<_FloatingMessageMenu> {
   }
 }
 
-/// A single aggregated reaction chip shown below a bubble.
-class _ReactionChip extends StatelessWidget {
-  final Reaction reaction;
-  final bool reacted;
-  final VoidCallback onTap;
-
-  const _ReactionChip({
-    super.key,
-    required this.reaction,
-    required this.reacted,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.neu;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: NeuDecoration(
-          colors: colors,
-          superellipseEnabled: ChatVisualSettingsScope.of(context)
-              .superellipseBorderEnabled,
-          depth: NeuDepth.pressed,
-          radius: NeuRadius.nav,
-          intensity: .6,
-          borderColor: reacted ? colors.accent : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(reaction.key, style: const TextStyle(fontSize: 13)),
-            const SizedBox(width: 3),
-            Text(
-              '${reaction.senders.length}',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: reacted ? colors.accent : colors.textTertiary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Bottom sheet listing who read a message and when (Telegram-style).
-class _ReadReceiptsSheet extends ConsumerWidget {
-  final ChatMessage message;
-  final String roomId;
-
-  const _ReadReceiptsSheet({required this.message, required this.roomId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.neu;
-    final textTheme = Theme.of(context).textTheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '已读 ${message.readers.length}',
-                  style: textTheme.titleMedium,
-                ),
-              ),
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Icon(
-                  Icons.close_rounded,
-                  color: colors.textTertiary,
-                  size: 22,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (message.readers.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: Text('暂无已读', style: textTheme.bodyMedium)),
-          )
-        else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 8),
-            itemCount: message.readers.length,
-            itemBuilder: (context, index) {
-              final reader = message.readers[index];
-              return _ReadReceiptRow(reader: reader, roomId: roomId);
-            },
-          ),
-      ],
-    );
-  }
-}
-
 class _StickyAvatarMessageGroup extends StatefulWidget {
   final bool showAvatar;
   final String fallback;
@@ -2700,61 +2518,4 @@ class _RenderStickyGroupAvatar extends RenderProxyBox {
 
   double get _maxAvatarTop =>
       (size.height - _avatarSize).clamp(0.0, double.infinity);
-}
-
-/// A single row in the read-receipts sheet: avatar + name.
-/// (No read time: the Matrix protocol stores one receipt position per user,
-/// not a per-message read time, so we surface *who* read but not *when*.)
-class _ReadReceiptRow extends ConsumerStatefulWidget {
-  final MessageReader reader;
-  final String roomId;
-
-  const _ReadReceiptRow({required this.reader, required this.roomId});
-
-  @override
-  ConsumerState<_ReadReceiptRow> createState() => _ReadReceiptRowState();
-}
-
-class _ReadReceiptRowState extends ConsumerState<_ReadReceiptRow> {
-  String? _avatarUrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _resolveAvatar();
-  }
-
-  Future<void> _resolveAvatar() async {
-    final url = await resolveMxcUrlAvatar(ref, widget.reader.avatarUrl);
-    if (mounted && url != _avatarUrl) {
-      setState(() => _avatarUrl = url);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Row(
-        children: [
-          AppAvatar(
-            fallback: widget.reader.displayName,
-            size: 40,
-            radius: NeuRadius.content,
-            url: _avatarUrl,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              widget.reader.displayName,
-              style: Theme.of(context).textTheme.bodyLarge
-                  ?.copyWith(fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
