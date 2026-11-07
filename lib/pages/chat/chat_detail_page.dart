@@ -50,6 +50,7 @@ import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
 import 'search_page.dart';
 import 'send_flight.dart';
+import 'timeline/timeline_clustering.dart' show clusterTimelineMessages;
 import 'unread_messages_banner.dart';
 import 'unread_navigation.dart';
 
@@ -339,7 +340,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   static const double _headerChromeHeight =
       _headerTopGap + _headerPanelHeight + _headerBottomGap;
   static const double _headerCompactBreakpoint = 480.0;
-  static const int _maxMessagesPerRenderGroup = 12;
   static const Duration _sentNoticeDuration = Duration(milliseconds: 2800);
   static const Duration _forwardNoticeDuration = Duration(seconds: 4);
   static const Duration _insertionAnimationLifetime = Duration(
@@ -2331,78 +2331,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     return result;
   }
 
-  List<ChatImageRun> _imageRunsForTimeline(List<ChatMessage> messages) {
-    final runs = chatImageRuns(messages);
-    if (_timelinePivotRunIds.isEmpty) return runs;
-    bool anchored(ChatMessage message) =>
-        _timelinePivotRunIds.contains(_messageLayoutId(message));
-    final frozen = messages.where(anchored).toList();
-    final result = <ChatImageRun>[];
-    var emitted = false;
-    for (final run in runs) {
-      final first = run.messages.indexWhere(anchored);
-      if (first < 0) {
-        result.add(run);
-        continue;
-      }
-      // Explicit albums may span interleaved messages. Freeze actual members,
-      // not a timestamp interval, and retain the original album presentation.
-      final before = run.messages.take(first).toList();
-      final after = run.messages
-          .skip(first)
-          .where((message) => !anchored(message))
-          .toList();
-      if (before.isNotEmpty) result.add(ChatImageRun(before, album: run.album));
-      if (!emitted) {
-        result.add(ChatImageRun(frozen, album: _timelinePivotAlbum));
-        emitted = true;
-      }
-      if (after.isNotEmpty) result.add(ChatImageRun(after, album: run.album));
-    }
-    return result;
-  }
-
-  List<MessageGroup> _groupMessages(List<ChatMessage> messages) {
-    final groups = <MessageGroup>[];
-    for (final run in _imageRunsForTimeline(messages)) {
-      final message = run.messages.first;
-      final startsNewCluster =
-          groups.isEmpty ||
-          groups.last.senderId != message.senderId ||
-          chatDateKey(groups.last.messages.last.timestamp) !=
-              chatDateKey(message.timestamp);
-      final startsNewRenderGroup =
-          startsNewCluster ||
-          _messageLayoutId(groups.last.messages.last) == _timelinePivotEndId ||
-          groups.last.messages.length >= _maxMessagesPerRenderGroup;
-      if (startsNewRenderGroup) {
-        if (!startsNewCluster && groups.isNotEmpty) {
-          groups.last.endsCluster = false;
-        }
-        groups.add(
-          MessageGroup(
-            senderId: message.senderId,
-            senderName: message.senderName,
-            isMe: message.isMe,
-            messages: List.of(run.messages),
-            imageRuns: [run],
-            startsCluster: startsNewCluster,
-          ),
-        );
-      } else {
-        groups.last.messages.addAll(run.messages);
-        groups.last.imageRuns!.add(run);
-      }
-    }
-    for (final group in groups) {
-      if (_messageLayoutId(group.messages.last) == _timelinePivotEndId) {
-        // Keep the trailing gap/radius fixed when a page extends the sender's
-        // cluster beyond the reading origin.
-        group.endsCluster = _timelinePivotEndsCluster;
-      }
-    }
-    return groups;
-  }
+  List<MessageGroup> _groupMessages(List<ChatMessage> messages) =>
+      clusterTimelineMessages(
+        messages,
+        layoutId: _messageLayoutId,
+        pivotRunIds: _timelinePivotRunIds,
+        pivotAlbum: _timelinePivotAlbum,
+        pivotEndId: _timelinePivotEndId,
+        pivotEndsCluster: _timelinePivotEndsCluster,
+      );
 
   String _messagesFingerprint(
     List<ChatMessage> latestMessages,

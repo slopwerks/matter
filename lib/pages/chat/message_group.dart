@@ -42,6 +42,9 @@ import 'message_text.dart';
 import 'poll_message_bubble.dart';
 import 'video_message_bubble.dart';
 import 'send_flight.dart';
+import 'timeline/timeline_clustering.dart' show MessageGroup;
+
+export 'timeline/timeline_clustering.dart' show MessageGroup;
 
 /// The HTML a text message should render with: the sender's formatted body,
 /// or HTML rebuilt from the markdown source when the sender's HTML lost its
@@ -126,26 +129,6 @@ List<BoxShadow> enabledNeuBubbleShadows(
               .shadowBlurOptimizationEnabled,
         )
       : const [];
-}
-
-class MessageGroup {
-  final String senderId;
-  final String senderName;
-  final bool isMe;
-  final List<ChatMessage> messages;
-  final bool startsCluster;
-  bool endsCluster;
-  final List<ChatImageRun>? imageRuns;
-
-  MessageGroup({
-    required this.senderId,
-    required this.senderName,
-    required this.isMe,
-    required this.messages,
-    this.startsCluster = true,
-    this.endsCluster = true,
-    this.imageRuns,
-  });
 }
 
 class MessageGroupWidget extends ConsumerWidget {
