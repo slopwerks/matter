@@ -84,6 +84,8 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
           card: neu.surface,
           overlay: neu.surfaceStrong,
           hairline: neu.hairline,
+          bubbleOutgoing: neu.accent,
+          bubbleIncoming: neu.card,
         ),
         typography: AppTypography(
           pageTitle: resolvedText.headlineMedium!,

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/neu_colors.dart';
-import 'message_group.dart' show enabledNeuBubbleShadows, neuBubbleShape;
+import 'timeline/timeline_bubble_frame.dart'
+    show enabledNeuBubbleShadows, neuBubbleShape;
 
 typedef LocationUriLauncher = Future<bool> Function(Uri uri);
 

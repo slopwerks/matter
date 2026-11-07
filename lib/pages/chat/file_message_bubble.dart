@@ -15,7 +15,8 @@ import 'attachment_media_utils.dart';
 import 'audio_attachment_player.dart';
 import 'file_download_saver.dart';
 import 'markdown_attachment_page.dart';
-import 'message_group.dart' show enabledNeuBubbleShadows, neuBubbleShape;
+import 'timeline/timeline_bubble_frame.dart'
+    show enabledNeuBubbleShadows, neuBubbleShape;
 
 /// Converts an untrusted attachment name into a portable suggested filename.
 String sanitizeAttachmentFilename(String filename) {

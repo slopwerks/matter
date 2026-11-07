@@ -255,6 +255,8 @@ ThemeData buildMaterialTheme(
       card: surfaces.card,
       overlay: overlaySurface,
       hairline: hairline,
+      bubbleOutgoing: scheme.primary,
+      bubbleIncoming: surfaces.card,
     ),
     typography: AppTypography(
       pageTitle: text.headlineSmall!,

@@ -67,6 +67,21 @@ unchanged; tokens and the scaffold use that same resolved page colour.
 Cards carry `elevation: 0`. Shadows belong to what actually floats: the dock,
 dialogs, menus, sheets.
 
+## Message bubble surfaces
+
+`TimelineBubbleFrame` owns the text container and joined-corner geometry.
+Outgoing and incoming fills use `tokens.surfaces.bubbleOutgoing` and
+`bubbleIncoming`: Material maps them to primary and the resolved card surface;
+Neu maps them to accent and its dense `NeuColors.card`, not the base card token.
+Neu keeps its existing gradient/shadow switches. Outer and tail corners consume
+`tokens.radii.bubble` / `tag`, with 6 dp joined corners. The legacy helper exports
+remain available from `message_group.dart` for compatibility.
+
+Text width remains 68% of the viewport, capped at 520 dp, with 14 × 10 dp padding.
+The text-bubble key stays on the actual container; menu, gesture and send-flight
+wrappers stay outside. Media bubbles share shape/shadow helpers without gaining
+an extra text container or changing their own sizing and transparent surfaces.
+
 ## Lists
 
 The shape depends on whether the rows are **categories** or a **stream**.

@@ -43,6 +43,14 @@ import 'poll_message_bubble.dart';
 import 'video_message_bubble.dart';
 import 'send_flight.dart';
 import 'timeline/timeline_clustering.dart' show MessageGroup;
+import 'timeline/timeline_bubble_frame.dart';
+
+export 'timeline/timeline_bubble_frame.dart'
+    show
+        neuBubbleDecoration,
+        neuBubbleShadows,
+        neuBubbleShape,
+        enabledNeuBubbleShadows;
 
 export 'timeline/timeline_clustering.dart' show MessageGroup;
 
@@ -55,81 +63,6 @@ String? effectiveFormattedHtml(ChatMessage message) =>
       formattedBody: message.formattedBody,
     ) ??
     message.formattedBody;
-
-/// 新拟物气泡装饰:超椭圆圆角 + 对角渐变填充 + 双向收敛投影。
-/// 配方与 [NeuDecoration] 的 raised/intensity .7 一致,但接受分角
-/// [BorderRadius],以保留同发送者聚合时的拼接圆角。
-Decoration neuBubbleDecoration(
-  BuildContext context,
-  NeuColors colors, {
-  required bool isMe,
-  required BorderRadius borderRadius,
-}) {
-  const offset = 3.8 * .7;
-  final settings = ChatVisualSettingsScope.of(context);
-  return ShapeDecoration(
-    color: context.isMaterial ? (isMe ? colors.accent : colors.card) : null,
-    shape: settings.superellipseBorderEnabled
-        ? RoundedSuperellipseBorder(borderRadius: borderRadius)
-        : RoundedRectangleBorder(borderRadius: borderRadius),
-    gradient: settings.bubbleGradientEnabled
-        ? LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isMe
-                ? [neuShift(colors.accent, .08), neuShift(colors.accent, -.06)]
-                : [neuShift(colors.card, .055), neuShift(colors.card, -.05)],
-          )
-        : null,
-    shadows: settings.bubbleShadowsEnabled
-        ? neuBubbleShadows(
-            colors,
-            offset: offset,
-            reduced: settings.shadowBlurOptimizationEnabled,
-          )
-        : const [],
-  );
-}
-
-/// 与 [NeuDecoration] raised/intensity .7 观感一致的柔和小投影
-/// (BoxShadow 形式,供 BoxDecoration 的媒体气泡复用)。
-List<BoxShadow> neuBubbleShadows(
-  NeuColors colors, {
-  double offset = 2.66,
-  bool reduced = false,
-}) => [
-  BoxShadow(
-    color: colors.shadowDark.withValues(alpha: .72),
-    blurRadius: offset * (reduced ? 1.45 : 2.3),
-    offset: Offset(offset, offset),
-  ),
-  BoxShadow(
-    color: colors.shadowLight.withValues(alpha: colors.highlightAlpha),
-    blurRadius: offset * (reduced ? 1.0 : 1.5),
-    offset: Offset(-offset, -offset),
-  ),
-];
-
-ShapeBorder neuBubbleShape(BuildContext context, BorderRadius borderRadius) {
-  return ChatVisualSettingsScope.of(context).superellipseBorderEnabled
-      ? RoundedSuperellipseBorder(borderRadius: borderRadius)
-      : RoundedRectangleBorder(borderRadius: borderRadius);
-}
-
-List<BoxShadow> enabledNeuBubbleShadows(
-  BuildContext context,
-  NeuColors colors, {
-  double offset = 2.66,
-}) {
-  return ChatVisualSettingsScope.of(context).bubbleShadowsEnabled
-      ? neuBubbleShadows(
-          colors,
-          offset: offset,
-          reduced: ChatVisualSettingsScope.of(context)
-              .shadowBlurOptimizationEnabled,
-        )
-      : const [];
-}
 
 class MessageGroupWidget extends ConsumerWidget {
   final MessageGroup group;
@@ -189,7 +122,6 @@ class MessageGroupWidget extends ConsumerWidget {
   static const double _avatarSlotWidth = 44.0;
   static const double _messageBottomPadding = 1.0;
   static const double _groupBottomGap = 9.0;
-  static const double _joinedRadius = 6.0;
 
   /// Stable row key for list identity. Local outgoing messages keep the same
   /// key across pending/sent/failed prefix changes so the [SendFlightTarget]
@@ -435,7 +367,8 @@ class MessageGroupWidget extends ConsumerWidget {
     // An optimistic image has no `mxc://` source yet, so its bubble is fed
     // the picked bytes instead of resolving a URL.
     final previewBytes = localImagePreviews[message.id];
-    final messageBorderRadius = _messageBorderRadius(
+    final messageBorderRadius = timelineBubbleBorderRadius(
+      context,
       isMe: isMe,
       isFirst: isFirst,
       isLast: isLast,
@@ -921,10 +854,7 @@ class MessageGroupWidget extends ConsumerWidget {
   }) {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
-    final maxBubbleWidth = math.min(
-      MediaQuery.of(context).size.width * 0.68,
-      520.0,
-    );
+    final maxBubbleWidth = TimelineBubbleFrame.maxWidth(context);
     final textStyle = textTheme.bodyLarge!.copyWith(
       color: isMe ? colors.onAccent : colors.text,
       height: 1.35,
@@ -1007,45 +937,12 @@ class MessageGroupWidget extends ConsumerWidget {
         ?linkPreview,
       ],
     );
-    final bubble = Container(
-      key: ValueKey('text-bubble:${message.id}'),
-      constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: neuBubbleDecoration(
-        context,
-        colors,
-        isMe: isMe,
-        borderRadius: _messageBorderRadius(
-          isMe: isMe,
-          isFirst: isFirst,
-          isLast: isLast,
-        ),
-      ),
+    return TimelineBubbleFrame(
+      bubbleKey: ValueKey('text-bubble:${message.id}'),
+      isMe: isMe,
+      isFirst: isFirst,
+      isLast: isLast,
       child: content,
-    );
-    return bubble;
-  }
-
-  BorderRadius _messageBorderRadius({
-    required bool isMe,
-    required bool isFirst,
-    required bool isLast,
-  }) {
-    final outer = const Radius.circular(NeuRadius.content);
-    final joined = const Radius.circular(_joinedRadius);
-    if (isMe) {
-      return BorderRadius.only(
-        topLeft: outer,
-        topRight: isFirst ? outer : joined,
-        bottomLeft: outer,
-        bottomRight: isLast ? const Radius.circular(NeuRadius.tag) : joined,
-      );
-    }
-    return BorderRadius.only(
-      topLeft: isFirst ? outer : joined,
-      topRight: outer,
-      bottomLeft: isLast ? const Radius.circular(NeuRadius.tag) : joined,
-      bottomRight: outer,
     );
   }
 

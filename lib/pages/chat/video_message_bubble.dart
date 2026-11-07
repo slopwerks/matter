@@ -16,7 +16,7 @@ import 'prepared_media_source.dart';
 import 'media_playback.dart';
 import 'media_progress_bar.dart';
 import 'video_controls.dart';
-import 'message_group.dart' show enabledNeuBubbleShadows;
+import 'timeline/timeline_bubble_frame.dart' show enabledNeuBubbleShadows;
 
 class VideoMessageBubble extends ConsumerStatefulWidget {
   final String? videoUrl;

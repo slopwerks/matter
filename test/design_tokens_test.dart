@@ -36,6 +36,8 @@ void main() {
         expect(t.surfaces.card, theme.cardTheme.color);
         expect(t.surfaces.hairline, theme.dividerTheme.color);
         expect(t.surfaces.overlay, theme.appBarTheme.backgroundColor);
+        expect(t.surfaces.bubbleOutgoing, scheme.primary);
+        expect(t.surfaces.bubbleIncoming, theme.extension<NeuColors>()!.card);
         final ratio = _contrast(t.surfaces.page, t.surfaces.card);
         expect(
           ratio >= 1.11,
@@ -82,6 +84,8 @@ void main() {
       expect(t.surfaces.card, neu.surface);
       expect(t.surfaces.overlay, neu.surfaceStrong);
       expect(t.surfaces.hairline, neu.hairline);
+      expect(t.surfaces.bubbleOutgoing, neu.accent);
+      expect(t.surfaces.bubbleIncoming, neu.card);
 
       expect(t.radii.surface, NeuRadius.surface);
       expect(t.radii.bubble, NeuRadius.content);
@@ -232,6 +236,22 @@ void main() {
       expect(
         result.surfaces.hairline,
         Color.lerp(start.surfaces.hairline, end.surfaces.hairline, t),
+      );
+      expect(
+        result.surfaces.bubbleOutgoing,
+        Color.lerp(
+          start.surfaces.bubbleOutgoing,
+          end.surfaces.bubbleOutgoing,
+          t,
+        ),
+      );
+      expect(
+        result.surfaces.bubbleIncoming,
+        Color.lerp(
+          start.surfaces.bubbleIncoming,
+          end.surfaces.bubbleIncoming,
+          t,
+        ),
       );
       expect(
         result.typography.pageTitle,
