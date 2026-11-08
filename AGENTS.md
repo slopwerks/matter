@@ -211,4 +211,4 @@ Core files: `lib/providers/chat_provider.dart` and `lib/pages/chat/send_flight.d
 
 ## Rust Matrix Bridge
 
-Core file: `rust/src/api/matrix.rs` (5000+ lines). It is the single FFI boundary between Dart and `matrix-sdk`, wrapping sync, E2EE, room state, pagination, invites/knocks, token refresh, and more. After changes, rerun FRB generation and check Rust compilation and Dart call sites. Async calls across FFI run on the Tokio runtime; avoid blocking the main thread or awaiting while holding locks to prevent deadlocks.
+Entry: `rust/src/api/matrix/mod.rs`. `ffi_*.rs` declarations expand in that namespace to preserve FRB paths; private domain modules own implementations and `runtime.rs` owns the single set of account/sync/queue state. SDK timeline adapters are split into `sdk_*.rs`. Do not replace declaration expansion with `pub use` alone: FRB 2.13 follows the definition namespace. Regenerate FRB after Rust API changes and inspect signature drift. Validate only the affected package/target with existing `rust/target`; async FFI uses Tokio, so preserve lifecycle leases, lock order and nonblocking behavior.
