@@ -199,7 +199,7 @@ These modules have the highest commit churn, the largest code volume, and are th
 
 ## Message List and Bubble Rendering
 
-Core file: `lib/pages/chat/message_group.dart` (nearly 2000 lines). Message grouping, clustering, bubble border radius, avatar placeholders, swipe-to-reply gestures, send-flight animation target positioning, and read-receipt avatar rows are all coupled here. When changing message layout or animation, always verify text, image, video, sticker, and event messages, as well as behavior at different screen widths.
+Entry: `lib/pages/chat/message_group.dart` re-exports the compatible API. Implementations live in `lib/pages/chat/timeline/`: group assembly, single-message presentation, text/metadata layout, actions/menu, sticky avatars, bubble frames, reactions, receipts and swipe replies. Pure clustering is in `timeline_clustering.dart`; the chat page retains ordering and local-echo reconciliation. When changing message layout or animation, verify text, image, video, sticker and event messages at multiple widths, along with stable row/menu/flight keys.
 
 ## Input Panel and Keyboard State
 
