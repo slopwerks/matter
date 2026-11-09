@@ -966,7 +966,7 @@ class ImageMessageCaption extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.neu;
     final accent = isMe ? colors.onAccent : colors.accent;
-    final style = Theme.of(context).textTheme.bodyMedium!
+    final style = Theme.of(context).textTheme.bodyLarge!
         .copyWith(color: isMe ? colors.onAccent : colors.text, height: 1.35);
     return Container(
       key: const ValueKey('image-caption'),

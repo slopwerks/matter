@@ -9,6 +9,8 @@ import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/image_media.dart';
 import 'package:matter/pages/chat/image_placeholders.dart';
 import 'package:matter/pages/chat/message_group.dart';
+import 'package:matter/pages/chat/message_text.dart';
+import 'package:matter/features/matrix_html/matrix_html_renderer.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart';
@@ -192,6 +194,41 @@ void main() {
 
     expect(tester.state(find.byType(ImageMessageBubble)), same(localState));
   });
+
+  for (final material in [false, true]) {
+    for (final dark in [false, true]) {
+      for (final formatted in [false, true]) {
+        testWidgets(
+          'caption uses message body typography (material=$material, dark=$dark, html=$formatted)',
+          (tester) async {
+            final theme = neuTestTheme(material: material, dark: dark);
+            await tester.pumpWidget(
+              MaterialApp(
+                theme: theme,
+                home: Scaffold(
+                  body: ImageMessageCaption(
+                    text: '图片描述',
+                    formattedBody: formatted ? '<p>图片描述</p>' : null,
+                    isMe: false,
+                    mentionDisplayNames: const {},
+                    mentionedUserIds: const [],
+                    onMentionTap: null,
+                  ),
+                ),
+              ),
+            );
+            final style = formatted
+                ? tester
+                      .widget<MatrixHtmlMessage>(find.byType(MatrixHtmlMessage))
+                      .style
+                : tester.widget<MessageText>(find.byType(MessageText)).style;
+            expect(style.fontSize, theme.textTheme.bodyLarge!.fontSize);
+            expect(style.height, 1.35);
+          },
+        );
+      }
+    }
+  }
 
   testWidgets('image caption is rendered below the media bubble', (
     tester,
