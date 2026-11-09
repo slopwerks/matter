@@ -6,8 +6,12 @@ Where a rule has a reason, the reason is here rather than in a commit message.
 
 Matter draws the same widgets in two skins. `AppThemeStyle` selects new-skeuomorphic
 (`NeuColors` shadows and depth) or Material (M3 `ColorScheme` fills). Business
-logic, state and layout are shared; only the skin branches, through
-`context.isMaterial`.
+logic, state and layout are shared. Existing presentation components still branch
+through `context.isMaterial`; new value-only styling consumes `context.tokens`.
+The M0 foundation is `AppDesignTokens` in `lib/theme/tokens/`, mounted by both
+builders. It supplies spacing, radii, surfaces, title styles and motion parameters;
+consumer migration is separate work. Missing tokens are a theme setup error, not
+a reason to silently fall back to another skin.
 
 ## Where a theme decision belongs
 
@@ -20,6 +24,18 @@ The Material theme configures typography, card, app bar, navigation bar, divider
 list tile, input, chip, segmented button, all four button families, FAB, switch,
 progress, tab bar, dialog, bottom sheet, popup menu, snack bar and tooltip. If a
 page needs something outside that list, add it there first.
+
+### Shared component presentation
+
+`AppComponentTheme`, mounted by both theme builders, supplies conversation-row
+radius, padding, avatar sizes, layout policy and floating-toolbar button style.
+`ChatListItem` consumes that contract rather than checking the skin; its two
+presentation widgets retain their original inline-status / trailing-status
+layouts. Drafts, unread overrides, membership actions and navigation remain in
+the stateful host. `GroupedRows` reads card/hairline/spacing from `context.tokens`.
+`MaterialToolbar` applies the optional theme-provided style and is transparent
+to its child when no override is present. Geometry interpolates and discrete
+layout policies switch at the compatibility palette's midpoint.
 
 ## Type
 
@@ -55,10 +71,28 @@ gives 1.11:1, the same step the dark side has.
 
 Presets that pull `surface` to pure black or pure white (`MaterialBackground`)
 stop the M3 container roles from connecting to the page; `_surfacesOf` then
-falls back to a luminance lift, so a card is still raised.
+falls back to a luminance lift, so a card is still raised. If the resolved
+page/card contrast is below 1.11:1, it moves only the page away from the card
+in 1/255 blend steps until the threshold is met. Card and accent roles stay
+unchanged; tokens and the scaffold use that same resolved page colour.
 
 Cards carry `elevation: 0`. Shadows belong to what actually floats: the dock,
 dialogs, menus, sheets.
+
+## Message bubble surfaces
+
+`TimelineBubbleFrame` owns the text container and joined-corner geometry.
+Outgoing and incoming fills use `tokens.surfaces.bubbleOutgoing` and
+`bubbleIncoming`: Material maps them to primary and the resolved card surface;
+Neu maps them to accent and its dense `NeuColors.card`, not the base card token.
+Neu keeps its existing gradient/shadow switches. Outer and tail corners consume
+`tokens.radii.bubble` / `tag`, with 6 dp joined corners. The legacy helper exports
+remain available from `message_group.dart` for compatibility.
+
+Text width remains 68% of the viewport, capped at 520 dp, with 14 × 10 dp padding.
+The text-bubble key stays on the actual container; menu, gesture and send-flight
+wrappers stay outside. Media bubbles share shape/shadow helpers without gaining
+an extra text container or changing their own sizing and transparent surfaces.
 
 ## Lists
 

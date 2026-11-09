@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
+import 'app_component_theme.dart';
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
+import 'tokens.dart';
 
 const defaultMaterialSeedColor = Color(0xFF5B8DEF);
 
@@ -157,7 +159,28 @@ const FontWeight materialPageTitleWeight = FontWeight.w600;
   );
   final cardStepsAway =
       (card.computeLuminance() - page.computeLuminance()).abs() > .01;
-  return (page: page, card: cardStepsAway ? card : blended);
+  final resolvedCard = cardStepsAway ? card : blended;
+  final pageLuminance = page.computeLuminance();
+  final cardLuminance = resolvedCard.computeLuminance();
+  double contrast(Color color) {
+    final luminance = color.computeLuminance();
+    return luminance < cardLuminance
+        ? (cardLuminance + .05) / (luminance + .05)
+        : (luminance + .05) / (cardLuminance + .05);
+  }
+
+  // pure/soft 浅色预设的阶跃略低于 1.11；只在不足时微调页面，
+  // 保留卡片与强调色，按最小的 8-bit 混色步长拉开层级。
+  if (contrast(page) < 1.11) {
+    final away = cardLuminance > pageLuminance ? Colors.black : Colors.white;
+    for (var step = 1; step <= 255; step++) {
+      final adjusted = Color.lerp(page, away, step / 255)!;
+      if (contrast(adjusted) >= 1.11) {
+        return (page: adjusted, card: resolvedCard);
+      }
+    }
+  }
+  return (page: page, card: resolvedCard);
 }
 
 /// Background presets change neutral surfaces while preserving accent roles.
@@ -220,6 +243,29 @@ ThemeData buildMaterialTheme(
   // 分隔线取正文色的 14%,不用 outlineVariant:后者在深色页上比对浅色页重一倍,
   // 还会带种子的色偏。
   final hairline = scheme.onSurface.withValues(alpha: .14);
+  // 列表行标题:tokens 与 listTileTheme 共用同一份,不各抄一次。
+  final listTitle = text.bodyLarge?.copyWith(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+  );
+  final tokens = AppDesignTokens(
+    spacing: const AppSpacing(),
+    radii: const AppRadii.material(),
+    surfaces: AppSurfaces(
+      page: surfaces.page,
+      card: surfaces.card,
+      overlay: overlaySurface,
+      hairline: hairline,
+      bubbleOutgoing: scheme.primary,
+      bubbleIncoming: surfaces.card,
+    ),
+    typography: AppTypography(
+      pageTitle: text.headlineSmall!,
+      listTitle: listTitle!,
+      sectionTitle: text.titleSmall!.copyWith(color: scheme.onSurfaceVariant),
+    ),
+    motion: AppMotion.material,
+  );
   const surfaceShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.all(Radius.circular(materialSurfaceRadius)),
   );
@@ -307,10 +353,7 @@ ThemeData buildMaterialTheme(
       minLeadingWidth: 24,
       iconColor: scheme.onSurfaceVariant,
       textColor: scheme.onSurface,
-      titleTextStyle: text.bodyLarge?.copyWith(
-        fontSize: 16,
-        fontWeight: FontWeight.w500,
-      ),
+      titleTextStyle: listTitle,
       subtitleTextStyle: text.bodyMedium?.copyWith(fontSize: 14),
       // The group owns its outline; ink inside a run reaches the row edges.
       shape: const RoundedRectangleBorder(),
@@ -551,6 +594,21 @@ ThemeData buildMaterialTheme(
         hairline: hairline,
         highlightAlpha: 0,
       ),
+      AppComponentTheme(
+        conversationLayout: ConversationRowLayout.trailingStatus,
+        rowRadius: materialSurfaceRadius,
+        rowHorizontalPadding: 12,
+        avatarSize: materialListAvatarSize,
+        denseAvatarSize: materialDenseListAvatarSize,
+        toolbarStyle: IconButton.styleFrom(
+          backgroundColor: dark ? scheme.surfaceContainerHigh : surfaces.card,
+          foregroundColor: scheme.onSurface,
+          shape: const StadiumBorder(),
+          minimumSize: const Size.square(44),
+          padding: EdgeInsets.zero,
+        ),
+      ),
+      tokens,
     ],
   );
 }

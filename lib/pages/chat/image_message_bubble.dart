@@ -26,7 +26,7 @@ import 'media_preparation.dart';
 import 'image_media.dart';
 import 'image_placeholders.dart';
 import 'image_viewer.dart';
-import 'message_group.dart' show enabledNeuBubbleShadows;
+import 'timeline/timeline_bubble_frame.dart' show enabledNeuBubbleShadows;
 import 'message_text.dart';
 import 'send_flight.dart';
 

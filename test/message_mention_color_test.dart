@@ -92,9 +92,11 @@ void main() {
         ),
       );
 
+      final colors = tester.element(find.byType(MessageGroupWidget)).neu;
+      final expected = isMe ? colors.onAccent : colors.accent;
       expect(
         _mentionSpan(tester).style?.color,
-        isMe ? Colors.white : NeuColors.dark.accent,
+        expected,
         reason: isMe ? 'own bubble' : 'other bubble',
       );
     }

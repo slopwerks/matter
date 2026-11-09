@@ -5,7 +5,8 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/neu_surface.dart';
-import 'message_group.dart' show enabledNeuBubbleShadows, neuBubbleShape;
+import 'timeline/timeline_bubble_frame.dart'
+    show enabledNeuBubbleShadows, neuBubbleShape;
 
 typedef PollVoteCallback = Future<void> Function(List<String> answerIds);
 typedef PollEndCallback = Future<void> Function();
