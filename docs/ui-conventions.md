@@ -59,7 +59,10 @@ gives 1.11:1, the same step the dark side has.
 
 Presets that pull `surface` to pure black or pure white (`MaterialBackground`)
 stop the M3 container roles from connecting to the page; `_surfacesOf` then
-falls back to a luminance lift, so a card is still raised.
+falls back to a luminance lift, so a card is still raised. If the resolved
+page/card contrast is below 1.11:1, it moves only the page away from the card
+in 1/255 blend steps until the threshold is met. Card and accent roles stay
+unchanged; tokens and the scaffold use that same resolved page colour.
 
 Cards carry `elevation: 0`. Shadows belong to what actually floats: the dock,
 dialogs, menus, sheets.

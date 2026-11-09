@@ -158,7 +158,28 @@ const FontWeight materialPageTitleWeight = FontWeight.w600;
   );
   final cardStepsAway =
       (card.computeLuminance() - page.computeLuminance()).abs() > .01;
-  return (page: page, card: cardStepsAway ? card : blended);
+  final resolvedCard = cardStepsAway ? card : blended;
+  final pageLuminance = page.computeLuminance();
+  final cardLuminance = resolvedCard.computeLuminance();
+  double contrast(Color color) {
+    final luminance = color.computeLuminance();
+    return luminance < cardLuminance
+        ? (cardLuminance + .05) / (luminance + .05)
+        : (luminance + .05) / (cardLuminance + .05);
+  }
+
+  // pure/soft 浅色预设的阶跃略低于 1.11；只在不足时微调页面，
+  // 保留卡片与强调色，按最小的 8-bit 混色步长拉开层级。
+  if (contrast(page) < 1.11) {
+    final away = cardLuminance > pageLuminance ? Colors.black : Colors.white;
+    for (var step = 1; step <= 255; step++) {
+      final adjusted = Color.lerp(page, away, step / 255)!;
+      if (contrast(adjusted) >= 1.11) {
+        return (page: adjusted, card: resolvedCard);
+      }
+    }
+  }
+  return (page: page, card: resolvedCard);
 }
 
 /// Background presets change neutral surfaces while preserving accent roles.
