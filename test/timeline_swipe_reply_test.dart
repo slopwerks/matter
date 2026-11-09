@@ -66,6 +66,28 @@ void main() {
           expect(tester.getRect(find.byType(TimelineSwipeReply)), before);
         },
       );
+
+      testWidgets(
+        '$label cancellation never replies even after crossing threshold',
+        (tester) async {
+          var replies = 0;
+          final linked = ValueNotifier(0.0);
+          addTearDown(linked.dispose);
+          await tester.pumpWidget(
+            _app(theme, onReply: () => replies++, linked: linked),
+          );
+          final gesture = await tester.startGesture(
+            tester.getCenter(find.byType(TimelineSwipeReply)),
+          );
+          await gesture.moveBy(const Offset(-65, 0));
+          await tester.pump();
+          expect(linked.value, 65);
+          await gesture.cancel();
+          await tester.pumpAndSettle();
+          expect(replies, 0);
+          expect(linked.value, 0);
+        },
+      );
     }
   }
 
@@ -125,10 +147,11 @@ void main() {
       await tester.pumpWidget(_app(theme, onReply: () {}, linked: next));
       expect(old.value, 0);
       expect(next.value, 40);
-      await gesture.up();
-      await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
       expect(next.value, 0);
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     },
   );
 }

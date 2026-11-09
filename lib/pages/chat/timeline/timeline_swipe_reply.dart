@@ -102,7 +102,9 @@ class _TimelineSwipeReplyState extends State<TimelineSwipeReply>
   }
 
   void _handleDragCancel() {
-    if (!_dragStartedInReplyRegion) return;
+    // A hit-test path can outlive the widget when the pointer is cancelled
+    // after its row was removed. Its animation controller is already disposed.
+    if (!mounted || !_dragStartedInReplyRegion) return;
     _dragStartedInReplyRegion = false;
     _settle();
   }
@@ -127,52 +129,58 @@ class _TimelineSwipeReplyState extends State<TimelineSwipeReply>
       onHorizontalDragUpdate: enabled ? _handleDragUpdate : null,
       onHorizontalDragEnd: enabled ? _handleDragEnd : null,
       onHorizontalDragCancel: enabled ? _handleDragCancel : null,
-      child: AnimatedBuilder(
-        animation: _dragController,
-        child: widget.child,
-        builder: (context, child) {
-          final progress = (_dragController.value / _triggerDistance).clamp(
-            0.0,
-            1.0,
-          );
-          return Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.centerRight,
-            children: [
-              Positioned(
-                right: 5,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: Opacity(
-                    opacity: progress,
-                    child: Transform.scale(
-                      scale: 0.72 + (0.28 * progress),
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: context.neu.accent.withValues(alpha: .14),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.reply_rounded,
-                          color: context.neu.accent,
-                          size: 20,
+      // Accepted drags receive onEnd even for PointerCancelEvent. Observe
+      // cancellation inside the detector so its hit-test entry runs first,
+      // clears the reply latch and settles before the recognizer ends.
+      child: Listener(
+        onPointerCancel: (_) => _handleDragCancel(),
+        child: AnimatedBuilder(
+          animation: _dragController,
+          child: widget.child,
+          builder: (context, child) {
+            final progress = (_dragController.value / _triggerDistance).clamp(
+              0.0,
+              1.0,
+            );
+            return Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.centerRight,
+              children: [
+                Positioned(
+                  right: 5,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: Opacity(
+                      opacity: progress,
+                      child: Transform.scale(
+                        scale: 0.72 + (0.28 * progress),
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: context.neu.accent.withValues(alpha: .14),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.reply_rounded,
+                            color: context.neu.accent,
+                            size: 20,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Transform.translate(
-                key: const ValueKey('swipe-reply-content'),
-                offset: Offset(-_dragController.value, 0),
-                child: child,
-              ),
-            ],
-          );
-        },
+                Transform.translate(
+                  key: const ValueKey('swipe-reply-content'),
+                  offset: Offset(-_dragController.value, 0),
+                  child: child,
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
