@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
+import 'tokens.dart';
 
 const defaultMaterialSeedColor = Color(0xFF5B8DEF);
 
@@ -220,6 +221,27 @@ ThemeData buildMaterialTheme(
   // 分隔线取正文色的 14%,不用 outlineVariant:后者在深色页上比对浅色页重一倍,
   // 还会带种子的色偏。
   final hairline = scheme.onSurface.withValues(alpha: .14);
+  // 列表行标题:tokens 与 listTileTheme 共用同一份,不各抄一次。
+  final listTitle = text.bodyLarge?.copyWith(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+  );
+  final tokens = AppDesignTokens(
+    spacing: const AppSpacing(),
+    radii: const AppRadii.material(),
+    surfaces: AppSurfaces(
+      page: surfaces.page,
+      card: surfaces.card,
+      overlay: overlaySurface,
+      hairline: hairline,
+    ),
+    typography: AppTypography(
+      pageTitle: text.headlineSmall!,
+      listTitle: listTitle!,
+      sectionTitle: text.titleSmall!.copyWith(color: scheme.onSurfaceVariant),
+    ),
+    motion: AppMotion.material,
+  );
   const surfaceShape = RoundedRectangleBorder(
     borderRadius: BorderRadius.all(Radius.circular(materialSurfaceRadius)),
   );
@@ -307,10 +329,7 @@ ThemeData buildMaterialTheme(
       minLeadingWidth: 24,
       iconColor: scheme.onSurfaceVariant,
       textColor: scheme.onSurface,
-      titleTextStyle: text.bodyLarge?.copyWith(
-        fontSize: 16,
-        fontWeight: FontWeight.w500,
-      ),
+      titleTextStyle: listTitle,
       subtitleTextStyle: text.bodyMedium?.copyWith(fontSize: 14),
       // The group owns its outline; ink inside a run reaches the row edges.
       shape: const RoundedRectangleBorder(),
@@ -551,6 +570,7 @@ ThemeData buildMaterialTheme(
         hairline: hairline,
         highlightAlpha: 0,
       ),
+      tokens,
     ],
   );
 }

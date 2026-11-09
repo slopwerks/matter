@@ -6,8 +6,12 @@ Where a rule has a reason, the reason is here rather than in a commit message.
 
 Matter draws the same widgets in two skins. `AppThemeStyle` selects new-skeuomorphic
 (`NeuColors` shadows and depth) or Material (M3 `ColorScheme` fills). Business
-logic, state and layout are shared; only the skin branches, through
-`context.isMaterial`.
+logic, state and layout are shared. Existing presentation components still branch
+through `context.isMaterial`; new value-only styling consumes `context.tokens`.
+The M0 foundation is `AppDesignTokens` in `lib/theme/tokens/`, mounted by both
+builders. It supplies spacing, radii, surfaces, title styles and motion parameters;
+consumer migration is separate work. Missing tokens are a theme setup error, not
+a reason to silently fall back to another skin.
 
 ## Where a theme decision belongs
 
