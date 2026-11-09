@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/neu_colors.dart';
+import '../theme/tokens.dart';
 
 /// 把一个分组画成一整张卡片,行间细线画在卡片填充**之上**。
 ///
@@ -18,22 +18,22 @@ class GroupedRows extends StatelessWidget {
     super.key,
     required this.children,
     this.radius,
-    this.dividerIndent = NeuSpacing.rowTitleInset,
-    this.dividerEndIndent = NeuSpacing.lg,
+    this.dividerIndent,
+    this.dividerEndIndent,
   });
 
   final List<Widget> children;
   final double? radius;
 
   /// 分隔线左缩进,默认对齐行标题。
-  final double dividerIndent;
-  final double dividerEndIndent;
+  final double? dividerIndent;
+  final double? dividerEndIndent;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.neu;
+    final tokens = context.tokens;
     return Material(
-      color: colors.card,
+      color: tokens.surfaces.card,
       shape: radius == null
           ? Theme.of(context).cardTheme.shape
           : RoundedSuperellipseBorder(
@@ -48,11 +48,11 @@ class GroupedRows extends StatelessWidget {
               Divider(
                 height: 1,
                 thickness: 1,
-                indent: dividerIndent,
-                endIndent: dividerEndIndent,
+                indent: dividerIndent ?? tokens.spacing.rowTitleInset,
+                endIndent: dividerEndIndent ?? tokens.spacing.lg,
                 // 细线落在卡片填充上,所以用半透明正文色:它在卡片上读起来
                 // 比卡片更亮/更暗一档,而不是露出底下的页面色。
-                color: colors.hairline,
+                color: tokens.surfaces.hairline,
               ),
             children[index],
           ],

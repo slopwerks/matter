@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/material_theme.dart';
-import '../theme/neu_colors.dart';
+import '../theme/app_component_theme.dart';
 import 'glass.dart';
 
 /// A toolbar over the page's fading surface. Reserve its height in the scroll
@@ -55,10 +54,10 @@ class MaterialToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!context.isMaterial) return child;
-    final theme = Theme.of(context);
+    final style = AppComponentTheme.of(context).toolbarStyle;
+    if (style == null) return child;
     return IconButtonTheme(
-      data: IconButtonThemeData(style: materialToolbarButtonStyle(theme)),
+      data: IconButtonThemeData(style: style),
       child: child,
     );
   }

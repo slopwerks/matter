@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
+import 'app_component_theme.dart';
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
 import 'tokens.dart';
@@ -592,6 +593,20 @@ ThemeData buildMaterialTheme(
         glassBorder: Colors.transparent,
         hairline: hairline,
         highlightAlpha: 0,
+      ),
+      AppComponentTheme(
+        conversationLayout: ConversationRowLayout.trailingStatus,
+        rowRadius: materialSurfaceRadius,
+        rowHorizontalPadding: 12,
+        avatarSize: materialListAvatarSize,
+        denseAvatarSize: materialDenseListAvatarSize,
+        toolbarStyle: IconButton.styleFrom(
+          backgroundColor: dark ? scheme.surfaceContainerHigh : surfaces.card,
+          foregroundColor: scheme.onSurface,
+          shape: const StadiumBorder(),
+          minimumSize: const Size.square(44),
+          padding: EdgeInsets.zero,
+        ),
       ),
       tokens,
     ],

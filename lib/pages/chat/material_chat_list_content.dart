@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../src/rust/api/matrix.dart';
+import '../../theme/app_component_theme.dart';
 import '../../theme/material_theme.dart';
+import '../../theme/tokens.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/avatar.dart' show NeuBadge;
 import 'chat_timestamp.dart';
@@ -30,6 +32,7 @@ class MaterialChatListContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final components = AppComponentTheme.of(context);
     final text = materialConversationTextTheme(
       theme,
       unread: hasUnread,
@@ -44,12 +47,10 @@ class MaterialChatListContent extends StatelessWidget {
             AppAvatar(
               key: ValueKey('room-avatar:${room.id}:${room.avatarUrl}'),
               fallback: room.name,
-              size: dense
-                  ? materialDenseListAvatarSize
-                  : materialListAvatarSize,
+              size: dense ? components.denseAvatarSize : components.avatarSize,
               url: room.avatarUrl,
             ),
-            const SizedBox(width: materialListContentGap),
+            SizedBox(width: context.tokens.spacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

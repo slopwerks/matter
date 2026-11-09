@@ -25,6 +25,18 @@ list tile, input, chip, segmented button, all four button families, FAB, switch,
 progress, tab bar, dialog, bottom sheet, popup menu, snack bar and tooltip. If a
 page needs something outside that list, add it there first.
 
+### Shared component presentation
+
+`AppComponentTheme`, mounted by both theme builders, supplies conversation-row
+radius, padding, avatar sizes, layout policy and floating-toolbar button style.
+`ChatListItem` consumes that contract rather than checking the skin; its two
+presentation widgets retain their original inline-status / trailing-status
+layouts. Drafts, unread overrides, membership actions and navigation remain in
+the stateful host. `GroupedRows` reads card/hairline/spacing from `context.tokens`.
+`MaterialToolbar` applies the optional theme-provided style and is transparent
+to its child when no override is present. Geometry interpolates and discrete
+layout policies switch at the compatibility palette's midpoint.
+
 ## Type
 
 `_buildTextTheme` in `material_theme.dart` gives every slot a size **and** a

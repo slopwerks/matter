@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_component_theme.dart';
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
 import 'tokens.dart';
@@ -76,6 +77,14 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
   return theme.copyWith(
     extensions: [
       ...theme.extensions.values,
+      const AppComponentTheme(
+        conversationLayout: ConversationRowLayout.inlineStatus,
+        rowRadius: NeuRadius.content,
+        rowHorizontalPadding: 8,
+        avatarSize: 46,
+        denseAvatarSize: 44,
+        toolbarStyle: null,
+      ),
       AppDesignTokens(
         spacing: const AppSpacing(),
         radii: const AppRadii.neu(),
