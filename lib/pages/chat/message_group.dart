@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -44,6 +43,7 @@ import 'timeline/timeline_clustering.dart' show MessageGroup;
 import 'timeline/timeline_bubble_frame.dart';
 import 'timeline/timeline_reactions_bar.dart';
 import 'timeline/timeline_read_receipts.dart';
+import 'timeline/timeline_swipe_reply.dart';
 
 export 'timeline/timeline_bubble_frame.dart'
     show
@@ -695,7 +695,7 @@ class MessageGroupWidget extends ConsumerWidget {
         : messageRow;
     return SizedBox(
       width: double.infinity,
-      child: _SwipeToReply(
+      child: TimelineSwipeReply(
         key: ValueKey('swipe-reply:$visualMessageId'),
         onReply: isLocalOutgoing
             ? null
@@ -1548,179 +1548,6 @@ class MessageGroupWidget extends ConsumerWidget {
             },
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SwipeToReply extends StatefulWidget {
-  final Widget child;
-  final VoidCallback? onReply;
-  final ValueNotifier<double>? linkedOffset;
-
-  const _SwipeToReply({
-    super.key,
-    required this.child,
-    required this.onReply,
-    this.linkedOffset,
-  });
-
-  @override
-  State<_SwipeToReply> createState() => _SwipeToReplyState();
-}
-
-class _SwipeToReplyState extends State<_SwipeToReply>
-    with SingleTickerProviderStateMixin {
-  // 与系统返回手势区对齐：Android CDD 规定侧滑返回触发区最大为 40dp。
-  static const double _edgeExclusionWidth = 40;
-  static const double _triggerDistance = 56;
-  static const double _maxDistance = 72;
-  static const Duration _settleDuration = Duration(milliseconds: 180);
-
-  late final AnimationController _dragController;
-  bool _dragStartedInReplyRegion = false;
-  bool _thresholdFeedbackSent = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _dragController = AnimationController(
-      vsync: this,
-      lowerBound: 0,
-      upperBound: _maxDistance,
-      duration: _settleDuration,
-    )..addListener(_syncLinkedOffset);
-  }
-
-  @override
-  void didUpdateWidget(covariant _SwipeToReply oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (identical(oldWidget.linkedOffset, widget.linkedOffset)) return;
-    oldWidget.linkedOffset?.value = 0;
-    _syncLinkedOffset();
-  }
-
-  @override
-  void dispose() {
-    widget.linkedOffset?.value = 0;
-    _dragController.removeListener(_syncLinkedOffset);
-    _dragController.dispose();
-    super.dispose();
-  }
-
-  void _syncLinkedOffset() {
-    widget.linkedOffset?.value = _dragController.value;
-  }
-
-  void _handleDragDown(DragDownDetails details) {
-    final width = context.size?.width;
-    _dragStartedInReplyRegion =
-        width != null && details.localPosition.dx < width - _edgeExclusionWidth;
-  }
-
-  void _handleDragStart(DragStartDetails details) {
-    if (!_dragStartedInReplyRegion) return;
-    _dragController.stop();
-    _thresholdFeedbackSent = _dragController.value >= _triggerDistance;
-  }
-
-  void _handleDragUpdate(DragUpdateDetails details) {
-    if (!_dragStartedInReplyRegion) return;
-    final distance = (_dragController.value - details.delta.dx).clamp(
-      0.0,
-      _maxDistance,
-    );
-    _dragController.value = distance;
-
-    final reachedThreshold = distance >= _triggerDistance;
-    if (reachedThreshold && !_thresholdFeedbackSent) {
-      _thresholdFeedbackSent = true;
-      HapticFeedback.mediumImpact();
-    } else if (!reachedThreshold) {
-      _thresholdFeedbackSent = false;
-    }
-  }
-
-  void _handleDragEnd(DragEndDetails details) {
-    if (!_dragStartedInReplyRegion) return;
-    _dragStartedInReplyRegion = false;
-    final shouldReply = _dragController.value >= _triggerDistance;
-    _settle();
-    if (shouldReply) widget.onReply?.call();
-  }
-
-  void _handleDragCancel() {
-    if (!_dragStartedInReplyRegion) return;
-    _dragStartedInReplyRegion = false;
-    _settle();
-  }
-
-  void _settle() {
-    _thresholdFeedbackSent = false;
-    _dragController.animateBack(
-      0,
-      duration: _settleDuration,
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.onReply != null;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      dragStartBehavior: DragStartBehavior.down,
-      onHorizontalDragDown: enabled ? _handleDragDown : null,
-      onHorizontalDragStart: enabled ? _handleDragStart : null,
-      onHorizontalDragUpdate: enabled ? _handleDragUpdate : null,
-      onHorizontalDragEnd: enabled ? _handleDragEnd : null,
-      onHorizontalDragCancel: enabled ? _handleDragCancel : null,
-      child: AnimatedBuilder(
-        animation: _dragController,
-        child: widget.child,
-        builder: (context, child) {
-          final progress = (_dragController.value / _triggerDistance).clamp(
-            0.0,
-            1.0,
-          );
-          return Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.centerRight,
-            children: [
-              Positioned(
-                right: 5,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: Opacity(
-                    opacity: progress,
-                    child: Transform.scale(
-                      scale: 0.72 + (0.28 * progress),
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: context.neu.accent.withValues(alpha: 0.14),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.reply_rounded,
-                          color: context.neu.accent,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Transform.translate(
-                key: const ValueKey('swipe-reply-content'),
-                offset: Offset(-_dragController.value, 0),
-                child: child,
-              ),
-            ],
-          );
-        },
       ),
     );
   }
