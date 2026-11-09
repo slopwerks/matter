@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 
@@ -111,7 +112,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   int? _thumbnailHeight;
   int _resolveGeneration = 0;
   int _decisionGeneration = 0;
-  ({bool original, bool thumbnail})? _lastPolicy;
+  ({bool original, bool thumbnail, int? byteLimit})? _lastPolicy;
   bool _spoilerRevealed = false;
   bool _manualDownload = false;
   bool _downloadBlocked = true;
@@ -265,13 +266,25 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
         generation == _resolveGeneration &&
         ref.read(activeUserIdProvider) == account;
     final imageUrl = widget.imageUrl;
+    int? stickerByteLimit;
     try {
+      final unknownStickerSize =
+          widget.isSticker &&
+          (widget.fileSize == null || widget.fileSize! <= 0);
+      if (unknownStickerSize && !_manualDownload) {
+        stickerByteLimit = await autoDownloadByteLimit(StorageKind.image);
+        // The bridge's bounded download API uses a signed 32-bit length.
+        stickerByteLimit = stickerByteLimit.clamp(0, 0x7fffffff);
+      }
       final allowed =
           _manualDownload ||
-          await mayAutoDownload(StorageKind.image, widget.fileSize);
+          (stickerByteLimit != null
+              ? stickerByteLimit > 0
+              : await mayAutoDownload(StorageKind.image, widget.fileSize));
       final allowThumbnail =
           allowed ||
-          (imageUrl?.startsWith('mxc://') == true &&
+          (!widget.isSticker &&
+              imageUrl?.startsWith('mxc://') == true &&
               widget.fileSize != null &&
               widget.fileSize! > 0 &&
               await mayAutoDownload(StorageKind.image, 1));
@@ -282,7 +295,11 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       }
       // Initial settings/network notifications often agree. Keep the active
       // request and its result instead of cancelling and downloading again.
-      final policy = (original: allowed, thumbnail: allowThumbnail);
+      final policy = (
+        original: allowed,
+        thumbnail: allowThumbnail,
+        byteLimit: stickerByteLimit,
+      );
       if (!manual && !retry && _lastPolicy == policy) return;
       _lastPolicy = policy;
       _imagePreparation?.cancel();
@@ -293,7 +310,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       setState(() {
         _downloadBlocked = !allowThumbnail;
         if (!allowed) _resolvedUrl = null;
-        if (imageUrl == null && allowed) {
+        if (allowed && (imageUrl == null || stickerByteLimit != null)) {
           _isLoadingEncrypted = true;
           _encryptedLoadFailed = false;
         }
@@ -301,7 +318,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       String? resolved;
       Future<String?>? originalFuture;
       if (imageUrl != null && imageUrl.startsWith('mxc://')) {
-        if (allowed && !widget.isSticker) {
+        if (widget.isSticker) {
+          // Server thumbnails may contain only the first animation frame.
+          resolved = await resolveMxcUrlFull(ref, imageUrl);
+        } else if (allowed) {
           originalFuture = resolveMxcUrlFull(ref, imageUrl);
           final fallback = Completer<String?>();
           final timer = Timer(Duration.zero, () => fallback.complete(null));
@@ -311,13 +331,15 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
             timer.cancel();
           }
         }
-        resolved ??= await resolveMxcUrl(
-          ref,
-          imageUrl,
-          width: _thumbnailWidth,
-          height: _thumbnailHeight,
-          useOriginalIfCached: allowed && !widget.isSticker,
-        );
+        if (!widget.isSticker) {
+          resolved ??= await resolveMxcUrl(
+            ref,
+            imageUrl,
+            width: _thumbnailWidth,
+            height: _thumbnailHeight,
+            useOriginalIfCached: allowed,
+          );
+        }
       } else {
         resolved = imageUrl;
       }
@@ -358,6 +380,36 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
                 allowThumbnail && cached == null && resolved == null;
           });
         }
+        return;
+      }
+      if (stickerByteLimit != null && allowed) {
+        // Unknown-size stickers may load automatically, but the transfer must
+        // enforce the network's byte budget before an image widget sees a URL.
+        var stickerBytes = resolved == null
+            ? null
+            : await cachedChatImageBytes(ref, resolved, widget.roomId);
+        if (!isCurrent()) return;
+        if (stickerBytes == null) {
+          stickerBytes = await rust.downloadMediaSourceBytes(
+            mediaSourceJson: widget.mediaSourceJson ?? jsonEncode(imageUrl),
+            maxSizeBytes: stickerByteLimit,
+          );
+          if (!isCurrent()) return;
+          if (resolved != null) {
+            await cacheChatImageBytes(
+              ref,
+              resolved,
+              stickerBytes,
+              widget.roomId,
+            );
+          }
+        }
+        if (!isCurrent()) return;
+        setState(() {
+          _downloadBlocked = false;
+          _decryptedBytes = stickerBytes;
+          _resolvedUrl = null;
+        });
         return;
       }
       if (imageUrl == null) {
@@ -427,6 +479,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
         setState(() {
           _resolveFailed = true;
           _encryptedLoadFailed = true;
+          if (stickerByteLimit != null) _downloadBlocked = true;
         });
       }
     } finally {
@@ -535,7 +588,8 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     }
     final originalUrl = ref.watch(
       mxcUrlCacheProvider.select(
-        (cache) => widget.isSticker || _lastPolicy?.original != true
+        (cache) =>
+            _lastPolicy?.byteLimit != null || _lastPolicy?.original != true
             ? null
             : cache['$account::${widget.imageUrl}|original'],
       ),
@@ -557,8 +611,12 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
         : _bubbleBorderRadius;
     final needsShortImageBackdrop = _needsShortImageBackdrop(context);
     // Keep original files intact in the disk cache, especially animated GIFs.
-    final cacheWidth = originalUrl == null ? _thumbnailWidth : null;
-    final cacheHeight = originalUrl == null ? _thumbnailHeight : null;
+    final cacheWidth = widget.isSticker || originalUrl != null
+        ? null
+        : _thumbnailWidth;
+    final cacheHeight = widget.isSticker || originalUrl != null
+        ? null
+        : _thumbnailHeight;
 
     if (_spoilerHidden) {
       return _withCaption(

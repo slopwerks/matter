@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -259,7 +260,6 @@ class ComposerSendController {
   rust.ChatMessage _localStickerMessage({
     required String id,
     required StickerItem sticker,
-    required String displayImageUrl,
     int? timestamp,
   }) => rust.ChatMessage(
     id: id,
@@ -271,7 +271,9 @@ class ComposerSendController {
     timestamp: (timestamp ?? DateTime.now().millisecondsSinceEpoch).toString(),
     isMe: true,
     msgType: rust.MessageType.sticker,
-    imageUrl: displayImageUrl,
+    imageUrl: sticker.imageUrl,
+    mediaSourceJson: jsonEncode(sticker.imageUrl),
+    mimeType: sticker.mimeType,
     imageWidth: sticker.width,
     imageHeight: sticker.height,
     isEdited: false,
@@ -296,10 +298,6 @@ class ComposerSendController {
         '$localOutgoingPendingPrefix${DateTime.now().microsecondsSinceEpoch}';
     final timestamp = _nextLocalTimestamp();
     final presentation = resolveSendPresentation();
-    final displayUrl =
-        cachedResolvedMxcUrl(ref, sticker.thumbnailUrl ?? imageUrl) ??
-        cachedResolvedMxcUrl(ref, imageUrl) ??
-        imageUrl;
     if (presentation == MessageSendPresentation.flight && sourceRect != null) {
       unawaited(
         registerSendFlight(
@@ -318,7 +316,6 @@ class ComposerSendController {
       message: _localStickerMessage(
         id: failedLocalOutgoingId(id),
         sticker: sticker,
-        displayImageUrl: displayUrl,
         timestamp: timestamp,
       ),
       sourceImageUrl: imageUrl,
@@ -330,7 +327,6 @@ class ComposerSendController {
         message: _localStickerMessage(
           id: id,
           sticker: sticker,
-          displayImageUrl: displayUrl,
           timestamp: timestamp,
         ),
         sourceImageUrl: imageUrl,
