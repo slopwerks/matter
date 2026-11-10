@@ -2,6 +2,7 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
 
 import '../markdown/markdown_composer.dart';
+import 'matrix_html_flow.dart';
 import 'matrix_html_node.dart';
 
 /// Returns the text content of [source] with monospace (`pre`/`code`)
@@ -106,7 +107,7 @@ class MatrixHtmlParser {
 
   List<MatrixHtmlNode> parse(String source) {
     final fragment = html.parseFragment(source);
-    return _parseChildren(fragment.nodes, 0);
+    return normalizeMatrixHtmlBreaks(_parseChildren(fragment.nodes, 0));
   }
 
   List<MatrixHtmlNode> _parseChildren(List<dom.Node> nodes, int depth) {
@@ -218,9 +219,9 @@ class MatrixHtmlParser {
         final className = node.attributes['class'];
         final language = className == null
             ? null
-            : RegExp(
-                r'(?:^|\s)language-([A-Za-z0-9_+-]{1,32})(?:\s|$)',
-              ).firstMatch(className)?.group(1);
+            : RegExp(r'(?:^|\s)language-([A-Za-z0-9_+-]{1,32})(?:\s|$)')
+                  .firstMatch(className)
+                  ?.group(1);
         if (language != null) attributes['class'] = 'language-$language';
       }
       result.add(

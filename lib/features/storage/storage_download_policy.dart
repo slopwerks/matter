@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -61,17 +63,31 @@ bool permitsOnConnection(
   StorageConnection.unknown => settings.permitsUnknownNetwork(kind, bytes),
 };
 
-Future<bool> mayAutoDownload(StorageKind kind, int? bytes) async {
+/// A byte budget for bounded downloads whose event does not declare a size.
+/// Zero keeps disabled types, disabled networks and offline requests blocked.
+Future<int> autoDownloadByteLimit(StorageKind kind) async {
   final settings = await loadStorageSettings();
-  if (bytes == null || bytes <= 0) return false;
+  int limit(DownloadRules rules) => rules.enabled ? rules.limits[kind] ?? 0 : 0;
+  int unknownLimit() =>
+      math.min(limit(settings.wifiDownloads), limit(settings.mobileDownloads));
   try {
     final connection = classifyStorageConnection(
       await Connectivity().checkConnectivity(),
     );
-    return permitsOnConnection(settings, connection, kind, bytes);
+    return switch (connection) {
+      StorageConnection.wifi => limit(settings.wifiDownloads),
+      StorageConnection.mobile => limit(settings.mobileDownloads),
+      StorageConnection.offline => 0,
+      StorageConnection.unknown => unknownLimit(),
+    };
   } on MissingPluginException {
-    return settings.permitsUnknownNetwork(kind, bytes);
+    return unknownLimit();
   } on PlatformException {
-    return false;
+    return 0;
   }
+}
+
+Future<bool> mayAutoDownload(StorageKind kind, int? bytes) async {
+  if (bytes == null || bytes <= 0) return false;
+  return bytes <= await autoDownloadByteLimit(kind);
 }

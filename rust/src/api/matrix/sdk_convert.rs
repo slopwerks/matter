@@ -67,7 +67,7 @@ pub(in crate::api::matrix) fn timeline_item_to_message(
                         image_width,
                         image_height,
                         filename: None,
-                        file_size: None,
+                        file_size: uint_to_i32(content.info.size),
                         mime_type: content.info.mimetype.clone(),
                         duration_ms: None,
                         geo_uri: None,

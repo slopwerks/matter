@@ -53,3 +53,41 @@ Future<Uint8List?> cachedChatImageBytes(
     return null;
   }
 }
+
+/// Store original bytes without the image cache's static resize conversion.
+Future<void> cacheChatImageBytes(
+  WidgetRef ref,
+  String url,
+  Uint8List bytes,
+  String? roomId,
+) async {
+  final user = ref.read(currentUserProvider);
+  if (user == null || kIsWeb) return;
+  final owner = roomId == null
+      ? null
+      : StorageOwner(storageAccountKey(user.id, user.homeserver), roomId);
+  try {
+    final key = authenticatedMediaCacheKey(
+      url: url,
+      userId: user.id,
+      homeserver: user.homeserver,
+    );
+    final manager =
+        authenticatedMediaCacheManager(
+          url: url,
+          userId: user.id,
+          homeserver: user.homeserver,
+        ) ??
+        CachedNetworkImageProvider.defaultCacheManager;
+    final file = await manager.putFile(url, bytes, key: key ?? url);
+    final release = storageRegistry.pin(file.path);
+    try {
+      if (owner != null) storageRegistry.rememberSource(url, owner);
+      await storageRegistry.recordSource(url, file.path, StorageKind.image);
+    } finally {
+      release();
+    }
+  } catch (error) {
+    debugPrint('Image cache write failed: $error');
+  }
+}

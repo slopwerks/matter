@@ -75,6 +75,30 @@ void main() {
     expect(await mayAutoDownload(StorageKind.image, 2 * storageMiB), isFalse);
   });
 
+  test(
+    'bounded download budget follows the active network and disabled rules',
+    () async {
+      expect(await autoDownloadByteLimit(StorageKind.image), 8 * storageMiB);
+      networks = ['mobile'];
+      expect(await autoDownloadByteLimit(StorageKind.image), 2 * storageMiB);
+      networks = ['wifi', 'mobile'];
+      expect(await autoDownloadByteLimit(StorageKind.image), 2 * storageMiB);
+      networks = ['vpn'];
+      expect(await autoDownloadByteLimit(StorageKind.image), 2 * storageMiB);
+      networks = ['none'];
+      expect(await autoDownloadByteLimit(StorageKind.image), 0);
+      await saveStorageSettings(
+        const StorageSettings(wifiDownloads: DownloadRules(enabled: false)),
+      );
+      networks = ['wifi'];
+      expect(await autoDownloadByteLimit(StorageKind.image), 0);
+      networks = ['vpn'];
+      expect(await autoDownloadByteLimit(StorageKind.image), 0);
+      networks = ['mobile'];
+      expect(await autoDownloadByteLimit(StorageKind.audio), 0);
+    },
+  );
+
   test('old global settings migrate without enabling a network or increasing limits', () {
     for (final network in ['any', 'unmetered', 'never']) {
       final settings = StorageSettings.fromJson({

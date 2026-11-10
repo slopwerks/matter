@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/chat_provider.dart';
 import '../../widgets/app_avatar.dart';
 import 'matrix_code_block.dart';
+import 'matrix_html_flow.dart';
 import 'matrix_html_node.dart';
 import 'matrix_html_parser.dart';
 import 'matrix_link_router.dart';
@@ -186,71 +187,19 @@ class _MatrixNodeRenderer {
 
   List<Widget> renderBlocks(List<MatrixHtmlNode> nodes) {
     final widgets = <Widget>[];
-    final inlineNodes = <MatrixHtmlNode>[];
-
-    void addWidget(Widget? widget) {
-      if (widget == null) return;
+    for (final node in matrixHtmlBlocks(nodes)) {
+      final widget = _renderBlock(node);
+      if (widget == null) continue;
       if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 7));
       widgets.add(widget);
     }
-
-    void flushInlineNodes() {
-      if (inlineNodes.isEmpty) return;
-      final hasContent = inlineNodes.any(
-        (node) => node is! MatrixTextNode || node.text.trim().isNotEmpty,
-      );
-      if (hasContent) {
-        addWidget(_richText(List.of(inlineNodes), baseStyle));
-      }
-      inlineNodes.clear();
-    }
-
-    for (final node in nodes) {
-      if (_isRootInlineNode(node)) {
-        inlineNodes.add(node);
-      } else {
-        flushInlineNodes();
-        addWidget(_renderBlock(node));
-      }
-    }
-    flushInlineNodes();
     return widgets;
   }
 
   _InlineBlock? singleInlineBlock(List<MatrixHtmlNode> nodes) {
-    final meaningful = nodes
-        .where((node) => node is! MatrixTextNode || node.text.trim().isNotEmpty)
-        .toList();
-    if (meaningful.isEmpty) return null;
-    if (meaningful.every(_isRootInlineNode)) {
-      return _inlineBlock(meaningful, baseStyle);
-    }
+    final meaningful = matrixHtmlBlocks(nodes).toList();
     if (meaningful.length != 1) return null;
     return _inlineBlockForNode(meaningful.single);
-  }
-
-  bool _isRootInlineNode(MatrixHtmlNode node) {
-    if (node is MatrixTextNode) return true;
-    final tag = (node as MatrixElementNode).tag;
-    return !const {
-      'p',
-      'h1',
-      'h2',
-      'h3',
-      'h4',
-      'h5',
-      'h6',
-      'blockquote',
-      'ul',
-      'ol',
-      'li',
-      'pre',
-      'hr',
-      'img',
-      'figure',
-      'div',
-      'table',
-    }.contains(tag);
   }
 
   List<Widget> renderBlocksWithTrailing(
@@ -258,7 +207,7 @@ class _MatrixNodeRenderer {
     Widget metadata,
   ) {
     final renderable = <(MatrixHtmlNode, Widget)>[];
-    for (final node in nodes) {
+    for (final node in matrixHtmlBlocks(nodes)) {
       final widget = _renderBlock(node);
       if (widget != null) renderable.add((node, widget));
     }
