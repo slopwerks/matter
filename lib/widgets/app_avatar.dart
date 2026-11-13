@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/diagnostics/media_diagnostics.dart';
+import '../features/cache/media_decode_recovery.dart';
 import '../providers/authenticated_media_cache.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
@@ -204,6 +206,8 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
   int _generation = 0;
   Stopwatch _loadWatch = Stopwatch()..start();
   bool _failureLogged = false;
+  bool _decodeRecoveryAttempted = false;
+  bool _decodeFailed = false;
   bool _successNotified = false;
   ui.Image? _lastReadyImage;
 
@@ -230,6 +234,47 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
   void dispose() {
     _lastReadyImage?.dispose();
     super.dispose();
+  }
+
+  Future<void> _recoverDecode(
+    _AuthenticatedImage source,
+    int generation,
+  ) async {
+    try {
+      await recoverMediaDecodeCache(
+        manager:
+            authenticatedMediaCacheManager(
+              url: source.url,
+              userId: source.userId,
+              homeserver: source.homeserver,
+            ) ??
+            CachedNetworkImageProvider.defaultCacheManager,
+        url: source.url,
+        cacheKey: authenticatedMediaCacheKey(
+          url: source.url,
+          userId: source.userId,
+          homeserver: source.homeserver,
+        ),
+        width: source.cacheWidth,
+        height: source.cacheHeight,
+      );
+      if (!mounted || _generation != generation) return;
+      setState(() {
+        _startLoad();
+        _failed = false;
+        _retry++;
+      });
+    } catch (error) {
+      logMediaLoadFailure(
+        url: source.url,
+        error: error,
+        elapsedMs: _loadWatch.elapsedMilliseconds,
+        attempt: _retry + 1,
+        connection: 'cache_recovery',
+        authenticated: source.token != null,
+      );
+      if (mounted && _generation == generation) source.onError?.call();
+    }
   }
 
   Widget? _retainedImage() => _lastReadyImage == null
@@ -264,6 +309,8 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
         (_failed && widget.token != oldWidget.token)) {
       _startLoad();
       _generation++;
+      _decodeRecoveryAttempted = false;
+      _decodeFailed = false;
     }
     if (widget.userId != oldWidget.userId ||
         widget.homeserver != oldWidget.homeserver ||
@@ -278,6 +325,7 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
   Widget build(BuildContext context) {
     ref.listen(connectionProvider, (previous, next) {
       if (_failed &&
+          !_decodeFailed &&
           previous != AppConnectionState.connected &&
           next == AppConnectionState.connected) {
         // Rebuilding an equal image provider retains its failed stream.
@@ -359,7 +407,10 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
             ),
           ),
       errorWidget: (context, url, error) {
+        final source = widget;
+        final generation = _generation;
         _failed = true;
+        _decodeFailed = isMediaDecodeFailure(error);
         _loadWatch.stop();
         if (!_failureLogged) {
           _failureLogged = true;
@@ -371,10 +422,19 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
             connection: ref.read(connectionProvider).name,
             authenticated: isMatrixMedia && widget.token != null,
           );
+          if (_decodeFailed && !_decodeRecoveryAttempted) {
+            _decodeRecoveryAttempted = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _generation == generation) {
+                unawaited(_recoverDecode(source, generation));
+              }
+            });
+          } else {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _generation == generation) widget.onError?.call();
+            });
+          }
         }
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => widget.onError?.call(),
-        );
         final retained = _retainedImage();
         return retained == null
             ? widget.fallback

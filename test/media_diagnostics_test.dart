@@ -120,6 +120,17 @@ void main() {
     expect(message, contains('Invalid image data'));
   });
 
+  test('HTTP failures containing decode text are not cache corruption', () {
+    expect(
+      isMediaDecodeFailure(HttpExceptionWithStatus(502, 'Invalid image data')),
+      isFalse,
+    );
+    expect(
+      isMediaDecodeFailure(const SocketException('Connection reset')),
+      isFalse,
+    );
+  });
+
   test('redacts credentials echoed in error messages before persistence', () {
     record(
       Exception(

@@ -10,6 +10,13 @@ final _httpUrlPattern = RegExp(
   caseSensitive: false,
 );
 
+bool isMediaDecodeFailure(Object error) =>
+    error is! HttpExceptionWithStatus &&
+    error is! NetworkImageLoadException &&
+    (error.toString().toLowerCase().contains('invalid image data') ||
+        error.toString().contains('Failed to decode image') ||
+        error.runtimeType.toString() == 'ImageCodecException');
+
 String _diagnosticUrl(String value) {
   final uri = Uri.tryParse(value);
   if (uri == null || !uri.hasAuthority) return '[invalid URL]';

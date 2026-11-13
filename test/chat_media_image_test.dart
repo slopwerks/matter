@@ -11,7 +11,10 @@ import 'package:matter/pages/chat/blurhash_codec.dart';
 import 'package:matter/pages/chat/image_media.dart';
 import 'package:matter/pages/chat/image_placeholders.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
+import 'package:matter/features/cache/media_decode_recovery.dart';
+import 'package:matter/providers/authenticated_media_cache.dart';
 import 'package:matter/providers/auth_provider.dart';
+import 'package:matter/providers/connection_provider.dart';
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -237,6 +240,15 @@ void main() {
     ]);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('bad disk image is removed and downloaded once', (tester) async {
+    cache.corrupt = true;
+    await show(tester, url: 'https://images.example/corrupt');
+    await flush(tester);
+    expect(cache.requests, hasLength(2));
+    expect(cache.removed, ['https://images.example/corrupt']);
+    expect(find.byIcon(Icons.broken_image_rounded), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
     'successful original replaces preview only after its first frame',
     (tester) async {
@@ -267,6 +279,78 @@ void main() {
     },
   );
 
+  test(
+    'recovery removes only account source and exact resize variant',
+    () async {
+      const url =
+          'https://matrix.example/_matrix/client/v1/media/download/server/id';
+      final alice = authenticatedMediaCacheKey(
+        url: url,
+        userId: '@alice:example',
+        homeserver: 'https://matrix.example',
+      );
+      final bob = authenticatedMediaCacheKey(
+        url: url,
+        userId: '@bob:example',
+        homeserver: 'https://matrix.example',
+      );
+      expect(alice, isNot(bob));
+      await recoverMediaDecodeCache(
+        manager: cache,
+        url: url,
+        cacheKey: alice,
+        width: 240,
+        height: 180,
+      );
+      expect(cache.removed, ['resized_w240_h180_$alice', alice]);
+      expect(cache.removed, isNot(contains(bob)));
+    },
+  );
+
+  testWidgets('finishing eviction cannot retry a replaced source', (
+    tester,
+  ) async {
+    cache.corrupt = true;
+    cache.evictionGate = Completer<void>();
+    await show(tester, url: 'https://images.example/old');
+    await flush(tester);
+    expect(cache.removed, hasLength(1));
+    cache.corrupt = false;
+    await show(tester, url: 'https://images.example/new');
+    await flush(tester);
+    cache.evictionGate!.complete();
+    await flush(tester);
+    expect(cache.requests, [
+      'https://images.example/old',
+      'https://images.example/new',
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('persistently invalid data stops after one recovery attempt', (
+    tester,
+  ) async {
+    cache.alwaysCorrupt = true;
+    await show(tester, url: 'https://images.example/invalid');
+    await flush(tester);
+    expect(cache.requests, hasLength(2));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ChatMediaImage)),
+    );
+    container.read(connectionProvider.notifier).value =
+        AppConnectionState.disconnected;
+    await tester.pump();
+    container.read(connectionProvider.notifier).value =
+        AppConnectionState.connected;
+    await flush(tester);
+    expect(cache.requests, hasLength(2));
+    expect(cache.removed, hasLength(1));
+    expect(find.byType(BlurhashPlaceholder), findsOneWidget);
+    expect(find.byIcon(Icons.broken_image_rounded), findsOneWidget);
+    await flush(tester);
+    expect(cache.requests, hasLength(2));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('switching account drops the previous decoded preview', (
     tester,
   ) async {
@@ -293,6 +377,21 @@ void main() {
     );
     cache.original.complete();
     await flush(tester);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('finishing eviction after disposal does not schedule a retry', (
+    tester,
+  ) async {
+    cache.corrupt = true;
+    cache.evictionGate = Completer<void>();
+    await show(tester, url: 'https://images.example/disposed');
+    await flush(tester);
+    expect(cache.removed, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+    cache.evictionGate!.complete();
+    await flush(tester);
+    expect(cache.requests, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 }
