@@ -911,12 +911,21 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
             ? enabledNeuBubbleShadows(context, colors)
             : null,
       ),
-      child: Center(
-        child: Icon(
-          Icons.broken_image_rounded,
-          color: colors.textTertiary,
-          size: 32,
-        ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          BlurhashPlaceholder(
+            hash: widget.message?.imageMetadata?.blurhash,
+            color: colors.card,
+          ),
+          Center(
+            child: Icon(
+              Icons.broken_image_rounded,
+              color: colors.textTertiary,
+              size: 32,
+            ),
+          ),
+        ],
       ),
     );
   }

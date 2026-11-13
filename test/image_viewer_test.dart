@@ -983,7 +983,11 @@ void main() {
     );
     expect(full, findsOneWidget);
     final image = tester.widget<CachedNetworkImage>(full);
-    image.imageBuilder!(tester.element(full), MemoryImage(pixel));
+    final rendered =
+        image.imageBuilder!(tester.element(full), MemoryImage(pixel)) as Image;
+    // Resolving a URL/provider alone must not mark the original as ready.
+    expect(find.text('高清'), findsNothing);
+    rendered.frameBuilder!(tester.element(full), const SizedBox(), 0, false);
     await tester.pump();
     await tester.pump();
     expect(find.text('高清'), findsOneWidget);

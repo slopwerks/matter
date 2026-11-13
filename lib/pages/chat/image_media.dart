@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../features/diagnostics/media_diagnostics.dart';
 import '../../widgets/app_avatar.dart';
 import 'image_placeholders.dart';
 
@@ -36,9 +37,24 @@ class ChatMediaImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final failure = Stack(
+      fit: StackFit.expand,
+      children: [
+        placeholder ??
+            BlurhashPlaceholder(hash: blurhash, color: context.neu.card),
+        Center(
+          child: Icon(
+            Icons.broken_image_rounded,
+            color: context.neu.textTertiary,
+          ),
+        ),
+      ],
+    );
     final bytes = imageBytes;
     if (bytes != null) {
       var notified = false;
+      var failed = false;
+      final loadWatch = Stopwatch()..start();
       return Image.memory(
         bytes,
         fit: fit,
@@ -49,9 +65,9 @@ class ChatMediaImage extends StatelessWidget {
         frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
           if (!notified && (frame != null || wasSynchronouslyLoaded)) {
             notified = true;
-            WidgetsBinding.instance.addPostFrameCallback(
-              (_) => onLoaded?.call(),
-            );
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) onLoaded?.call();
+            });
           }
           if (frame == null && !wasSynchronouslyLoaded && blurhash != null) {
             return BlurhashPlaceholder(hash: blurhash, color: context.neu.card);
@@ -59,25 +75,37 @@ class ChatMediaImage extends StatelessWidget {
           return child;
         },
         errorBuilder: (context, error, stackTrace) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => onError?.call());
-          return ColoredBox(
-            color: context.neu.card,
-            child: const Center(
-              child: Icon(Icons.broken_image_rounded, color: Colors.white54),
-            ),
-          );
+          if (!failed) {
+            failed = true;
+            logMediaLoadFailure(
+              url: imageUrl ?? 'memory://local',
+              error: error,
+              elapsedMs: loadWatch.elapsedMilliseconds,
+              attempt: 1,
+              connection: 'memory',
+              authenticated: false,
+              inputBytes: bytes.length,
+              width: cacheWidth,
+              height: cacheHeight,
+            );
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) onError?.call();
+            });
+          }
+          return failure;
         },
       );
     }
     final url = imageUrl;
     if (url == null || url.isEmpty) {
-      return ColoredBox(color: context.neu.card);
+      return BlurhashPlaceholder(hash: blurhash, color: context.neu.card);
     }
     return AuthenticatedImageMessage(
       imageUrl: url,
       fit: fit,
       onLoaded: onLoaded,
       onError: onError,
+      errorPlaceholder: failure,
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
       loadingPlaceholder:
