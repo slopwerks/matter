@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -200,17 +201,61 @@ class _AuthenticatedImage extends ConsumerStatefulWidget {
 class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
   bool _failed = false;
   int _retry = 0;
+  int _generation = 0;
   Stopwatch _loadWatch = Stopwatch()..start();
   bool _failureLogged = false;
+  bool _successNotified = false;
+  ui.Image? _lastReadyImage;
+
+  void _rememberFrame(ImageProvider provider, int generation) {
+    final stream = provider.resolve(createLocalImageConfiguration(context));
+    late ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        if (mounted && generation == _generation) {
+          _lastReadyImage?.dispose();
+          _lastReadyImage = info.image.clone();
+        }
+        info.dispose();
+      },
+      onError: (Object error, StackTrace? stack) {
+        stream.removeListener(listener);
+      },
+    );
+    stream.addListener(listener);
+  }
+
+  @override
+  void dispose() {
+    _lastReadyImage?.dispose();
+    super.dispose();
+  }
+
+  Widget? _retainedImage() => _lastReadyImage == null
+      ? null
+      : RawImage(
+          image: _lastReadyImage,
+          fit: widget.fit ?? BoxFit.cover,
+          width: widget.width,
+          height: widget.height,
+        );
 
   void _startLoad() {
     _loadWatch = Stopwatch()..start();
     _failureLogged = false;
+    _successNotified = false;
   }
 
   @override
   void didUpdateWidget(covariant _AuthenticatedImage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.userId != oldWidget.userId ||
+        widget.homeserver != oldWidget.homeserver ||
+        (!widget.useOldImageOnUrlChange && widget.url != oldWidget.url)) {
+      _lastReadyImage?.dispose();
+      _lastReadyImage = null;
+    }
     if (widget.url != oldWidget.url ||
         widget.userId != oldWidget.userId ||
         widget.homeserver != oldWidget.homeserver ||
@@ -218,6 +263,7 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
         widget.cacheHeight != oldWidget.cacheHeight ||
         (_failed && widget.token != oldWidget.token)) {
       _startLoad();
+      _generation++;
     }
     if (widget.userId != oldWidget.userId ||
         widget.homeserver != oldWidget.homeserver ||
@@ -258,7 +304,7 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
       homeserver: widget.homeserver,
     );
     return CachedNetworkImage(
-      key: ValueKey(_retry),
+      key: ValueKey((_generation, _retry)),
       imageUrl: widget.url,
       cacheKey: cacheKey,
       cacheManager: cacheManager,
@@ -276,19 +322,35 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
       fadeInDuration: Duration.zero,
       fadeOutDuration: Duration.zero,
       imageBuilder: (context, imageProvider) {
-        _loadWatch.stop();
-        _failed = false;
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => widget.onLoaded?.call(),
-        );
+        final generation = _generation;
         return Image(
           image: imageProvider,
           fit: widget.fit ?? BoxFit.cover,
           width: widget.width,
           height: widget.height,
+          frameBuilder: (context, child, frame, synchronous) {
+            if (frame == null && !synchronous) {
+              return _retainedImage() ?? widget.loadingPlaceholder ?? child;
+            }
+            if (frame != null || synchronous) {
+              _loadWatch.stop();
+              _failed = false;
+              if (!_successNotified) {
+                _successNotified = true;
+                _rememberFrame(imageProvider, generation);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && _generation == generation) {
+                    widget.onLoaded?.call();
+                  }
+                });
+              }
+            }
+            return child;
+          },
         );
       },
       placeholder: (context, _) =>
+          _retainedImage() ??
           widget.loadingPlaceholder ??
           Center(
             child: CircularProgressIndicator(
@@ -313,7 +375,21 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
         WidgetsBinding.instance.addPostFrameCallback(
           (_) => widget.onError?.call(),
         );
-        return widget.fallback;
+        final retained = _retainedImage();
+        return retained == null
+            ? widget.fallback
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  retained,
+                  Center(
+                    child: Icon(
+                      Icons.broken_image_rounded,
+                      color: context.neu.textTertiary,
+                    ),
+                  ),
+                ],
+              );
       },
     );
   }
@@ -323,6 +399,7 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
 class AuthenticatedImageMessage extends ConsumerWidget {
   final String imageUrl;
   final Widget? loadingPlaceholder;
+  final Widget? errorPlaceholder;
   final VoidCallback? onTap;
   final BoxFit? fit;
   final VoidCallback? onLoaded;
@@ -334,6 +411,7 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     super.key,
     required this.imageUrl,
     this.loadingPlaceholder,
+    this.errorPlaceholder,
     this.onTap,
     this.fit,
     this.onLoaded,
@@ -347,13 +425,14 @@ class AuthenticatedImageMessage extends ConsumerWidget {
     // mxc:// URLs can't be shown directly
     if (imageUrl.startsWith('mxc://')) {
       WidgetsBinding.instance.addPostFrameCallback((_) => onError?.call());
-      return Center(
-        child: Icon(
-          Icons.broken_image_rounded,
-          color: context.neu.textTertiary,
-          size: 40,
-        ),
-      );
+      return errorPlaceholder ??
+          Center(
+            child: Icon(
+              Icons.broken_image_rounded,
+              color: context.neu.textTertiary,
+              size: 40,
+            ),
+          );
     }
 
     final token = ref.watch(currentAccessTokenProvider);
@@ -374,7 +453,7 @@ class AuthenticatedImageMessage extends ConsumerWidget {
       token: token,
       userId: userId,
       homeserver: homeserver,
-      fallback: brokenIcon,
+      fallback: errorPlaceholder ?? brokenIcon,
       fit: fit ?? BoxFit.cover,
       onLoaded: onLoaded,
       onError: onError,
