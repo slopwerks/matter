@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../features/diagnostics/media_diagnostics.dart';
 import '../../widgets/app_avatar.dart';
 import 'image_placeholders.dart';
 
@@ -53,6 +54,7 @@ class ChatMediaImage extends StatelessWidget {
     if (bytes != null) {
       var notified = false;
       var failed = false;
+      final loadWatch = Stopwatch()..start();
       return Image.memory(
         bytes,
         fit: fit,
@@ -75,6 +77,17 @@ class ChatMediaImage extends StatelessWidget {
         errorBuilder: (context, error, stackTrace) {
           if (!failed) {
             failed = true;
+            logMediaLoadFailure(
+              url: imageUrl ?? 'memory://local',
+              error: error,
+              elapsedMs: loadWatch.elapsedMilliseconds,
+              attempt: 1,
+              connection: 'memory',
+              authenticated: false,
+              inputBytes: bytes.length,
+              width: cacheWidth,
+              height: cacheHeight,
+            );
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (context.mounted) onError?.call();
             });

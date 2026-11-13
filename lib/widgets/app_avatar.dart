@@ -272,6 +272,8 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
         attempt: _retry + 1,
         connection: 'cache_recovery',
         authenticated: source.token != null,
+        width: source.cacheWidth,
+        height: source.cacheHeight,
       );
       if (mounted && _generation == generation) source.onError?.call();
     }
@@ -370,6 +372,7 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
       fadeInDuration: Duration.zero,
       fadeOutDuration: Duration.zero,
       imageBuilder: (context, imageProvider) {
+        final source = widget;
         final generation = _generation;
         return Image(
           image: imageProvider,
@@ -381,11 +384,29 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
               return _retainedImage() ?? widget.loadingPlaceholder ?? child;
             }
             if (frame != null || synchronous) {
+              final retainedPreview = _lastReadyImage != null;
               _loadWatch.stop();
               _failed = false;
               if (!_successNotified) {
                 _successNotified = true;
                 _rememberFrame(imageProvider, generation);
+                if (widget.useOldImageOnUrlChange) {
+                  logMediaFirstFrame(
+                    url: source.url,
+                    elapsedMs: _loadWatch.elapsedMilliseconds,
+                    retainedPreview: retainedPreview,
+                    width: source.cacheWidth,
+                    height: source.cacheHeight,
+                  );
+                }
+                if (_decodeRecoveryAttempted) {
+                  logMediaRecovery(
+                    url: source.url,
+                    outcome: 'recovered',
+                    width: source.cacheWidth,
+                    height: source.cacheHeight,
+                  );
+                }
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted && _generation == generation) {
                     widget.onLoaded?.call();
@@ -421,6 +442,8 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
             attempt: _retry + 1,
             connection: ref.read(connectionProvider).name,
             authenticated: isMatrixMedia && widget.token != null,
+            width: widget.cacheWidth,
+            height: widget.cacheHeight,
           );
           if (_decodeFailed && !_decodeRecoveryAttempted) {
             _decodeRecoveryAttempted = true;
@@ -430,6 +453,14 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
               }
             });
           } else {
+            if (_decodeFailed) {
+              logMediaRecovery(
+                url: url,
+                outcome: 'exhausted',
+                width: source.cacheWidth,
+                height: source.cacheHeight,
+              );
+            }
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted && _generation == generation) widget.onError?.call();
             });

@@ -2,6 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
+import '../diagnostics/media_diagnostics.dart';
+
 // Shared by simultaneous consumers (e.g. a bubble and its viewer).
 final _recoveries = <(BaseCacheManager, String, int?, int?), Future<void>>{};
 
@@ -36,7 +38,17 @@ Future<void> _recover(
       '${height == null ? '' : '_h$height'}_$key';
   final keys = [if (width != null || height != null) resizedKey, key];
   for (final entry in keys) {
+    final info = await manager.getFileFromCache(entry);
+    final cacheBytes = info == null ? null : await info.file.length();
     await manager.removeFile(entry);
+    logMediaRecovery(
+      url: url,
+      outcome: entry == key ? 'evicted_source' : 'evicted_resized',
+      cacheHit: info != null,
+      cacheBytes: cacheBytes,
+      width: width,
+      height: height,
+    );
   }
   await ResizeImage.resizeIfNeeded(
     width,

@@ -247,6 +247,8 @@ void main() {
     expect(cache.requests, hasLength(2));
     expect(cache.removed, ['https://images.example/corrupt']);
     expect(find.byIcon(Icons.broken_image_rounded), findsNothing);
+    expect(api.messages.any((m) => m.contains('cache_bytes=3')), isTrue);
+    expect(api.messages.any((m) => m.contains('outcome=recovered')), isTrue);
     expect(tester.takeException(), isNull);
   });
   testWidgets(
@@ -275,6 +277,14 @@ void main() {
           .where((x) => x.image != null);
       expect(frames, isNotEmpty);
       expect(frames.any((x) => x.image!.isCloneOf(thumbnail)), isFalse);
+      expect(
+        api.messages.any(
+          (m) =>
+              m.contains('media_first_frame') &&
+              m.contains('retained_preview=true'),
+        ),
+        isTrue,
+      );
       expect(tester.takeException(), isNull);
     },
   );

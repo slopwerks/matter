@@ -118,6 +118,27 @@ void main() {
     expect(message, contains('stage=image_load http_status=none'));
     expect(message, contains('error_type=StateError'));
     expect(message, contains('Invalid image data'));
+    expect(message, contains('failure_kind=decode'));
+  });
+
+  test('recovery diagnostics retain cache evidence and sanitize URL', () {
+    logMediaRecovery(
+      url: 'https://alice:password@matrix.example/_matrix/client/v1/media/thumbnail/server/id?token=secret',
+      outcome: 'evicted_resized',
+      cacheHit: true,
+      cacheBytes: 3,
+      width: 240,
+      height: 180,
+    );
+    final message = api.entries.single.message;
+    expect(message, contains('source=thumbnail'));
+    expect(
+      message,
+      contains('cache_hit=true cache_bytes=3 width=240 height=180'),
+    );
+    expect(message, isNot(contains('alice')));
+    expect(message, isNot(contains('password')));
+    expect(message, isNot(contains('secret')));
   });
 
   test('HTTP failures containing decode text are not cache corruption', () {
