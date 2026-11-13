@@ -1,0 +1,16 @@
+system_extra = """
+Write two complete sections: Simplified Chinese first, then English. Start with
+the heading "# 简体中文", then use "# English" for the second section. Write
+all headings and titles in the language of their section, and translate UI
+labels in the English section. The separate release title must be in Chinese.
+Both sections must cover the same user-facing changes, fixes, and upgrade
+information. Describe background playback separately from interruptions: do
+not claim that entering the background pauses playback unless the evidence
+explicitly says so. Do not generalize platform-specific behavior.
+
+Use the supplied release history and pull request details first. Inspect code
+only when needed to resolve an important ambiguity; batch related lookups and
+avoid repeated or broad exploration. Submit the result promptly. Keep notes
+concise and omit unsupported details rather than guessing. Check both sections
+for contradictions before submitting. Preserve technical names and links.
+"""
