@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Read and validate app version
         id: app_version
@@ -124,8 +126,51 @@ jobs:
           path: build/app/outputs/flutter-apk/matter-android-arm64.apk
           if-no-files-found: error
 
-      - name: Publish GitHub release
+      - name: Generate AI release notes
         if: startsWith(github.ref, 'refs/tags/')
+        id: release_notes
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_BASE_URL: https://api.deepseek.com
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test -n "$OPENAI_API_KEY"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/communique.tar.gz" https://github.com/jdx/communique/releases/download/v1.8.0/communique-x86_64-unknown-linux-gnu.tar.gz
+          echo 'a600a3a26ef66e5695e1ac7bf57b3d30fdf6d075dc8349d054711a605a311199  '"$RUNNER_TEMP/communique.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/communique"
+          tar -xzf "$RUNNER_TEMP/communique.tar.gz" -C "$RUNNER_TEMP/communique"
+          "$RUNNER_TEMP/communique/communique" generate "$RELEASE_TAG" --provider openai --model deepseek-flash --output "$RUNNER_TEMP/release-notes.md"
+          test -s "$RUNNER_TEMP/release-notes.md"
+          python3 - "$RUNNER_TEMP/release-notes.md" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          notes = path.read_text(encoding="utf-8")
+          # Communique prepends its separate release title to the body.
+          notes = re.sub(r"\A# (?!简体中文\s*$)[^\n]+\n\s*(?=# 简体中文\s*$)", "", notes, count=1, flags=re.MULTILINE)
+          headings = re.findall(r"^# (.+)$", notes, flags=re.MULTILINE)
+          if headings != ["简体中文", "English"]:
+              sys.exit("AI release notes do not contain the expected bilingual sections")
+          chinese, english = notes.split("# English", 1)
+          if not chinese.removeprefix("# 简体中文").strip() or not english.strip():
+              sys.exit("AI release notes contain an empty section")
+          path.write_text(notes, encoding="utf-8")
+          PY
+
+      - name: Publish GitHub release with AI notes
+        if: startsWith(github.ref, 'refs/tags/') && steps.release_notes.outcome == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/matter-android-arm64.apk
+          body_path: ${{ runner.temp }}/release-notes.md
+
+      - name: Publish GitHub release with generated notes
+        if: startsWith(github.ref, 'refs/tags/') && steps.release_notes.outcome != 'success'
         uses: softprops/action-gh-release@v2
         with:
           files: build/app/outputs/flutter-apk/matter-android-arm64.apk
