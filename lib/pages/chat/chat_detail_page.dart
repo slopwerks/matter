@@ -241,13 +241,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   unread.RoomUnreadState? _entryUnread;
   String? _entryUnreadOwner;
   bool _jumpingToUnread = false;
+  String? _unreadRetryTargetId;
   UnreadNavigation? _unreadNavigation;
   int _unreadScanGeneration = 0;
   bool _unreadScanRunning = false;
   String? _unreadNextBatch;
   Object? _unreadScanError;
-  bool _unreadObservationScheduled = false;
-  bool _showUnreadNavigation = false;
+  bool _unreadCandidateUpdateScheduled = false;
+  bool get _showUnreadNavigation => _entryUnread != null;
   double _unreadTopInset = 0;
   double _unreadBottomInset = 0;
   final _unreadPageTokens = <String>{};
@@ -583,6 +584,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _setRoomViewOwner(null);
     _viewSuspended = true;
     _cancelUnreadScan();
+    _messageJumpGeneration++;
+    _isJumpingToMessage = false;
   }
 
   void _setRoomViewOwner(String? accountUserId) {
@@ -606,6 +609,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _deactivateRoom() {
+    _messageJumpGeneration++;
+    _isJumpingToMessage = false;
     _cancelUnreadScan();
     _viewSuspended = false;
     if (_currentRoomIdNotifier.value == widget.roomId) {
@@ -791,7 +796,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ref.read(activeUserIdProvider) == account &&
         !_viewSuspended) {
       unawaited(_loadUnreadPages());
-      _scheduleUnreadObservation();
+      _scheduleUnreadCandidateUpdate();
     }
   }
 
@@ -849,13 +854,28 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _clearUnreadNavigation() {
+    if (_jumpingToUnread) {
+      _messageJumpGeneration++;
+      _isJumpingToMessage = false;
+    }
     _cancelUnreadScan();
     _entryUnread = null;
     _unreadNavigation = null;
-    _showUnreadNavigation = false;
     _unreadNextBatch = null;
     _unreadScanError = null;
+    _unreadRetryTargetId = null;
     _unreadPageTokens.clear();
+  }
+
+  bool get _unreadNeedsHistoryFallback =>
+      _entryUnread != null &&
+      !(_unreadNavigation?.complete ?? true) &&
+      (_entryUnread!.readEventId == null ||
+          _entryUnread!.throughEventId == null);
+
+  Future<void> _retryUnreadPages() async {
+    setState(() => _unreadScanError = null);
+    await _loadUnreadPages();
   }
 
   Future<void> _loadUnreadPages() async {
@@ -907,7 +927,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           );
           _unreadNextBatch = page.nextBatch;
         });
-        _scheduleUnreadObservation();
+        _scheduleUnreadCandidateUpdate();
         await WidgetsBinding.instance.endOfFrame;
       }
     } catch (error) {
@@ -915,7 +935,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     } finally {
       if (mounted && generation == _unreadScanGeneration) {
         _unreadScanRunning = false;
-        _scheduleUnreadObservation();
+        _scheduleUnreadCandidateUpdate();
       }
     }
   }
@@ -935,11 +955,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     return node != null;
   }
 
-  void _scheduleUnreadObservation() {
-    if (_unreadObservationScheduled || _entryUnread == null) return;
-    _unreadObservationScheduled = true;
+  void _scheduleUnreadCandidateUpdate() {
+    if (_unreadCandidateUpdateScheduled || _entryUnread == null) return;
+    _unreadCandidateUpdateScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _unreadObservationScheduled = false;
+      _unreadCandidateUpdateScheduled = false;
       final navigation = _unreadNavigation;
       if (!mounted ||
           navigation == null ||
@@ -955,8 +975,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       }
       final ignored = ref.read(ignoredUserIdsProvider).value;
       if (ignored == null) return;
-      final previousCount = navigation.remainingCount;
+      final previousCount = navigation.candidateCount;
       final previousTarget = navigation.firstNavigableId;
+      final previouslyUnresolved = navigation.hasUnresolved;
       final redacted = ref.read(
         redactedMessageIdsProvider(activeRoomAccountKey(ref, widget.roomId)),
       );
@@ -981,45 +1002,10 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               !ignored.contains(message.senderId),
         );
       }
-      final viewport = _scrollViewportKey.currentContext?.findRenderObject();
-      if (viewport is! RenderBox || !viewport.attached || !viewport.hasSize) {
-        return;
-      }
-      final readable = Rect.fromLTRB(
-        0,
-        _unreadTopInset +
-            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0),
-        viewport.size.width,
-        math.max(0, viewport.size.height - _unreadBottomInset),
-      );
-      final rects = <String, Rect>{};
-      for (final message in _displayedMessages) {
-        if (message.isMe ||
-            message.msgType == MessageType.event ||
-            ignored.contains(message.senderId) ||
-            redacted.contains(message.id) ||
-            isUnableToDecryptPlaceholder(message)) {
-          continue;
-        }
-        final id = message.id;
-        final box = _messageAnchorKeys[id]?.currentContext?.findRenderObject();
-        if (box is RenderBox &&
-            box.attached &&
-            box.hasSize &&
-            _unreadMessagePainted(box, viewport)) {
-          rects[id] =
-              box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
-        }
-      }
-      final changed = navigation.observe(rects, readable);
-      final show = navigation.firstNavigableId != null;
-      if (!navigation.hasRemaining && navigation.complete) {
-        setState(_clearUnreadNavigation);
-      } else if (changed ||
-          show != _showUnreadNavigation ||
-          previousCount != navigation.remainingCount ||
-          previousTarget != navigation.firstNavigableId) {
-        setState(() => _showUnreadNavigation = show);
+      if (previousCount != navigation.candidateCount ||
+          previousTarget != navigation.firstNavigableId ||
+          previouslyUnresolved != navigation.hasUnresolved) {
+        setState(() {});
       }
     });
   }
@@ -1028,30 +1014,53 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final entry = _entryUnread;
     final account = _entryUnreadOwner;
     if (entry == null || account == null || _jumpingToUnread) return;
+    final activation = _activationId;
+    bool current() =>
+        mounted &&
+        identical(_entryUnread, entry) &&
+        activation == _activationId &&
+        !_viewSuspended &&
+        _currentRoomIdNotifier.value == widget.roomId &&
+        ref.read(activeUserIdProvider) == account;
+    // Capture before awaiting ignored users or context loading.
+    var targetId = _unreadRetryTargetId ?? _unreadNavigation?.firstNavigableId;
     setState(() => _jumpingToUnread = true);
     try {
       final ignored = await ref.read(ignoredUserIdsProvider.future);
-      if (!mounted ||
-          _entryUnread != entry ||
-          ref.read(activeUserIdProvider) != account) {
-        return;
+      if (!current()) return;
+      if (targetId == null && _unreadNeedsHistoryFallback) {
+        final context = await unread.getUnreadContext(
+          accountUserId: account,
+          roomId: widget.roomId,
+          readEventId: entry.readEventId,
+          ignoredUserIds: ignored.toList(),
+        );
+        if (!current()) return;
+        targetId = context
+            .where(
+              (message) =>
+                  !message.isMe &&
+                  message.msgType != MessageType.event &&
+                  !ignored.contains(message.senderId) &&
+                  !isUnableToDecryptPlaceholder(message),
+            )
+            .firstOrNull
+            ?.id;
+        if (targetId == null) throw StateError('暂时没有可定位的历史消息，请稍后重试');
       }
-      final targetId = _unreadNavigation?.firstNavigableId;
       if (targetId == null) return;
+      _unreadRetryTargetId = targetId;
       final target = _messageIndex[targetId];
       if (target != null &&
           (target.isMe || ignored.contains(target.senderId))) {
+        _unreadRetryTargetId = null;
         _unreadNavigation?.resolve(targetId, candidate: false);
-        _scheduleUnreadObservation();
+        _scheduleUnreadCandidateUpdate();
         return;
       }
       _jumpHighlight.value = null;
-      await _jumpToMessage(targetId, unreadTarget: true);
-      if (!mounted ||
-          !identical(_entryUnread, entry) ||
-          ref.read(activeUserIdProvider) != account) {
-        return;
-      }
+      final located = await _jumpToMessage(targetId, unreadTarget: true);
+      if (current() && located) setState(_clearUnreadNavigation);
     } catch (error) {
       if (mounted && _entryUnread == entry) {
         ScaffoldMessenger.of(context)
@@ -1060,7 +1069,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     } finally {
       if (mounted) {
         setState(() => _jumpingToUnread = false);
-        _scheduleUnreadObservation();
+        _scheduleUnreadCandidateUpdate();
       }
     }
   }
@@ -1144,7 +1153,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final metrics = notification.metrics;
     if (notification.depth != 0) return false;
     _updateLatestMessageControl(metrics);
-    _scheduleUnreadObservation();
     if (notification is UserScrollNotification) {
       _userScrollActive = notification.direction != ScrollDirection.idle;
     }
@@ -1230,7 +1238,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   ) {
     if (notification.depth != 0) return false;
     _updateLatestMessageControl(notification.metrics);
-    _scheduleUnreadObservation();
     if (_timelinePivotEndId == null) {
       _maybeLoadOlderMessages(notification.metrics);
     }
@@ -1443,14 +1450,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     return mounted && generation == _messageJumpGeneration;
   }
 
-  Future<void> _jumpToMessage(
+  Future<bool> _jumpToMessage(
     String messageId, {
     bool unreadTarget = false,
   }) async {
     final generation = ++_messageJumpGeneration;
     _isJumpingToMessage = true;
     try {
-      if (!await _waitForTimeline(generation)) return;
+      if (!await _waitForTimeline(generation)) return false;
       if (!_messageIndex.containsKey(messageId)) {
         final history = ref.read(
           messageHistoryCursorProvider(
@@ -1467,13 +1474,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           // return to the live timeline instead of detaching again.
           _exitFocusedBrowsing(scrollToLatest: false, cancelPendingJump: false);
           await WidgetsBinding.instance.endOfFrame;
-          if (!mounted || generation != _messageJumpGeneration) return;
+          if (!mounted || generation != _messageJumpGeneration) return false;
         }
         if (!_messageIndex.containsKey(messageId)) {
           final loaded = await _loadMessageContext(messageId, generation);
-          if (!loaded || !mounted || generation != _messageJumpGeneration) {
-            return;
-          }
+          if (!mounted || generation != _messageJumpGeneration) return false;
+          if (!loaded) throw StateError('目标消息不可用或已被删除');
         }
       }
       setState(() => _anchorTimelineAtMessage(messageId));
@@ -1488,8 +1494,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             .viewed(messageId);
       }
       await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || generation != _messageJumpGeneration) return;
-      if (!await _waitForTimeline(generation)) return;
+      if (!mounted || generation != _messageJumpGeneration) return false;
+      if (!await _waitForTimeline(generation)) return false;
       final targetIndex = _timelineEntryIndexForMessage(messageId);
       if (targetIndex == null) {
         throw StateError('目标消息不可用或已被删除');
@@ -1516,7 +1522,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         var previousMaxExtent = double.nan;
         for (var attempt = 0; attempt < 24; attempt++) {
           await WidgetsBinding.instance.endOfFrame;
-          if (!mounted || generation != _messageJumpGeneration) return;
+          if (!mounted || generation != _messageJumpGeneration) return false;
           targetContext = _messageAnchorKeys[messageId]?.currentContext;
           if (targetContext != null) break;
           final builtIndices = _builtMessageEntryIndices();
@@ -1563,7 +1569,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       }
       if (unreadTarget) {
         final navigation = _unreadNavigation;
-        if (navigation == null) return;
+        if (navigation == null) return false;
         final box = targetContext.findRenderObject();
         final viewport = _scrollViewportKey.currentContext?.findRenderObject();
         if (box is! RenderBox ||
@@ -1577,22 +1583,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
         final readableHeight =
             viewport.size.height - _unreadBottomInset - readableTop;
-        if (readableHeight <= 0) return;
+        if (readableHeight <= 0) return false;
         final fits = box.size.height <= readableHeight;
-        final gap = fits ? 0.0 : navigation.firstUnseenOffset(messageId);
-        // Position once in the same unobstructed rectangle used for reading.
-        // Oversized content keeps overlap around the next unseen section.
+        // A successful entry jump opens the beginning, including long bodies.
         final destination =
-            readableTop +
-            (fits
-                ? (readableHeight - box.size.height) / 2
-                : gap > 0
-                ? readableHeight / 2
-                : 0);
+            readableTop + (fits ? (readableHeight - box.size.height) / 2 : 0);
         final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
         final position = _scrollController.position;
         await _scrollController.animateTo(
-          (position.pixels + destination - top - gap).clamp(
+          (position.pixels + destination - top).clamp(
             position.minScrollExtent,
             position.maxScrollExtent,
           ),
@@ -1607,7 +1606,34 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           curve: Curves.easeOutCubic,
         );
       }
-      if (!mounted || generation != _messageJumpGeneration) return;
+      if (!mounted || generation != _messageJumpGeneration) return false;
+      if (unreadTarget) {
+        // animateTo completes before the final scroll offset is laid out.
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted || generation != _messageJumpGeneration) return false;
+        final box = _messageAnchorKeys[messageId]?.currentContext
+            ?.findRenderObject();
+        final viewport = _scrollViewportKey.currentContext?.findRenderObject();
+        if (box is! RenderBox ||
+            viewport is! RenderBox ||
+            !box.attached ||
+            !box.hasSize ||
+            !viewport.hasSize) {
+          return false;
+        }
+        final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+        final readableTop =
+            _unreadTopInset +
+            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
+        final bottom = viewport.size.height - _unreadBottomInset;
+        if (!_unreadMessagePainted(box, viewport) ||
+            top < readableTop - 1 ||
+            top >= bottom ||
+            (box.size.height <= bottom - readableTop &&
+                top + box.size.height > bottom + 1)) {
+          return false;
+        }
+      }
       _jumpHighlight.value = null;
       _jumpHighlight.value = messageId;
       HapticFeedback.selectionClick();
@@ -1619,8 +1645,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           ),
         );
       }
+      return true;
     } catch (error, stack) {
-      if (!mounted || generation != _messageJumpGeneration) return;
+      if (!mounted || generation != _messageJumpGeneration) return false;
       logAppMessage(
         level: 'error',
         tag: 'message-jump',
@@ -1634,10 +1661,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       );
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('无法跳转到该消息: $error')));
+      return false;
     } finally {
       if (mounted && generation == _messageJumpGeneration) {
         _isJumpingToMessage = false;
-        _scheduleUnreadObservation();
+        _scheduleUnreadCandidateUpdate();
       }
     }
   }
@@ -2648,7 +2676,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           scrollController: _scrollController,
           scrollViewportKey: _scrollViewportKey,
           stickyBottomInset: stickyBottomInset,
-          onImageLoaded: _scheduleUnreadObservation,
           onReplyRequested: () => _setInputPanelMode(InputPanelMode.keyboard),
           onMentionRequested: _mentionUser,
           onMessageJumpRequested: (messageId) =>
@@ -2891,7 +2918,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _unreadTopInset = headerInset + pinnedStackHeight + audioHeight;
     _unreadBottomInset =
         inputChromeHeight + math.max(panelReservedHeight, keyboardHeight);
-    _scheduleUnreadObservation();
+    _scheduleUnreadCandidateUpdate();
     // The timeline fills the whole screen and runs under the floating glass
     // header (like the prototype); its clip edge sits at the screen edge
     // where the gradient-blur layer is nearly opaque, so no hard clip line
@@ -3307,9 +3334,29 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   right: context.isMaterial ? 0 : 12,
                   top: headerInset + pinnedStackHeight + audioHeight,
                   child: UnreadMessagesBanner(
-                    count: _unreadNavigation?.remainingCount,
-                    loading: _jumpingToUnread,
-                    onPressed: () => unawaited(_jumpToFirstUnread()),
+                    count: _unreadNavigation?.candidateCount,
+                    loading:
+                        _jumpingToUnread ||
+                        (_unreadScanError == null &&
+                            !_unreadNeedsHistoryFallback &&
+                            _unreadRetryTargetId == null &&
+                            _unreadNavigation?.firstNavigableId == null &&
+                            (!(_unreadNavigation?.complete ?? false) ||
+                                (_unreadNavigation?.hasUnresolved ?? false))),
+                    unavailable:
+                        _unreadScanError == null &&
+                        !_unreadNeedsHistoryFallback &&
+                        _unreadRetryTargetId == null &&
+                        _unreadNavigation?.firstNavigableId == null &&
+                        (_unreadNavigation?.complete ?? false) &&
+                        !(_unreadNavigation?.hasUnresolved ?? false),
+                    historyFallback: _unreadNeedsHistoryFallback,
+                    failed: _unreadScanError != null,
+                    onPressed: () => unawaited(
+                      _unreadScanError != null
+                          ? _retryUnreadPages()
+                          : _jumpToFirstUnread(),
+                    ),
                     onDismiss: () => setState(_clearUnreadNavigation),
                   ),
                 ),

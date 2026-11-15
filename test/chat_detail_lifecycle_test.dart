@@ -3860,7 +3860,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     return container;
   }
 
@@ -3890,7 +3892,19 @@ void main() {
           unresolvedEventIds: [r'$utd-target'],
         ),
       );
-      expect(find.byType(UnreadMessagesBanner), findsNothing);
+      expect(find.byType(UnreadMessagesBanner), findsOneWidget);
+      expect(find.text('正在定位未读消息…'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.descendant(
+                of: find.byType(UnreadMessagesBanner),
+                matching: find.byType(TextButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
       container
           .read(messageCacheProvider('!geometry-unread:example.org').notifier)
           .value = [
@@ -3918,7 +3932,8 @@ void main() {
   );
 
   for (final material in [false, true]) {
-    for (final lines in [1, 20, 23, 24, 26]) {
+    // Keep the fitting boundary and the oversized case in both layouts.
+    for (final lines in [23, 26]) {
       testWidgets(
         'unread single jump fully exposes a fitting target material=$material lines=$lines',
         (tester) async {
@@ -3966,33 +3981,8 @@ void main() {
             expect(bubble.bottom, lessThanOrEqualTo(input.top + 1));
             expect(find.byType(UnreadMessagesBanner), findsNothing);
           } else {
-            // Just above the real readable height: clicks must advance, not
-            // repeatedly center the same partially covered message.
-            for (
-              var i = 0;
-              i < 5 && find.byType(UnreadMessagesBanner).evaluate().isNotEmpty;
-              i++
-            ) {
-              final before = tester
-                  .getTopLeft(
-                    find.byKey(const ValueKey(r'text-bubble:$single-target')),
-                  )
-                  .dy;
-              await tester.tap(find.byType(UnreadMessagesBanner));
-              await tester.pumpAndSettle();
-              if (find.byType(UnreadMessagesBanner).evaluate().isNotEmpty) {
-                expect(
-                  tester
-                      .getTopLeft(
-                        find.byKey(
-                          const ValueKey(r'text-bubble:$single-target'),
-                        ),
-                      )
-                      .dy,
-                  isNot(closeTo(before, 1)),
-                );
-              }
-            }
+            expect(bubble.top, greaterThanOrEqualTo(material ? 56 : 82));
+            expect(bubble.top, lessThan(input.top));
             expect(find.byType(UnreadMessagesBanner), findsNothing);
           }
           expect(rustApi.unreadReadEventIds, isEmpty);
@@ -4003,65 +3993,203 @@ void main() {
     }
   }
 
-  testWidgets('unread single jump advances to a different remaining target', (
-    tester,
-  ) async {
-    rustApi.messagesAround = [
-      _message(r'$first-target', timestamp: '1'),
-      ...List.generate(
-        50,
-        (i) => _message('\$between-$i', timestamp: '${i + 2}'),
-      ),
-      _message(r'$second-target', timestamp: '100'),
-    ];
+  for (final dismiss in [false, true]) {
+    testWidgets(
+      'unread pending jump ${dismiss ? "dismissal" : "suspension"} ignores late context',
+      (tester) async {
+        final pending = Completer<List<rust.ChatMessage>>();
+        rustApi.pendingMessagesAround[r'$cancel-target'] = pending;
+        await openGeometryUnread(
+          tester,
+          List.generate(
+            90,
+            (i) => _message('\$cancel-live-$i', timestamp: '${500 + i}'),
+          ),
+          snapshot: const unread.RoomUnreadState(
+            unreadCount: 1,
+            readEventId: r'$read',
+            throughEventId: r'$tail',
+            boundaryResolved: true,
+            unreadEventIds: [r'$cancel-target'],
+          ),
+        );
+        await tester.tap(find.byType(UnreadMessagesBanner));
+        await tester.pump();
+        if (dismiss) {
+          await tester.tap(find.byTooltip('关闭未读提示'));
+        } else {
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.inactive,
+          );
+        }
+        pending.complete([_message(r'$cancel-target', timestamp: '1')]);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey(r'text-bubble:$cancel-target')),
+          findsNothing,
+        );
+        if (!dismiss) {
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.resumed,
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(UnreadMessagesBanner), findsOneWidget);
+          await tester.tap(find.byType(UnreadMessagesBanner));
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey(r'text-bubble:$cancel-target')),
+            findsOneWidget,
+          );
+        }
+        expect(find.byType(UnreadMessagesBanner), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
+  }
+
+  testWidgets(
+    'unread missing tail keeps history entry with the saved read marker',
+    (tester) async {
+      final target = _message(r'$no-tail-target', timestamp: '1');
+      rustApi.unreadContext = [target];
+      rustApi.messagesAround = [target];
+      await openGeometryUnread(
+        tester,
+        List.generate(
+          90,
+          (i) => _message('\$no-tail-live-$i', timestamp: '${500 + i}'),
+        ),
+        snapshot: const unread.RoomUnreadState(
+          unreadCount: 1,
+          readEventId: r'$saved-read',
+          boundaryResolved: true,
+        ),
+      );
+      expect(find.text('查看较早消息'), findsOneWidget);
+      await tester.tap(find.text('查看较早消息'));
+      await tester.pumpAndSettle();
+      expect(rustApi.unreadReadEventIds, [r'$saved-read']);
+      expect(rustApi.unreadPageCalls, isEmpty);
+      expect(
+        find.byKey(const ValueKey(r'text-bubble:$no-tail-target')),
+        findsOneWidget,
+      );
+      expect(find.byType(UnreadMessagesBanner), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets('unread first page failure remains retryable', (tester) async {
     await openGeometryUnread(
       tester,
       List.generate(
         90,
-        (i) => _message('\$different-live-$i', timestamp: '${i + 500}'),
+        (i) => _message('\$first-page-$i', timestamp: '${500 + i}'),
+      ),
+      snapshot: const unread.RoomUnreadState(
+        unreadCount: 1,
+        readEventId: r'$read',
+        throughEventId: r'$tail',
+        boundaryResolved: true,
+      ),
+    );
+    expect(find.text('未读消息加载失败 · 点击重试'), findsOneWidget);
+    rustApi.unreadPages[null] = const unread.UnreadPage(
+      eventIds: [r'$retry-target'],
+      unresolvedEventIds: [],
+      reachedEnd: true,
+    );
+    await tester.tap(find.text('未读消息加载失败 · 点击重试'));
+    await tester.pumpAndSettle();
+    expect(rustApi.unreadPageCalls.length, 2);
+    expect(find.text('1 条未读 · 跳到最早未读'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('unread failed page exposes retry and resumes its cursor', (
+    tester,
+  ) async {
+    rustApi.unreadPages[null] = const unread.UnreadPage(
+      eventIds: [r'$first-page-target'],
+      unresolvedEventIds: [],
+      nextBatch: 'next',
+      reachedEnd: false,
+    );
+    await openGeometryUnread(
+      tester,
+      List.generate(
+        90,
+        (i) => _message('\$retry-live-$i', timestamp: '${500 + i}'),
       ),
       snapshot: const unread.RoomUnreadState(
         unreadCount: 2,
         readEventId: r'$read',
+        throughEventId: r'$tail',
         boundaryResolved: true,
-        unreadEventIds: [r'$first-target', r'$second-target'],
       ),
     );
-    await tester.tap(find.byType(UnreadMessagesBanner));
+    expect(find.text('未读消息加载失败 · 点击重试'), findsOneWidget);
+    rustApi.unreadPages['next'] = const unread.UnreadPage(
+      eventIds: [r'$retry-target'],
+      unresolvedEventIds: [],
+      reachedEnd: true,
+    );
+    await tester.tap(find.text('未读消息加载失败 · 点击重试'));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<UnreadMessagesBanner>(find.byType(UnreadMessagesBanner))
-          .count,
-      1,
-    );
-    await tester.tap(find.byType(UnreadMessagesBanner));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey(r'text-bubble:$second-target')),
-      findsOneWidget,
-    );
-    final second = tester.getRect(
-      find.byKey(const ValueKey(r'text-bubble:$second-target')),
-    );
-    expect(second.top, greaterThanOrEqualTo(82));
-    expect(
-      second.bottom,
-      lessThanOrEqualTo(
-        tester
-                .getTopLeft(find.byKey(const ValueKey('message-input-surface')))
-                .dy +
-            1,
-      ),
-    );
-    expect(find.byType(UnreadMessagesBanner), findsNothing);
-    expect(rustApi.getMessagesAroundCalls, 1);
+    expect(rustApi.unreadPageCalls.map((call) => call.$3).toList(), [
+      null,
+      'next',
+      'next',
+    ]);
+    expect(find.text('2 条未读 · 跳到最早未读'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
 
   testWidgets(
-    'unread end to end unknown boundary cannot become an endless earlier-message jump',
+    'unread single jump consumes the entry even with remaining targets',
+    (tester) async {
+      rustApi.messagesAround = [
+        _message(r'$first-target', timestamp: '1'),
+        ...List.generate(
+          50,
+          (i) => _message('\$between-$i', timestamp: '${i + 2}'),
+        ),
+        _message(r'$second-target', timestamp: '100'),
+      ];
+      await openGeometryUnread(
+        tester,
+        List.generate(
+          90,
+          (i) => _message('\$different-live-$i', timestamp: '${i + 500}'),
+        ),
+        snapshot: const unread.RoomUnreadState(
+          unreadCount: 2,
+          readEventId: r'$read',
+          boundaryResolved: true,
+          unreadEventIds: [r'$first-target', r'$second-target'],
+        ),
+      );
+      await tester.tap(find.byType(UnreadMessagesBanner));
+      await tester.pumpAndSettle();
+      expect(find.byType(UnreadMessagesBanner), findsNothing);
+      expect(
+        find.byKey(const ValueKey(r'text-bubble:$first-target')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(UnreadMessagesBanner), findsNothing);
+      expect(rustApi.getMessagesAroundCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'unread entry keeps a visible target with unknown boundary until successful navigation',
     (tester) async {
       await openGeometryUnread(
         tester,
@@ -4075,6 +4203,15 @@ void main() {
         ),
       );
       expect(find.text('查看较早消息'), findsNothing);
+      expect(find.byType(UnreadMessagesBanner), findsOneWidget);
+      expect(
+        tester
+            .widget<UnreadMessagesBanner>(find.byType(UnreadMessagesBanner))
+            .count,
+        isNull,
+      );
+      await tester.tap(find.byType(UnreadMessagesBanner));
+      await tester.pumpAndSettle();
       expect(find.byType(UnreadMessagesBanner), findsNothing);
       expect(rustApi.unreadReadEventIds, isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -4121,7 +4258,7 @@ void main() {
       expect(rustApi.unreadReadEventIds, isEmpty);
       pending.complete(
         const unread.UnreadPage(
-          eventIds: [],
+          eventIds: [r'$late-other-unread'],
           unresolvedEventIds: [],
           reachedEnd: true,
         ),
@@ -4185,7 +4322,10 @@ void main() {
           await tester.enterText(find.byType(TextField), 'keep my draft');
           await tester.pumpAndSettle();
           final before = tester.getRect(bubble);
-          expect(find.byType(UnreadMessagesBanner), findsOneWidget);
+          expect(
+            find.byType(UnreadMessagesBanner),
+            jump ? findsNothing : findsOneWidget,
+          );
           final forwardBefore = List.of(rustApi.messagesAfterEventIds);
           tester.view.viewInsets = const FakeViewPadding(bottom: 300);
           await tester.pumpAndSettle();
@@ -4195,7 +4335,10 @@ void main() {
           );
           expect(after.bottom, lessThanOrEqualTo(input.top + 1));
           expect(after.top, closeTo(before.top - 300, 2));
-          expect(find.byType(UnreadMessagesBanner), findsOneWidget);
+          expect(
+            find.byType(UnreadMessagesBanner),
+            jump ? findsNothing : findsOneWidget,
+          );
           expect(rustApi.messagesAfterEventIds, forwardBefore);
           expect(
             tester.widget<TextField>(find.byType(TextField)).controller!.text,
@@ -4217,7 +4360,10 @@ void main() {
                   1,
             ),
           );
-          expect(find.byType(UnreadMessagesBanner), findsOneWidget);
+          expect(
+            find.byType(UnreadMessagesBanner),
+            jump ? findsNothing : findsOneWidget,
+          );
           await tester.tap(find.byIcon(Icons.keyboard_rounded));
           tester.view.viewInsets = const FakeViewPadding(bottom: 300);
           await tester.pumpAndSettle();
@@ -4243,7 +4389,7 @@ void main() {
   }
 
   testWidgets(
-    'unread navigation follows viewport after scrolling and does not reappear',
+    'unread entry survives scrolling and resize until explicit dismissal',
     (tester) async {
       final messages = [
         _ownMessage(r'$read', content: 'read', timestamp: '1'),
@@ -4258,20 +4404,26 @@ void main() {
       ];
       await openGeometryUnread(tester, messages);
       expect(find.byType(UnreadMessagesBanner), findsOneWidget);
-      final before = tester
-          .widget<UnreadMessagesBanner>(find.byType(UnreadMessagesBanner))
-          .count!;
-      expect(before, greaterThan(0));
-      expect(before, lessThan(24));
-      for (
-        var i = 0;
-        i < 20 && find.byType(UnreadMessagesBanner).evaluate().isNotEmpty;
-        i++
-      ) {
+      expect(
+        tester
+            .widget<UnreadMessagesBanner>(find.byType(UnreadMessagesBanner))
+            .count,
+        24,
+      );
+      for (var i = 0; i < 8; i++) {
         await tester.drag(find.byType(CustomScrollView), const Offset(0, 240));
         await tester.pumpAndSettle();
       }
-      expect(find.byType(UnreadMessagesBanner), findsNothing);
+      await tester.binding.setSurfaceSize(const Size(400, 1200));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<UnreadMessagesBanner>(find.byType(UnreadMessagesBanner))
+            .count,
+        24,
+      );
+      await tester.tap(find.byTooltip('关闭未读提示'));
+      await tester.pumpAndSettle();
       final controller = tester
           .widget<CustomScrollView>(find.byType(CustomScrollView))
           .controller!;
@@ -4283,41 +4435,52 @@ void main() {
     },
   );
 
-  testWidgets('unread navigation follows viewport when the window grows', (
-    tester,
-  ) async {
-    final messages = [
-      _ownMessage(r'$read', content: 'read', timestamp: '1'),
-      ...List.generate(
-        6,
-        (i) => _message(
-          '\$geometry-$i',
-          timestamp: '${i + 2}',
-          content: 'unread line $i',
-        ),
-      ),
-    ];
-    await openGeometryUnread(tester, messages, size: const Size(400, 360));
-    expect(find.byType(UnreadMessagesBanner), findsOneWidget);
-    await tester.binding.setSurfaceSize(const Size(400, 1200));
-    await tester.pumpAndSettle();
-    expect(find.byType(UnreadMessagesBanner), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-  });
-
   testWidgets(
-    'unread navigation follows viewport but excludes own and ignored messages',
+    'unread entry leaves loading when the last unresolved candidate is excluded',
     (tester) async {
-      await openGeometryUnread(
+      final container = await openGeometryUnread(
         tester,
         [
-          _ownMessage(r'$read', content: 'read', timestamp: '1'),
           _ownMessage(r'$own', content: 'own', timestamp: '2'),
-          _message(r'$ignored', timestamp: '3'),
+          _message(
+            r'$ignored',
+            timestamp: '3',
+            content: unableToDecryptMessageContent,
+          ),
         ],
         ignored: const {'@alice:example.org'},
+        snapshot: const unread.RoomUnreadState(
+          unreadCount: 2,
+          readEventId: r'$read',
+          throughEventId: r'$ignored',
+          boundaryResolved: false,
+          unreadEventIds: [r'$own', r'$ignored'],
+          unresolvedEventIds: [r'$ignored'],
+        ),
       );
+      expect(find.text('正在定位未读消息…'), findsOneWidget);
+      container
+          .read(messageCacheProvider('!geometry-unread:example.org').notifier)
+          .value = [
+        _ownMessage(r'$own', content: 'own', timestamp: '2'),
+        _message(r'$ignored', timestamp: '3'),
+      ];
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('暂无可定位的未读消息'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.descendant(
+                of: find.byType(UnreadMessagesBanner),
+                matching: find.byType(TextButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.byTooltip('关闭未读提示'));
+      await tester.pumpAndSettle();
       expect(find.byType(UnreadMessagesBanner), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -4325,7 +4488,7 @@ void main() {
   );
 
   testWidgets(
-    'unread navigation follows viewport with frozen async pages and unknown counts',
+    'unread entry stays visible while paging and retains already visible candidates',
     (tester) async {
       final pending = Completer<unread.UnreadPage>();
       rustApi.pendingUnreadPages[null] = pending;
@@ -4343,7 +4506,7 @@ void main() {
           boundaryResolved: true,
         ),
       );
-      expect(find.byType(UnreadMessagesBanner), findsNothing);
+      expect(find.text('正在定位未读消息…'), findsOneWidget);
       expect(rustApi.unreadPageCalls, [(r'$read', r'$async-unread', null)]);
       expect(rustApi.markRoomAsReadCalls, greaterThan(0));
       pending.complete(
@@ -4354,49 +4517,50 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('1 条未读 · 跳到最早未读'), findsOneWidget);
+      await tester.tap(find.byType(UnreadMessagesBanner));
+      await tester.pumpAndSettle();
       expect(find.byType(UnreadMessagesBanner), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     },
   );
 
-  testWidgets(
-    'unread navigation follows viewport and discards a late page after account switch',
-    (tester) async {
-      final pending = Completer<unread.UnreadPage>();
-      rustApi.pendingUnreadPages[null] = pending;
-      final container = await openGeometryUnread(
-        tester,
-        [_message(r'$async-unread', timestamp: '2')],
-        snapshot: const unread.RoomUnreadState(
-          unreadCount: 1,
-          readEventId: r'$read',
-          throughEventId: r'$async-unread',
-          boundaryResolved: true,
-        ),
-      );
-      expect(rustApi.unreadPageCalls.length, 1);
-      container.read(activeUserIdProvider.notifier).value =
-          '@other:example.org';
-      await tester.pumpAndSettle();
-      pending.complete(
-        const unread.UnreadPage(
-          eventIds: [r'$late-unread'],
-          unresolvedEventIds: [],
-          reachedEnd: true,
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(UnreadMessagesBanner), findsNothing);
-      expect(find.text('账号已切换'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-    },
-  );
+  testWidgets('unread entry discards a late page after account switch', (
+    tester,
+  ) async {
+    final pending = Completer<unread.UnreadPage>();
+    rustApi.pendingUnreadPages[null] = pending;
+    final container = await openGeometryUnread(
+      tester,
+      [_message(r'$async-unread', timestamp: '2')],
+      snapshot: const unread.RoomUnreadState(
+        unreadCount: 1,
+        readEventId: r'$read',
+        throughEventId: r'$async-unread',
+        boundaryResolved: true,
+      ),
+    );
+    expect(rustApi.unreadPageCalls.length, 1);
+    container.read(activeUserIdProvider.notifier).value = '@other:example.org';
+    await tester.pumpAndSettle();
+    pending.complete(
+      const unread.UnreadPage(
+        eventIds: [r'$late-unread'],
+        unresolvedEventIds: [],
+        reachedEnd: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(UnreadMessagesBanner), findsNothing);
+    expect(find.text('账号已切换'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
 
   for (final album in [false, true]) {
     testWidgets(
-      'unread navigation follows viewport for ${album ? 'mosaic' : 'covered stack'} images',
+      'unread entry locates ${album ? 'mosaic' : 'covered stack'} images',
       (tester) async {
         rust.ChatMessage image(String id, String timestamp, {String? root}) =>
             rust.ChatMessage(
@@ -4428,19 +4592,15 @@ void main() {
           image(r'$image-first', '2'),
           image(r'$image-last', '3', root: album ? r'$image-first' : null),
         ]);
-        if (album) {
-          expect(find.byType(UnreadMessagesBanner), findsNothing);
-        } else {
-          expect(
-            tester
-                .widget<UnreadMessagesBanner>(find.byType(UnreadMessagesBanner))
-                .count,
-            1,
-          );
-          await tester.tap(find.byType(UnreadMessagesBanner));
-          await tester.pumpAndSettle();
-          expect(find.byType(UnreadMessagesBanner), findsNothing);
-        }
+        expect(
+          tester
+              .widget<UnreadMessagesBanner>(find.byType(UnreadMessagesBanner))
+              .count,
+          2,
+        );
+        await tester.tap(find.byType(UnreadMessagesBanner));
+        await tester.pumpAndSettle();
+        expect(find.byType(UnreadMessagesBanner), findsNothing);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
       },
@@ -4448,79 +4608,26 @@ void main() {
   }
 
   for (final material in [false, true]) {
-    for (final count in [1, 3]) {
-      testWidgets(
-        'unread navigation follows viewport for $count visible messages material=$material',
-        (tester) async {
-          await tester.binding.setSurfaceSize(const Size(400, 720));
-          addTearDown(() => tester.binding.setSurfaceSize(null));
-          const roomId = '!visible-unread:example.org';
-          const account = '@alice:example.org';
-          final messages = [
-            _ownMessage(r'$read', content: 'already read', timestamp: '1'),
-            ...List.generate(
-              count,
-              (i) => _message(
-                '\$unread-$i',
-                timestamp: '${i + 2}',
-                content: 'visible unread $i',
-              ),
-            ),
-          ];
-          rustApi.entryUnread = unread.RoomUnreadState(
-            unreadCount: count,
-            readEventId: r'$read',
-            throughEventId: messages.last.id,
-            boundaryResolved: true,
-            unreadEventIds: messages
-                .skip(1)
-                .map((message) => message.id)
-                .toList(),
-            unresolvedEventIds: const [],
-          );
-          final container = ProviderContainer(
-            overrides: [
-              ignoredUserIdsProvider.overrideWith(
-                (ref) async => const <String>{},
-              ),
-              roomMembersProvider(roomId).overrideWith((ref) async => const []),
-              messagesProvider(roomId).overrideWith((ref) async => messages),
-            ],
-          );
-          addTearDown(container.dispose);
-          container.read(activeUserIdProvider.notifier).value = account;
-          container.read(messageCacheOwnerProvider(roomId).notifier).value =
-              account;
-          container.read(messageCachePrimedProvider(roomId).notifier).value =
-              true;
-          await tester.pumpWidget(
-            UncontrolledProviderScope(
-              container: container,
-              child: MaterialApp(
-                theme: neuTestTheme(material: material),
-                home: const ChatDetailPage(roomId: roomId, roomName: 'Room'),
-              ),
-            ),
-          );
-          await tester.pumpAndSettle();
-          for (var i = 0; i < count; i++) {
-            final bubble = find.byKey(ValueKey('text-bubble:\$unread-$i'));
-            expect(bubble, findsOneWidget);
-            final rect = tester.getRect(bubble);
-            expect(rect.top, greaterThan(100));
-            expect(rect.bottom, lessThan(660));
-          }
-          expect(find.byType(UnreadMessagesBanner), findsNothing);
-          expect(rustApi.readLifecycle.first, 'capture');
-          expect(rustApi.markRoomAsReadCalls, greaterThan(0));
-          await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump();
-        },
-      );
-    }
+    testWidgets(
+      'unread entry retains first-screen messages material=$material',
+      (tester) async {
+        await openGeometryUnread(tester, [
+          _message(r'$first-screen', timestamp: '2', content: 'visible unread'),
+        ], material: material);
+        expect(find.text('visible unread'), findsOneWidget);
+        expect(find.text('1 条未读 · 跳到最早未读'), findsOneWidget);
+        expect(rustApi.readLifecycle.first, 'capture');
+        expect(rustApi.markRoomAsReadCalls, greaterThan(0));
+        await tester.tap(find.byType(UnreadMessagesBanner));
+        await tester.pumpAndSettle();
+        expect(find.byType(UnreadMessagesBanner), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
   }
 
-  testWidgets('unread navigation follows viewport for one oversized message', (
+  testWidgets('unread entry locates the beginning of one oversized message', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(400, 720));
@@ -4571,19 +4678,13 @@ void main() {
       greaterThan(720),
     );
     expect(find.byType(UnreadMessagesBanner), findsOneWidget);
-    for (
-      var i = 0;
-      i < 8 && find.byType(UnreadMessagesBanner).evaluate().isNotEmpty;
-      i++
-    ) {
-      final bubble = find.byKey(const ValueKey(r'text-bubble:$long-unread'));
-      final before = tester.getTopLeft(bubble).dy;
-      await tester.tap(find.byType(UnreadMessagesBanner));
-      await tester.pumpAndSettle();
-      if (find.byType(UnreadMessagesBanner).evaluate().isNotEmpty) {
-        expect(tester.getTopLeft(bubble).dy, isNot(closeTo(before, 1)));
-      }
-    }
+    await tester.tap(find.byType(UnreadMessagesBanner));
+    await tester.pumpAndSettle();
+    final top = tester
+        .getTopLeft(find.byKey(const ValueKey(r'text-bubble:$long-unread')))
+        .dy;
+    expect(top, greaterThanOrEqualTo(82));
+    expect(top, lessThan(400));
     expect(find.byType(UnreadMessagesBanner), findsNothing);
     expect(rustApi.unreadReadEventIds, isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -4641,14 +4742,6 @@ void main() {
           await tester.pumpAndSettle();
           expect(rustApi.readLifecycle.first, 'capture');
           expect(rustApi.markRoomAsReadCalls, greaterThan(0));
-          if (!hasMarker) {
-            expect(find.byType(UnreadMessagesBanner), findsNothing);
-            expect(find.text('查看较早消息'), findsNothing);
-            expect(rustApi.unreadReadEventIds, isEmpty);
-            await tester.pumpWidget(const SizedBox.shrink());
-            await tester.pump();
-            return;
-          }
           expect(find.text(entryLabel), findsOneWidget);
           final controller = tester
               .widget<CustomScrollView>(find.byType(CustomScrollView))
@@ -4669,7 +4762,7 @@ void main() {
           await tester.pumpAndSettle();
           if (hasMarker) {
             expect(rustApi.getMessagesAroundCalls, greaterThan(1));
-            expect(find.text('122 条未读 · 跳到最早未读'), findsOneWidget);
+            expect(find.byType(UnreadMessagesBanner), findsNothing);
           } else {
             expect(rustApi.unreadReadEventIds.last, isNull);
           }
