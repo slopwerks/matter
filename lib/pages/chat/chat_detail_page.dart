@@ -241,6 +241,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   unread.RoomUnreadState? _entryUnread;
   String? _entryUnreadOwner;
   bool _jumpingToUnread = false;
+  bool _refreshUnreadOnActivation = false;
   String? _unreadRetryTargetId;
   UnreadNavigation? _unreadNavigation;
   int _unreadScanGeneration = 0;
@@ -556,9 +557,6 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     switch (state) {
       case AppLifecycleState.resumed:
         if (mounted) {
-          // A new foreground visit may have accumulated unread messages.
-          // Ordinary route returns retain the original entry boundary.
-          if (_entryUnread == null) _entryUnreadOwner = null;
           if (_viewSuspended) {
             _resumeSuspendedRoom();
           } else if (_currentRoomIdNotifier.value != widget.roomId) {
@@ -575,6 +573,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         // While the app is not visible the room must not be treated as
         // "being viewed": background sync would otherwise mark incoming
         // messages as read.
+        _refreshUnreadOnActivation = true;
         _deactivateRoom();
     }
   }
@@ -745,7 +744,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   Future<void> _primeAndRefreshMessages() async {
     final account = ref.read(activeUserIdProvider);
     final activation = _activationId;
-    if (account != null && _entryUnreadOwner != account) {
+    if (account != null &&
+        (_entryUnreadOwner != account || _refreshUnreadOnActivation)) {
       try {
         final entry = await unread.getRoomUnreadState(
           accountUserId: account,
@@ -758,9 +758,27 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           return;
         }
         setState(() {
+          final previous = _entryUnreadOwner == account ? _entryUnread : null;
           if (_entryUnreadOwner != account) _clearUnreadNavigation();
           _entryUnreadOwner = account;
-          if (entry.unreadCount > 0) {
+          _refreshUnreadOnActivation = false;
+          if (previous != null &&
+              entry.throughEventId != null &&
+              entry.throughEventId != previous.throughEventId) {
+            // Extend the saved interval, never replace its old starting point
+            // with the receipt that auto-read advanced during the last visit.
+            _cancelUnreadScan();
+            _unreadNextBatch = null;
+            _unreadPageTokens.clear();
+            _unreadScanError = null;
+            _entryUnread = unread.RoomUnreadState(
+              unreadCount: entry.unreadCount,
+              readEventId: previous.readEventId,
+              throughEventId: entry.throughEventId,
+              boundaryResolved: previous.boundaryResolved,
+            );
+            _unreadNavigation!.complete = false;
+          } else if (previous == null && entry.unreadCount > 0) {
             _entryUnread = entry;
             _unreadNavigation = UnreadNavigation(
               boundaryResolved: entry.boundaryResolved == true,

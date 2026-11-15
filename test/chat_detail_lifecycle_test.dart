@@ -4150,6 +4150,62 @@ void main() {
   });
 
   testWidgets(
+    'unread background return extends old boundary before auto read',
+    (tester) async {
+      await openGeometryUnread(
+        tester,
+        List.generate(
+          90,
+          (i) => _message('\$resume-live-$i', timestamp: '${500 + i}'),
+        ),
+        snapshot: const unread.RoomUnreadState(
+          unreadCount: 1,
+          readEventId: r'$old-read',
+          throughEventId: r'$old-tail',
+          boundaryResolved: true,
+          unreadEventIds: [r'$old-unread'],
+        ),
+      );
+      final captures = rustApi.readLifecycle
+          .where((event) => event == 'capture')
+          .length;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(
+        rustApi.readLifecycle.where((event) => event == 'capture').length,
+        captures,
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      rustApi.entryUnread = const unread.RoomUnreadState(
+        unreadCount: 1,
+        readEventId: r'$old-tail',
+        throughEventId: r'$new-tail',
+        boundaryResolved: true,
+        unreadEventIds: [r'$new-unread'],
+      );
+      rustApi.unreadPages[null] = const unread.UnreadPage(
+        eventIds: [r'$old-unread', r'$new-unread'],
+        unresolvedEventIds: [],
+        reachedEnd: true,
+      );
+      final before = rustApi.readLifecycle.length;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(rustApi.readLifecycle[before], 'capture');
+      expect(rustApi.unreadPageCalls, [(r'$old-read', r'$new-tail', null)]);
+      expect(find.text('2 条未读 · 跳到最早未读'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
     'unread single jump consumes the entry even with remaining targets',
     (tester) async {
       rustApi.messagesAround = [
