@@ -1,3 +1,11 @@
+import com.android.apksig.ApkSigner
+import com.android.apksig.ApkVerifier
+import com.android.apksig.SigningCertificateLineage
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.cert.X509Certificate
 import java.util.Base64
 import java.util.Properties
 
@@ -36,6 +44,8 @@ val releaseSigningProperties =
         "storePassword",
         "keyAlias",
         "keyPassword",
+        "rotationKeyAlias",
+        "signingLineage",
     )
 val missingReleaseSigningProperties =
     releaseSigningProperties.filter {
@@ -126,6 +136,71 @@ dependencies {
 
 flutter {
     source = "../.."
+}
+
+// AGP's signing DSL does not expose certificate lineage. Re-sign its final APKs
+// before Flutter copies them, keeping Android 12 and Android 13+ on one lineage.
+val signReleaseApks = tasks.register("signReleaseApks") {
+    dependsOn("packageRelease")
+    inputs.file(keystorePropertiesFile)
+    if (missingReleaseSigningProperties.isEmpty()) {
+        inputs.file(file(keystoreProperties.getProperty("storeFile")))
+        inputs.file(file(keystoreProperties.getProperty("signingLineage")))
+    }
+    doLast {
+        val store = KeyStore.getInstance("PKCS12")
+        file(keystoreProperties.getProperty("storeFile")).inputStream().use {
+            store.load(it, keystoreProperties.getProperty("storePassword").toCharArray())
+        }
+        val signers = listOf("keyAlias", "rotationKeyAlias").map { property ->
+            val alias = keystoreProperties.getProperty(property)
+            val key = store.getKey(alias, keystoreProperties.getProperty("keyPassword").toCharArray()) as PrivateKey
+            val certificates = store.getCertificateChain(alias).map { it as X509Certificate }
+            ApkSigner.SignerConfig.Builder(alias, key, certificates).build()
+        }
+        val lineage = SigningCertificateLineage.readFromFile(file(keystoreProperties.getProperty("signingLineage")))
+        val apks = fileTree(layout.buildDirectory.dir("outputs/apk/release")) { include("*.apk") }.files
+        check(apks.isNotEmpty()) { "No release APKs found for signing" }
+        apks.forEach { apk ->
+            val signedApk = File(apk.parentFile, "${apk.name}.signed")
+            val idsig = File(apk.parentFile, "${apk.name}.idsig")
+            ApkSigner.Builder(signers)
+                .setInputApk(apk)
+                .setOutputApk(signedApk)
+                .setV4SignatureOutputFile(idsig)
+                .setSigningCertificateLineage(lineage)
+                .setMinSdkVersionForRotation(33)
+                .setV1SigningEnabled(false)
+                .setV2SigningEnabled(true)
+                .setV3SigningEnabled(true)
+                .setV4SigningEnabled(true)
+                .setV4ErrorReportingEnabled(true)
+                .build().sign()
+            // Explicitly check v2 too: the verifier normally skips it when the
+            // manifest's minSdk is already covered by v3.
+            val result = ApkVerifier.Builder(signedApk)
+                .setMinCheckedPlatformVersion(24)
+                .setV4SignatureFile(idsig).build().verify()
+            check(result.isVerified && result.isVerifiedUsingV2Scheme && result.isVerifiedUsingV3Scheme &&
+                result.isVerifiedUsingV31Scheme && result.isVerifiedUsingV4Scheme) {
+                "Release APK verification failed: v2=${result.isVerifiedUsingV2Scheme}, " +
+                    "v3=${result.isVerifiedUsingV3Scheme}, v3.1=${result.isVerifiedUsingV31Scheme}, " +
+                    "v4=${result.isVerifiedUsingV4Scheme}, errors=${result.allErrors}"
+            }
+            Files.move(signedApk.toPath(), apk.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            logger.lifecycle("Verified ${apk.name}: v2, v3, v3.1 and v4")
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    dependsOn(signReleaseApks)
+    doLast {
+        copy {
+            from(layout.buildDirectory.dir("outputs/apk/release")) { include("*.apk.idsig") }
+            into(layout.buildDirectory.dir("outputs/flutter-apk"))
+        }
+    }
 }
 
 val rustSoFile = file("src/main/jniLibs/arm64-v8a/librust_lib_matter.so")

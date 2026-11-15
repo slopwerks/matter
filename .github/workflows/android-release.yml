@@ -93,18 +93,26 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_ROTATION_KEY_ALIAS: ${{ secrets.ANDROID_ROTATION_KEY_ALIAS }}
+          ANDROID_SIGNING_LINEAGE_BASE64: ${{ secrets.ANDROID_SIGNING_LINEAGE_BASE64 }}
         run: |
           test -n "$ANDROID_KEYSTORE_BASE64"
           test -n "$ANDROID_KEY_ALIAS"
           test -n "$ANDROID_KEYSTORE_PASSWORD"
           test -n "$ANDROID_KEY_PASSWORD"
+          test -n "$ANDROID_ROTATION_KEY_ALIAS"
+          test -n "$ANDROID_SIGNING_LINEAGE_BASE64"
+          umask 077
           mkdir -p android/app
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          echo "$ANDROID_SIGNING_LINEAGE_BASE64" | base64 --decode > android/app/matter.lineage
           cat > android/key.properties <<EOF
           storeFile=upload-keystore.jks
           storePassword=$ANDROID_KEYSTORE_PASSWORD
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
+          rotationKeyAlias=$ANDROID_ROTATION_KEY_ALIAS
+          signingLineage=matter.lineage
           EOF
 
       - name: Build signed arm64 APK
@@ -116,14 +124,18 @@ jobs:
           --build-name "${{ steps.app_version.outputs.name }}"
           --build-number "${{ steps.app_version.outputs.code }}"
 
-      - name: Rename APK
-        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/matter-android-arm64.apk
+      - name: Rename APK and v4 signature
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/matter-android-arm64.apk
+          mv build/app/outputs/flutter-apk/app-release.apk.idsig build/app/outputs/flutter-apk/matter-android-arm64.apk.idsig
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: matter-android-arm64-apk
-          path: build/app/outputs/flutter-apk/matter-android-arm64.apk
+          path: |
+            build/app/outputs/flutter-apk/matter-android-arm64.apk
+            build/app/outputs/flutter-apk/matter-android-arm64.apk.idsig
           if-no-files-found: error
 
       - name: Generate AI release notes
@@ -166,12 +178,16 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && steps.release_notes.outcome == 'success'
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/matter-android-arm64.apk
+          files: |
+            build/app/outputs/flutter-apk/matter-android-arm64.apk
+            build/app/outputs/flutter-apk/matter-android-arm64.apk.idsig
           body_path: ${{ runner.temp }}/release-notes.md
 
       - name: Publish GitHub release with generated notes
         if: startsWith(github.ref, 'refs/tags/') && steps.release_notes.outcome != 'success'
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/matter-android-arm64.apk
+          files: |
+            build/app/outputs/flutter-apk/matter-android-arm64.apk
+            build/app/outputs/flutter-apk/matter-android-arm64.apk.idsig
           generate_release_notes: true
