@@ -178,7 +178,7 @@ void _recoverIgnoredListError(Ref ref) {
   // Do not instantiate the provider just to check it: a session that never
   // surfaced the ignore list (and thus has nothing stuck) should not start a
   // fetch on its behalf.
-  if (!ref.exists(ignoredUserIdsProvider)) return;
+  if (!ref.read(ignoredUserIdsProvider.exists)) return;
   if (!ref.read(ignoredUserIdsProvider).hasError) return;
   final lastAttempt = _lastIgnoredListRecoveryAttempt[namespace];
   final now = clock.now();
