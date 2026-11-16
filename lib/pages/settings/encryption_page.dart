@@ -921,6 +921,14 @@ class _VerificationDialogState extends State<_VerificationDialog> {
       child: GlassPanel(
         radius: NeuRadius.nav,
         padding: const EdgeInsets.all(22),
+        // The default width/height takes pretty much the whole
+        // screen on horizontal displays (desktop or tablets),
+        // so we set the width to be proportional of the port size
+        // here. Height seems to adapt itself correspondingly.
+        // TODO: Tweak this value
+        width: MediaQuery.widthOf(context) > MediaQuery.heightOf(context)
+            ? MediaQuery.widthOf(context) * 0.5
+            : null,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
