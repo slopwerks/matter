@@ -461,7 +461,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       directMessagesOnly: widget.directMessagesOnly,
       ungroupedRoomsOnly: widget.ungroupedRoomsOnly,
       hiddenRooms: ref.watch(hiddenRoomsProvider),
-      ignoredUsers: ref.exists(ignoredUserIdsProvider)
+      ignoredUsers: ref.read(ignoredUserIdsProvider.exists)
           ? ref.watch(ignoredUserIdsProvider)
           : null,
     );
