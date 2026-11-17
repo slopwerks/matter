@@ -13,6 +13,7 @@ import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
+import 'material_log_view.dart';
 
 /// Provider that accumulates log entries from the Rust stream.
 final logEntriesProvider =
@@ -166,230 +167,278 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
           ? buildFloatingAppBar(
               title: Text('日志 (${allLogs.length})'),
               actions: [
-                IconButton(
-                  icon: Icon(
-                    _autoScroll
-                        ? Icons.vertical_align_bottom
-                        : Icons.vertical_align_top,
-                  ),
+                NeuIconButton(
+                  icon: _autoScroll
+                      ? Icons.vertical_align_bottom
+                      : Icons.vertical_align_top,
                   tooltip: _autoScroll ? '自动滚动: 开' : '自动滚动: 关',
                   onPressed: () => setState(() => _autoScroll = !_autoScroll),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
+                NeuIconButton(
+                  icon: Icons.delete_outline,
                   tooltip: '清空日志',
                   onPressed: allLogs.isEmpty ? null : _clearLogs,
                 ),
               ],
             )
           : null,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Padding(
-              // 标题栏移到上方浮层,内容从它下方开始。
-              padding: EdgeInsets.only(
-                top: MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
-              ),
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      NeuSpacing.lg,
-                      NeuSpacing.sm,
-                      NeuSpacing.lg,
-                      0,
+      body: context.isMaterial
+          ? MaterialLogView(
+              total: allLogs.length,
+              filteredCount: filtered.length,
+              scrollController: _scrollController,
+              searchController: _searchController,
+              query: _searchQuery,
+              levels: [
+                (value: null, label: '全部', count: allLogs.length),
+                for (final level in _levels)
+                  (
+                    value: level,
+                    label: _levelMeta(colors, level).label,
+                    count: levelCounts[level] ?? 0,
+                  ),
+              ],
+              selectedLevel: _levelFilter,
+              tags: tags,
+              tagCounts: tagCounts,
+              selectedTag: _tagFilter,
+              onSearch: (value) => setState(() => _searchQuery = value),
+              onClearSearch: () {
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+              },
+              onLevelSelected: (level) => setState(() => _levelFilter = level),
+              onTagSelected: (tag) => setState(() => _tagFilter = tag),
+              itemBuilder: (context, index) =>
+                  _LogEntryTile(entry: filtered[index]),
+            )
+          : Stack(
+              children: [
+                Positioned.fill(
+                  child: Padding(
+                    // 标题栏移到上方浮层,内容从它下方开始。
+                    padding: EdgeInsets.only(
+                      top:
+                          MediaQuery.viewPaddingOf(context).top +
+                          kToolbarHeight,
                     ),
-                    child: Row(
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: NeuTextField(
-                            controller: _searchController,
-                            hint: '搜索日志内容或标签',
-                            radius: context.isMaterial ? 28 : NeuRadius.content,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            leading: const Icon(Icons.search_rounded),
-                            trailing: _searchQuery.isEmpty
-                                ? null
-                                : GestureDetector(
-                                    onTap: () {
-                                      _searchController.clear();
-                                      setState(() => _searchQuery = '');
-                                    },
-                                    child: const Icon(Icons.close_rounded),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            NeuSpacing.lg,
+                            NeuSpacing.sm,
+                            NeuSpacing.lg,
+                            0,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: NeuTextField(
+                                  controller: _searchController,
+                                  hint: '搜索日志内容或标签',
+                                  radius: NeuRadius.content,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
                                   ),
-                            onChanged: (value) =>
-                                setState(() => _searchQuery = value),
+                                  leading: const Icon(Icons.search_rounded),
+                                  trailing: _searchQuery.isEmpty
+                                      ? null
+                                      : GestureDetector(
+                                          onTap: () {
+                                            _searchController.clear();
+                                            setState(() => _searchQuery = '');
+                                          },
+                                          child: const Icon(
+                                            Icons.close_rounded,
+                                          ),
+                                        ),
+                                  onChanged: (value) =>
+                                      setState(() => _searchQuery = value),
+                                ),
+                              ),
+                              const SizedBox(width: NeuSpacing.sm),
+                              _TagFilterButton(
+                                tags: tags,
+                                counts: tagCounts,
+                                selected: _tagFilter,
+                                onSelected: (tag) =>
+                                    setState(() => _tagFilter = tag),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: NeuSpacing.sm),
-                        _TagFilterButton(
-                          tags: tags,
-                          counts: tagCounts,
-                          selected: _tagFilter,
-                          onSelected: (tag) => setState(() => _tagFilter = tag),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      NeuSpacing.lg,
-                      NeuSpacing.sm,
-                      NeuSpacing.lg,
-                      NeuSpacing.xs,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                _LevelPill(
-                                  label: '全部',
-                                  count: allLogs.length,
-                                  color: colors.textSecondary,
-                                  selected: _levelFilter == null,
-                                  onTap: () =>
-                                      setState(() => _levelFilter = null),
-                                ),
-                                for (final level in _levels) ...[
-                                  const SizedBox(width: NeuSpacing.xs),
-                                  _LevelPill(
-                                    label: _levelMeta(colors, level).label,
-                                    count: levelCounts[level] ?? 0,
-                                    color: _levelMeta(colors, level).color,
-                                    selected: _levelFilter == level,
-                                    onTap: () =>
-                                        setState(() => _levelFilter = level),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            NeuSpacing.lg,
+                            NeuSpacing.sm,
+                            NeuSpacing.lg,
+                            NeuSpacing.xs,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      _LevelPill(
+                                        label: '全部',
+                                        count: allLogs.length,
+                                        color: colors.textSecondary,
+                                        selected: _levelFilter == null,
+                                        onTap: () =>
+                                            setState(() => _levelFilter = null),
+                                      ),
+                                      for (final level in _levels) ...[
+                                        const SizedBox(width: NeuSpacing.xs),
+                                        _LevelPill(
+                                          label: _levelMeta(
+                                            colors,
+                                            level,
+                                          ).label,
+                                          count: levelCounts[level] ?? 0,
+                                          color: _levelMeta(
+                                            colors,
+                                            level,
+                                          ).color,
+                                          selected: _levelFilter == level,
+                                          onTap: () => setState(
+                                            () => _levelFilter = level,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
-                                ],
-                              ],
+                                ),
+                              ),
+                              const SizedBox(width: NeuSpacing.sm),
+                              Text(
+                                '${filtered.length}/${allLogs.length}',
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: colors.textTertiary,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              NeuSpacing.lg,
+                              NeuSpacing.xs,
+                              NeuSpacing.lg,
+                              NeuSpacing.lg,
+                            ),
+                            child: NeuSurface(
+                              depth: NeuDepth.pressed,
+                              radius: NeuRadius.content,
+                              intensity: .8,
+                              padding: const EdgeInsets.all(NeuSpacing.sm),
+                              child: filtered.isEmpty
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.article_outlined,
+                                            color: colors.textTertiary,
+                                            size: 48,
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            allLogs.isEmpty
+                                                ? '等待日志...'
+                                                : '无匹配日志',
+                                            style: textTheme.bodyMedium,
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      controller: _scrollController,
+                                      padding: EdgeInsets.zero,
+                                      itemCount: filtered.length,
+                                      itemBuilder: (context, index) {
+                                        return _LogEntryTile(
+                                          entry: filtered[index],
+                                        );
+                                      },
+                                    ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: NeuSpacing.sm),
-                        Text(
-                          '${filtered.length}/${allLogs.length}',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        NeuSpacing.lg,
-                        NeuSpacing.xs,
-                        NeuSpacing.lg,
-                        NeuSpacing.lg,
-                      ),
-                      child: NeuSurface(
-                        depth: NeuDepth.pressed,
-                        radius: NeuRadius.content,
-                        intensity: .8,
-                        padding: const EdgeInsets.all(NeuSpacing.sm),
-                        child: filtered.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.article_outlined,
-                                      color: colors.textTertiary,
-                                      size: 48,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      allLogs.isEmpty ? '等待日志...' : '无匹配日志',
-                                      style: textTheme.bodyMedium,
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : ListView.builder(
-                                controller: _scrollController,
-                                padding: EdgeInsets.zero,
-                                itemCount: filtered.length,
-                                itemBuilder: (context, index) {
-                                  return _LogEntryTile(entry: filtered[index]);
-                                },
-                              ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
-          if (!context.isMaterial)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
-              child: const TopFadeBlur(useShader: true),
-            ),
-          // 标题栏移到上方浮层,滚动内容从它下方穿过。
-          if (!context.isMaterial)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: SizedBox(
-                  height: kToolbarHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                      left: NeuSpacing.sm,
-                      right: NeuSpacing.md,
-                    ),
-                    child: Row(
-                      children: [
-                        NeuIconButton(
-                          icon: Icons.arrow_back_ios_new_rounded,
-                          size: 36,
-                          tooltip: '返回',
-                          onPressed: () => Navigator.of(context).maybePop(),
-                        ),
-                        const SizedBox(width: NeuSpacing.sm),
-                        Expanded(
-                          child: Text(
-                            '日志 (${allLogs.length})',
-                            style: textTheme.titleLarge,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        NeuIconButton(
-                          icon: _autoScroll
-                              ? Icons.vertical_align_bottom_rounded
-                              : Icons.vertical_align_top_rounded,
-                          size: 36,
-                          tooltip: _autoScroll ? '自动滚动: 开' : '自动滚动: 关',
-                          onPressed: () =>
-                              setState(() => _autoScroll = !_autoScroll),
-                        ),
-                        const SizedBox(width: NeuSpacing.xs),
-                        NeuIconButton(
-                          icon: Icons.delete_outline_rounded,
-                          size: 36,
-                          tooltip: '清空日志',
-                          onPressed: allLogs.isEmpty ? null : _clearLogs,
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
+                // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
+                if (!context.isMaterial)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height:
+                        MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
+                    child: const TopFadeBlur(useShader: true),
+                  ),
+                // 标题栏移到上方浮层,滚动内容从它下方穿过。
+                if (!context.isMaterial)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: SafeArea(
+                      bottom: false,
+                      child: SizedBox(
+                        height: kToolbarHeight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            left: NeuSpacing.sm,
+                            right: NeuSpacing.md,
+                          ),
+                          child: Row(
+                            children: [
+                              NeuIconButton(
+                                icon: Icons.arrow_back_ios_new_rounded,
+                                size: 36,
+                                tooltip: '返回',
+                                onPressed: () =>
+                                    Navigator.of(context).maybePop(),
+                              ),
+                              const SizedBox(width: NeuSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  '日志 (${allLogs.length})',
+                                  style: textTheme.titleLarge,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              NeuIconButton(
+                                icon: _autoScroll
+                                    ? Icons.vertical_align_bottom_rounded
+                                    : Icons.vertical_align_top_rounded,
+                                size: 36,
+                                tooltip: _autoScroll ? '自动滚动: 开' : '自动滚动: 关',
+                                onPressed: () =>
+                                    setState(() => _autoScroll = !_autoScroll),
+                              ),
+                              const SizedBox(width: NeuSpacing.xs),
+                              NeuIconButton(
+                                icon: Icons.delete_outline_rounded,
+                                size: 36,
+                                tooltip: '清空日志',
+                                onPressed: allLogs.isEmpty ? null : _clearLogs,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 }
@@ -583,14 +632,26 @@ class _LogEntryTile extends StatelessWidget {
       _ => colors.textSecondary,
     };
 
+    void copyEntry() {
+      final text =
+          '[$timeStr] [${entry.level.toUpperCase()}] [${entry.tag}] ${entry.message}';
+      Clipboard.setData(ClipboardData(text: text));
+      neuToast(context, '已复制');
+    }
+
+    if (context.isMaterial) {
+      return MaterialLogEntry(
+        time: timeStr,
+        level: entry.level,
+        levelLabel: meta.label,
+        tag: entry.tag,
+        message: entry.message,
+        onCopy: copyEntry,
+      );
+    }
+
     return GestureDetector(
-      onLongPress: () {
-        // Copy log entry
-        final text =
-            '[$timeStr] [${entry.level.toUpperCase()}] [${entry.tag}] ${entry.message}';
-        Clipboard.setData(ClipboardData(text: text));
-        neuToast(context, '已复制');
-      },
+      onLongPress: copyEntry,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 1),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

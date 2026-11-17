@@ -67,6 +67,34 @@ materialProfileCardStyle(ThemeData theme, {bool detail = false}) => (
       ),
     );
 
+({Color fill, TextStyle? level, TextStyle? metadata, TextStyle? message})
+materialLogEntryStyle(ThemeData theme, String level) {
+  final scheme = theme.colorScheme;
+  final foreground = switch (level) {
+    'error' => scheme.error,
+    'warn' => scheme.tertiary,
+    'debug' => scheme.onSurfaceVariant,
+    _ => scheme.primary,
+  };
+  return (
+    fill: level == 'error' ? scheme.errorContainer : scheme.surface,
+    level: theme.textTheme.labelMedium?.copyWith(
+      color: level == 'error' ? scheme.onErrorContainer : foreground,
+    ),
+    metadata: theme.textTheme.labelSmall?.copyWith(
+      color: level == 'error'
+          ? scheme.onErrorContainer
+          : scheme.onSurfaceVariant,
+      fontFamily: 'monospace',
+    ),
+    message: theme.textTheme.bodySmall?.copyWith(
+      color: level == 'error' ? scheme.onErrorContainer : scheme.onSurface,
+      fontFamily: 'monospace',
+      height: 1.5,
+    ),
+  );
+}
+
 ({
   Color fill,
   Color foreground,
