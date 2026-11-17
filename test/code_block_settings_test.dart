@@ -96,7 +96,10 @@ void main() {
 
   group('CodeBlockSettingsPage Widget', () {
     testWidgets('renders preview, slider, and theme choices', (tester) async {
-      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.physicalSize = const Size(
+        bool.fromEnvironment('MATTER_TEST_MATERIAL') ? 320 : 800,
+        2400,
+      );
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);

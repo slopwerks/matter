@@ -95,6 +95,20 @@ materialLogEntryStyle(ThemeData theme, String level) {
   );
 }
 
+({Color fill, Color foreground, TextStyle? title, TextStyle? subtitle})
+materialSettingsPresetStyle(ThemeData theme, {required bool selected}) {
+  final scheme = theme.colorScheme;
+  final foreground = selected ? scheme.onSecondaryContainer : scheme.onSurface;
+  return (
+    fill: selected ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+    foreground: foreground,
+    title: materialListTitleStyle(theme)?.copyWith(color: foreground),
+    subtitle: theme.textTheme.labelSmall?.copyWith(
+      color: selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+    ),
+  );
+}
+
 ({
   Color fill,
   Color foreground,
@@ -152,6 +166,19 @@ TextStyle? materialSettingsSectionStyle(ThemeData theme) => theme
     .textTheme
     .titleSmall
     ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+
+({Color fill, Color accent, TextStyle? label, TextStyle code})
+materialCodePreviewStyle(ThemeData theme) => (
+  fill: theme.colorScheme.primaryContainer,
+  accent: theme.colorScheme.primary,
+  label: theme.textTheme.labelMedium?.copyWith(
+    color: theme.colorScheme.onPrimaryContainer,
+  ),
+  code: theme.textTheme.bodyMedium!.copyWith(
+    fontSize: 13,
+    color: theme.colorScheme.onPrimaryContainer,
+  ),
+);
 
 TextStyle materialSearchHighlightStyle(ThemeData theme) => TextStyle(
   color: theme.colorScheme.onPrimaryContainer,

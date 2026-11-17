@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/timeline_event_settings_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/material_detail_card.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/neu_action.dart';
 
 class TimelineEventSettingsPage extends ConsumerWidget {
   final String? roomId;
@@ -150,29 +152,9 @@ class TimelineEventSettingsPage extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               if (!isOverridden) ...[
-                GlassPanel(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.info_outline_rounded,
-                        size: 16,
-                        color: colors.accent,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '当前房间正在跟随全局设置。开启上方的「单独配置此房间」后，可为此群单独定制状态事件过滤规则（如在大群中隐藏进退与改名，或在工作群中全开）。',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: colors.textSecondary,
-                                height: 1.4,
-                              ),
-                        ),
-                      ),
-                    ],
-                  ),
+                const _EventNotice(
+                  followingGlobal: true,
+                  message: '当前房间正在跟随全局设置。开启上方的「单独配置此房间」后，可为此群单独定制状态事件过滤规则（如在大群中隐藏进退与改名，或在工作群中全开）。',
                 ),
                 const SizedBox(height: 16),
               ],
@@ -245,37 +227,43 @@ class TimelineEventSettingsPage extends ConsumerWidget {
                         ),
                         if (settings.preset == TimelineEventPreset.custom) ...[
                           const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colors.accent.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(
-                                NeuRadius.tag,
+                          if (context.isMaterial)
+                            const Chip(
+                              avatar: Icon(Icons.tune_rounded, size: 16),
+                              label: Text('当前为自定义模式'),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.accent.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(
+                                  NeuRadius.tag,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.tune_rounded,
+                                    size: 13,
+                                    color: colors.accent,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '当前为自定义模式',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: colors.accent,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.tune_rounded,
-                                  size: 13,
-                                  color: colors.accent,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '当前为自定义模式',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: colors.accent,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ],
                       ],
                     ),
@@ -377,28 +365,10 @@ class TimelineEventSettingsPage extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
             ],
-            GlassPanel(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 16,
-                    color: colors.textTertiary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      isRoomMode
-                          ? '关闭某些事件的显示仅影响当前设备在此房间的消息时间线展示，不会影响 Matrix 协议消息同步或房间实际状态。'
-                          : '关闭某些事件的显示仅影响当前设备的聊天时间线展示，不会影响 Matrix 协议消息同步或房间实际状态。随时可以在这里重新开启。',
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: colors.textSecondary, height: 1.4),
-                    ),
-                  ),
-                ],
-              ),
+            _EventNotice(
+              message: isRoomMode
+                  ? '关闭某些事件的显示仅影响当前设备在此房间的消息时间线展示，不会影响 Matrix 协议消息同步或房间实际状态。'
+                  : '关闭某些事件的显示仅影响当前设备的聊天时间线展示，不会影响 Matrix 协议消息同步或房间实际状态。随时可以在这里重新开启。',
             ),
           ],
         ),
@@ -426,6 +396,60 @@ class _PresetCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.neu;
     final primaryColor = colors.accent;
+
+    if (context.isMaterial) {
+      final theme = Theme.of(context);
+      final style = materialSettingsPresetStyle(theme, selected: isSelected);
+      return NeuAction(
+        onTap: onTap,
+        label: title,
+        selected: isSelected,
+        radius: materialSurfaceRadius,
+        child: TweenAnimationBuilder<Color?>(
+          tween: ColorTween(begin: style.fill, end: style.fill),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          builder: (context, fill, child) => Ink(
+            decoration: ShapeDecoration(
+              color: fill,
+              shape: theme.cardTheme.shape ?? materialListItemShape,
+            ),
+            child: child,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 20, color: style.foreground),
+                    const Spacer(),
+                    if (isSelected)
+                      Icon(
+                        Icons.check_circle_rounded,
+                        size: 20,
+                        color: style.foreground,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(title, style: style.title),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: style.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Material(
       color: Colors.transparent,
@@ -506,7 +530,14 @@ class _Section extends StatelessWidget {
     if (context.isMaterial) {
       return MaterialDetailCard(
         title: title,
-        child: Column(children: children),
+        child: Column(
+          children: [
+            for (var index = 0; index < children.length; index++) ...[
+              if (index > 0) const Divider(height: 1),
+              children[index],
+            ],
+          ],
+        ),
       );
     }
     return Column(
@@ -565,6 +596,16 @@ class _EventSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    if (context.isMaterial) {
+      return SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        secondary: Icon(icon),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        value: value,
+        onChanged: onChanged,
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
@@ -606,6 +647,45 @@ class _EventSwitch extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _EventNotice extends StatelessWidget {
+  const _EventNotice({required this.message, this.followingGlobal = false});
+
+  final String message;
+  final bool followingGlobal;
+
+  @override
+  Widget build(BuildContext context) {
+    if (context.isMaterial) {
+      return MaterialDetailCard(
+        title: followingGlobal ? '跟随全局设置' : '使用说明',
+        child: Text(message, style: Theme.of(context).textTheme.bodySmall),
+      );
+    }
+    final colors = context.neu;
+    return GlassPanel(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 16,
+            color: followingGlobal ? colors.accent : colors.textTertiary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: colors.textSecondary, height: 1.4),
+            ),
+          ),
         ],
       ),
     );
