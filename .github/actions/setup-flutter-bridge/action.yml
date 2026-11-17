@@ -108,12 +108,16 @@ runs:
     - name: Install binary installer
       if: steps.bridge-cache.outputs.cache-hit != 'true'
       uses: taiki-e/install-action@v2
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
       with:
         tool: cargo-binstall
 
     - name: Install prebuilt bridge tools
       if: steps.bridge-cache.outputs.cache-hit != 'true'
       shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
       run: >-
         cargo binstall flutter_rust_bridge_codegen@2.13.0 cargo-expand@1.0.127
         --no-confirm --disable-strategies compile
