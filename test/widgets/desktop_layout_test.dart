@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
 import 'package:matter/pages/chat/message_input.dart';
 import 'package:matter/pages/chat/desktop_split_view.dart';
 import 'package:matter/pages/chat/chat_detail_page.dart';
+import 'package:matter/pages/chat/chat_page.dart';
 import 'package:matter/pages/chat/desktop_room_details_panel.dart';
 import 'package:matter/pages/chat/room_metadata_patch.dart';
 import 'package:matter/providers/auth_provider.dart';
@@ -12,6 +14,7 @@ import 'package:matter/providers/navigation_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/widgets/material_adaptive_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/neu_test_theme.dart';
@@ -105,11 +108,18 @@ rust.ChatRoom _room({
   );
 }
 
-Future<void> _pumpApp(WidgetTester tester, ProviderContainer container) async {
+Future<void> _pumpApp(
+  WidgetTester tester,
+  ProviderContainer container, {
+  bool material = false,
+}) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(theme: neuTestTheme(), home: const MatterApp()),
+      child: MaterialApp(
+        theme: neuTestTheme(material: material),
+        home: const MatterApp(),
+      ),
     ),
   );
   for (var i = 0; i < 4; i++) {
@@ -141,6 +151,104 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     rustApi.markRoomAsReadCalls = 0;
   });
+
+  testWidgets(
+    'M3 keeps chat, list, focus and draft across all five window classes',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final room = _room(
+        id: '!m3-resize:example.org',
+        name: 'M3 resize',
+        roomType: 'dm',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          allChatRoomsProvider.overrideWith((ref) async => [room]),
+          spacesProvider.overrideWith((ref) async => const []),
+          roomMembersProvider(room.id).overrideWith((ref) async => const []),
+        ],
+      );
+      addTearDown(container.dispose);
+      await _pumpApp(tester, container, material: true);
+      final chatState = tester.state(find.byType(ChatDetailPage));
+      final listState = tester.state(
+        find.byType(ChatPage, skipOffstage: false),
+      );
+      final input = find.descendant(
+        of: find.byType(MessageInput),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(input, 'M3 draft across widths');
+      final focus = tester.widget<TextField>(input).focusNode;
+      for (final width in [
+        599.0,
+        600.0,
+        839.0,
+        840.0,
+        1199.0,
+        1200.0,
+        1599.0,
+        1600.0,
+        1800.0,
+      ]) {
+        await tester.binding.setSurfaceSize(Size(width, 800));
+        await tester.pump();
+        final window = MaterialWindowClass.fromWidth(width);
+        final detail = find.byType(ChatDetailPage);
+        expect(tester.state(detail), same(chatState));
+        expect(
+          tester.state(find.byType(ChatPage, skipOffstage: false)),
+          same(listState),
+        );
+        expect(
+          tester.widget<TextField>(input).controller!.text,
+          'M3 draft across widths',
+        );
+        expect(tester.widget<TextField>(input).focusNode, same(focus));
+        expect(focus!.hasFocus, isTrue);
+        final expectedWidth =
+            width -
+            window.railWidth -
+            (window.hasSplit ? window.listWidth + 1 : 0) -
+            (width >= 1600 ? 361 : 0);
+        expect(tester.getSize(detail).width, expectedWidth);
+        expect(MediaQuery.sizeOf(tester.element(detail)).width, expectedWidth);
+        expect(
+          tester.widget<ChatDetailPage>(detail).onBack == null,
+          window.hasSplit,
+        );
+        expect(
+          find.byType(NavigationRail),
+          window.hasRail ? findsOneWidget : findsNothing,
+        );
+        expect(find.byType(NavigationBar), findsNothing);
+        expect(
+          find.byType(DesktopRoomDetailsPanel),
+          width >= 1600 ? findsOneWidget : findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await tester.binding.setSurfaceSize(const Size(840, 800));
+      await tester.pump();
+      final beforePanel = tester.getSize(find.byType(ChatDetailPage)).width;
+      await tester.tap(find.byTooltip('显示详情'));
+      await tester.pump();
+      expect(find.byType(ModalBarrier), findsWidgets);
+      expect(find.byType(DesktopRoomDetailsPanel), findsOneWidget);
+      expect(tester.getSize(find.byType(ChatDetailPage)).width, beforePanel);
+      await tester.tap(find.byType(CloseButton));
+      await tester.pump();
+      expect(find.byType(DesktopRoomDetailsPanel), findsNothing);
+      await tester.tap(find.byTooltip('显示详情'));
+      await tester.pump();
+      expect(focus!.hasFocus, isFalse);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(find.byType(DesktopRoomDetailsPanel), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('opens a nested space instead of its chat detail', (
     tester,

@@ -12,12 +12,14 @@ class MobileTabView extends StatefulWidget {
     required this.children,
     required this.position,
     required this.onChanged,
+    this.swipeEnabled = true,
   });
 
   final int index;
   final List<Widget> children;
   final ValueNotifier<double> position;
   final ValueChanged<int> onChanged;
+  final bool swipeEnabled;
 
   @override
   State<MobileTabView> createState() => _MobileTabViewState();
@@ -192,11 +194,13 @@ class _MobileTabViewState extends State<MobileTabView>
       builder: (context, constraints) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         dragStartBehavior: DragStartBehavior.down,
-        onHorizontalDragStart: _startDrag,
-        onHorizontalDragUpdate: (details) =>
-            _updateDrag(details, constraints.maxWidth, direction),
-        onHorizontalDragEnd: (details) =>
-            _endDrag(details.primaryVelocity!, direction),
+        onHorizontalDragStart: widget.swipeEnabled ? _startDrag : null,
+        onHorizontalDragUpdate: widget.swipeEnabled
+            ? (details) => _updateDrag(details, constraints.maxWidth, direction)
+            : null,
+        onHorizontalDragEnd: widget.swipeEnabled
+            ? (details) => _endDrag(details.primaryVelocity!, direction)
+            : null,
         onHorizontalDragCancel: () {
           if (_dragOrigin != null) _endDrag(0, direction);
         },

@@ -295,6 +295,8 @@ void main() {
   testWidgets('returning home during a fetch keeps the existing list', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     var response = Completer<List<rust.ChatRoom>>()
       ..complete(List.generate(30, _room));
     final container = ProviderContainer(
@@ -553,11 +555,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 64));
     expect(find.text('连接中…'), findsOneWidget);
-    expect(find.text('Matter'), findsOneWidget);
-    final opacity = find.ancestor(
-      of: find.text('Matter'),
-      matching: find.byType(Opacity),
+    final title = find.descendant(
+      of: find.byType(ChatPage),
+      matching: find.text('聊天'),
     );
+    expect(title, findsOneWidget);
+    final opacity = find.ancestor(of: title, matching: find.byType(Opacity));
     expect(opacity, findsWidgets);
     expect(
       tester.widget<Opacity>(opacity.first).opacity,
@@ -584,14 +587,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 64));
     final fades = find.ancestor(
       of: find.byType(ContactsPage),
-      matching: find.byType(FadeTransition),
+      matching: find.byType(Opacity),
     );
     expect(fades, findsWidgets);
-    expect(
-      tester.widget<FadeTransition>(fades.first).opacity.value,
-      inExclusiveRange(0, 1),
-    );
+    expect(tester.widget<Opacity>(fades.first).opacity, inExclusiveRange(0, 1));
     await tester.pumpAndSettle();
-    expect(tester.widget<FadeTransition>(fades.first).opacity.value, 1);
+    expect(tester.widget<Opacity>(fades.first).opacity, 1);
   });
 }
