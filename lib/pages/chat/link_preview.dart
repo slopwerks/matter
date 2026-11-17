@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import 'timeline/timeline_bubble_frame.dart' show outgoingBubbleForeground;
 
 class LinkPreviewCard extends ConsumerWidget {
   final Uri uri;
@@ -79,12 +80,12 @@ class _LinkPreviewFrame extends StatelessWidget {
     final border = isMe
         ? Colors.white.withValues(alpha: 0.16)
         : colors.hairline;
-    final titleColor = isMe ? colors.onAccent : colors.text;
+    final titleColor = isMe ? outgoingBubbleForeground(context) : colors.text;
     final secondaryColor = isMe
-        ? colors.onAccent.withValues(alpha: 0.72)
+        ? outgoingBubbleForeground(context).withValues(alpha: 0.72)
         : colors.textTertiary;
     final linkColor = isMe
-        ? colors.onAccent.withValues(alpha: 0.86)
+        ? outgoingBubbleForeground(context).withValues(alpha: 0.86)
         : colors.accent;
     final imageUrl = preview.imageUrl;
     final showImage = imageUrl != null && width >= 300;

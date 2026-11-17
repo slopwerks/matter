@@ -28,6 +28,7 @@ import '../../src/rust/api/matrix/unread.dart' as unread;
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
+import '../../widgets/max_content_width.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
@@ -3102,179 +3103,187 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           in membersAsync.asData?.value ?? const <Contact>[])
                         member.id: member,
                     };
-                    final timeline = TweenAnimationBuilder<double>(
-                      tween: Tween<double>(end: messageBottomPadding),
-                      duration: animatePanelChange
-                          ? const Duration(milliseconds: 180)
-                          : Duration.zero,
-                      curve: Curves.easeOutCubic,
-                      builder: (context, animatedBottomPadding, _) {
-                        return LayoutBuilder(
-                          builder: (context, constraints) {
-                            final reserve = 8 + animatedBottomPadding;
-                            final anchor =
-                                pivot == null || constraints.maxHeight <= 0
-                                ? 0.0
-                                : (reserve / constraints.maxHeight).clamp(
-                                    0.0,
-                                    1.0,
-                                  );
-                            return NotificationListener<
-                              ScrollMetricsNotification
-                            >(
-                              onNotification: _handleScrollMetricsNotification,
-                              child: NotificationListener<ScrollNotification>(
-                                onNotification: _handleScrollNotification,
-                                child: CustomScrollView(
-                                  key: _scrollViewportKey,
-                                  reverse: true,
-                                  controller: _scrollController,
-                                  // Pages newer than the pivot grow below this
-                                  // origin, without changing the reading offset.
-                                  center: pivot == null
-                                      ? null
-                                      : _timelineCenterKey,
-                                  // In reverse layout, move the reading origin up
-                                  // with the real composer/keyboard reservation.
-                                  anchor: anchor,
-                                  slivers: [
-                                    SliverPadding(
-                                      padding: EdgeInsets.only(
-                                        bottom: 8 + animatedBottomPadding,
+                    final timeline = MaxContentWidth(
+                      maxWidth: context.isMaterial ? 720 : double.infinity,
+                      usePaneSize: context.isMaterial,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(end: messageBottomPadding),
+                        duration: animatePanelChange
+                            ? const Duration(milliseconds: 180)
+                            : Duration.zero,
+                        curve: Curves.easeOutCubic,
+                        builder: (context, animatedBottomPadding, _) {
+                          return LayoutBuilder(
+                            builder: (context, constraints) {
+                              final reserve = 8 + animatedBottomPadding;
+                              final anchor =
+                                  pivot == null || constraints.maxHeight <= 0
+                                  ? 0.0
+                                  : (reserve / constraints.maxHeight).clamp(
+                                      0.0,
+                                      1.0,
+                                    );
+                              return NotificationListener<
+                                ScrollMetricsNotification
+                              >(
+                                onNotification:
+                                    _handleScrollMetricsNotification,
+                                child: NotificationListener<ScrollNotification>(
+                                  onNotification: _handleScrollNotification,
+                                  child: CustomScrollView(
+                                    key: _scrollViewportKey,
+                                    reverse: true,
+                                    controller: _scrollController,
+                                    // Pages newer than the pivot grow below this
+                                    // origin, without changing the reading offset.
+                                    center: pivot == null
+                                        ? null
+                                        : _timelineCenterKey,
+                                    // In reverse layout, move the reading origin up
+                                    // with the real composer/keyboard reservation.
+                                    anchor: anchor,
+                                    slivers: [
+                                      SliverPadding(
+                                        padding: EdgeInsets.only(
+                                          bottom: 8 + animatedBottomPadding,
+                                        ),
                                       ),
-                                    ),
-                                    if (_focusedBrowsing && _isLoadingNewer)
-                                      const SliverToBoxAdapter(
-                                        child: Padding(
-                                          padding: EdgeInsets.all(12),
-                                          child: Center(
-                                            child: SizedBox.square(
-                                              dimension: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
+                                      if (_focusedBrowsing && _isLoadingNewer)
+                                        const SliverToBoxAdapter(
+                                          child: Padding(
+                                            padding: EdgeInsets.all(12),
+                                            child: Center(
+                                              child: SizedBox.square(
+                                                dimension: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    if (_focusedBrowsing &&
-                                        !_isLoadingNewer &&
-                                        _hasMoreNewerMessages)
-                                      SliverToBoxAdapter(
-                                        child: Center(
-                                          child: TextButton.icon(
-                                            key: const ValueKey(
-                                              'newer-history-retry',
-                                            ),
-                                            onPressed: _retryNewerMessages,
-                                            icon: const Icon(
-                                              Icons.refresh_rounded,
-                                              size: 16,
-                                            ),
-                                            label: Text(
-                                              _newerLoadBlockedByError
-                                                  ? '重试加载更新消息'
-                                                  : '加载更新消息',
+                                      if (_focusedBrowsing &&
+                                          !_isLoadingNewer &&
+                                          _hasMoreNewerMessages)
+                                        SliverToBoxAdapter(
+                                          child: Center(
+                                            child: TextButton.icon(
+                                              key: const ValueKey(
+                                                'newer-history-retry',
+                                              ),
+                                              onPressed: _retryNewerMessages,
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 16,
+                                              ),
+                                              label: Text(
+                                                _newerLoadBlockedByError
+                                                    ? '重试加载更新消息'
+                                                    : '加载更新消息',
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    if (pivot != null)
+                                      if (pivot != null)
+                                        SliverList(
+                                          delegate: SliverChildBuilderDelegate(
+                                            (context, index) =>
+                                                _buildTimelineEntry(
+                                                  timelineEntries[pivotIndex -
+                                                      1 -
+                                                      index],
+                                                  avatarMap,
+                                                  membersById,
+                                                  messageIndex,
+                                                  8 + animatedBottomPadding,
+                                                ),
+                                            childCount: pivotIndex,
+                                            findChildIndexCallback: (key) {
+                                              final index =
+                                                  _findTimelineEntryIndex(key);
+                                              return index == null ||
+                                                      index >= pivotIndex
+                                                  ? null
+                                                  : pivotIndex - 1 - index;
+                                            },
+                                          ),
+                                        ),
                                       SliverList(
+                                        key: _timelineCenterKey,
                                         delegate: SliverChildBuilderDelegate(
                                           (context, index) =>
                                               _buildTimelineEntry(
-                                                timelineEntries[pivotIndex -
-                                                    1 -
+                                                timelineEntries[pivotIndex +
                                                     index],
                                                 avatarMap,
                                                 membersById,
                                                 messageIndex,
                                                 8 + animatedBottomPadding,
                                               ),
-                                          childCount: pivotIndex,
+                                          childCount:
+                                              timelineEntries.length -
+                                              pivotIndex,
                                           findChildIndexCallback: (key) {
                                             final index =
                                                 _findTimelineEntryIndex(key);
                                             return index == null ||
-                                                    index >= pivotIndex
+                                                    index < pivotIndex
                                                 ? null
-                                                : pivotIndex - 1 - index;
+                                                : index - pivotIndex;
                                           },
                                         ),
                                       ),
-                                    SliverList(
-                                      key: _timelineCenterKey,
-                                      delegate: SliverChildBuilderDelegate(
-                                        (context, index) => _buildTimelineEntry(
-                                          timelineEntries[pivotIndex + index],
-                                          avatarMap,
-                                          membersById,
-                                          messageIndex,
-                                          8 + animatedBottomPadding,
-                                        ),
-                                        childCount:
-                                            timelineEntries.length - pivotIndex,
-                                        findChildIndexCallback: (key) {
-                                          final index = _findTimelineEntryIndex(
-                                            key,
-                                          );
-                                          return index == null ||
-                                                  index < pivotIndex
-                                              ? null
-                                              : index - pivotIndex;
-                                        },
-                                      ),
-                                    ),
-                                    if (_automaticOlderLoadBlocked &&
-                                        _hasMoreMessages)
-                                      if (timelineEntries.isEmpty)
-                                        SliverFillRemaining(
-                                          hasScrollBody: false,
-                                          child: Center(
-                                            child: TextButton.icon(
-                                              onPressed: _retryOlderMessages,
-                                              icon: const Icon(
-                                                Icons.refresh_rounded,
+                                      if (_automaticOlderLoadBlocked &&
+                                          _hasMoreMessages)
+                                        if (timelineEntries.isEmpty)
+                                          SliverFillRemaining(
+                                            hasScrollBody: false,
+                                            child: Center(
+                                              child: TextButton.icon(
+                                                onPressed: _retryOlderMessages,
+                                                icon: const Icon(
+                                                  Icons.refresh_rounded,
+                                                ),
+                                                label: const Text('重试加载更早消息'),
                                               ),
-                                              label: const Text('重试加载更早消息'),
+                                            ),
+                                          )
+                                        else
+                                          SliverToBoxAdapter(
+                                            child: Center(
+                                              child: TextButton.icon(
+                                                onPressed: _retryOlderMessages,
+                                                icon: const Icon(
+                                                  Icons.refresh_rounded,
+                                                  size: 16,
+                                                ),
+                                                label: const Text('加载更早消息'),
+                                              ),
                                             ),
                                           ),
-                                        )
-                                      else
-                                        SliverToBoxAdapter(
-                                          child: Center(
-                                            child: TextButton.icon(
-                                              onPressed: _retryOlderMessages,
-                                              icon: const Icon(
-                                                Icons.refresh_rounded,
-                                                size: 16,
-                                              ),
-                                              label: const Text('加载更早消息'),
-                                            ),
-                                          ),
+                                      SliverPadding(
+                                        padding: EdgeInsets.only(
+                                          // The timeline runs under the floating
+                                          // header and the pinned stack; keep the
+                                          // oldest end clear of both layers.
+                                          top:
+                                              headerInset +
+                                              pinnedStackHeight +
+                                              audioHeight +
+                                              unreadHeight +
+                                              4,
                                         ),
-                                    SliverPadding(
-                                      padding: EdgeInsets.only(
-                                        // The timeline runs under the floating
-                                        // header and the pinned stack; keep the
-                                        // oldest end clear of both layers.
-                                        top:
-                                            headerInset +
-                                            pinnedStackHeight +
-                                            audioHeight +
-                                            unreadHeight +
-                                            4,
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                      child: const SizedBox.shrink(),
+                              );
+                            },
+                          );
+                        },
+                        child: const SizedBox.shrink(),
+                      ),
                     );
                     if (!_initialMessageJumpPending) return timeline;
                     return Stack(
@@ -3583,7 +3592,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             tooltip: '置顶消息',
             onPressed: () => unawaited(_openPinnedMessages()),
           ),
-        if (widget.embedded && widget.onToggleDetailsPanel != null)
+        if (widget.onToggleDetailsPanel != null)
           IconButton(
             icon: const Icon(Icons.people_outline),
             tooltip: widget.detailsPanelOpen ? '隐藏详情' : '显示详情',

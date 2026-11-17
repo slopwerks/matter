@@ -6,6 +6,14 @@ import '../../../providers/chat_visual_settings_provider.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../theme/tokens.dart';
 
+Color outgoingBubbleForeground(BuildContext context) => context.isMaterial
+    ? Theme.of(context).colorScheme.onPrimaryContainer
+    : context.neu.onAccent;
+
+Color messageBubbleFill(BuildContext context, {required bool isMe}) => isMe
+    ? context.tokens.surfaces.bubbleOutgoing
+    : context.tokens.surfaces.bubbleIncoming;
+
 /// Joined corners follow cluster position, not render-block position. Media
 /// collections and send-flight targets consume the same geometry as text.
 BorderRadius timelineBubbleBorderRadius(
@@ -16,7 +24,7 @@ BorderRadius timelineBubbleBorderRadius(
 }) {
   final radii = context.tokens.radii;
   final outer = Radius.circular(radii.bubble);
-  const joined = Radius.circular(6);
+  final joined = Radius.circular(context.isMaterial ? 4 : 6);
   final tail = Radius.circular(radii.tag);
   if (isMe) {
     return BorderRadius.only(
@@ -125,8 +133,9 @@ class TimelineBubbleFrame extends StatelessWidget {
   final Widget child;
   final Key? bubbleKey;
 
-  static double maxWidth(BuildContext context) =>
-      math.min(MediaQuery.sizeOf(context).width * .68, 520);
+  static double maxWidth(BuildContext context) => context.isMaterial
+      ? math.min(MediaQuery.sizeOf(context).width, 720) * .75
+      : math.min(MediaQuery.sizeOf(context).width * .68, 520);
 
   @override
   Widget build(BuildContext context) => Container(

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_page.dart';
 import 'package:matter/providers/chat_provider.dart';
-import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/widgets/mobile_tab_view.dart';
 import 'package:matter/widgets/glass.dart';
 import 'package:matter/src/rust/api/matrix.dart';
@@ -25,7 +24,7 @@ void main() {
     roomState: 'joined',
   );
 
-  for (final material in [false, true]) {
+  for (final material in [false]) {
     testWidgets(
       '${material ? 'Material' : 'Neu'} scrolling collapses the search entry into a header icon',
       (tester) async {
@@ -159,11 +158,16 @@ void main() {
   }
 
   testWidgets(
-    'Material keeps an icon-only new chat FAB below the fading header',
+    'Material keeps search visible and the new chat FAB below its tonal header',
     (tester) async {
       final container = ProviderContainer(
         overrides: [
-          inboxRoomsProvider.overrideWith((ref) => const AsyncData([])),
+          inboxRoomsProvider.overrideWith(
+            (ref) => AsyncData([
+              for (var i = 0; i < 20; i++)
+                room('!room$i:example.org', 'Room $i'),
+            ]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -195,32 +199,16 @@ void main() {
         greaterThan(tester.getBottomLeft(appBar).dy),
       );
       expect(find.byTooltip('搜索'), findsNothing);
-      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+      expect(find.byType(TopFadeBlur), findsNothing);
+      final scheme = Theme.of(tester.element(appBar)).colorScheme;
+      expect(tester.widget<AppBar>(appBar).backgroundColor, scheme.surface);
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pumpAndSettle();
       expect(
-        scaffold.appBar == null || scaffold.extendBodyBehindAppBar,
-        isTrue,
+        find.byKey(const ValueKey('open-chat-search')).hitTestable(),
+        findsOneWidget,
       );
-      expect(find.byType(TopFadeBlur), findsOneWidget);
-      final fade = tester.widget<DecoratedBox>(
-        find.descendant(
-          of: find.byType(TopFadeBlur),
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is DecoratedBox &&
-                widget.decoration is BoxDecoration &&
-                (widget.decoration as BoxDecoration).gradient is LinearGradient,
-          ),
-        ),
-      );
-      final gradient =
-          (fade.decoration as BoxDecoration).gradient! as LinearGradient;
-      expect(
-        gradient.colors.first.withValues(alpha: 1),
-        tester.element(appBar).neu.base,
-      );
-      expect(gradient.colors.first.a, greaterThan(0));
-      expect(gradient.colors.first.a, lessThan(1));
-      expect(gradient.colors.last.a, 0);
+      expect(find.byKey(const ValueKey('header-search-entry')), findsNothing);
     },
   );
 }

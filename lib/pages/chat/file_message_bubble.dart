@@ -16,7 +16,11 @@ import 'audio_attachment_player.dart';
 import 'file_download_saver.dart';
 import 'markdown_attachment_page.dart';
 import 'timeline/timeline_bubble_frame.dart'
-    show enabledNeuBubbleShadows, neuBubbleShape;
+    show
+        enabledNeuBubbleShadows,
+        neuBubbleShape,
+        outgoingBubbleForeground,
+        messageBubbleFill;
 
 /// Converts an untrusted attachment name into a portable suggested filename.
 String sanitizeAttachmentFilename(String filename) {
@@ -241,9 +245,11 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
   Widget build(BuildContext context) {
     final colors = context.neu;
     final caption = widget.caption?.trim();
-    final foreground = widget.isMe ? colors.onAccent : colors.text;
+    final foreground = widget.isMe
+        ? outgoingBubbleForeground(context)
+        : colors.text;
     final secondary = widget.isMe
-        ? colors.onAccent.withValues(alpha: 0.7)
+        ? outgoingBubbleForeground(context).withValues(alpha: 0.7)
         : colors.textTertiary;
     final shape = neuBubbleShape(
       context,
@@ -254,7 +260,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
       child: Container(
         decoration: ShapeDecoration(
           shape: shape,
-          color: widget.isMe ? colors.accent : colors.card,
+          color: messageBubbleFill(context, isMe: widget.isMe),
           shadows: enabledNeuBubbleShadows(context, colors),
         ),
         child: ClipPath.shape(
@@ -282,7 +288,7 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                                   : Icons.insert_drive_file_rounded,
                               size: 30,
                               color: widget.isMe
-                                  ? colors.onAccent
+                                  ? outgoingBubbleForeground(context)
                                   : colors.accent,
                             ),
                             const SizedBox(width: 10),

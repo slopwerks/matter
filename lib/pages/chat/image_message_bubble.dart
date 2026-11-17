@@ -20,7 +20,8 @@ import 'image_media.dart';
 import 'image_message_loader.dart';
 import 'image_placeholders.dart';
 import 'image_viewer.dart';
-import 'timeline/timeline_bubble_frame.dart' show enabledNeuBubbleShadows;
+import 'timeline/timeline_bubble_frame.dart'
+    show enabledNeuBubbleShadows, outgoingBubbleForeground, messageBubbleFill;
 import 'message_text.dart';
 import 'send_flight.dart';
 
@@ -569,7 +570,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       width: _bubbleSize(context).width,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: widget.isMe ? colors.accent : colors.card,
+        color: messageBubbleFill(context, isMe: widget.isMe),
         borderRadius: _bubbleBorderRadius,
         boxShadow: enabledNeuBubbleShadows(context, colors),
       ),
@@ -722,9 +723,11 @@ class ImageMessageCaption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final accent = isMe ? colors.onAccent : colors.accent;
-    final style = Theme.of(context).textTheme.bodyLarge!
-        .copyWith(color: isMe ? colors.onAccent : colors.text, height: 1.35);
+    final accent = isMe ? outgoingBubbleForeground(context) : colors.accent;
+    final style = Theme.of(context).textTheme.bodyLarge!.copyWith(
+      color: isMe ? outgoingBubbleForeground(context) : colors.text,
+      height: 1.35,
+    );
     return Container(
       key: const ValueKey('image-caption'),
       width: double.infinity,

@@ -3,7 +3,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/neu_colors.dart';
 import 'timeline/timeline_bubble_frame.dart'
-    show enabledNeuBubbleShadows, neuBubbleShape;
+    show
+        enabledNeuBubbleShadows,
+        neuBubbleShape,
+        outgoingBubbleForeground,
+        messageBubbleFill;
 
 typedef LocationUriLauncher = Future<bool> Function(Uri uri);
 
@@ -99,7 +103,7 @@ class LocationMessageBubble extends StatelessWidget {
       child: Container(
         decoration: ShapeDecoration(
           shape: shape,
-          color: isMe ? colors.accent : colors.card,
+          color: messageBubbleFill(context, isMe: isMe),
           shadows: enabledNeuBubbleShadows(context, colors),
         ),
         child: ClipPath.shape(
@@ -117,7 +121,9 @@ class LocationMessageBubble extends StatelessWidget {
                       children: [
                         Icon(
                           Icons.location_on_rounded,
-                          color: isMe ? colors.onAccent : colors.accent,
+                          color: isMe
+                              ? outgoingBubbleForeground(context)
+                              : colors.accent,
                           size: 30,
                         ),
                         const SizedBox(width: 10),
@@ -126,7 +132,9 @@ class LocationMessageBubble extends StatelessWidget {
                             label,
                             style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(
-                                  color: isMe ? colors.onAccent : colors.text,
+                                  color: isMe
+                                      ? outgoingBubbleForeground(context)
+                                      : colors.text,
                                 ),
                           ),
                         ),
@@ -135,7 +143,8 @@ class LocationMessageBubble extends StatelessWidget {
                           Icons.open_in_new_rounded,
                           size: 18,
                           color: isMe
-                              ? colors.onAccent.withValues(alpha: 0.7)
+                              ? outgoingBubbleForeground(context)
+                                    .withValues(alpha: 0.7)
                               : colors.textTertiary,
                         ),
                       ],

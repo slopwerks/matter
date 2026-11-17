@@ -38,7 +38,9 @@ void main() {
                           isFirst: first,
                           isLast: last,
                         ),
-                        _originalRadius(isMe, first, last),
+                        material
+                            ? _materialRadius(isMe, first, last)
+                            : _originalRadius(isMe, first, last),
                       );
                     }
                   }
@@ -50,7 +52,7 @@ void main() {
         );
       });
 
-      for (final isMe in [false, true]) {
+      for (final isMe in material ? <bool>[] : [false, true]) {
         testWidgets(
           '$label isMe=$isMe frame pixels and rect match the original',
           (tester) async {
@@ -188,13 +190,15 @@ void main() {
     );
   });
 
-  testWidgets('wide text frames retain their 520dp cap', (tester) async {
+  testWidgets('M3 text frames use 75% of the 720dp reading region', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildMaterialTheme(Brightness.light),
         home: Builder(
           builder: (context) {
-            expect(TimelineBubbleFrame.maxWidth(context), 520);
+            expect(TimelineBubbleFrame.maxWidth(context), 540);
             return const SizedBox();
           },
         ),
@@ -261,3 +265,17 @@ ShapeDecoration _originalDecoration(
         : const [],
   );
 }
+
+BorderRadius _materialRadius(bool isMe, bool first, bool last) => isMe
+    ? BorderRadius.only(
+        topLeft: const Radius.circular(20),
+        topRight: Radius.circular(first ? 20 : 4),
+        bottomLeft: const Radius.circular(20),
+        bottomRight: const Radius.circular(4),
+      )
+    : BorderRadius.only(
+        topLeft: Radius.circular(first ? 20 : 4),
+        topRight: const Radius.circular(20),
+        bottomLeft: const Radius.circular(4),
+        bottomRight: const Radius.circular(20),
+      );

@@ -13,7 +13,7 @@ import '../../src/rust/api/matrix.dart';
 import '../../providers/connection_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/cascade_title.dart';
-import '../../widgets/floating_app_bar.dart';
+import '../../widgets/material_root_header.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/app_search_field.dart';
@@ -35,6 +35,7 @@ class ChatPage extends ConsumerStatefulWidget {
   final bool ungroupedRoomsOnly;
   final bool showFloatingActionButton;
   final bool autoSelectFirstRoom;
+  final Widget? filters;
 
   const ChatPage({
     super.key,
@@ -48,6 +49,7 @@ class ChatPage extends ConsumerStatefulWidget {
     this.ungroupedRoomsOnly = false,
     this.showFloatingActionButton = true,
     this.autoSelectFirstRoom = true,
+    this.filters,
   }) : assert(!directMessagesOnly || !ungroupedRoomsOnly);
 
   @override
@@ -168,42 +170,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Widget _buildHeader(String titleText, {required bool hasHiddenRooms}) {
     if (context.isMaterial) {
-      return AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: widget.embedded ? null : Colors.transparent,
-        title: CascadeTitle(
-          text: titleText,
-          style: Theme.of(context).textTheme.headlineSmall!,
-        ),
+      final compact = MaterialRootHeader.isCompact(context);
+      return MaterialRootHeader(
+        title: titleText,
+        compact: compact,
+        search: _buildSearchEntry(),
         actions: [
-          MaterialToolbar(
-            child: Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 6,
-                children: [
-                  _buildHeaderSearchEntry(),
-                  if (hasHiddenRooms)
-                    NeuIconButton(
-                      icon: Icons.visibility_off_outlined,
-                      tooltip: '隐藏的聊天',
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const HiddenRoomsPage(),
-                        ),
-                      ),
-                    ),
-                  if (widget.embedded)
-                    NeuIconButton(
-                      icon: Icons.edit_outlined,
-                      tooltip: '新聊天',
-                      onPressed: _openCreateChat,
-                    ),
-                ],
+          if (hasHiddenRooms)
+            IconButton(
+              icon: const Icon(Icons.visibility_off_outlined),
+              tooltip: '隐藏的聊天',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HiddenRoomsPage()),
               ),
             ),
-          ),
+          if (!compact && widget.embedded)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: '新聊天',
+              onPressed: _openCreateChat,
+            ),
         ],
       );
     }
@@ -475,18 +461,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final hiddenRooms = ref.read(hiddenRoomsProvider.notifier);
     final hasHiddenRooms = allRooms?.any(hiddenRooms.isHidden) ?? false;
 
-    final titleText =
-        widget.title ??
-        (connectionLabel.isNotEmpty ? connectionLabel : 'Matter');
+    final titleText = connectionLabel.isNotEmpty && context.isMaterial
+        ? connectionLabel
+        : widget.title ??
+              (connectionLabel.isNotEmpty ? connectionLabel : 'Matter');
 
-    if (widget.embedded) {
-      // 桌面端内嵌:搜索栏固定,列表不穿透头部。
-      return ColoredBox(
+    if (widget.embedded || context.isMaterial) {
+      final content = ColoredBox(
         color: colors.base,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildHeader(titleText, hasHiddenRooms: hasHiddenRooms),
+            ?widget.filters,
             if (audioVisible)
               AudioMessageBar(
                 session: audioSession,
@@ -494,15 +481,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 onQueueTap: () =>
                     unawaited(showAudioPlayerPanel(context, audioSession)),
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                NeuSpacing.lg,
-                NeuSpacing.xs,
-                NeuSpacing.lg,
-                0,
+            if (!context.isMaterial)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  NeuSpacing.lg,
+                  NeuSpacing.xs,
+                  NeuSpacing.lg,
+                  0,
+                ),
+                child: _buildSearchEntry(),
               ),
-              child: _buildSearchEntry(),
-            ),
             Expanded(
               child: _buildRooms(
                 roomsAsync,
@@ -513,18 +501,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           ],
         ),
       );
+      return widget.embedded
+          ? content
+          : Scaffold(
+              floatingActionButton: widget.showFloatingActionButton
+                  ? FloatingActionButton(
+                      tooltip: '新聊天',
+                      onPressed: _openCreateChat,
+                      child: const Icon(Icons.edit_outlined),
+                    )
+                  : null,
+              body: content,
+            );
     }
 
     final topInset = MediaQuery.viewPaddingOf(context).top;
     return Scaffold(
-      floatingActionButton:
-          context.isMaterial && widget.showFloatingActionButton
-          ? FloatingActionButton(
-              tooltip: '新聊天',
-              onPressed: _openCreateChat,
-              child: const Icon(Icons.edit_outlined),
-            )
-          : null,
       body: Stack(
         children: [
           Positioned.fill(

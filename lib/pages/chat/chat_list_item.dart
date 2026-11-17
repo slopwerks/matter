@@ -125,10 +125,11 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
       clearStaleRoomUnreadOverride(ref, context, room.id, unreadOverride);
     }
 
+    final selectedFill = components.selectedRowFill ?? colors.accentSoft;
     final fillColor = _pressed || isSelected
-        ? colors.accentSoft
+        ? selectedFill
         : isPendingMembership
-        ? colors.accentSoft.withValues(alpha: .45)
+        ? selectedFill.withValues(alpha: .45)
         : null;
 
     return NeuAction(
@@ -189,7 +190,7 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
         duration: const Duration(milliseconds: 110),
         padding: EdgeInsets.symmetric(
           horizontal: components.rowHorizontalPadding,
-          vertical: dense ? 8 : 10,
+          vertical: dense ? 8 : components.rowVerticalPadding,
         ),
         decoration: ShapeDecoration(
           color: fillColor,

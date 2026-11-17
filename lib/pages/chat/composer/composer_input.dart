@@ -266,7 +266,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
       _keyboardMouse ||
       ref.read(composerAttachmentDraftProvider(_draftKey)).selected.isNotEmpty;
 
-  bool get _expandedComposer => MediaQuery.sizeOf(context).width >= 600;
+  bool get _expandedComposer =>
+      !context.isMaterial && MediaQuery.sizeOf(context).width >= 600;
 
   Future<void> _pasteClipboard(SelectionChangedCause cause) async {
     if (_readingClipboard ||
@@ -415,7 +416,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.neu;
     final desktop = ref
         .watch(interactionModeProvider)
         .usesKeyboardMouse(Theme.of(context).platform);
@@ -663,7 +663,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
     if (expanded) return input;
     if (context.isMaterial) {
-      return ColoredBox(color: colors.glassFill, child: input);
+      return input;
     }
     return ClipRect(
       child: Stack(

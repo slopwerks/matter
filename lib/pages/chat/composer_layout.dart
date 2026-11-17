@@ -4,7 +4,7 @@ import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
 
-/// A full-width editor surface on desktop/tablet, with no nested card or blur.
+/// M3 uses one floating capsule at every width; Neu retains its wide editor.
 class ComposerSurface extends StatelessWidget {
   const ComposerSurface({
     super.key,
@@ -19,6 +19,24 @@ class ComposerSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isMaterial) {
+      return Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 752),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Material(
+              key: const ValueKey('message-input-surface'),
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(28),
+              child: Padding(padding: const EdgeInsets.all(4), child: child),
+            ),
+          ),
+        ),
+      );
+    }
     if (expanded) {
       return Material(
         key: const ValueKey('message-input-surface'),

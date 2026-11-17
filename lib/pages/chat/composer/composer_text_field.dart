@@ -67,7 +67,7 @@ class ComposerTextField extends StatelessWidget {
           hintText: '消息',
           hintStyle: Theme.of(context).textTheme.bodyLarge
               ?.copyWith(color: colors.textTertiary),
-          filled: expanded ? false : null,
+          filled: expanded || context.isMaterial ? false : null,
           contentPadding: EdgeInsets.symmetric(
             horizontal: expanded ? 8 : 14,
             vertical: expanded ? 6 : 11,

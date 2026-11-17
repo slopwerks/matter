@@ -3933,7 +3933,8 @@ void main() {
 
   for (final material in [false, true]) {
     // Keep the fitting boundary and the oversized case in both layouts.
-    for (final lines in [23, 26]) {
+    final fittingLines = material ? 20 : 23;
+    for (final lines in [fittingLines, 26]) {
       testWidgets(
         'unread single jump fully exposes a fitting target material=$material lines=$lines',
         (tester) async {
@@ -3976,7 +3977,11 @@ void main() {
             find.byKey(const ValueKey('message-input-surface')),
           );
           // This text fits in a screen, so one click must expose all of it.
-          if (lines <= 23) {
+          if (lines == fittingLines) {
+            expect(
+              bubble.height,
+              lessThanOrEqualTo(input.top - (material ? 56 : 82)),
+            );
             expect(bubble.top, greaterThanOrEqualTo(material ? 56 : 82));
             expect(bubble.bottom, lessThanOrEqualTo(input.top + 1));
             expect(find.byType(UnreadMessagesBanner), findsNothing);

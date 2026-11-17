@@ -8,6 +8,7 @@ import '../../../theme/neu_colors.dart';
 import '../../../widgets/sheets.dart';
 import '../chat_timestamp.dart';
 import 'timeline_read_receipts.dart';
+import 'timeline_bubble_frame.dart';
 
 class TimelineMessageMetadata extends StatelessWidget {
   const TimelineMessageMetadata({
@@ -89,7 +90,7 @@ class TimelineMessageMetadata extends StatelessWidget {
     final foreground = overlay
         ? Colors.white.withValues(alpha: 0.9)
         : message.isMe
-        ? colors.onAccent.withValues(alpha: 0.65)
+        ? outgoingBubbleForeground(context).withValues(alpha: 0.65)
         : colors.textTertiary;
     final content = Row(
       mainAxisSize: MainAxisSize.min,
