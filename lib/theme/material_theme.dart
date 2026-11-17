@@ -23,6 +23,9 @@ TextStyle? materialListTitleStyle(ThemeData theme, {bool unread = false}) =>
       fontWeight: unread ? FontWeight.w600 : FontWeight.w500,
     );
 
+TextStyle materialReaderTextStyle(ThemeData theme) =>
+    theme.textTheme.bodyLarge!.copyWith(height: 1.65);
+
 TextTheme materialConversationTextTheme(
   ThemeData theme, {
   required bool unread,
@@ -112,6 +115,12 @@ TextStyle? materialSettingsSectionStyle(ThemeData theme) => theme
     .textTheme
     .titleSmall
     ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+
+TextStyle materialSearchHighlightStyle(ThemeData theme) => TextStyle(
+  color: theme.colorScheme.onPrimaryContainer,
+  backgroundColor: theme.colorScheme.primaryContainer,
+  fontWeight: FontWeight.w700,
+);
 
 const materialPreviewBubbleShape = RoundedSuperellipseBorder(
   borderRadius: BorderRadius.all(Radius.circular(12)),

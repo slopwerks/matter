@@ -6,6 +6,7 @@ import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/neu_field.dart';
+import 'material_forward_message_picker.dart';
 
 typedef ForwardMessageSender = Future<void> Function({
   required String sourceRoomId,
@@ -56,7 +57,7 @@ Future<rust.ChatRoom?> showForwardMessageSheet({
   return showModalBottomSheet<rust.ChatRoom>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Colors.transparent,
+    backgroundColor: context.isMaterial ? null : Colors.transparent,
     builder: (_) => ForwardMessageSheet(
       sourceRoomId: sourceRoomId,
       message: message,
@@ -211,6 +212,21 @@ class _ForwardMessageSheetState extends ConsumerState<ForwardMessageSheet> {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
     final rooms = ref.watch(chatRoomsProvider);
+    if (context.isMaterial) {
+      return MaterialForwardMessagePicker(
+        message: widget.message,
+        sourceRoomId: widget.sourceRoomId,
+        rooms: rooms.whenData((allRooms) => forwardableRooms(allRooms, _query)),
+        controller: _searchController,
+        query: _query,
+        sendingRoomId: _sendingRoomId,
+        onQueryChanged: (value) => setState(() => _query = value),
+        onForward: _forwardTo,
+        onClose: _sendingRoomId == null
+            ? () => Navigator.of(context).pop()
+            : null,
+      );
+    }
     return FractionallySizedBox(
       heightFactor: 0.72,
       child: Material(

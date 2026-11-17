@@ -16,6 +16,7 @@ import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_field.dart';
@@ -1807,6 +1808,12 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
         : null;
     final colors = context.neu;
     final viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
+    final contentInset = context.isMaterial
+        ? ((MediaQuery.sizeOf(context).width - 720) / 2).clamp(
+            0.0,
+            double.infinity,
+          )
+        : 0.0;
     return Scaffold(
       backgroundColor: colors.base,
       extendBodyBehindAppBar: context.isMaterial,
@@ -1834,6 +1841,8 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
       body: Stack(
         children: [
           Positioned.fill(
+            left: contentInset,
+            right: contentInset,
             child: _loading
                 ? Center(
                     child: CircularProgressIndicator(
@@ -1910,16 +1919,42 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 18),
-                                NeuTextField(
-                                  controller: _nameController,
-                                  hint: '房间名称',
-                                ),
+                                if (context.isMaterial) ...[
+                                  Text(
+                                    '修改名称或话题后，点击右上角保存。',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                                if (context.isMaterial)
+                                  TextField(
+                                    controller: _nameController,
+                                    decoration: const InputDecoration(
+                                      labelText: '房间名称',
+                                    ),
+                                  )
+                                else
+                                  NeuTextField(
+                                    controller: _nameController,
+                                    hint: '房间名称',
+                                  ),
                                 const SizedBox(height: 12),
-                                NeuTextField(
-                                  controller: _topicController,
-                                  hint: '房间主题',
-                                  maxLines: 4,
-                                ),
+                                if (context.isMaterial)
+                                  TextField(
+                                    controller: _topicController,
+                                    decoration: const InputDecoration(
+                                      labelText: '房间主题',
+                                    ),
+                                    maxLines: 4,
+                                  )
+                                else
+                                  NeuTextField(
+                                    controller: _topicController,
+                                    hint: '房间主题',
+                                    maxLines: 4,
+                                  ),
                               ],
                             ),
                           ),
@@ -2465,6 +2500,19 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     required Widget child,
     Widget? action,
   }) {
+    if (context.isMaterial) {
+      return MaterialDetailCard(
+        title: title,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (action != null)
+              Align(alignment: Alignment.centerRight, child: action),
+            child,
+          ],
+        ),
+      );
+    }
     return NeuSurface(
       color: context.neu.card,
       radius: NeuRadius.surface,
@@ -2501,17 +2549,23 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     required Widget Function(T row) rowBuilder,
   }) {
     final colors = context.neu;
+    final theme = Theme.of(context);
     // Hairlines under a data row start at the row title: card padding 16 +
     // avatar 40 + ListTile's title gap 16 (same alignment as ChatListDivider).
     const rowSeparatorIndent = 16.0 + 40 + 16;
     return DecoratedSliver(
-      decoration: NeuDecoration(
-        colors: colors,
-        superellipseEnabled: ChatVisualSettingsScope.of(context)
-            .superellipseBorderEnabled,
-        color: colors.card,
-        radius: NeuRadius.surface,
-      ),
+      decoration: context.isMaterial
+          ? ShapeDecoration(
+              color: theme.cardTheme.color,
+              shape: theme.cardTheme.shape ?? const RoundedRectangleBorder(),
+            )
+          : NeuDecoration(
+              colors: colors,
+              superellipseEnabled: ChatVisualSettingsScope.of(context)
+                  .superellipseBorderEnabled,
+              color: colors.card,
+              radius: NeuRadius.surface,
+            ),
       sliver: SliverList.separated(
         // Item 0 is the section title; the rest are the error tiles followed
         // by the data rows.
@@ -2561,6 +2615,27 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
   }) {
     final colors = context.neu;
     final color = danger ? colors.error : colors.text;
+    if (context.isMaterial) {
+      return NeuAction(
+        label: label,
+        onTap: onTap,
+        child: ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(icon, color: danger ? colors.error : colors.accent),
+          title: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyLarge
+                ?.copyWith(color: color),
+          ),
+          trailing: saving
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right_rounded),
+        ),
+      );
+    }
     return NeuAction(
       radius: NeuRadius.button,
       label: label,

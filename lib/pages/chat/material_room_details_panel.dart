@@ -1,0 +1,198 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/app_avatar.dart';
+import '../../widgets/material_detail_card.dart';
+import '../../widgets/neu_action.dart';
+
+/// Conversation information shared by the supporting pane and its modal view.
+class MaterialRoomDetailsPanel extends StatelessWidget {
+  const MaterialRoomDetailsPanel({
+    super.key,
+    required this.roomId,
+    required this.roomName,
+    this.avatarUrl,
+    this.isEncrypted,
+    required this.members,
+    required this.onManage,
+    required this.onRetry,
+  });
+
+  final String roomId;
+  final String roomName;
+  final String? avatarUrl;
+  final bool? isEncrypted;
+  final AsyncValue<List<rust.Contact>> members;
+  final VoidCallback onManage;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hero = materialProfileCardStyle(theme, detail: true);
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Card(
+                  color: hero.fill,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      children: [
+                        AppAvatar(
+                          fallback: roomName,
+                          size: 80,
+                          radius: NeuRadius.content,
+                          url: avatarUrl,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          roomName,
+                          textAlign: TextAlign.center,
+                          style: hero.title,
+                        ),
+                        if (members.value case final loaded?) ...[
+                          const SizedBox(height: 8),
+                          Text('${loaded.length} 位成员', style: hero.subtitle),
+                        ],
+                        if (isEncrypted == true) ...[
+                          const SizedBox(height: 12),
+                          const Chip(
+                            avatar: Icon(Icons.lock_outline_rounded, size: 16),
+                            label: Text('端到端加密'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                MaterialDetailCard(
+                  title: '会话信息',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      NeuAction(
+                        onTap: onManage,
+                        label: '房间管理',
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.tune_rounded),
+                          title: const Text('房间管理'),
+                          subtitle: const Text('资料、成员与消息设置'),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                        ),
+                      ),
+                      const Divider(),
+                      Text('房间 ID', style: theme.textTheme.labelMedium),
+                      const SizedBox(height: 4),
+                      SelectableText(roomId, style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            0,
+            16,
+            24 + MediaQuery.paddingOf(context).bottom,
+          ),
+          sliver: DecoratedSliver(
+            decoration: ShapeDecoration(
+              color: theme.cardTheme.color,
+              shape: theme.cardTheme.shape ?? const RoundedRectangleBorder(),
+            ),
+            sliver: members.when(
+              data: (loaded) => SliverList.separated(
+                itemCount: loaded.length + 1,
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, indent: 20, endIndent: 20),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '成员 ${loaded.length}',
+                            style: theme.textTheme.titleSmall,
+                          ),
+                          if (loaded.isEmpty) ...[
+                            const SizedBox(height: 12),
+                            const Text('暂无成员'),
+                          ],
+                        ],
+                      ),
+                    );
+                  }
+                  final member = loaded[index - 1];
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 4,
+                    ),
+                    leading: AppAvatar(
+                      fallback: member.name,
+                      size: 40,
+                      radius: NeuRadius.content,
+                      url: member.avatarUrl,
+                    ),
+                    title: Text(
+                      member.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      member.id,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                },
+              ),
+              loading: () => const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+              error: (_, _) => SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('成员', style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 12),
+                      const Text('无法加载成员'),
+                      TextButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
