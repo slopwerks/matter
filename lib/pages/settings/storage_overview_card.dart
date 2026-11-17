@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../features/storage/storage_models.dart';
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../theme/storage_visual_theme.dart';
 import '../../widgets/grouped_rows.dart';
 
@@ -16,6 +18,8 @@ class StorageOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final visuals = StorageVisualTheme.of(context);
+    final material = context.isMaterial;
+    final style = materialStorageOverviewStyle(theme);
     final systemTotal =
         snapshot.systemDataBytes != null && snapshot.appBytes != null
         ? snapshot.systemDataBytes! + snapshot.appBytes!
@@ -24,11 +28,13 @@ class StorageOverviewCard extends StatelessWidget {
       children: [
         Ink(
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: visuals.heroColors,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            gradient: material
+                ? null
+                : LinearGradient(
+                    colors: visuals.heroColors,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
           ),
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -37,32 +43,44 @@ class StorageOverviewCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.storage_rounded, color: visuals.heroInk),
+                    Icon(
+                      Icons.storage_rounded,
+                      color: material ? style.foreground : visuals.heroInk,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         systemTotal == null ? '本机应用文件' : '系统统计 · 总占用',
-                        style: visuals.heroLabel(theme),
+                        style: material
+                            ? style.title
+                            : visuals.heroLabel(theme),
                       ),
                     ),
                     IconButton(
                       onPressed: onExplain,
                       tooltip: '用量统计说明',
-                      icon: Icon(Icons.info_outline, color: visuals.heroInk),
+                      icon: Icon(
+                        Icons.info_outline,
+                        color: material ? style.foreground : visuals.heroInk,
+                      ),
                     ),
                   ],
                 ),
+                if (material) ...[
+                  Text('只统计此设备保存的内容。', style: style.label),
+                  const SizedBox(height: 12),
+                ],
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
                     formatStorageBytes(systemTotal ?? snapshot.totalBytes),
-                    style: visuals.heroNumber(theme),
+                    style: material ? style.number : visuals.heroNumber(theme),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '已扫描 ${snapshot.files.length} 个文件 · ${formatStorageBytes(snapshot.totalBytes)}',
-                  style: visuals.heroLabel(theme),
+                  style: material ? style.label : visuals.heroLabel(theme),
                 ),
                 const SizedBox(height: 20),
                 LayoutBuilder(
@@ -71,7 +89,12 @@ class StorageOverviewCard extends StatelessWidget {
                     runSpacing: 16,
                     children: [
                       SizedBox(
-                        width: (constraints.maxWidth - 16) / 2,
+                        width:
+                            material &&
+                                constraints.maxWidth <
+                                    MediaQuery.textScalerOf(context).scale(320)
+                            ? constraints.maxWidth
+                            : (constraints.maxWidth - 16) / 2,
                         child: _metric(
                           context,
                           '当前可清理',
@@ -80,7 +103,12 @@ class StorageOverviewCard extends StatelessWidget {
                         ),
                       ),
                       SizedBox(
-                        width: (constraints.maxWidth - 16) / 2,
+                        width:
+                            material &&
+                                constraints.maxWidth <
+                                    MediaQuery.textScalerOf(context).scale(320)
+                            ? constraints.maxWidth
+                            : (constraints.maxWidth - 16) / 2,
                         child: _metric(
                           context,
                           snapshot.appBytes == null ? '保留或使用中' : '安装包与本地库',
@@ -101,13 +129,15 @@ class StorageOverviewCard extends StatelessWidget {
                       Icon(
                         Icons.sd_storage_outlined,
                         size: 16,
-                        color: visuals.heroInk,
+                        color: material ? style.foreground : visuals.heroInk,
                       ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           '设备可用 ${formatStorageBytes(snapshot.freeBytes!)}',
-                          style: visuals.heroLabel(theme),
+                          style: material
+                              ? style.label
+                              : visuals.heroLabel(theme),
                         ),
                       ),
                     ],
@@ -129,21 +159,35 @@ class StorageOverviewCard extends StatelessWidget {
   ) {
     final visuals = StorageVisualTheme.of(context);
     final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final style = materialStorageOverviewStyle(theme);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: visuals.heroInk),
+            Icon(
+              icon,
+              size: 18,
+              color: material ? style.foreground : visuals.heroInk,
+            ),
             const SizedBox(width: 6),
-            Expanded(child: Text(label, style: visuals.heroLabel(theme))),
+            Expanded(
+              child: Text(
+                label,
+                style: material ? style.label : visuals.heroLabel(theme),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 4),
         FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text(value, style: visuals.heroMetric(theme)),
+          child: Text(
+            value,
+            style: material ? style.metric : visuals.heroMetric(theme),
+          ),
         ),
       ],
     );

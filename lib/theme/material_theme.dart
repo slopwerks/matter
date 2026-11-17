@@ -26,6 +26,23 @@ TextStyle? materialListTitleStyle(ThemeData theme, {bool unread = false}) =>
 TextStyle materialReaderTextStyle(ThemeData theme) =>
     theme.textTheme.bodyLarge!.copyWith(height: 1.65);
 
+({
+  Color foreground,
+  TextStyle? title,
+  TextStyle? label,
+  TextStyle? number,
+  TextStyle? metric,
+})
+materialStorageOverviewStyle(ThemeData theme) => (
+  foreground: theme.colorScheme.onSurfaceVariant,
+  title: theme.textTheme.titleSmall,
+  label: theme.textTheme.bodySmall?.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+  ),
+  number: theme.textTheme.displaySmall,
+  metric: theme.textTheme.titleLarge,
+);
+
 TextTheme materialConversationTextTheme(
   ThemeData theme, {
   required bool unread,

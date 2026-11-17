@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../features/storage/storage_models.dart';
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/grouped_rows.dart';
 import '../chat/chat_list_item.dart' show ChatListDivider;
@@ -71,38 +73,62 @@ class _StorageRoomsSectionState extends State<StorageRoomsSection> {
       final row = rows[index];
       return ListTile(
         leading: CircleAvatar(
+          radius: context.isMaterial ? materialListAvatarSize / 2 : null,
           child: Icon(switch (row.type) {
             StorageChatType.direct => Icons.person_outline,
             StorageChatType.space => Icons.hub_outlined,
             _ => Icons.groups_outlined,
           }),
         ),
-        title: Text(row.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          row.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.isMaterial
+              ? materialListTitleStyle(Theme.of(context))
+              : null,
+        ),
         subtitle: Text(
           '${row.files.length} 个文件${row.files.any((file) => file.owners.length > 1) ? ' · 含共用缓存' : ''}',
         ),
-        trailing: Text(formatStorageBytes(row.bytes)),
+        trailing: Text(
+          formatStorageBytes(row.bytes),
+          style: context.isMaterial
+              ? Theme.of(context).textTheme.labelLarge
+              : null,
+        ),
         onTap: () => widget.onOpen(row.key, row.name),
       );
     }
 
     if (widget.compact) {
+      final tiles = rows.isEmpty
+          ? [
+              const ListTile(
+                leading: Icon(Icons.forum_outlined),
+                title: Text('暂无已归属缓存'),
+              ),
+            ]
+          : [for (var i = 0; i < rows.length.clamp(0, 3); i++) tile(i)];
       return StorageSection(
         title: '聊天媒体缓存',
         action: TextButton(
           onPressed: widget.onOpenAll,
           child: const Text('全部'),
         ),
-        child: GroupedRows(
-          children: rows.isEmpty
-              ? [
-                  const ListTile(
-                    leading: Icon(Icons.forum_outlined),
-                    title: Text('暂无已归属缓存'),
-                  ),
-                ]
-              : [for (var i = 0; i < rows.length.clamp(0, 3); i++) tile(i)],
-        ),
+        child: context.isMaterial
+            ? Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  children: [
+                    for (var index = 0; index < tiles.length; index++) ...[
+                      if (index > 0) const ChatListDivider(),
+                      tiles[index],
+                    ],
+                  ],
+                ),
+              )
+            : GroupedRows(children: tiles),
       );
     }
     return Column(
@@ -144,13 +170,49 @@ class _StorageRoomsSectionState extends State<StorageRoomsSection> {
                   ),
                 ],
               ),
+              if (context.isMaterial) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '${rows.length} 个聊天',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ],
           ),
         ),
         Expanded(
           child: rows.isEmpty
-              ? const Center(child: Text('没有匹配的聊天'))
+              ? Center(
+                  child: context.isMaterial
+                      ? SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.forum_outlined, size: 48),
+                              const SizedBox(height: 12),
+                              Text(
+                                _query.isEmpty && _type == null
+                                    ? '暂无已归属缓存'
+                                    : '没有匹配的聊天',
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '仅展示能确认聊天归属的本机媒体缓存。',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        )
+                      : const Text('没有匹配的聊天'),
+                )
               : ListView.separated(
+                  padding: context.isMaterial
+                      ? EdgeInsets.only(
+                          bottom: 24 + MediaQuery.paddingOf(context).bottom,
+                        )
+                      : null,
                   itemCount: rows.length,
                   itemBuilder: (_, index) => tile(index),
                   separatorBuilder: (_, _) => const ChatListDivider(),

@@ -6,7 +6,7 @@ import '../../features/storage/storage_providers.dart';
 import '../../features/storage/storage_settings.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
-import '../../widgets/grouped_rows.dart';
+import '../../widgets/material_detail_card.dart';
 import '../../widgets/max_content_width.dart';
 import 'storage_actions.dart';
 import 'storage_number_picker.dart';
@@ -84,16 +84,32 @@ class _StoragePolicyPageState extends ConsumerState<StoragePolicyPage> {
           .watch(storageSettingsProvider)
           .when(
             data: (settings) => ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                24 +
+                    (context.isMaterial
+                        ? MediaQuery.paddingOf(context).bottom
+                        : 0),
+              ),
               children: [
                 SizedBox(
                   height: 4,
                   child: _saving ? const LinearProgressIndicator() : null,
                 ),
+                if (context.isMaterial)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 20),
+                    child: MaterialDetailCard(
+                      title: '仅清理缓存',
+                      child: Text('按最近使用时间处理过期或超限的缓存。聊天记录、密钥、草稿和已保存文件会保留。'),
+                    ),
+                  ),
                 for (final type in StorageChatType.values)
-                  StorageSection(
+                  StorageSettingsSection(
                     title: type.label,
-                    child: GroupedRows(
+                    child: StorageSettingsRows(
                       children: [
                         ListTile(
                           title: const Text('保留时长'),

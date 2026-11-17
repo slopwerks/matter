@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/storage/storage_models.dart';
 import '../../features/storage/storage_providers.dart';
+import '../../theme/app_component_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/floating_app_bar.dart';
@@ -142,7 +143,7 @@ class _StorageDetailPageState extends ConsumerState<StorageDetailPage> {
         : file.owners.length > 1
         ? '${file.owners.length} 个聊天共用'
         : null;
-    return ListTile(
+    final tile = ListTile(
       leading: Semantics(
         button: canPreviewStorageFile(file),
         label: canPreviewStorageFile(file)
@@ -170,6 +171,13 @@ class _StorageDetailPageState extends ConsumerState<StorageDetailPage> {
       ),
       onTap: () => _details(file, snapshot),
     );
+    if (!context.isMaterial) return tile;
+    return Material(
+      color: _selected.contains(file.path)
+          ? AppComponentTheme.of(context).selectedRowFill
+          : Colors.transparent,
+      child: tile,
+    );
   }
 
   Widget _body(StorageSnapshot snapshot) {
@@ -190,69 +198,108 @@ class _StorageDetailPageState extends ConsumerState<StorageDetailPage> {
     final hiddenCount = _selected
         .difference(files.map((file) => file.path).toSet())
         .length;
+    final material = context.isMaterial;
+    final header = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppSearchField(
+          hint: '搜索文件',
+          onChanged: (text) => setState(() => _query = text),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${files.length} 项 · ${formatStorageBytes(files.fold<int>(0, (sum, file) => sum + file.bytes))}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            IconButton(
+              tooltip: _newest ? '按大小排序' : '按最近使用排序',
+              icon: Icon(_newest ? Icons.schedule : Icons.sort),
+              onPressed: () => setState(() => _newest = !_newest),
+            ),
+            PopupMenuButton<String>(
+              tooltip: '选择操作',
+              enabled: !_cleaning,
+              onSelected: (action) => setState(() {
+                if (action == 'clear') {
+                  _selected.clear();
+                } else if (allSelected) {
+                  _selected.removeAll(paths);
+                } else {
+                  _selected.addAll(paths);
+                }
+              }),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'all',
+                  enabled: paths.isNotEmpty,
+                  child: Text(allSelected ? '取消当前' : '全选当前'),
+                ),
+                PopupMenuItem(
+                  value: 'clear',
+                  enabled: _selected.isNotEmpty,
+                  child: const Text('清除选择'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        if (hiddenCount > 0)
+          Text(
+            '另有 $hiddenCount 项已选',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        if (material) ...[
+          const SizedBox(height: 8),
+          Text(
+            '勾选可清理的本地缓存；保留数据和使用中的文件不可选。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppSearchField(
-                hint: '搜索文件',
-                onChanged: (text) => setState(() => _query = text),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${files.length} 项 · ${formatStorageBytes(files.fold<int>(0, (sum, file) => sum + file.bytes))}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+          child: material
+              ? Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: header,
                   ),
-                  IconButton(
-                    tooltip: _newest ? '按大小排序' : '按最近使用排序',
-                    icon: Icon(_newest ? Icons.schedule : Icons.sort),
-                    onPressed: () => setState(() => _newest = !_newest),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: '选择操作',
-                    enabled: !_cleaning,
-                    onSelected: (action) => setState(() {
-                      if (action == 'clear') {
-                        _selected.clear();
-                      } else if (allSelected) {
-                        _selected.removeAll(paths);
-                      } else {
-                        _selected.addAll(paths);
-                      }
-                    }),
-                    itemBuilder: (_) => [
-                      PopupMenuItem(
-                        value: 'all',
-                        enabled: paths.isNotEmpty,
-                        child: Text(allSelected ? '取消当前' : '全选当前'),
-                      ),
-                      PopupMenuItem(
-                        value: 'clear',
-                        enabled: _selected.isNotEmpty,
-                        child: const Text('清除选择'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              if (hiddenCount > 0)
-                Text(
-                  '另有 $hiddenCount 项已选',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-            ],
-          ),
+                )
+              : header,
         ),
         Expanded(
           child: files.isEmpty
-              ? const Center(child: Text('没有匹配的文件'))
+              ? material
+                    ? Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.search_off_outlined),
+                              const SizedBox(height: 12),
+                              Text(
+                                '没有匹配的文件',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _query.isEmpty ? '当前分类没有文件。' : '试试文件名、路径或聊天名称。',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : const Center(child: Text('没有匹配的文件'))
               : ListView.separated(
                   itemCount: files.length,
                   itemBuilder: (context, index) =>
@@ -260,28 +307,41 @@ class _StorageDetailPageState extends ConsumerState<StorageDetailPage> {
                   separatorBuilder: (_, _) => const ChatListDivider(indent: 80),
                 ),
         ),
+        if (material) const Divider(height: 1),
         SafeArea(
           top: false,
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _cleaning || _selected.isEmpty
-                    ? null
-                    : () => _clean(snapshot),
-                icon: _cleaning
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cleaning_services_outlined),
-                label: Text(
-                  _selected.isEmpty
-                      ? '选择要清理的文件'
-                      : '清理已选 ${_selected.length} 项 · ${formatStorageBytes(selectedBytes)}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (material) ...[
+                  Text(
+                    '聊天记录、密钥、草稿和已保存文件会保留。',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _cleaning || _selected.isEmpty
+                        ? null
+                        : () => _clean(snapshot),
+                    icon: _cleaning
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.cleaning_services_outlined),
+                    label: Text(
+                      _selected.isEmpty
+                          ? '选择要清理的文件'
+                          : '清理已选 ${_selected.length} 项 · ${formatStorageBytes(selectedBytes)}',
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ),

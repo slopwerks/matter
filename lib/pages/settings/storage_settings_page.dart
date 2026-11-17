@@ -7,7 +7,6 @@ import '../../features/storage/storage_providers.dart';
 import '../../features/storage/storage_settings.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
-import '../../widgets/grouped_rows.dart';
 import '../../widgets/max_content_width.dart';
 import 'storage_actions.dart';
 import 'storage_appearance_sheet.dart';
@@ -73,15 +72,21 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
   }
 
   Widget _body(StorageSettings settings) => ListView(
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+    padding: EdgeInsets.fromLTRB(
+      16,
+      0,
+      16,
+      24 + (context.isMaterial ? MediaQuery.paddingOf(context).bottom : 0),
+    ),
     children: [
       // Keep list indices stable so saving cannot recreate the network controls.
       SizedBox(
         height: 4,
         child: _saving ? const LinearProgressIndicator() : null,
       ),
-      StorageSection(
+      StorageSettingsSection(
         title: '自动下载',
+        description: '手动点开附件始终可以下载，自动下载按网络规则执行。',
         child: StorageDownloadSettings(
           settings: settings,
           saving: _saving,
@@ -89,9 +94,9 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
           onEditLimit: (profile, kind) => _editLimit(settings, profile, kind),
         ),
       ),
-      StorageSection(
+      StorageSettingsSection(
         title: '保存位置',
-        child: GroupedRows(
+        child: StorageSettingsRows(
           children: [
             ListTile(
               leading: const Icon(Icons.folder_open_outlined),
@@ -145,9 +150,10 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
           ],
         ),
       ),
-      StorageSection(
+      StorageSettingsSection(
         title: '缓存管理',
-        child: GroupedRows(
+        description: '设置本机缓存上限与按聊天类型保留的时长。',
+        child: StorageSettingsRows(
           children: [
             ListTile(
               leading: const Icon(Icons.storage_outlined),
@@ -188,9 +194,9 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
           ],
         ),
       ),
-      StorageSection(
+      StorageSettingsSection(
         title: '外观',
-        child: GroupedRows(
+        child: StorageSettingsRows(
           children: [
             ListTile(
               leading: const Icon(Icons.palette_outlined),
