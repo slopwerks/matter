@@ -8,17 +8,21 @@ import '../../providers/chat_provider.dart';
 import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'action_failure_message.dart';
 import 'chat_detail_page.dart';
+
+part 'material_space_detail.dart';
 
 /// Guard wording shown inside the space dialogs while a previous space
 /// write is still in flight. Kept as a constant so the dialogs can render
@@ -44,6 +48,10 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
   /// account.
   String? _openedUserId;
   bool _accountSwitched = false;
+  int _materialSpaceTab = 0;
+
+  void _selectMaterialSpaceTab(int tab) =>
+      setState(() => _materialSpaceTab = tab);
 
   /// Room currently being added to this space (double-tap guard: the sheet
   /// is a separate route, so its rows cannot be disabled by a page-level
@@ -134,6 +142,17 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
       data: (value) => value,
       orElse: () => fallbackDetails,
     );
+
+    if (context.isMaterial) {
+      return _buildMaterialSpaceDetail(
+        context,
+        details,
+        detailsAsync.hasValue,
+        childrenAsync,
+        allChildrenAsync,
+        membersAsync,
+      );
+    }
 
     final viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
     return Scaffold(
@@ -1206,6 +1225,67 @@ class _SpaceChildTile extends ConsumerWidget {
     if (unreadOverride != null && !overrideApplies) {
       clearStaleRoomUnreadOverride(ref, context, room.id, unreadOverride);
     }
+    final content = Row(
+      children: [
+        AppAvatar(
+          fallback: room.name,
+          size: 42,
+          radius: NeuRadius.content,
+          url: room.avatarUrl,
+        ),
+        const SizedBox(width: NeuSpacing.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                room.name,
+                style: Theme.of(context).textTheme.titleSmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                room.lastMessage.isEmpty ? room.id : room.lastMessage,
+                style: Theme.of(context).textTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        if (hasUnread) ...[
+          const SizedBox(width: NeuSpacing.sm),
+          if (room.unreadCount > 0)
+            NeuBadge(
+              key: ValueKey('space-child-unread-badge:${room.id}'),
+              count: room.unreadCount,
+              muted: room.isMuted,
+            )
+          else
+            Container(
+              key: ValueKey('space-child-unread-dot:${room.id}'),
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: unreadAccent,
+                shape: BoxShape.circle,
+              ),
+            ),
+        ],
+        if (onRemove != null)
+          IconButton(
+            onPressed: onRemove,
+            icon: Icon(
+              Icons.remove_circle_outline_rounded,
+              color: context.neu.error,
+            ),
+            tooltip: '从空间移除',
+          )
+        else
+          Icon(Icons.chevron_right_rounded, color: context.neu.textTertiary),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: NeuSpacing.sm),
       child: NeuAction(
@@ -1237,75 +1317,19 @@ class _SpaceChildTile extends ConsumerWidget {
             ),
           );
         },
-        child: NeuSurface(
-          color: context.neu.card,
-          radius: NeuRadius.content,
-          padding: const EdgeInsets.all(NeuSpacing.md),
-          child: Row(
-            children: [
-              AppAvatar(
-                fallback: room.name,
-                size: 42,
+        child: context.isMaterial
+            ? Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: content,
+                ),
+              )
+            : NeuSurface(
+                color: context.neu.card,
                 radius: NeuRadius.content,
-                url: room.avatarUrl,
+                padding: const EdgeInsets.all(NeuSpacing.md),
+                child: content,
               ),
-              const SizedBox(width: NeuSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      room.name,
-                      style: Theme.of(context).textTheme.titleSmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      room.lastMessage.isEmpty ? room.id : room.lastMessage,
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              if (hasUnread) ...[
-                const SizedBox(width: NeuSpacing.sm),
-                if (room.unreadCount > 0)
-                  NeuBadge(
-                    key: ValueKey('space-child-unread-badge:${room.id}'),
-                    count: room.unreadCount,
-                    muted: room.isMuted,
-                  )
-                else
-                  Container(
-                    key: ValueKey('space-child-unread-dot:${room.id}'),
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      color: unreadAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-              ],
-              if (onRemove != null)
-                IconButton(
-                  onPressed: onRemove,
-                  icon: Icon(
-                    Icons.remove_circle_outline_rounded,
-                    color: context.neu.error,
-                  ),
-                  tooltip: '从空间移除',
-                )
-              else
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: context.neu.textTertiary,
-                ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1329,6 +1353,19 @@ class _ActionSettingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = danger ? context.neu.error : context.neu.text;
+    if (context.isMaterial) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon, color: color),
+        title: Text(
+          label,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: color),
+        ),
+        subtitle: Text(value),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: onTap,
+      );
+    }
     return InkWell(
       borderRadius: BorderRadius.circular(NeuRadius.content),
       onTap: onTap,

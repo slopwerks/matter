@@ -49,7 +49,47 @@ double _searchOpacity(WidgetTester tester) => tester
     .opacity;
 
 void main() {
-  for (final material in [false, true]) {
+  testWidgets(
+    'Material search keeps its query and focus across header layouts',
+    (tester) async {
+      var contacts = _contacts();
+      final container = ProviderContainer(
+        overrides: [contactsProvider.overrideWith((ref) async => contacts)],
+      );
+      addTearDown(container.dispose);
+      await _pumpPage(tester, container, true);
+      final state = tester.state(find.byType(ContactsPage));
+      await tester.enterText(find.byType(TextField), 'AlIcE');
+      await tester.pump();
+      final focus = tester.widget<TextField>(find.byType(TextField)).focusNode!;
+      await tester.binding.setSurfaceSize(const Size(1000, 700));
+      await tester.pump();
+      expect(tester.state(find.byType(ContactsPage)), same(state));
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'AlIcE',
+      );
+      expect(focus.hasFocus, isTrue);
+      expect(find.text('Bob'), findsNothing);
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -1000));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_searchKey).hitTestable(), findsOneWidget);
+      expect(find.byKey(_headerKey), findsNothing);
+      await tester.enterText(find.byType(TextField), 'offline');
+      await tester.pumpAndSettle();
+      expect(find.text('Bob'), findsOneWidget);
+      expect(find.text('Alice 0'), findsNothing);
+      contacts = [];
+      container.invalidate(contactsProvider);
+      await tester.pumpAndSettle();
+      expect(find.text('暂无联系人'), findsOneWidget);
+      expect(find.byKey(_searchKey).hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  for (final material in [false]) {
     final style = material ? 'Material' : 'Neu';
     testWidgets(
       '$style contacts search fades into a header button that restores focus',

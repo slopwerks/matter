@@ -21,7 +21,8 @@ import '../../src/rust/api/matrix.dart' as rust;
 
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
-import '../../widgets/floating_app_bar.dart';
+import '../../widgets/material_root_header.dart';
+import '../../widgets/material_list_detail.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/material_press.dart';
 import '../../widgets/neu_action.dart';
@@ -544,13 +545,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final currentUser = ref.watch(currentUserProvider);
     final activeUserId = ref.watch(activeUserIdProvider);
     final currentAccountId = activeUserId ?? currentUser?.id;
+    final header = MaterialRootHeader(
+      title: '设置',
+      compact: MaterialRootHeader.isCompact(context),
+    );
 
     return Scaffold(
       backgroundColor: colors.base,
       extendBodyBehindAppBar: context.isMaterial,
-      appBar: context.isMaterial
-          ? buildFloatingAppBar(title: const Text('设置'))
-          : null,
+      appBar: context.isMaterial ? header : null,
       body: Stack(
         children: [
           CustomScrollView(
@@ -560,7 +563,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 padding: EdgeInsets.fromLTRB(
                   NeuSpacing.lg,
                   MediaQuery.viewPaddingOf(context).top +
-                      kToolbarHeight +
+                      (context.isMaterial
+                          ? header.preferredSize.height
+                          : kToolbarHeight) +
                       NeuSpacing.lg,
                   NeuSpacing.lg,
                   context.isMaterial
@@ -573,7 +578,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     SettingsProfileCard(
                       user: currentUser,
                       onTap: () {
-                        Navigator.of(context).push(
+                        MaterialListDetail.push(
+                          context,
                           MaterialPageRoute(
                             builder: (_) => const ProfileEditPage(),
                           ),
@@ -680,7 +686,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             icon: Icons.palette_outlined,
                             title: 'Material 配色',
                             subtitle: '系统取色 · 主题色 · 浅色与深色背景',
-                            onTap: () => Navigator.of(context).push(
+                            onTap: () => MaterialListDetail.push(
+                              context,
                               MaterialPageRoute<void>(
                                 builder: (_) =>
                                     const MaterialColorSettingsPage(),
@@ -693,7 +700,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           subtitle: 'FCM 推送 · 自定义网关 · 房间免打扰',
                           onTap: currentUser == null
                               ? null
-                              : () => Navigator.of(context).push(
+                              : () => MaterialListDetail.push(
+                                  context,
                                   MaterialPageRoute<void>(
                                     builder: (_) => NotificationSettingsPage(
                                       userId: currentUser.id,
@@ -705,7 +713,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           icon: Icons.home_outlined,
                           title: '启动页面',
                           subtitle: ref.watch(startupPageProvider).label,
-                          onTap: () => Navigator.of(context).push(
+                          onTap: () => MaterialListDetail.push(
+                            context,
                             MaterialPageRoute<void>(
                               builder: (_) => const StartupPageSettingsPage(),
                             ),
@@ -715,7 +724,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           icon: Icons.touch_app_rounded,
                           title: '交互模式',
                           subtitle: ref.watch(interactionModeProvider).label,
-                          onTap: () => Navigator.of(context).push(
+                          onTap: () => MaterialListDetail.push(
+                            context,
                             MaterialPageRoute<void>(
                               builder: (_) =>
                                   const InteractionModeSettingsPage(),
@@ -726,7 +736,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           icon: Icons.keyboard_rounded,
                           title: '键盘发送与换行',
                           subtitle: 'Enter · Shift+Enter · Alt+Enter',
-                          onTap: () => Navigator.of(context).push(
+                          onTap: () => MaterialListDetail.push(
+                            context,
                             MaterialPageRoute<void>(
                               builder: (_) =>
                                   const ComposerKeyboardSettingsPage(),
@@ -748,7 +759,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           icon: Icons.tune_rounded,
                           title: '时间线事件显示',
                           subtitle: '配置头像更改、成员进退与房间状态事件显示',
-                          onTap: () => Navigator.of(context).push(
+                          onTap: () => MaterialListDetail.push(
+                            context,
                             MaterialPageRoute<void>(
                               builder: (_) => const TimelineEventSettingsPage(),
                             ),
@@ -759,7 +771,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             icon: Icons.blur_on_rounded,
                             title: '模糊效果设置',
                             subtitle: '配置渐进式模糊、图片背景与阴影优化',
-                            onTap: () => Navigator.of(context).push(
+                            onTap: () => MaterialListDetail.push(
+                              context,
                               MaterialPageRoute<void>(
                                 builder: (_) => const BlurSettingsPage(),
                               ),
@@ -814,7 +827,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           icon: Icons.code_rounded,
                           title: '代码块显示设置',
                           subtitle: '高亮主题 · 背景透明度 · 实时预览',
-                          onTap: () => Navigator.of(context).push(
+                          onTap: () => MaterialListDetail.push(
+                            context,
                             MaterialPageRoute<void>(
                               builder: (_) => const CodeBlockSettingsPage(),
                             ),
@@ -857,7 +871,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           title: '设备与加密',
                           subtitle: '登录设备、验证与加密恢复',
                           onTap: () {
-                            Navigator.of(context).push(
+                            MaterialListDetail.push(
+                              context,
                               MaterialPageRoute<void>(
                                 builder: (_) => const EncryptionPage(),
                               ),
@@ -896,7 +911,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             icon: Icons.storage_rounded,
                             title: '存储与数据',
                             subtitle: '空间用量、分类清理、自动下载与保留策略',
-                            onTap: () => Navigator.of(context).push(
+                            onTap: () => MaterialListDetail.push(
+                              context,
                               MaterialPageRoute<void>(
                                 builder: (_) => const StoragePage(),
                               ),
@@ -941,7 +957,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           title: '查看日志',
                           subtitle: '调试连接、同步问题',
                           onTap: () {
-                            Navigator.of(context).push(
+                            MaterialListDetail.push(
+                              context,
                               MaterialPageRoute(
                                 builder: (_) => const LogViewerPage(),
                               ),

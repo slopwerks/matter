@@ -17,7 +17,7 @@ class ComposerKeyboardSettingsPage extends StatelessWidget {
       extendBodyBehindAppBar: true,
       appBar: buildFloatingAppBar(title: const Text('键盘发送与换行')),
       body: MaxContentWidth(
-        maxWidth: 600,
+        maxWidth: context.isMaterial ? 720 : 600,
         child: ListView(
           padding: EdgeInsets.fromLTRB(
             16,

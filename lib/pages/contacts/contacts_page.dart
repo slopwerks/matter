@@ -10,7 +10,9 @@ import '../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
-import '../../widgets/floating_app_bar.dart';
+import '../../widgets/material_root_header.dart';
+import '../../widgets/material_list_detail.dart';
+import 'contact_profile_page.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/app_search_field.dart';
@@ -34,6 +36,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
   final _searchCollapse = ValueNotifier(0.0);
   bool _headerSearchVisible = false;
   String _searchQuery = '';
+  final _creatingDms = <String>{};
 
   static const _searchBarExtent = 56.0;
 
@@ -52,8 +55,86 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
     super.dispose();
   }
 
+  Future<void> _createDm(Contact contact, String? avatarUrl) async {
+    // Entry guard (not only the disabled button): the rebuild lags a frame,
+    // so a second tap could otherwise issue a duplicate createDm (two
+    // concurrent scans would both miss the existing DM and create duplicate
+    // rooms).
+    if (_creatingDms.contains(contact.id)) return;
+    setState(() => _creatingDms.add(contact.id));
+    // Account snapshot: a switch while the request is in flight must not
+    // redirect the write, and suppresses the feedback below (the room would
+    // belong to the previous account).
+    final accountUserId = ref.read(activeUserIdProvider) ?? '';
+    try {
+      final roomId = await createDm(
+        accountUserId: accountUserId,
+        userId: contact.id,
+      );
+      // The account may have switched while the request was in flight: skip
+      // the navigation — the chat page would open against a room of the
+      // previous account. `mounted` first: `ref.read` throws after unmount
+      // (Riverpod asserts on disposed widgets).
+      if (!mounted) return;
+      if (ref.read(activeUserIdProvider) != accountUserId) {
+        return;
+      }
+      if (context.mounted) {
+        final room = ref
+            .read(allChatRoomsProvider)
+            .asData
+            ?.value
+            .where((room) => room.id == roomId)
+            .firstOrNull;
+        final destination =
+            room ??
+            ChatRoom(
+              id: roomId,
+              name: contact.name,
+              avatarUrl: avatarUrl,
+              lastMessage: '',
+              lastMessageTime: '',
+              lastEventId: '',
+              unreadCount: 0,
+              isMarkedUnread: false,
+              roomType: 'dm',
+              isEncrypted: false,
+              isMuted: false,
+              roomState: 'joined',
+            );
+        if (ref.read(desktopRoomNavigationProvider).open?.call(destination) ??
+            false) {
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ChatDetailPage(
+              roomId: roomId,
+              roomName: contact.name,
+              avatarUrl: avatarUrl,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
+      // `mounted` first: `ref.read` throws after unmount.
+      if (!mounted) return;
+      if (ref.read(activeUserIdProvider) != accountUserId) {
+        return;
+      }
+      if (context.mounted) {
+        // Shared wording: timeout mapping and partial-success passthrough
+        // come from the single `actionFailureMessage` source.
+        neuToast(context, actionFailureMessage(e));
+      }
+    } finally {
+      if (mounted) setState(() => _creatingDms.remove(contact.id));
+    }
+  }
+
   void _syncSearchCollapse() {
-    final offset = _scrollController.hasClients
+    final offset = !context.isMaterial && _scrollController.hasClients
         ? _scrollController.offset
         : 0.0;
     _searchCollapse.value = (offset / _searchBarExtent).clamp(0.0, 1.0);
@@ -97,16 +178,25 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
   @override
   Widget build(BuildContext context) {
     final contactsAsync = ref.watch(contactsProvider);
+    final search = AppSearchField(
+      key: const ValueKey('contacts-search-entry'),
+      controller: _searchController,
+      focusNode: _searchFocusNode,
+      hint: '搜索联系人',
+      onChanged: (value) {
+        setState(() => _searchQuery = value.toLowerCase());
+      },
+    );
+    final header = MaterialRootHeader(
+      title: '通讯录',
+      compact: MaterialRootHeader.isCompact(context),
+      search: search,
+    );
 
     return Scaffold(
       backgroundColor: context.neu.base,
       extendBodyBehindAppBar: context.isMaterial,
-      appBar: context.isMaterial
-          ? buildFloatingAppBar(
-              title: const Text('通讯录'),
-              actions: [_buildHeaderSearchEntry()],
-            )
-          : null,
+      appBar: context.isMaterial ? header : null,
       body: Stack(
         children: [
           NotificationListener<ScrollMetricsNotification>(
@@ -122,41 +212,37 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
                 SliverToBoxAdapter(
                   child: SizedBox(
                     height:
-                        MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
+                        MediaQuery.viewPaddingOf(context).top +
+                        (context.isMaterial
+                            ? header.preferredSize.height
+                            : kToolbarHeight),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: ValueListenableBuilder<double>(
-                    valueListenable: _searchCollapse,
-                    builder: (context, collapse, child) => Opacity(
-                      opacity: 1 - collapse,
-                      child: IgnorePointer(
-                        ignoring: collapse == 1,
-                        child: ExcludeFocus(
-                          excluding: collapse == 1,
-                          child: child!,
+                if (!context.isMaterial)
+                  SliverToBoxAdapter(
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: _searchCollapse,
+                      builder: (context, collapse, child) => Opacity(
+                        opacity: 1 - collapse,
+                        child: IgnorePointer(
+                          ignoring: collapse == 1,
+                          child: ExcludeFocus(
+                            excluding: collapse == 1,
+                            child: child!,
+                          ),
                         ),
                       ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        NeuSpacing.lg,
-                        NeuSpacing.xs,
-                        NeuSpacing.lg,
-                        NeuSpacing.sm,
-                      ),
-                      child: AppSearchField(
-                        key: const ValueKey('contacts-search-entry'),
-                        controller: _searchController,
-                        focusNode: _searchFocusNode,
-                        hint: '搜索联系人',
-                        onChanged: (value) {
-                          setState(() => _searchQuery = value.toLowerCase());
-                        },
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          NeuSpacing.lg,
+                          NeuSpacing.xs,
+                          NeuSpacing.lg,
+                          NeuSpacing.sm,
+                        ),
+                        child: search,
                       ),
                     ),
                   ),
-                ),
                 contactsAsync.when(
                   data: (contacts) {
                     final filtered = _searchQuery.isEmpty
@@ -200,6 +286,9 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
                           return _ContactTile(
                             key: ValueKey(contact.id),
                             contact: contact,
+                            creatingDm: _creatingDms.contains(contact.id),
+                            onMessage: (avatarUrl) =>
+                                _createDm(contact, avatarUrl),
                           );
                         },
                       ),
@@ -231,7 +320,8 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
                 SliverPadding(
                   padding: EdgeInsets.only(
                     bottom: context.isMaterial
-                        ? NeuSpacing.xl + MediaQuery.paddingOf(context).bottom
+                        ? NeuSpacing.floatingDockClearance +
+                              MediaQuery.paddingOf(context).bottom
                         : NeuSpacing.navClearance,
                   ),
                 ),
@@ -301,7 +391,15 @@ class _EmptyView extends StatelessWidget {
 class _ContactTile extends ConsumerStatefulWidget {
   final Contact contact;
 
-  const _ContactTile({super.key, required this.contact});
+  const _ContactTile({
+    super.key,
+    required this.contact,
+    required this.creatingDm,
+    required this.onMessage,
+  });
+
+  final bool creatingDm;
+  final Future<void> Function(String?) onMessage;
 
   @override
   ConsumerState<_ContactTile> createState() => _ContactTileState();
@@ -309,7 +407,6 @@ class _ContactTile extends ConsumerStatefulWidget {
 
 class _ContactTileState extends ConsumerState<_ContactTile> {
   String? _resolvedAvatarUrl;
-  bool _creatingDm = false;
   bool _pressed = false;
 
   @override
@@ -331,6 +428,21 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
   /// 资料卡:头像 + 昵称 + Matrix ID,底部「发消息 / 复制 ID」。
   Future<void> _showProfile() async {
     final contact = widget.contact;
+    if (context.isMaterial) {
+      final onMessage = widget.onMessage;
+      final avatarUrl = _resolvedAvatarUrl;
+      await MaterialListDetail.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ContactProfilePage(
+            contact: contact,
+            avatarUrl: avatarUrl,
+            onMessage: () => onMessage(avatarUrl),
+          ),
+        ),
+      );
+      return;
+    }
     // 页面 context 用于关闭弹层后的提示与导航;弹层自身的 context
     // 在 pop 后随路由销毁,不能拿来做这些。
     final pageContext = context;
@@ -398,83 +510,7 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
     );
   }
 
-  Future<void> _createDm() async {
-    // Entry guard (not only the disabled button): the rebuild lags a frame,
-    // so a second tap could otherwise issue a duplicate createDm (two
-    // concurrent scans would both miss the existing DM and create duplicate
-    // rooms).
-    if (_creatingDm) return;
-    setState(() => _creatingDm = true);
-    // Account snapshot: a switch while the request is in flight must not
-    // redirect the write, and suppresses the feedback below (the room would
-    // belong to the previous account).
-    final accountUserId = ref.read(activeUserIdProvider) ?? '';
-    try {
-      final roomId = await createDm(
-        accountUserId: accountUserId,
-        userId: widget.contact.id,
-      );
-      // The account may have switched while the request was in flight: skip
-      // the navigation — the chat page would open against a room of the
-      // previous account. `mounted` first: `ref.read` throws after unmount
-      // (Riverpod asserts on disposed widgets).
-      if (!mounted) return;
-      if (ref.read(activeUserIdProvider) != accountUserId) {
-        return;
-      }
-      if (context.mounted) {
-        final room = ref
-            .read(allChatRoomsProvider)
-            .asData
-            ?.value
-            .where((room) => room.id == roomId)
-            .firstOrNull;
-        final destination =
-            room ??
-            ChatRoom(
-              id: roomId,
-              name: widget.contact.name,
-              avatarUrl: _resolvedAvatarUrl,
-              lastMessage: '',
-              lastMessageTime: '',
-              lastEventId: '',
-              unreadCount: 0,
-              isMarkedUnread: false,
-              roomType: 'dm',
-              isEncrypted: false,
-              isMuted: false,
-              roomState: 'joined',
-            );
-        if (ref.read(desktopRoomNavigationProvider).open?.call(destination) ??
-            false) {
-          return;
-        }
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ChatDetailPage(
-              roomId: roomId,
-              roomName: widget.contact.name,
-              avatarUrl: _resolvedAvatarUrl,
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
-      // `mounted` first: `ref.read` throws after unmount.
-      if (!mounted) return;
-      if (ref.read(activeUserIdProvider) != accountUserId) {
-        return;
-      }
-      if (context.mounted) {
-        // Shared wording: timeout mapping and partial-success passthrough
-        // come from the single `actionFailureMessage` source.
-        neuToast(context, actionFailureMessage(e));
-      }
-    } finally {
-      if (mounted) setState(() => _creatingDm = false);
-    }
-  }
+  Future<void> _createDm() => widget.onMessage(_resolvedAvatarUrl);
 
   @override
   Widget build(BuildContext context) {
@@ -541,14 +577,14 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
               IconButton(
                 icon: const Icon(Icons.chat_bubble_outline_rounded),
                 tooltip: '发消息',
-                onPressed: _creatingDm ? null : _createDm,
+                onPressed: widget.creatingDm ? null : _createDm,
               )
             else
               NeuIconButton(
                 icon: Icons.chat_bubble_outline_rounded,
                 size: 36,
                 tooltip: '发消息',
-                onPressed: _creatingDm ? null : _createDm,
+                onPressed: widget.creatingDm ? null : _createDm,
               ),
           ],
         ),

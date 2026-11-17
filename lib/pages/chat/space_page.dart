@@ -10,7 +10,7 @@ import '../../providers/chat_visual_settings_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/cascade_title.dart';
-import '../../widgets/floating_app_bar.dart';
+import '../../widgets/material_root_header.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_field.dart';
@@ -43,11 +43,9 @@ class SpacePage extends ConsumerWidget {
       backgroundColor: context.neu.base,
       extendBodyBehindAppBar: context.isMaterial,
       appBar: context.isMaterial
-          ? buildFloatingAppBar(
-              title: CascadeTitle(
-                text: titleText,
-                style: Theme.of(context).textTheme.headlineSmall!,
-              ),
+          ? MaterialRootHeader(
+              title: titleText,
+              compact: MaterialRootHeader.isCompact(context),
             )
           : null,
       floatingActionButton: context.isMaterial && showFloatingActionButton

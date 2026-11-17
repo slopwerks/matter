@@ -181,6 +181,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : MaxContentWidth(
+                    maxWidth: context.isMaterial ? 560 : 720,
                     child: SingleChildScrollView(
                       padding: EdgeInsets.fromLTRB(
                         NeuSpacing.lg,

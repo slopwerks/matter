@@ -14,6 +14,7 @@ import '../../src/rust/api/matrix/notifications.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 
@@ -673,6 +674,7 @@ class _NotificationSettingsPageState
                 ),
                 DropdownButtonFormField<PushBackend>(
                   initialValue: _backend,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: '推送通道',
                     border: OutlineInputBorder(),
@@ -798,28 +800,33 @@ class _SettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall
-                ?.copyWith(color: context.neu.textSecondary),
-          ),
-        ),
-        NeuSurface(
-          color: context.neu.card,
-          radius: NeuRadius.surface,
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Material(
-            type: MaterialType.transparency,
+    child: context.isMaterial
+        ? MaterialDetailCard(
+            title: title,
             child: Column(children: children),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(color: context.neu.textSecondary),
+                ),
+              ),
+              NeuSurface(
+                color: context.neu.card,
+                radius: NeuRadius.surface,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Column(children: children),
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
-    ),
   );
 }
 

@@ -45,7 +45,7 @@ class MaterialColorSettingsPage extends ConsumerWidget {
       extendBodyBehindAppBar: true,
       appBar: buildFloatingAppBar(title: const Text('配色')),
       body: MaxContentWidth(
-        maxWidth: 600,
+        maxWidth: 720,
         child: Builder(
           builder: (context) => ListView(
             padding: EdgeInsets.fromLTRB(
@@ -310,7 +310,7 @@ Future<void> _showColorStyles(
                   subtitle: style.description,
                   selected: settings.colorStyle == style.value,
                   leading: MaterialSchemeThumbnail(
-                    scheme: ColorScheme.fromSeed(
+                    scheme: materialColorScheme(
                       seedColor: settings.seedColor,
                       brightness: Theme.of(context).brightness,
                       dynamicSchemeVariant: style.value,

@@ -19,7 +19,7 @@ class InteractionModeSettingsPage extends ConsumerWidget {
       extendBodyBehindAppBar: true,
       appBar: buildFloatingAppBar(title: const Text('交互模式')),
       body: MaxContentWidth(
-        maxWidth: 600,
+        maxWidth: context.isMaterial ? 720 : 600,
         child: ListView(
           padding: EdgeInsets.fromLTRB(
             16,

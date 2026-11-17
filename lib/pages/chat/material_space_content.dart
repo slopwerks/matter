@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/rust/api/matrix.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/material_press.dart';
+import '../../widgets/material_list_detail.dart';
 import 'chat_list_item.dart';
 import 'space_detail_page.dart';
 
@@ -32,7 +34,7 @@ class MaterialSpaceContent extends StatelessWidget {
         MediaQuery.textScalerOf(context).scale(titleStyle.fontSize!) *
         (titleStyle.height ?? 1.5);
     // Reserve two title lines, including when accessibility text is enlarged.
-    final cardHeight = math.max(48.0, titleLineHeight * 2) + 32;
+    final cardHeight = math.max(72.0, titleLineHeight * 2) + 36;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -70,6 +72,7 @@ class MaterialSpaceContent extends StatelessWidget {
                             itemBuilder: (context, index) => _SpaceCard(
                               key: ValueKey(items[index].id),
                               space: items[index],
+                              colorIndex: index,
                             ),
                           ),
                     loading: () => const SliverToBoxAdapter(
@@ -124,24 +127,28 @@ class MaterialSpaceContent extends StatelessWidget {
 }
 
 class _SpaceCard extends StatelessWidget {
-  const _SpaceCard({super.key, required this.space});
+  const _SpaceCard({super.key, required this.space, required this.colorIndex});
 
   final Space space;
+  final int colorIndex;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final style = materialSpaceCardStyle(theme, colorIndex);
     return MaterialPress(
       builder: (states) => Card(
+        color: style.fill,
         child: InkWell(
           statesController: states,
-          onTap: () => Navigator.of(context).push(
+          onTap: () => MaterialListDetail.push(
+            context,
             MaterialPageRoute<void>(
               builder: (_) => SpaceDetailPage(space: space),
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             child: Row(
               children: [
                 AppAvatar(fallback: space.name, size: 48, url: space.avatarUrl),
@@ -149,16 +156,15 @@ class _SpaceCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     space.name,
-                    style: theme.textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: style.foreground,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                Icon(Icons.chevron_right_rounded, color: style.foreground),
               ],
             ),
           ),

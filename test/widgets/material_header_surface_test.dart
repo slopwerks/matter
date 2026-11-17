@@ -4,15 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/theme/material_theme.dart';
-import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/widgets/floating_app_bar.dart';
 import 'package:matter/widgets/glass.dart';
-import 'package:matter/widgets/material_tab_navigation_bar.dart';
 
 void main() {
   for (final brightness in Brightness.values) {
     testWidgets(
-      'Linux $brightness header and dock each paint their own translucent surface',
+      'Linux $brightness header and native dock paint opaque theme surfaces',
       (tester) async {
         tester.view.devicePixelRatio = 1;
         tester.view.padding = const FakeViewPadding();
@@ -25,9 +23,6 @@ void main() {
         final theme = buildMaterialTheme(brightness)
             .copyWith(platform: TargetPlatform.linux);
         const backdrop = Color(0xFFDC3050);
-        final surface = theme.extension<NeuColors>()!.glassFill;
-        final position = ValueNotifier(0.0);
-        addTearDown(position.dispose);
         final boundaryKey = GlobalKey();
         await tester.pumpWidget(
           MaterialApp(
@@ -44,12 +39,14 @@ void main() {
                 ),
                 bottomNavigationBar: SafeArea(
                   top: false,
-                  minimum: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-                  child: DockSurface(
-                    child: MaterialTabNavigationBar(
-                      position: position,
+                  minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: NavigationBar(
                       selectedIndex: 0,
                       onDestinationSelected: (_) {},
+                      labelBehavior:
+                          NavigationDestinationLabelBehavior.alwaysHide,
                       destinations: const [
                         NavigationDestination(
                           icon: Icon(Icons.chat),
@@ -68,10 +65,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(
-          tester.getSize(find.byType(TopFadeBlur)),
-          tester.getSize(find.byType(AppBar)),
-        );
+        expect(find.byType(TopFadeBlur), findsNothing);
         final boundary =
             boundaryKey.currentContext!.findRenderObject()!
                 as RenderRepaintBoundary;
@@ -93,34 +87,14 @@ void main() {
           );
         }
 
-        // The header and the dock no longer share one alpha. The header sits
-        // over the title and needs a firmer cover; the dock is a floating
-        // platter that shows more of what scrolls beneath it. Check each
-        // against its own tint instead of demanding they match.
-        final dock = tester.getRect(find.byType(DockSurface));
-        final header = sample(160, 18);
-        final navigation = sample(
-          (dock.right - 8).round(),
-          (dock.top + dock.height / 2).round(),
+        final dock = tester.getRect(find.byType(NavigationBar));
+        expect(dock.height, 56);
+        expect(dock.left, 16);
+        expect(sample(160, 18), theme.appBarTheme.backgroundColor);
+        expect(
+          sample((dock.right - 8).round(), dock.center.dy.round()),
+          theme.navigationBarTheme.backgroundColor,
         );
-        expect(surface.a, greaterThan(0));
-        expect(surface.a, lessThan(1));
-        // How far a sample has moved away from the raw backdrop. Distance is
-        // brightness-independent, unlike comparing a channel to the backdrop's
-        // own value: a near-white tint sits above the red in light mode and
-        // below it in dark, so only the distance carries the same meaning.
-        double distance(Color c) => [
-          (c.r - backdrop.r).abs(),
-          (c.g - backdrop.g).abs(),
-          (c.b - backdrop.b).abs(),
-        ].reduce((a, b) => a > b ? a : b);
-        for (final actual in [header, navigation]) {
-          // Both cover the backdrop firmly: this is a toolbar and a dock, not
-          // a translucent wash. Ranking the two by a few thousandths depends
-          // on the theme's brightness and on where each gradient is sampled,
-          // so assert firm coverage instead.
-          expect(distance(actual), greaterThan(.5));
-        }
         await tester.pumpWidget(const SizedBox());
       },
     );

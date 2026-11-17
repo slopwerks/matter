@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/matrix_html/matrix_code_block.dart';
 import '../../providers/code_block_settings_provider.dart';
+import '../../providers/material_color_provider.dart';
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/grouped_rows.dart';
@@ -43,11 +45,17 @@ class _CodeBlockSettingsPageState extends ConsumerState<CodeBlockSettingsPage> {
       _ => systemIsDark,
     };
 
-    final previewBubbleColor = isPreviewDark
+    final schemes = ref.watch(materialColorSchemesProvider);
+    final previewScheme = isPreviewDark ? schemes.dark : schemes.light;
+    final previewBubbleColor = context.isMaterial
+        ? previewScheme.primaryContainer
+        : isPreviewDark
         ? const Color(0xFF5577C2) // 暗色模式下的发送气泡强调色
         : const Color(0xFFD6E3FF); // 浅色模式下的浅色底
 
-    final previewTextColor = isPreviewDark
+    final previewTextColor = context.isMaterial
+        ? previewScheme.onPrimaryContainer
+        : isPreviewDark
         ? Colors.white
         : const Color(0xFF1F2937);
 
@@ -56,7 +64,7 @@ class _CodeBlockSettingsPageState extends ConsumerState<CodeBlockSettingsPage> {
       extendBodyBehindAppBar: true,
       appBar: buildFloatingAppBar(title: const Text('代码块设置')),
       body: MaxContentWidth(
-        maxWidth: 600,
+        maxWidth: context.isMaterial ? 720 : 600,
         child: ListView(
           padding: EdgeInsets.fromLTRB(
             16,
@@ -90,7 +98,9 @@ class _CodeBlockSettingsPageState extends ConsumerState<CodeBlockSettingsPage> {
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: previewBubbleColor,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(
+                  context.isMaterial ? materialSurfaceRadius : 16,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

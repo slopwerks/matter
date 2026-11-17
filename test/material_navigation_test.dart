@@ -51,7 +51,7 @@ void main() {
   setUpAll(() => RustLib.initMock(api: _RustApi()));
   tearDownAll(RustLib.dispose);
 
-  for (final width in [320.0, 400.0, 1200.0]) {
+  for (final width in [320.0, 600.0, 840.0, 1200.0, 1600.0]) {
     for (final style in [
       AppThemeStyle.materialLight,
       AppThemeStyle.materialDark,
@@ -81,12 +81,22 @@ void main() {
         for (var i = 0; i < 5; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
-        final desktop = width >= 960;
+        final desktop = width >= 600;
         expect(
           find.byType(desktop ? NavigationRail : MaterialTabNavigationBar),
           findsOneWidget,
         );
         if (!desktop) {
+          expect(find.byType(DockSurface), findsOneWidget);
+          for (final label in ['聊天', '空间', '通讯录', '设置']) {
+            expect(
+              find.descendant(
+                of: find.byType(MaterialTabNavigationBar),
+                matching: find.text(label),
+              ),
+              findsOneWidget,
+            );
+          }
           final compose = find.byKey(const ValueKey('new-chat-action'));
           expect(compose, findsOneWidget);
           expect(
@@ -112,22 +122,21 @@ void main() {
           await tester.tap(
             find.descendant(
               of: navigation,
-              matching: desktop
-                  ? find.byIcon(destination.icon)
-                  : find.text(destination.label),
+              matching: find.text(destination.label),
             ),
           );
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 300));
           expect(find.byType(AppBar), findsOneWidget);
           final appBar = find.byType(AppBar);
+          final scheme = Theme.of(tester.element(appBar)).colorScheme;
           expect(
             tester.widget<AppBar>(appBar).backgroundColor,
-            Colors.transparent,
+            desktop ? scheme.surface : scheme.primaryContainer,
           );
           expect(
             find.descendant(of: appBar, matching: find.byType(TopFadeBlur)),
-            findsOneWidget,
+            findsNothing,
           );
           final scaffold = find
               .ancestor(of: appBar, matching: find.byType(Scaffold))

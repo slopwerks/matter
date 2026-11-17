@@ -207,7 +207,7 @@ void main() {
             final toolbar = find.byKey(
               const ValueKey('desktop-composer-toolbar'),
             );
-            if (width >= 600) {
+            if (width >= 600 && !material) {
               final toolbarRect = tester.getRect(toolbar);
               expect(emptyRect.height, greaterThanOrEqualTo(80));
               expect(emptyRect.height, lessThan(96));
@@ -223,6 +223,7 @@ void main() {
             } else {
               expect(toolbar, findsNothing);
               expect(emptyRect.height, lessThan(96));
+              if (material) expect(emptyRect.width, lessThanOrEqualTo(720));
             }
             await tester.enterText(
               field,
@@ -316,10 +317,14 @@ void main() {
         expect(tester.getSize(find.byType(IconButton).first).height, 48);
         expect(
           tester.getSize(find.byType(TextField)).height,
-          greaterThanOrEqualTo(96),
+          material ? lessThan(96) : greaterThanOrEqualTo(96),
         );
         expect(find.byType(GlassPanel), findsNothing);
-        await tester.tap(find.byTooltip('更多'));
+        if (material) {
+          await tester.longPress(find.byTooltip('附件'));
+        } else {
+          await tester.tap(find.byTooltip('更多'));
+        }
         await tester.pumpAndSettle();
         expect(find.text('Markdown 编辑器'), findsOneWidget);
         expect(tester.takeException(), isNull);
