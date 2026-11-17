@@ -1,16 +1,11 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/matrix_html/matrix_html_renderer.dart';
 import '../../features/matrix_html/matrix_link_router.dart';
-import '../../features/storage/managed_media.dart';
-import '../../features/storage/storage_download_policy.dart';
 import '../../features/storage/storage_models.dart';
 import '../../features/storage/storage_providers.dart';
 import '../../features/storage/storage_registry.dart';
@@ -21,10 +16,8 @@ import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/image_view_history.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
-import 'cached_chat_image.dart';
-import 'chat_media_source.dart';
-import 'media_preparation.dart';
 import 'image_media.dart';
+import 'image_message_loader.dart';
 import 'image_placeholders.dart';
 import 'image_viewer.dart';
 import 'timeline/timeline_bubble_frame.dart' show enabledNeuBubbleShadows;
@@ -103,19 +96,8 @@ class ImageMessageBubble extends ConsumerStatefulWidget {
 }
 
 class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
-  String? _resolvedUrl;
-  Uint8List? _decryptedBytes;
-  bool _isLoadingEncrypted = false;
-  bool _encryptedLoadFailed = false;
-  bool _resolveFailed = false;
-  int? _thumbnailWidth;
-  int? _thumbnailHeight;
-  int _resolveGeneration = 0;
-  int _decisionGeneration = 0;
-  ({bool original, bool thumbnail, int? byteLimit})? _lastPolicy;
+  late final ImageMessageLoader _loader;
   bool _spoilerRevealed = false;
-  bool _manualDownload = false;
-  bool _downloadBlocked = true;
 
   /// Preview bytes kept after the server echo replaced the optimistic row.
   ///
@@ -129,11 +111,15 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   /// Whether the resolved/decrypted server image has produced a frame yet.
   bool _serverImageReady = false;
-  MediaPreparation? _imagePreparation;
 
   @override
   void initState() {
     super.initState();
+    _loader = ImageMessageLoader(
+      ref: ref,
+      onLoaded: () => widget.onLoaded?.call(),
+    );
+    _loader.addListener(_onLoadChanged);
     ref.listenManual(
       storageAutoDownloadPolicyProvider,
       (_, _) => _resolveUrl(),
@@ -142,10 +128,13 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   @override
   void dispose() {
-    _decisionGeneration++;
-    _resolveGeneration++;
-    _imagePreparation?.cancel();
+    _loader.removeListener(_onLoadChanged);
+    _loader.dispose();
     super.dispose();
+  }
+
+  void _onLoadChanged() {
+    if (mounted) setState(() {});
   }
 
   bool get _spoilerHidden =>
@@ -194,20 +183,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     final bubbleSize = _bubbleSize(context);
     final nextWidth = (bubbleSize.width * pixelRatio).round();
     final nextHeight = (bubbleSize.height * pixelRatio).round();
-    final cachedUrl = widget.isSticker
-        ? null
-        : cachedOriginalMxcUrl(ref, widget.imageUrl);
-    if (cachedUrl != null) _resolvedUrl = cachedUrl;
-    if (_thumbnailWidth != nextWidth ||
-        _thumbnailHeight != nextHeight ||
-        _resolvedUrl == null) {
-      if (_thumbnailWidth != nextWidth || _thumbnailHeight != nextHeight) {
-        _lastPolicy = null;
-      }
-      _thumbnailWidth = nextWidth;
-      _thumbnailHeight = nextHeight;
-      _resolveUrl();
-    }
+    if (!widget.isSticker) _loader.restoreCachedOriginal(widget.imageUrl);
+    final sizeChanged = _loader.updateThumbnailSize(nextWidth, nextHeight);
+    if (sizeChanged || _loader.resolvedUrl == null) _resolveUrl();
   }
 
   @override
@@ -216,17 +194,8 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     if (widget.imageUrl != oldWidget.imageUrl ||
         widget.mediaSourceJson != oldWidget.mediaSourceJson ||
         (widget.previewBytes == null) != (oldWidget.previewBytes == null)) {
-      _decisionGeneration++;
-      _lastPolicy = null;
-      _resolveGeneration++;
+      _loader.reset();
       _spoilerRevealed = false;
-      _manualDownload = false;
-      _downloadBlocked = true;
-      _resolvedUrl = null;
-      _decryptedBytes = null;
-      _isLoadingEncrypted = false;
-      _encryptedLoadFailed = false;
-      _resolveFailed = false;
     }
     // Local row handed over to its server echo: keep painting the picked bytes
     // until the network copy has a frame, so the swap is invisible.
@@ -246,248 +215,26 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
         widget.fileSize != oldWidget.fileSize ||
         widget.mimeType != oldWidget.mimeType ||
         widget.filename != oldWidget.filename ||
-        (_resolvedUrl == null && _decryptedBytes == null)) {
+        (_loader.resolvedUrl == null && _loader.decryptedBytes == null)) {
       _resolveUrl();
     }
   }
 
-  Future<void> _resolveUrl({bool manual = false, bool retry = false}) async {
-    if (manual) _manualDownload = true;
-    if (_spoilerHidden) return;
-    // An optimistic image already has its pixels: there is no `mxc://` source
-    // to resolve until the upload produces one.
-    if (widget.previewBytes != null) return;
-    final decision = ++_decisionGeneration;
-    var generation = _resolveGeneration;
-    var started = false;
-    final account = ref.read(activeUserIdProvider);
-    bool isCurrent() =>
-        mounted &&
-        generation == _resolveGeneration &&
-        ref.read(activeUserIdProvider) == account;
-    final imageUrl = widget.imageUrl;
-    int? stickerByteLimit;
-    try {
-      final unknownStickerSize =
-          widget.isSticker &&
-          (widget.fileSize == null || widget.fileSize! <= 0);
-      if (unknownStickerSize && !_manualDownload) {
-        stickerByteLimit = await autoDownloadByteLimit(StorageKind.image);
-        // The bridge's bounded download API uses a signed 32-bit length.
-        stickerByteLimit = stickerByteLimit.clamp(0, 0x7fffffff);
-      }
-      final allowed =
-          _manualDownload ||
-          (stickerByteLimit != null
-              ? stickerByteLimit > 0
-              : await mayAutoDownload(StorageKind.image, widget.fileSize));
-      final allowThumbnail =
-          allowed ||
-          (!widget.isSticker &&
-              imageUrl?.startsWith('mxc://') == true &&
-              widget.fileSize != null &&
-              widget.fileSize! > 0 &&
-              await mayAutoDownload(StorageKind.image, 1));
-      if (!mounted ||
-          decision != _decisionGeneration ||
-          ref.read(activeUserIdProvider) != account) {
-        return;
-      }
-      // Initial settings/network notifications often agree. Keep the active
-      // request and its result instead of cancelling and downloading again.
-      final policy = (
-        original: allowed,
-        thumbnail: allowThumbnail,
-        byteLimit: stickerByteLimit,
+  Future<void> _resolveUrl({bool manual = false, bool retry = false}) =>
+      _loader.resolve(
+        source: ImageBubbleSource(
+          imageUrl: widget.imageUrl,
+          mediaSourceJson: widget.mediaSourceJson,
+          fileSize: widget.fileSize,
+          filename: widget.filename,
+          roomId: widget.roomId,
+          isSticker: widget.isSticker,
+          hasPreview: widget.previewBytes != null,
+          spoilerHidden: _spoilerHidden,
+        ),
+        manual: manual,
+        retry: retry,
       );
-      if (!manual && !retry && _lastPolicy == policy) return;
-      _lastPolicy = policy;
-      _imagePreparation?.cancel();
-      final preparation = _imagePreparation = MediaPreparation();
-      generation = ++_resolveGeneration;
-      started = true;
-      _resolveFailed = false;
-      setState(() {
-        _downloadBlocked = !allowThumbnail;
-        if (!allowed) _resolvedUrl = null;
-        if (allowed && (imageUrl == null || stickerByteLimit != null)) {
-          _isLoadingEncrypted = true;
-          _encryptedLoadFailed = false;
-        }
-      });
-      String? resolved;
-      Future<String?>? originalFuture;
-      if (imageUrl != null && imageUrl.startsWith('mxc://')) {
-        if (widget.isSticker) {
-          // Server thumbnails may contain only the first animation frame.
-          resolved = await resolveMxcUrlFull(ref, imageUrl);
-        } else if (allowed) {
-          originalFuture = resolveMxcUrlFull(ref, imageUrl);
-          final fallback = Completer<String?>();
-          final timer = Timer(Duration.zero, () => fallback.complete(null));
-          try {
-            resolved = await Future.any([originalFuture, fallback.future]);
-          } finally {
-            timer.cancel();
-          }
-        }
-        if (!widget.isSticker) {
-          resolved ??= await resolveMxcUrl(
-            ref,
-            imageUrl,
-            width: _thumbnailWidth,
-            height: _thumbnailHeight,
-            useOriginalIfCached: allowed,
-          );
-        }
-      } else {
-        resolved = imageUrl;
-      }
-      if (!isCurrent()) return;
-      final user = ref.read(currentUserProvider);
-      final accountKey = user == null
-          ? null
-          : storageAccountKey(user.id, user.homeserver);
-      final filename = widget.filename ?? 'image.bin';
-      final maxImageBytes = widget.fileSize != null && widget.fileSize! > 0
-          ? widget.fileSize!
-          : 16 * 1024 * 1024;
-      if (!allowed) {
-        final cachedUrl = cachedOriginalMxcUrl(ref, imageUrl) ?? resolved;
-        var cached = cachedUrl != null
-            ? await cachedChatImageBytes(ref, cachedUrl, widget.roomId)
-            : accountKey == null
-            ? null
-            : await readManagedMediaBytes(
-                account: accountKey,
-                key: widget.mediaSourceJson ?? '',
-                filename: filename,
-                kind: StorageKind.image,
-                maxBytes: maxImageBytes,
-                owner: widget.roomId == null
-                    ? null
-                    : StorageOwner(accountKey, widget.roomId!),
-              );
-        if (cached == null && resolved != null && resolved != cachedUrl) {
-          cached = await cachedChatImageBytes(ref, resolved, widget.roomId);
-        }
-        if (isCurrent()) {
-          setState(() {
-            _downloadBlocked = cached == null && !allowThumbnail;
-            _decryptedBytes = cached;
-            _resolvedUrl = cached == null && allowThumbnail ? resolved : null;
-            _resolveFailed =
-                allowThumbnail && cached == null && resolved == null;
-          });
-        }
-        return;
-      }
-      if (stickerByteLimit != null && allowed) {
-        // Unknown-size stickers may load automatically, but the transfer must
-        // enforce the network's byte budget before an image widget sees a URL.
-        var stickerBytes = resolved == null
-            ? null
-            : await cachedChatImageBytes(ref, resolved, widget.roomId);
-        if (!isCurrent()) return;
-        if (stickerBytes == null) {
-          stickerBytes = await rust.downloadMediaSourceBytes(
-            mediaSourceJson: widget.mediaSourceJson ?? jsonEncode(imageUrl),
-            maxSizeBytes: stickerByteLimit,
-          );
-          if (!isCurrent()) return;
-          if (resolved != null) {
-            await cacheChatImageBytes(
-              ref,
-              resolved,
-              stickerBytes,
-              widget.roomId,
-            );
-          }
-        }
-        if (!isCurrent()) return;
-        setState(() {
-          _downloadBlocked = false;
-          _decryptedBytes = stickerBytes;
-          _resolvedUrl = null;
-        });
-        return;
-      }
-      if (imageUrl == null) {
-        final mediaSourceJson = widget.mediaSourceJson;
-        if (mediaSourceJson == null) return;
-        _isLoadingEncrypted = true;
-        _encryptedLoadFailed = false;
-        Uint8List bytes;
-        if (accountKey == null || kIsWeb) {
-          bytes = await rust.downloadMediaSourceBytes(
-            mediaSourceJson: mediaSourceJson,
-            maxSizeBytes: maxImageBytes,
-          );
-        } else {
-          final prepared = await prepareChatMediaSource(
-            ref: ref,
-            url: null,
-            mediaSourceJson: mediaSourceJson,
-            filename: filename,
-            roomId: widget.roomId,
-            kind: StorageKind.image,
-            preparation: preparation,
-          );
-          try {
-            bytes = (await readManagedMediaBytes(
-              account: accountKey,
-              key: mediaSourceJson,
-              filename: filename,
-              kind: StorageKind.image,
-              maxBytes: maxImageBytes,
-              owner: widget.roomId == null
-                  ? null
-                  : StorageOwner(accountKey, widget.roomId!),
-            ))!;
-          } finally {
-            await prepared.cleanup();
-          }
-        }
-        if (isCurrent()) {
-          setState(() {
-            _downloadBlocked = false;
-            _decryptedBytes = bytes;
-          });
-          widget.onLoaded?.call();
-        }
-      } else if (isCurrent()) {
-        setState(() {
-          _downloadBlocked = false;
-          _resolvedUrl = resolved;
-          _resolveFailed = resolved == null;
-        });
-        if (resolved != null) widget.onLoaded?.call();
-        // Paint the thumbnail while the original is resolving. A failed or
-        // slow original must not hide an otherwise usable image/gallery.
-        if (originalFuture != null) {
-          final original = await originalFuture;
-          if (isCurrent() && original != null) {
-            setState(() {
-              _resolvedUrl = original;
-              _resolveFailed = false;
-            });
-          }
-        }
-      }
-    } catch (_) {
-      if (started && isCurrent()) {
-        setState(() {
-          _resolveFailed = true;
-          _encryptedLoadFailed = true;
-          if (stickerByteLimit != null) _downloadBlocked = true;
-        });
-      }
-    } finally {
-      if (started && generation == _resolveGeneration) {
-        _isLoadingEncrypted = false;
-      }
-    }
-  }
 
   /// Builds the bubble's picture.
   ///
@@ -570,7 +317,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     ref.listen(connectionProvider, (previous, next) {
       if (previous != AppConnectionState.connected &&
           next == AppConnectionState.connected &&
-          (_encryptedLoadFailed || _resolveFailed)) {
+          (_loader.encryptedLoadFailed || _loader.resolveFailed)) {
         _resolveUrl(retry: true);
       }
     });
@@ -589,14 +336,15 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     final originalUrl = ref.watch(
       mxcUrlCacheProvider.select(
         (cache) =>
-            _lastPolicy?.byteLimit != null || _lastPolicy?.original != true
+            _loader.policy?.byteLimit != null ||
+                _loader.policy?.original != true
             ? null
             : cache['$account::${widget.imageUrl}|original'],
       ),
     );
     final colors = context.neu;
-    final url = originalUrl ?? _resolvedUrl;
-    final serverBytes = _decryptedBytes;
+    final url = originalUrl ?? _loader.resolvedUrl;
+    final serverBytes = _loader.decryptedBytes;
     final previewBytes = widget.previewBytes ?? _stickyPreviewBytes;
     final bytes = previewBytes ?? serverBytes;
     final bubbleSize = _bubbleSize(context);
@@ -613,10 +361,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     // Keep original files intact in the disk cache, especially animated GIFs.
     final cacheWidth = widget.isSticker || originalUrl != null
         ? null
-        : _thumbnailWidth;
+        : _loader.thumbnailWidth;
     final cacheHeight = widget.isSticker || originalUrl != null
         ? null
-        : _thumbnailHeight;
+        : _loader.thumbnailHeight;
 
     if (_spoilerHidden) {
       return _withCaption(
@@ -644,7 +392,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       );
     }
 
-    if (_downloadBlocked && bytes == null) {
+    if (_loader.downloadBlocked && bytes == null) {
       return _withCaption(
         SizedBox(
           width: bubbleSize.width,
@@ -672,10 +420,10 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     }
     if (url == null && bytes == null) {
       final placeholder =
-          (!_resolveFailed &&
-                  !_encryptedLoadFailed &&
+          (!_loader.resolveFailed &&
+                  !_loader.encryptedLoadFailed &&
                   widget.message?.imageMetadata?.blurhash != null) ||
-              (_isLoadingEncrypted && !_encryptedLoadFailed)
+              (_loader.isLoadingEncrypted && !_loader.encryptedLoadFailed)
           ? _buildLoading(context, bubbleSize)
           : _buildBroken(context, bubbleSize);
       return _withCaption(
