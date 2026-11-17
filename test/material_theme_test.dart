@@ -23,16 +23,9 @@ void main() {
       final colors = theme.extension<NeuColors>()!;
       expect(theme.useMaterial3, isTrue);
       expect(colors.isMaterial, isTrue);
-      // The page is one step off M3's surface so cards can sit on it: in light
-      // mode surface and surfaceBright are both tone 98, so a page on surface
-      // left the card indistinguishable from it.
       expect(colors.base, theme.scaffoldBackgroundColor);
-      expect(
-        colors.base,
-        brightness == Brightness.dark
-            ? theme.colorScheme.surface
-            : theme.colorScheme.surfaceContainer,
-      );
+      expect(colors.base, theme.colorScheme.surface);
+      expect(colors.surface, theme.colorScheme.surfaceContainerLow);
       expect(colors.text, theme.colorScheme.onSurface);
       expect(colors.accent, theme.colorScheme.primary);
       expect(
@@ -281,7 +274,7 @@ void main() {
       );
       expect(
         outgoing.color,
-        buildMaterialTheme(Brightness.dark).colorScheme.primary,
+        buildMaterialTheme(Brightness.dark).colorScheme.primaryContainer,
       );
       expect(incoming.color, isNotNull);
       expect(outgoing.gradient, isNull);

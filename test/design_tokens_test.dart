@@ -30,26 +30,20 @@ void main() {
         expect(tokens, isNotNull, reason: 'theme 必须挂载 AppDesignTokens');
         final t = tokens!;
 
-        // 表面层级:页面就是 scaffold 底色;卡片必须离页面 ≥ 1.11:1,
-        // 否则就是浅色表面色调坍塌(卡片看不见)。
+        // 原型直接使用 M3 语义表面，不再调整页面以倒置卡片层级。
         expect(t.surfaces.page, theme.scaffoldBackgroundColor);
         expect(t.surfaces.card, theme.cardTheme.color);
         expect(t.surfaces.hairline, theme.dividerTheme.color);
         expect(t.surfaces.overlay, theme.appBarTheme.backgroundColor);
-        expect(t.surfaces.bubbleOutgoing, scheme.primary);
-        expect(t.surfaces.bubbleIncoming, theme.extension<NeuColors>()!.card);
-        final ratio = _contrast(t.surfaces.page, t.surfaces.card);
-        expect(
-          ratio >= 1.11,
-          isTrue,
-          reason:
-              'card 与 page 对比度 $ratio < 1.11 '
-              '(${background.name} $brightness),卡片会贴进页面里',
-        );
+        expect(t.surfaces.page, scheme.surface);
+        expect(t.surfaces.card, scheme.surfaceContainerLow);
+        expect(t.surfaces.bubbleOutgoing, scheme.primaryContainer);
+        expect(t.surfaces.bubbleIncoming, scheme.surfaceContainerHigh);
+        expect(t.surfaces.page, isNot(t.surfaces.card));
 
-        // 圆角:分组卡片 28,气泡两套皮肤同值 18。
+        // M3 原型气泡 20，分组卡片与导航 28。
         expect(t.radii.surface, 28);
-        expect(t.radii.bubble, 18);
+        expect(t.radii.bubble, 20);
 
         // 字阶槽位齐全。
         expect(t.typography.pageTitle.fontSize, 24);

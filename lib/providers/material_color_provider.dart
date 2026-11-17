@@ -177,13 +177,13 @@ final materialBaseColorSchemesProvider = Provider<MaterialColorSchemes>((ref) {
   return (
     light:
         system?.light ??
-        ColorScheme.fromSeed(
+        materialColorScheme(
           seedColor: settings.seedColor,
           dynamicSchemeVariant: settings.colorStyle,
         ),
     dark:
         system?.dark ??
-        ColorScheme.fromSeed(
+        materialColorScheme(
           seedColor: settings.seedColor,
           brightness: Brightness.dark,
           dynamicSchemeVariant: settings.colorStyle,

@@ -5,7 +5,7 @@ import '../neu_colors.dart';
 /// 圆角档位（语义命名，两套皮肤各自给值）：
 ///
 /// - [tag] 角标、极小控件底、消息组内收尾角；
-/// - [bubble] 消息气泡外框（两套皮肤同值，见 `neuBubbleShape`）；
+/// - [bubble] 消息气泡外框（Material 20，新拟物 18）；
 /// - [surface] 卡片、面板、对话框；
 /// - [nav] 导航、底部大浮层；
 /// - [thumbnail] 媒体缩略图预览。
@@ -28,7 +28,8 @@ class AppRadii {
 
   /// Material 皮肤：分组卡片与对话框用 28（`materialSurfaceRadius`），
   /// 缩略图取 Material 预览小圆角 8。
-  const AppRadii.material() : this(surface: 28, thumbnail: 8);
+  const AppRadii.material()
+    : this(tag: 4, bubble: 20, surface: 28, nav: 28, thumbnail: 8);
 
   final double tag;
   final double bubble;

@@ -15,6 +15,8 @@ class AppComponentTheme extends ThemeExtension<AppComponentTheme> {
     required this.avatarSize,
     required this.denseAvatarSize,
     required this.toolbarStyle,
+    this.rowVerticalPadding = 10,
+    this.selectedRowFill,
   });
 
   final ConversationRowLayout conversationLayout;
@@ -23,6 +25,8 @@ class AppComponentTheme extends ThemeExtension<AppComponentTheme> {
   final double avatarSize;
   final double denseAvatarSize;
   final ButtonStyle? toolbarStyle;
+  final double rowVerticalPadding;
+  final Color? selectedRowFill;
 
   ShapeBorder rowShape({required bool superellipse}) =>
       conversationLayout == ConversationRowLayout.trailingStatus ||
@@ -43,6 +47,8 @@ class AppComponentTheme extends ThemeExtension<AppComponentTheme> {
     double? avatarSize,
     double? denseAvatarSize,
     ButtonStyle? toolbarStyle,
+    double? rowVerticalPadding,
+    Color? selectedRowFill,
   }) => AppComponentTheme(
     conversationLayout: conversationLayout ?? this.conversationLayout,
     rowRadius: rowRadius ?? this.rowRadius,
@@ -50,6 +56,8 @@ class AppComponentTheme extends ThemeExtension<AppComponentTheme> {
     avatarSize: avatarSize ?? this.avatarSize,
     denseAvatarSize: denseAvatarSize ?? this.denseAvatarSize,
     toolbarStyle: toolbarStyle ?? this.toolbarStyle,
+    rowVerticalPadding: rowVerticalPadding ?? this.rowVerticalPadding,
+    selectedRowFill: selectedRowFill ?? this.selectedRowFill,
   );
 
   @override
@@ -73,6 +81,16 @@ class AppComponentTheme extends ThemeExtension<AppComponentTheme> {
             t,
           )!,
           toolbarStyle: t < .5 ? toolbarStyle : other.toolbarStyle,
+          rowVerticalPadding: lerpDouble(
+            rowVerticalPadding,
+            other.rowVerticalPadding,
+            t,
+          )!,
+          selectedRowFill: Color.lerp(
+            selectedRowFill,
+            other.selectedRowFill,
+            t,
+          ),
         );
 
   static AppComponentTheme of(BuildContext context) =>

@@ -54,10 +54,12 @@ class _ColorApp extends ConsumerWidget {
 }
 
 Future<void> _tapChip(WidgetTester tester, String label) async {
-  final tooltipFinder = find.byTooltip(label);
-  final target = tooltipFinder.evaluate().isNotEmpty
-      ? tooltipFinder
-      : find.text(label);
+  // Keep both forms live while lazy sections enter the viewport.
+  final target = find.byWidgetPredicate(
+    (widget) =>
+        (widget is Tooltip && widget.message == label) ||
+        (widget is Text && widget.data == label),
+  );
   final scrollable = find.byType(Scrollable).first;
   tester.state<ScrollableState>(scrollable).position.jumpTo(0);
   await tester.pumpAndSettle();
@@ -498,10 +500,7 @@ void main() {
         matching: find.byType(MaterialSchemeThumbnail),
       ),
     );
-    expect(
-      thumbnail.scheme,
-      ColorScheme.fromSeed(seedColor: defaultMaterialSeedColor),
-    );
+    expect(thumbnail.scheme, materialColorScheme());
     expect(
       container.read(materialColorSchemesProvider).light.surface,
       Colors.white,
