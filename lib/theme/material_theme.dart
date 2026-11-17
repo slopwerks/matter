@@ -58,6 +58,15 @@ materialProfileCardStyle(ThemeData theme, {bool detail = false}) => (
   ),
 );
 
+({Color fill, TextStyle? text}) materialEncryptionValueStyle(ThemeData theme) =>
+    (
+      fill: theme.colorScheme.surfaceContainerHighest,
+      text: theme.textTheme.bodySmall?.copyWith(
+        fontFamily: 'monospace',
+        height: 1.6,
+      ),
+    );
+
 ({
   Color fill,
   Color foreground,
