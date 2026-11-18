@@ -26,6 +26,27 @@ TextStyle? materialListTitleStyle(ThemeData theme, {bool unread = false}) =>
 TextStyle materialReaderTextStyle(ThemeData theme) =>
     theme.textTheme.bodyLarge!.copyWith(height: 1.65);
 
+({Color base, Color surface, Color text, Color textSecondary, Color accent})
+materialMediaChromeStyle(ThemeData theme) => (
+  base: theme.colorScheme.surface,
+  surface: theme.colorScheme.surfaceContainerHigh,
+  text: theme.colorScheme.onSurface,
+  textSecondary: theme.colorScheme.onSurfaceVariant,
+  accent: theme.colorScheme.primary,
+);
+
+const materialAttachmentCaptionDecoration = InputDecoration(
+  hintText: '添加图片描述',
+  filled: false,
+  border: InputBorder.none,
+  enabledBorder: InputBorder.none,
+  focusedBorder: InputBorder.none,
+  disabledBorder: InputBorder.none,
+  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  isDense: true,
+  counterText: '',
+);
+
 ({
   Color brandFill,
   Color brandForeground,

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import 'sticker_catalog.dart';
 
@@ -29,6 +30,19 @@ class StickerHoldPreviewOverlay extends StatelessWidget {
     final colors = context.neu;
     final screenSize = MediaQuery.sizeOf(context);
     final previewMaxSide = math.min(screenSize.width * 0.62, 260.0);
+    final preview = AspectRatio(
+      aspectRatio: sticker.aspectRatio,
+      child: ClipPath(
+        clipper: ShapeBorderClipper(
+          shape: context.isMaterial
+              ? materialPreviewThumbnailShape
+              : RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(NeuRadius.content),
+                ),
+        ),
+        child: RemoteStickerPreview(sticker: sticker, fit: BoxFit.contain),
+      ),
+    );
 
     return IgnorePointer(
       child: Material(
@@ -51,56 +65,77 @@ class StickerHoldPreviewOverlay extends StatelessWidget {
                   key: ValueKey(sticker.id),
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      constraints: BoxConstraints(
-                        maxWidth: previewMaxSide,
-                        maxHeight: previewMaxSide,
-                      ),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceStrong.withValues(alpha: 0.94),
-                        borderRadius: BorderRadius.circular(NeuRadius.surface),
-                        border: Border.all(color: colors.hairline),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.28),
-                            blurRadius: 28,
-                            offset: const Offset(0, 16),
+                    if (context.isMaterial)
+                      Card(
+                        margin: EdgeInsets.zero,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: previewMaxSide,
+                            maxHeight: previewMaxSide,
                           ),
-                        ],
-                      ),
-                      child: AspectRatio(
-                        aspectRatio: sticker.aspectRatio,
-                        child: ClipRRect(
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: preview,
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        constraints: BoxConstraints(
+                          maxWidth: previewMaxSide,
+                          maxHeight: previewMaxSide,
+                        ),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceStrong.withValues(alpha: 0.94),
                           borderRadius: BorderRadius.circular(
-                            NeuRadius.content,
+                            NeuRadius.surface,
                           ),
-                          child: RemoteStickerPreview(
-                            sticker: sticker,
-                            fit: BoxFit.contain,
-                          ),
+                          border: Border.all(color: colors.hairline),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.28),
+                              blurRadius: 28,
+                              offset: const Offset(0, 16),
+                            ),
+                          ],
                         ),
+                        child: preview,
                       ),
-                    ),
                     const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceStrong,
-                        borderRadius: BorderRadius.circular(NeuRadius.button),
-                      ),
-                      child: Text(
-                        sticker.label,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colors.text,
-                          fontWeight: FontWeight.w600,
+                    if (context.isMaterial)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: screenSize.width - 32,
+                        ),
+                        child: Chip(
+                          label: Text(
+                            sticker.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceStrong,
+                          borderRadius: BorderRadius.circular(NeuRadius.button),
+                        ),
+                        child: Text(
+                          sticker.label,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: colors.text,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),

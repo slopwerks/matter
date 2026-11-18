@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../../theme/neu_colors.dart';
-import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
+import '../../widgets/app_search_field.dart';
 import 'emoji_data.dart';
 import 'emoji_keywords.dart';
 
@@ -29,10 +30,12 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
   String _query = '';
   bool _showSearch = false;
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -72,11 +75,10 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
             child: Row(
               children: [
                 Expanded(
-                  child: NeuTextField(
+                  child: AppSearchField(
                     controller: _searchController,
-                    autofocus: true,
+                    focusNode: _searchFocus,
                     hint: '搜索表情，如 笑 / heart',
-                    leading: const Icon(Icons.search_rounded),
                     onChanged: (v) => setState(() => _query = v),
                   ),
                 ),
@@ -97,27 +99,30 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
           ),
         // Emoji grid.
         Expanded(
-          child: GridView.builder(
-            controller: widget.scrollController,
-            physics: const ClampingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 44,
-              childAspectRatio: 1,
-              crossAxisSpacing: 2,
-              mainAxisSpacing: 2,
+          child: Material(
+            type: MaterialType.transparency,
+            child: GridView.builder(
+              controller: widget.scrollController,
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 44,
+                childAspectRatio: 1,
+                crossAxisSpacing: 2,
+                mainAxisSpacing: 2,
+              ),
+              itemCount: emojis.length,
+              itemBuilder: (context, index) {
+                final emoji = emojis[index];
+                return InkWell(
+                  borderRadius: BorderRadius.circular(NeuRadius.tag),
+                  onTap: () => widget.onEmojiSelected(emoji),
+                  child: Center(
+                    child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                  ),
+                );
+              },
             ),
-            itemCount: emojis.length,
-            itemBuilder: (context, index) {
-              final emoji = emojis[index];
-              return InkWell(
-                borderRadius: BorderRadius.circular(NeuRadius.tag),
-                onTap: () => widget.onEmojiSelected(emoji),
-                child: Center(
-                  child: Text(emoji, style: const TextStyle(fontSize: 24)),
-                ),
-              );
-            },
           ),
         ),
         // Category bar (hidden while searching).
@@ -135,6 +140,25 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
                       children: List.generate(kEmojiCategories.length, (i) {
                         final cat = kEmojiCategories[i];
                         final selected = i == _categoryIndex;
+                        if (context.isMaterial) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 3,
+                              vertical: 4,
+                            ),
+                            child: ChoiceChip(
+                              label: Text(
+                                cat.icon,
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                              tooltip: cat.label,
+                              selected: selected,
+                              showCheckmark: false,
+                              onSelected: (_) =>
+                                  setState(() => _categoryIndex = i),
+                            ),
+                          );
+                        }
                         return IconButton(
                           onPressed: () => setState(() => _categoryIndex = i),
                           icon: Text(
@@ -171,6 +195,11 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
                         _searchController.clear();
                       }
                     });
+                    if (_showSearch) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _searchFocus.requestFocus();
+                      });
+                    }
                   },
                 ),
               ],

@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart' as material_ui;
 import 'package:pro_image_editor/pro_image_editor.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 
 enum ChatImageEditorTool { crop, paint }
 
@@ -67,7 +68,17 @@ class _ChatImageEditorPageState extends State<ChatImageEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.neu;
+    final neu = context.neu;
+    final scheme = Theme.of(context).colorScheme;
+    final colors = context.isMaterial
+        ? materialMediaChromeStyle(Theme.of(context))
+        : (
+            base: neu.base,
+            surface: neu.surface,
+            text: neu.text,
+            textSecondary: neu.textSecondary,
+            accent: neu.accent,
+          );
     final overlayIconBrightness =
         context.isMaterial && Theme.of(context).brightness == Brightness.light
         ? Brightness.dark
@@ -82,8 +93,48 @@ class _ChatImageEditorPageState extends State<ChatImageEditorPage> {
         seedColor: colors.accent,
         brightness: Theme.of(context).brightness,
         primary: colors.accent,
-        secondary: colors.accent,
-        surface: colors.surface,
+        onPrimary: context.isMaterial ? scheme.onPrimary : null,
+        primaryContainer: context.isMaterial ? scheme.primaryContainer : null,
+        onPrimaryContainer: context.isMaterial
+            ? scheme.onPrimaryContainer
+            : null,
+        secondary: context.isMaterial ? scheme.secondary : colors.accent,
+        onSecondary: context.isMaterial ? scheme.onSecondary : null,
+        secondaryContainer: context.isMaterial
+            ? scheme.secondaryContainer
+            : null,
+        onSecondaryContainer: context.isMaterial
+            ? scheme.onSecondaryContainer
+            : null,
+        tertiary: context.isMaterial ? scheme.tertiary : null,
+        onTertiary: context.isMaterial ? scheme.onTertiary : null,
+        tertiaryContainer: context.isMaterial ? scheme.tertiaryContainer : null,
+        onTertiaryContainer: context.isMaterial
+            ? scheme.onTertiaryContainer
+            : null,
+        error: context.isMaterial ? scheme.error : null,
+        onError: context.isMaterial ? scheme.onError : null,
+        errorContainer: context.isMaterial ? scheme.errorContainer : null,
+        onErrorContainer: context.isMaterial ? scheme.onErrorContainer : null,
+        surface: context.isMaterial ? scheme.surface : colors.surface,
+        surfaceDim: context.isMaterial ? scheme.surfaceDim : null,
+        surfaceBright: context.isMaterial ? scheme.surfaceBright : null,
+        surfaceContainerLowest: context.isMaterial
+            ? scheme.surfaceContainerLowest
+            : null,
+        surfaceContainerLow: context.isMaterial
+            ? scheme.surfaceContainerLow
+            : null,
+        surfaceContainer: context.isMaterial ? scheme.surfaceContainer : null,
+        surfaceContainerHigh: context.isMaterial
+            ? scheme.surfaceContainerHigh
+            : null,
+        surfaceContainerHighest: context.isMaterial
+            ? scheme.surfaceContainerHighest
+            : null,
+        onSurfaceVariant: context.isMaterial ? scheme.onSurfaceVariant : null,
+        outline: context.isMaterial ? scheme.outline : null,
+        outlineVariant: context.isMaterial ? scheme.outlineVariant : null,
         onSurface: colors.text,
       ),
     );

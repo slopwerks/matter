@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/app_component_theme.dart';
+import '../../theme/material_theme.dart';
+import '../../widgets/material_press.dart';
 import 'sticker_catalog.dart';
 import 'sticker_preview.dart';
 
@@ -341,6 +344,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
               itemBuilder: (context, index) {
                 final pack = packs[index];
                 return _PackThumb(
+                  label: pack.title,
                   sticker: pack.stickers.first,
                   fallback: pack.accent,
                   selected: index == _activePackIndex,
@@ -452,12 +456,14 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
 }
 
 class _PackThumb extends StatelessWidget {
+  final String label;
   final StickerItem sticker;
   final String fallback;
   final bool selected;
   final VoidCallback onTap;
 
   const _PackThumb({
+    required this.label,
     required this.sticker,
     required this.fallback,
     required this.selected,
@@ -467,6 +473,39 @@ class _PackThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    if (context.isMaterial) {
+      return Tooltip(
+        message: label,
+        child: Semantics(
+          selected: selected,
+          button: true,
+          child: MaterialPress(
+            builder: (states) => Material(
+              animationDuration: const Duration(milliseconds: 160),
+              color: selected
+                  ? AppComponentTheme.of(context).selectedRowFill
+                  : colors.card,
+              shape: materialPreviewThumbnailShape,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                statesController: states,
+                onTap: onTap,
+                child: SizedBox.square(
+                  dimension: 40,
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: RemoteStickerPreview(
+                      sticker: sticker,
+                      fallback: fallback,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return InkWell(
       borderRadius: BorderRadius.circular(NeuRadius.button),
       onTap: onTap,
@@ -522,11 +561,16 @@ class _StickerCard extends StatelessWidget {
       onLongPressCancel: onLongPressCancel,
       behavior: HitTestBehavior.opaque,
       child: Ink(
-        decoration: BoxDecoration(
-          color: colors.card,
-          borderRadius: BorderRadius.circular(NeuRadius.button),
-          border: Border.all(color: colors.hairline, width: 0.6),
-        ),
+        decoration: context.isMaterial
+            ? ShapeDecoration(
+                color: colors.card,
+                shape: materialPreviewThumbnailShape,
+              )
+            : BoxDecoration(
+                color: colors.card,
+                borderRadius: BorderRadius.circular(NeuRadius.button),
+                border: Border.all(color: colors.hairline, width: 0.6),
+              ),
         child: Padding(
           padding: const EdgeInsets.all(4),
           child: AspectRatio(
