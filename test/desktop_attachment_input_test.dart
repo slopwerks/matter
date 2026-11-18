@@ -781,7 +781,12 @@ void main() {
   testWidgets('mixed dropped batch retries only the unsent files', (
     tester,
   ) async {
-    await tester.pumpWidget(_input(container));
+    await tester.pumpWidget(
+      _input(
+        container,
+        material: const bool.fromEnvironment('MATTER_TEST_MATERIAL'),
+      ),
+    );
     await tester.enterText(find.byType(TextField), '保留文字');
     final input = tester.state<MessageInputState>(find.byType(MessageInput));
     final preview = input.previewExternalFiles([

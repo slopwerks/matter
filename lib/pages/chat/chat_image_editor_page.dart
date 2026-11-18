@@ -7,6 +7,7 @@ import 'package:pro_image_editor/pro_image_editor.dart';
 
 import '../../theme/neu_colors.dart';
 import '../../theme/material_theme.dart';
+import '../../theme/image_editor_theme.dart';
 
 enum ChatImageEditorTool { crop, paint }
 
@@ -69,7 +70,6 @@ class _ChatImageEditorPageState extends State<ChatImageEditorPage> {
   @override
   Widget build(BuildContext context) {
     final neu = context.neu;
-    final scheme = Theme.of(context).colorScheme;
     final colors = context.isMaterial
         ? materialMediaChromeStyle(Theme.of(context))
         : (
@@ -85,59 +85,21 @@ class _ChatImageEditorPageState extends State<ChatImageEditorPage> {
         : Brightness.light;
     // pro_image_editor 14 renders with the decoupled `material_ui` package,
     // whose ThemeData is not interchangeable with the SDK one.
-    final editorTheme = material_ui.ThemeData(
-      useMaterial3: true,
-      brightness: Theme.of(context).brightness,
-      scaffoldBackgroundColor: colors.base,
-      colorScheme: material_ui.ColorScheme.fromSeed(
-        seedColor: colors.accent,
-        brightness: Theme.of(context).brightness,
-        primary: colors.accent,
-        onPrimary: context.isMaterial ? scheme.onPrimary : null,
-        primaryContainer: context.isMaterial ? scheme.primaryContainer : null,
-        onPrimaryContainer: context.isMaterial
-            ? scheme.onPrimaryContainer
-            : null,
-        secondary: context.isMaterial ? scheme.secondary : colors.accent,
-        onSecondary: context.isMaterial ? scheme.onSecondary : null,
-        secondaryContainer: context.isMaterial
-            ? scheme.secondaryContainer
-            : null,
-        onSecondaryContainer: context.isMaterial
-            ? scheme.onSecondaryContainer
-            : null,
-        tertiary: context.isMaterial ? scheme.tertiary : null,
-        onTertiary: context.isMaterial ? scheme.onTertiary : null,
-        tertiaryContainer: context.isMaterial ? scheme.tertiaryContainer : null,
-        onTertiaryContainer: context.isMaterial
-            ? scheme.onTertiaryContainer
-            : null,
-        error: context.isMaterial ? scheme.error : null,
-        onError: context.isMaterial ? scheme.onError : null,
-        errorContainer: context.isMaterial ? scheme.errorContainer : null,
-        onErrorContainer: context.isMaterial ? scheme.onErrorContainer : null,
-        surface: context.isMaterial ? scheme.surface : colors.surface,
-        surfaceDim: context.isMaterial ? scheme.surfaceDim : null,
-        surfaceBright: context.isMaterial ? scheme.surfaceBright : null,
-        surfaceContainerLowest: context.isMaterial
-            ? scheme.surfaceContainerLowest
-            : null,
-        surfaceContainerLow: context.isMaterial
-            ? scheme.surfaceContainerLow
-            : null,
-        surfaceContainer: context.isMaterial ? scheme.surfaceContainer : null,
-        surfaceContainerHigh: context.isMaterial
-            ? scheme.surfaceContainerHigh
-            : null,
-        surfaceContainerHighest: context.isMaterial
-            ? scheme.surfaceContainerHighest
-            : null,
-        onSurfaceVariant: context.isMaterial ? scheme.onSurfaceVariant : null,
-        outline: context.isMaterial ? scheme.outline : null,
-        outlineVariant: context.isMaterial ? scheme.outlineVariant : null,
-        onSurface: colors.text,
-      ),
-    );
+    final editorTheme = context.isMaterial
+        ? buildMaterialImageEditorTheme(Theme.of(context))
+        : material_ui.ThemeData(
+            useMaterial3: true,
+            brightness: Theme.of(context).brightness,
+            scaffoldBackgroundColor: colors.base,
+            colorScheme: material_ui.ColorScheme.fromSeed(
+              seedColor: colors.accent,
+              brightness: Theme.of(context).brightness,
+              primary: colors.accent,
+              secondary: colors.accent,
+              surface: colors.surface,
+              onSurface: colors.text,
+            ),
+          );
 
     final callbacks = ProImageEditorCallbacks(
       onImageEditingComplete: (bytes) async {

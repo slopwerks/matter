@@ -35,6 +35,34 @@ materialMediaChromeStyle(ThemeData theme) => (
   accent: theme.colorScheme.primary,
 );
 
+({
+  Color background,
+  Color foreground,
+  Color supporting,
+  ButtonStyle control,
+  Decoration captionDecoration,
+  TextStyle? caption,
+  TextStyle? title,
+})
+materialMediaViewerStyle(ThemeData theme) => (
+  background: Colors.black,
+  foreground: Colors.white,
+  supporting: Colors.white70,
+  control: IconButton.styleFrom(
+    backgroundColor: Colors.white.withValues(alpha: .14),
+    foregroundColor: Colors.white,
+    disabledBackgroundColor: Colors.white.withValues(alpha: .06),
+    disabledForegroundColor: Colors.white38,
+    shape: const StadiumBorder(),
+  ),
+  captionDecoration: ShapeDecoration(
+    color: Colors.black.withValues(alpha: .75),
+    shape: materialListItemShape,
+  ),
+  caption: theme.textTheme.bodyLarge?.copyWith(color: Colors.white),
+  title: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+);
+
 const materialAttachmentCaptionDecoration = InputDecoration(
   hintText: '添加图片描述',
   filled: false,
@@ -46,6 +74,12 @@ const materialAttachmentCaptionDecoration = InputDecoration(
   isDense: true,
   counterText: '',
 );
+
+final materialMarkdownEditorDecoration = materialAttachmentCaptionDecoration
+    .copyWith(
+      hintText: '用 Markdown 编写消息…',
+      contentPadding: const EdgeInsets.all(20),
+    );
 
 ({
   Color brandFill,
