@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/neu_field.dart';
@@ -79,15 +80,20 @@ class ForwardSuccessNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final style = context.isMaterial
+        ? materialForwardNoticeStyle(Theme.of(context))
+        : null;
+    final linkColor = style?.action ?? colors.accent;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Material(
           key: const ValueKey('forward-success-notice-surface'),
-          color: colors.surfaceStrong,
+          color: style?.fill ?? colors.surfaceStrong,
           elevation: 8,
           shadowColor: Colors.black54,
-          borderRadius: BorderRadius.circular(NeuRadius.button),
+          borderRadius:
+              style?.radius ?? BorderRadius.circular(NeuRadius.button),
           clipBehavior: Clip.antiAlias,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
@@ -98,7 +104,7 @@ class ForwardSuccessNotice extends StatelessWidget {
                 Text(
                   '成功转发到',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: colors.text),
+                  style: style?.text ?? TextStyle(color: colors.text),
                 ),
                 Semantics(
                   link: true,
@@ -109,10 +115,10 @@ class ForwardSuccessNotice extends StatelessWidget {
                     child: Text(
                       roomName,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.accent,
+                      style: (style?.text ?? const TextStyle()).copyWith(
+                        color: linkColor,
                         decoration: TextDecoration.underline,
-                        decorationColor: colors.accent,
+                        decorationColor: linkColor,
                       ),
                     ),
                   ),

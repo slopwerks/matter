@@ -27,26 +27,17 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.neu;
-    final membersAsync = ref.watch(roomMembersProvider(roomId));
-
     if (context.isMaterial) {
-      final room = ref
-          .watch(allChatRoomsProvider)
-          .value
-          ?.where((room) => room.id == roomId)
-          .firstOrNull;
       return MaterialRoomDetailsPanel(
         roomId: roomId,
         roomName: roomName,
         avatarUrl: avatarUrl,
-        isEncrypted: room?.isEncrypted,
-        members: membersAsync,
         onManage: () => _openRoomManagement(context),
-        onRetry: () => ref.invalidate(roomMembersProvider(roomId)),
       );
     }
 
+    final colors = context.neu;
+    final membersAsync = ref.watch(roomMembersProvider(roomId));
     return ColoredBox(
       color: colors.surface,
       child: Column(

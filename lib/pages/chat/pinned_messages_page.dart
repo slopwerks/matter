@@ -804,43 +804,49 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
 
   Widget _refreshErrorTile() {
     final colors = context.neu;
+    final row = Row(
+      children: [
+        Icon(Icons.sync_problem_rounded, color: colors.error, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '刷新失败，当前显示上次结果',
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: colors.text),
+              ),
+              Text(
+                '$_loadError',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        NeuIconButton(
+          icon: Icons.refresh_rounded,
+          size: 36,
+          tooltip: '重试刷新',
+          onPressed: () => unawaited(_reload()),
+        ),
+      ],
+    );
+    const padding = EdgeInsets.fromLTRB(14, 10, 8, 10);
     return Padding(
       padding: const EdgeInsets.only(bottom: NeuSpacing.md),
-      child: NeuSurface(
-        color: colors.surfaceStrong,
-        radius: context.isMaterial ? 0 : NeuRadius.content,
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-        child: Row(
-          children: [
-            Icon(Icons.sync_problem_rounded, color: colors.error, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '刷新失败，当前显示上次结果',
-                    style: Theme.of(context).textTheme.bodyMedium
-                        ?.copyWith(color: colors.text),
-                  ),
-                  Text(
-                    '$_loadError',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+      child: context.isMaterial
+          ? Card(
+              child: Padding(padding: padding, child: row),
+            )
+          : NeuSurface(
+              color: colors.surfaceStrong,
+              radius: NeuRadius.content,
+              padding: padding,
+              child: row,
             ),
-            NeuIconButton(
-              icon: Icons.refresh_rounded,
-              size: 36,
-              tooltip: '重试刷新',
-              onPressed: () => unawaited(_reload()),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

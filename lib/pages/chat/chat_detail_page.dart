@@ -41,6 +41,7 @@ import 'floating_date_header.dart';
 import 'forward_message_sheet.dart';
 import 'latest_message_control.dart';
 import 'local_outgoing_matcher.dart';
+import 'material_room_details_panel.dart';
 import 'message_group.dart';
 import 'image_message_runs.dart';
 import 'message_input.dart';
@@ -3784,8 +3785,46 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     );
   }
 
-  void _showRoomDetails(BuildContext context) {
-    showNeuSheet<void>(
+  Future<void> _showRoomDetails(BuildContext context) async {
+    final roomId = widget.roomId;
+    void openManagement() {
+      if (!mounted || !context.mounted || widget.roomId != roomId) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RoomManagementPage(
+            roomId: roomId,
+            roomName: _roomName,
+            avatarUrl: _avatarUrl,
+            onRoomClosed: widget.onRoomLeft,
+            onRoomDetailsChanged: _handleRoomDetailsChanged,
+          ),
+        ),
+      );
+    }
+
+    if (context.isMaterial) {
+      final manage = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        clipBehavior: Clip.antiAlias,
+        constraints: const BoxConstraints(maxWidth: 420),
+        builder: (sheetContext) => SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * .85,
+          child: MaterialRoomDetailsPanel(
+            roomId: roomId,
+            roomName: _roomName,
+            avatarUrl: _avatarUrl,
+            onManage: () => Navigator.of(sheetContext).pop(true),
+          ),
+        ),
+      );
+      if (manage == true) openManagement();
+      return;
+    }
+
+    await showNeuSheet<void>(
       context: context,
       child: Builder(
         builder: (sheetContext) => Column(
@@ -3826,17 +3865,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               label: '房间管理',
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => RoomManagementPage(
-                      roomId: widget.roomId,
-                      roomName: _roomName,
-                      avatarUrl: _avatarUrl,
-                      onRoomClosed: widget.onRoomLeft,
-                      onRoomDetailsChanged: _handleRoomDetailsChanged,
-                    ),
-                  ),
-                );
+                openManagement();
               },
             ),
             // Room members preview
@@ -3855,18 +3884,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           label: '成员 (${members.length})',
                           onTap: () {
                             Navigator.of(sheetContext).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => RoomManagementPage(
-                                  roomId: widget.roomId,
-                                  roomName: _roomName,
-                                  avatarUrl: _avatarUrl,
-                                  onRoomClosed: widget.onRoomLeft,
-                                  onRoomDetailsChanged:
-                                      _handleRoomDetailsChanged,
-                                ),
-                              ),
-                            );
+                            openManagement();
                           },
                         ),
                         Padding(

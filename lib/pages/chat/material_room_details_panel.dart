@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/rust/api/matrix.dart' as rust;
+import '../../providers/chat_provider.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
@@ -9,28 +9,32 @@ import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_action.dart';
 
 /// Conversation information shared by the supporting pane and its modal view.
-class MaterialRoomDetailsPanel extends StatelessWidget {
+class MaterialRoomDetailsPanel extends ConsumerWidget {
   const MaterialRoomDetailsPanel({
     super.key,
     required this.roomId,
     required this.roomName,
     this.avatarUrl,
-    this.isEncrypted,
-    required this.members,
     required this.onManage,
-    required this.onRetry,
   });
 
   final String roomId;
   final String roomName;
   final String? avatarUrl;
-  final bool? isEncrypted;
-  final AsyncValue<List<rust.Contact>> members;
   final VoidCallback onManage;
-  final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final membersProvider = roomMembersProvider(roomId);
+    final members = ref.watch(membersProvider);
+    final isEncrypted = ref.watch(
+      allChatRoomsProvider.select(
+        (rooms) => rooms.value
+            ?.where((room) => room.id == roomId)
+            .firstOrNull
+            ?.isEncrypted,
+      ),
+    );
     final theme = Theme.of(context);
     final hero = materialProfileCardStyle(theme, detail: true);
     return CustomScrollView(
@@ -181,7 +185,7 @@ class MaterialRoomDetailsPanel extends StatelessWidget {
                       const SizedBox(height: 12),
                       const Text('无法加载成员'),
                       TextButton.icon(
-                        onPressed: onRetry,
+                        onPressed: () => ref.invalidate(membersProvider),
                         icon: const Icon(Icons.refresh_rounded),
                         label: const Text('重试'),
                       ),

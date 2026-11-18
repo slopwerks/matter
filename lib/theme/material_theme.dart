@@ -17,6 +17,41 @@ const materialListItemShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.all(Radius.circular(materialSurfaceRadius)),
 );
 
+({Color fill, ShapeBorder shape}) materialComposerPickerStyle(
+  ThemeData theme,
+) =>
+    (fill: theme.colorScheme.surfaceContainerLow, shape: materialListItemShape);
+
+({
+  Color fill,
+  Color foreground,
+  ShapeBorder shape,
+  TextStyle? title,
+  TextStyle? preview,
+})
+materialPinnedStripStyle(ThemeData theme) {
+  final foreground = theme.colorScheme.onTertiaryContainer;
+  return (
+    fill: theme.colorScheme.tertiaryContainer,
+    foreground: foreground,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(12)),
+    ),
+    title: theme.textTheme.labelMedium?.copyWith(color: foreground),
+    preview: theme.textTheme.bodySmall?.copyWith(color: foreground),
+  );
+}
+
+({Color fill, Color action, BorderRadius radius, TextStyle? text})
+materialForwardNoticeStyle(ThemeData theme) => (
+  fill: theme.colorScheme.inverseSurface,
+  action: theme.colorScheme.inversePrimary,
+  radius: BorderRadius.circular(8),
+  text: theme.textTheme.bodyMedium?.copyWith(
+    color: theme.colorScheme.onInverseSurface,
+  ),
+);
+
 TextStyle? materialListTitleStyle(ThemeData theme, {bool unread = false}) =>
     theme.textTheme.titleMedium?.copyWith(
       fontSize: 16,
