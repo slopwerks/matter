@@ -191,6 +191,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('编辑空间'));
       await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.byType(TextField), findsNWidgets(2));
       await tester.enterText(find.byType(TextField).first, '尚未保存的名称');
       await _resize(tester, 1600);

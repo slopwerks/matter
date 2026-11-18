@@ -1223,149 +1223,127 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
           // success and the failure paths fall back to the page snackbar
           // when the dialog is gone.
           canPop: true,
-          child: Dialog(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-            child: GlassPanel(
-              radius: NeuRadius.nav,
-              padding: const EdgeInsets.all(22),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '邀请用户',
-                      style: Theme.of(dialogContext).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    NeuTextField(
-                      hint: '@user:server.example',
-                      autofocus: true,
-                      onChanged: (value) => invitedUserId = value,
-                    ),
-                    if (inviteError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          inviteError!,
-                          style: Theme.of(dialogContext).textTheme.bodyMedium
-                              ?.copyWith(color: dialogContext.neu.error),
-                        ),
-                      ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: NeuButton(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            onPressed: inviting
-                                ? null
-                                : () => Navigator.of(dialogContext).pop(),
-                            child: const Center(child: Text('取消')),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: NeuButton(
-                            accent: true,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            onPressed: inviting
-                                ? null
-                                : () async {
-                                    // Entry guard (not only the disabled button): the
-                                    // rebuild lags a frame, so a second tap on the old
-                                    // widget could otherwise issue a duplicate invite.
-                                    if (inviting) return;
-                                    final userId = invitedUserId.trim();
-                                    if (userId.isEmpty) return;
-                                    setDialogState(() {
-                                      inviting = true;
-                                      inviteError = null;
-                                    });
-                                    try {
-                                      await rust.inviteUserToRoom(
-                                        accountUserId: _openedUserId ?? '',
-                                        roomId: widget.roomId,
-                                        userId: userId,
-                                      );
-                                      // Close the dialog first, then report: if the page
-                                      // is gone (dismissal race), the dialog must not
-                                      // stay stuck in its non-dismissible in-flight state
-                                      // — mirror the error path. `isCurrent` guard: the
-                                      // dialog may already be in its exit animation —
-                                      // popping then would pop the page below it.
-                                      if (dialogContext.mounted &&
-                                          ModalRoute.of(dialogContext)
-                                                  ?.isCurrent ==
-                                              true) {
-                                        Navigator.of(dialogContext).pop();
-                                      }
-                                      // The account may have switched while the request
-                                      // was in flight: the invite itself was guarded
-                                      // server-side, so skip the local bookkeeping (the
-                                      // page shows the switched placeholder).
-                                      if (!mounted || !_accountActive()) return;
-                                      // Room invalidation and the feedback must not
-                                      // depend on the dialog still being up.
-                                      _invalidateRoom();
-                                      _showSnackBar('邀请已发送');
-                                      // Fire the member refetch detached, like the knock
-                                      // approval path: the invitee must appear without
-                                      // waiting for the server join event.
-                                      unawaited(_retryMembers());
-                                    } catch (error) {
-                                      if (!mounted) {
-                                        // The page is gone: close the dialog so it is
-                                        // not stuck in its non-dismissible in-flight
-                                        // state.
-                                        if (dialogContext.mounted &&
-                                            ModalRoute.of(dialogContext)
-                                                    ?.isCurrent ==
-                                                true) {
-                                          Navigator.of(dialogContext).pop();
-                                        }
-                                        return;
-                                      }
-                                      // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
-                                      if (!_accountActive()) {
-                                        if (dialogContext.mounted &&
-                                            ModalRoute.of(dialogContext)
-                                                    ?.isCurrent ==
-                                                true) {
-                                          Navigator.of(dialogContext).pop();
-                                        }
-                                        return;
-                                      }
-                                      if (dialogContext.mounted) {
-                                        setDialogState(() {
-                                          inviting = false;
-                                          // Render the failure inside the dialog: a
-                                          // page-level snackbar would sit beneath the
-                                          // modal barrier and stay invisible while the
-                                          // dialog stays open for retry.
-                                          inviteError = _actionFailureMessage(
-                                            error,
-                                          );
-                                        });
-                                      } else if (mounted) {
-                                        // The dialog was dismissed while the request was
-                                        // in flight: fall back to the page snackbar so
-                                        // the failure is not completely silent.
-                                        _showActionFailure(error);
-                                      }
-                                    }
-                                  },
-                            child: const Center(child: Text('邀请')),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+          child: AppDialogSurface(
+            title: '邀请用户',
+            children: [
+              NeuTextField(
+                hint: '@user:server.example',
+                autofocus: true,
+                onChanged: (value) => invitedUserId = value,
               ),
-            ),
+              if (inviteError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    inviteError!,
+                    style: Theme.of(dialogContext).textTheme.bodyMedium
+                        ?.copyWith(color: dialogContext.neu.error),
+                  ),
+                ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: NeuButton(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      onPressed: inviting
+                          ? null
+                          : () => Navigator.of(dialogContext).pop(),
+                      child: const Center(child: Text('取消')),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: NeuButton(
+                      accent: true,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      onPressed: inviting
+                          ? null
+                          : () async {
+                              // Entry guard (not only the disabled button): the
+                              // rebuild lags a frame, so a second tap on the old
+                              // widget could otherwise issue a duplicate invite.
+                              if (inviting) return;
+                              final userId = invitedUserId.trim();
+                              if (userId.isEmpty) return;
+                              setDialogState(() {
+                                inviting = true;
+                                inviteError = null;
+                              });
+                              try {
+                                await rust.inviteUserToRoom(
+                                  accountUserId: _openedUserId ?? '',
+                                  roomId: widget.roomId,
+                                  userId: userId,
+                                );
+                                // Close the dialog first, then report: if the page
+                                // is gone (dismissal race), the dialog must not
+                                // stay stuck in its non-dismissible in-flight state
+                                // — mirror the error path. `isCurrent` guard: the
+                                // dialog may already be in its exit animation —
+                                // popping then would pop the page below it.
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                // The account may have switched while the request
+                                // was in flight: the invite itself was guarded
+                                // server-side, so skip the local bookkeeping (the
+                                // page shows the switched placeholder).
+                                if (!mounted || !_accountActive()) return;
+                                // Room invalidation and the feedback must not
+                                // depend on the dialog still being up.
+                                _invalidateRoom();
+                                _showSnackBar('邀请已发送');
+                                // Fire the member refetch detached, like the knock
+                                // approval path: the invitee must appear without
+                                // waiting for the server join event.
+                                unawaited(_retryMembers());
+                              } catch (error) {
+                                if (!mounted) {
+                                  // The page is gone: close the dialog so it is
+                                  // not stuck in its non-dismissible in-flight
+                                  // state.
+                                  if (dialogContext.mounted &&
+                                      ModalRoute.of(dialogContext)?.isCurrent ==
+                                          true) {
+                                    Navigator.of(dialogContext).pop();
+                                  }
+                                  return;
+                                }
+                                // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
+                                if (!_accountActive()) {
+                                  if (dialogContext.mounted &&
+                                      ModalRoute.of(dialogContext)?.isCurrent ==
+                                          true) {
+                                    Navigator.of(dialogContext).pop();
+                                  }
+                                  return;
+                                }
+                                if (dialogContext.mounted) {
+                                  setDialogState(() {
+                                    inviting = false;
+                                    // Render the failure inside the dialog: a
+                                    // page-level snackbar would sit beneath the
+                                    // modal barrier and stay invisible while the
+                                    // dialog stays open for retry.
+                                    inviteError = _actionFailureMessage(error);
+                                  });
+                                } else if (mounted) {
+                                  // The dialog was dismissed while the request was
+                                  // in flight: fall back to the page snackbar so
+                                  // the failure is not completely silent.
+                                  _showActionFailure(error);
+                                }
+                              }
+                            },
+                      child: const Center(child: Text('邀请')),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
