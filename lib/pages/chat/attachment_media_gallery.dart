@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/neu_surface.dart';
 import 'attachment_caption_composer.dart';
@@ -116,8 +117,12 @@ class _AttachmentGalleryTabState extends State<AttachmentGalleryTab> {
     listenable: widget.draft,
     builder: (context, _) {
       final colors = context.neu;
+      final style = context.isMaterial
+          ? materialGalleryStyle(Theme.of(context))
+          : null;
+      final progressColor = style == null ? colors.accent : null;
       if (_loading) {
-        return Center(child: CircularProgressIndicator(color: colors.accent));
+        return Center(child: CircularProgressIndicator(color: progressColor));
       }
       if (_error != null) {
         return Center(
@@ -153,13 +158,23 @@ class _AttachmentGalleryTabState extends State<AttachmentGalleryTab> {
           itemBuilder: (context, index) {
             if (index == _assets.length) {
               return Center(
-                child: CircularProgressIndicator(color: colors.accent),
+                child: CircularProgressIndicator(color: progressColor),
               );
             }
             final asset = _assets[index];
             final item = widget.draft.forAsset(asset);
             final order = widget.draft.order(item);
             final selected = order > 0;
+            final thumbnail = item.editedBytes != null
+                ? Image.memory(
+                    item.editedBytes!,
+                    fit: BoxFit.cover,
+                    cacheWidth: 256,
+                  )
+                : _AssetThumbnail(
+                    key: ValueKey('thumbnail_${asset.id}'),
+                    asset: asset,
+                  );
             return GestureDetector(
               key: ValueKey(asset.id),
               onTap: widget.draft.isSending
@@ -184,25 +199,31 @@ class _AttachmentGalleryTabState extends State<AttachmentGalleryTab> {
                 children: [
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    color: selected ? colors.base : Colors.transparent,
+                    color: style == null
+                        ? (selected ? colors.base : Colors.transparent)
+                        : null,
+                    decoration: style == null
+                        ? null
+                        : ShapeDecoration(
+                            color: selected
+                                ? style.selection
+                                : Colors.transparent,
+                            shape: materialPreviewThumbnailShape,
+                          ),
                     padding: selected
                         ? const EdgeInsets.all(6)
                         : EdgeInsets.zero,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        selected ? NeuRadius.tag - 2 : 0,
-                      ),
-                      child: item.editedBytes != null
-                          ? Image.memory(
-                              item.editedBytes!,
-                              fit: BoxFit.cover,
-                              cacheWidth: 256,
-                            )
-                          : _AssetThumbnail(
-                              key: ValueKey('thumbnail_${asset.id}'),
-                              asset: asset,
+                    child: style == null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              selected ? NeuRadius.tag - 2 : 0,
                             ),
-                    ),
+                            child: thumbnail,
+                          )
+                        : ClipPath.shape(
+                            shape: materialPreviewThumbnailShape,
+                            child: thumbnail,
+                          ),
                   ),
                   Positioned(
                     top: 4,
@@ -265,7 +286,13 @@ class _AssetThumbnailState extends State<_AssetThumbnail> {
   Widget build(BuildContext context) => FutureBuilder<Uint8List?>(
     future: _thumbnail,
     builder: (context, snapshot) {
-      if (snapshot.data == null) return ColoredBox(color: context.neu.card);
+      if (snapshot.data == null) {
+        return ColoredBox(
+          color: context.isMaterial
+              ? materialGalleryStyle(Theme.of(context)).placeholder
+              : context.neu.card,
+        );
+      }
       return Image.memory(
         snapshot.data!,
         fit: BoxFit.cover,
@@ -286,13 +313,17 @@ class AttachmentSelectionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final style = context.isMaterial ? materialGalleryStyle(theme) : null;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       width: 22,
       height: 22,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: selected ? colors.accent : Colors.black.withValues(alpha: .35),
+        color: selected
+            ? style?.badge ?? colors.accent
+            : Colors.black.withValues(alpha: .35),
         border: Border.all(
           color: Colors.white.withValues(alpha: selected ? 0 : .7),
           width: 1.5,
@@ -302,8 +333,8 @@ class AttachmentSelectionBadge extends StatelessWidget {
       child: selected
           ? Text(
               '$order',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colors.onAccent,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: style?.badgeText ?? colors.onAccent,
                 fontWeight: FontWeight.w600,
               ),
             )

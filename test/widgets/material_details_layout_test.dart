@@ -138,7 +138,9 @@ void main() {
         same(detail),
       );
       expect(
-        tester.widget<DropdownButton<ComposerEnterAction>>(dropdown).value,
+        tester
+            .widget<DropdownMenu<ComposerEnterAction>>(dropdown)
+            .initialSelection,
         ComposerEnterAction.newline,
       );
       expect(tester.takeException(), isNull);

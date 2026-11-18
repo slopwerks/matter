@@ -4,10 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../theme/neu_colors.dart';
 import 'timeline/timeline_bubble_frame.dart'
     show
-        enabledNeuBubbleShadows,
-        neuBubbleShape,
-        outgoingBubbleForeground,
-        messageBubbleFill;
+        AttachmentBubbleIcon,
+        attachmentBubbleDecoration,
+        outgoingBubbleForeground;
 
 typedef LocationUriLauncher = Future<bool> Function(Uri uri);
 
@@ -40,6 +39,7 @@ class LocationMessageBubble extends StatelessWidget {
   final bool isMe;
   final Widget metadata;
   final double maxWidth;
+  final BorderRadius? borderRadius;
   final LocationUriLauncher? launchUri;
 
   const LocationMessageBubble({
@@ -49,6 +49,7 @@ class LocationMessageBubble extends StatelessWidget {
     required this.isMe,
     required this.metadata,
     this.maxWidth = 240,
+    this.borderRadius,
     this.launchUri,
   });
 
@@ -93,21 +94,28 @@ class LocationMessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final foreground = isMe
+        ? outgoingBubbleForeground(context)
+        : context.isMaterial
+        ? scheme.onSurface
+        : colors.text;
+    final trailing = context.isMaterial
+        ? (isMe ? foreground : scheme.onSurfaceVariant)
+        : (isMe ? foreground.withValues(alpha: 0.7) : colors.textTertiary);
     final label = body.trim().isEmpty ? geoUri : body;
-    final shape = neuBubbleShape(
+    final decoration = attachmentBubbleDecoration(
       context,
-      BorderRadius.circular(NeuRadius.content),
+      isMe: isMe,
+      borderRadius: borderRadius,
     );
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
       child: Container(
-        decoration: ShapeDecoration(
-          shape: shape,
-          color: messageBubbleFill(context, isMe: isMe),
-          shadows: enabledNeuBubbleShadows(context, colors),
-        ),
+        decoration: decoration,
         child: ClipPath.shape(
-          shape: shape,
+          shape: decoration.shape,
           child: Stack(
             children: [
               Material(
@@ -119,33 +127,27 @@ class LocationMessageBubble extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.location_on_rounded,
-                          color: isMe
-                              ? outgoingBubbleForeground(context)
-                              : colors.accent,
-                          size: 30,
+                        AttachmentBubbleIcon(
+                          icon: Icons.location_on_rounded,
+                          isMe: isMe,
+                          location: true,
                         ),
                         const SizedBox(width: 10),
                         Flexible(
                           child: Text(
                             label,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: isMe
-                                      ? outgoingBubbleForeground(context)
-                                      : colors.text,
-                                ),
+                            style:
+                                (context.isMaterial
+                                        ? theme.textTheme.titleSmall
+                                        : theme.textTheme.bodyMedium)
+                                    ?.copyWith(color: foreground),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Icon(
                           Icons.open_in_new_rounded,
                           size: 18,
-                          color: isMe
-                              ? outgoingBubbleForeground(context)
-                                    .withValues(alpha: 0.7)
-                              : colors.textTertiary,
+                          color: trailing,
                         ),
                       ],
                     ),

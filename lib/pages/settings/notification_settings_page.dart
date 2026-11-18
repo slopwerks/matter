@@ -456,24 +456,39 @@ class _NotificationSettingsPageState
       void change(bool next) => _saveRule(rule, next, selected, title);
       final detail = supported ? subtitle : '$subtitle\n此服务器不支持该规则';
       if (mode) {
+        void select(bool? next) {
+          if (next != null) change(next);
+        }
+
+        final key = ValueKey(rule);
         return ListTile(
           title: Text(title),
           subtitle: Text(detail),
           enabled: enabled,
-          trailing: DropdownButton<bool>(
-            key: ValueKey(rule),
-            value: selected,
-            underline: const SizedBox.shrink(),
-            items: const [
-              DropdownMenuItem(value: true, child: Text('所有消息')),
-              DropdownMenuItem(value: false, child: Text('仅提及')),
-            ],
-            onChanged: enabled
-                ? (next) {
-                    if (next != null) change(next);
-                  }
-                : null,
-          ),
+          trailing: context.isMaterial
+              ? DropdownMenu<bool>(
+                  key: key,
+                  width: 132,
+                  enabled: enabled,
+                  initialSelection: selected,
+                  selectOnly: true,
+                  enableSearch: false,
+                  dropdownMenuEntries: const [
+                    DropdownMenuEntry(value: true, label: '所有消息'),
+                    DropdownMenuEntry(value: false, label: '仅提及'),
+                  ],
+                  onSelected: enabled ? select : null,
+                )
+              : DropdownButton<bool>(
+                  key: key,
+                  value: selected,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: true, child: Text('所有消息')),
+                    DropdownMenuItem(value: false, child: Text('仅提及')),
+                  ],
+                  onChanged: enabled ? select : null,
+                ),
         );
       }
       return SwitchListTile.adaptive(

@@ -169,12 +169,12 @@ void main() {
     );
     expect(notice.value, isTrue);
     expect(notice.onChanged, isNotNull);
-    expect(
-      tester
-          .widget<DropdownButton<bool>>(tile(NotificationRule.directMessage))
-          .onChanged,
-      isNotNull,
-    );
+    final directMessage = tester.widget(tile(NotificationRule.directMessage));
+    expect(switch (directMessage) {
+      DropdownMenu<bool>(:final enabled) => enabled,
+      DropdownButton<bool>(:final onChanged) => onChanged != null,
+      _ => false,
+    }, isTrue);
     await tester.tap(tile(NotificationRule.muteAll));
     await tester.pumpAndSettle();
     expect(
@@ -408,7 +408,10 @@ void main() {
     final mode = find.byKey(const ValueKey(NotificationRule.directMessage));
     await tester.tap(mode);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('仅提及').last);
+    final option = tester.widget(mode) is DropdownMenu<bool>
+        ? find.widgetWithText(MenuItemButton, '仅提及').hitTestable()
+        : find.text('仅提及').last;
+    await tester.tap(option);
     await tester.pumpAndSettle();
     expect(api.calls, [(userId, NotificationRule.directMessage, false)]);
     expect(api.values[NotificationRule.encryptedDirectMessage], isTrue);

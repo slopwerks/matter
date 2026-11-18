@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
+import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 
 import '../../../features/markdown/markdown_composer.dart';
@@ -153,6 +154,9 @@ class TimelineTextBubble extends StatelessWidget {
     bool isMe,
   ) {
     final colors = context.neu;
+    final style = context.isMaterial
+        ? materialTimelinePreviewStyle(Theme.of(context))
+        : null;
     return Semantics(
       button: true,
       label: '跳转到被回复的消息',
@@ -166,13 +170,17 @@ class TimelineTextBubble extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isMe
-                ? Colors.white.withValues(alpha: 0.16)
-                : colors.base.withValues(alpha: 0.65),
-            borderRadius: BorderRadius.circular(NeuRadius.tag),
+            color:
+                style?.fill ??
+                (isMe
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : colors.base.withValues(alpha: 0.65)),
+            borderRadius: style?.radius ?? BorderRadius.circular(NeuRadius.tag),
             border: Border(
               left: BorderSide(
-                color: isMe ? outgoingBubbleForeground(context) : colors.accent,
+                color:
+                    style?.accent ??
+                    (isMe ? outgoingBubbleForeground(context) : colors.accent),
                 width: 3,
               ),
             ),
@@ -190,8 +198,11 @@ class TimelineTextBubble extends StatelessWidget {
 
   TextStyle _replyPreviewTextStyle(BuildContext context, bool isMe) {
     final colors = context.neu;
-    return Theme.of(context).textTheme.bodySmall!.copyWith(
-      color: isMe
+    final theme = Theme.of(context);
+    return theme.textTheme.bodySmall!.copyWith(
+      color: context.isMaterial
+          ? materialTimelinePreviewStyle(theme).foreground
+          : isMe
           ? outgoingBubbleForeground(context).withValues(alpha: 0.7)
           : colors.textTertiary,
       height: 1.3,

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../providers/chat_visual_settings_provider.dart';
+import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../theme/tokens.dart';
 
@@ -114,6 +115,62 @@ List<BoxShadow> enabledNeuBubbleShadows(
             .shadowBlurOptimizationEnabled,
       )
     : const [];
+
+ShapeDecoration attachmentBubbleDecoration(
+  BuildContext context, {
+  required bool isMe,
+  BorderRadius? borderRadius,
+}) {
+  final radius = context.isMaterial
+      ? borderRadius ??
+            timelineBubbleBorderRadius(
+              context,
+              isMe: isMe,
+              isFirst: true,
+              isLast: true,
+            )
+      : BorderRadius.circular(NeuRadius.content);
+  return ShapeDecoration(
+    shape: neuBubbleShape(context, radius),
+    color: messageBubbleFill(context, isMe: isMe),
+    shadows: enabledNeuBubbleShadows(context, context.neu),
+  );
+}
+
+/// The leading badge for downloadable files and shared locations.
+class AttachmentBubbleIcon extends StatelessWidget {
+  const AttachmentBubbleIcon({
+    super.key,
+    required this.icon,
+    required this.isMe,
+    this.location = false,
+  });
+
+  final IconData icon;
+  final bool isMe;
+  final bool location;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!context.isMaterial) {
+      return Icon(
+        icon,
+        size: 30,
+        color: isMe ? outgoingBubbleForeground(context) : context.neu.accent,
+      );
+    }
+    final style = materialTimelineAttachmentIconStyle(
+      Theme.of(context),
+      location: location,
+    );
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(color: style.fill, borderRadius: style.radius),
+      child: Icon(icon, size: 20, color: style.foreground),
+    );
+  }
+}
 
 /// Text bubble surface only: content, metadata, gestures, menu anchors and
 /// send-flight targets stay outside this widget at their existing boundaries.

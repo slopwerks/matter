@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import '../../features/matrix_html/matrix_link_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import 'timeline/timeline_bubble_frame.dart' show outgoingBubbleForeground;
@@ -73,102 +74,124 @@ class _LinkPreviewFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final style = context.isMaterial
+        ? materialTimelinePreviewStyle(theme)
+        : null;
     final background = isMe
         ? Colors.white.withValues(alpha: 0.14)
         : colors.base.withValues(alpha: 0.55);
     final border = isMe
         ? Colors.white.withValues(alpha: 0.16)
         : colors.hairline;
-    final titleColor = isMe ? outgoingBubbleForeground(context) : colors.text;
-    final secondaryColor = isMe
-        ? outgoingBubbleForeground(context).withValues(alpha: 0.72)
-        : colors.textTertiary;
-    final linkColor = isMe
-        ? outgoingBubbleForeground(context).withValues(alpha: 0.86)
-        : colors.accent;
+    final titleColor =
+        style?.foreground ??
+        (isMe ? outgoingBubbleForeground(context) : colors.text);
+    final secondaryColor =
+        style?.supporting ??
+        (isMe
+            ? outgoingBubbleForeground(context).withValues(alpha: 0.72)
+            : colors.textTertiary);
+    final linkColor =
+        style?.accent ??
+        (isMe
+            ? outgoingBubbleForeground(context).withValues(alpha: 0.86)
+            : colors.accent);
     final imageUrl = preview.imageUrl;
     final showImage = imageUrl != null && width >= 300;
     final imageWidth = math.min(156.0, math.max(112.0, width * 0.34));
 
+    final content = Row(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _PreviewSourceRow(
+                  preview: preview,
+                  color: style?.accent ?? secondaryColor,
+                  fallbackColor: linkColor,
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  preview.titleLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleSmall?.copyWith(
+                    color: titleColor,
+                    height: 1.2,
+                  ),
+                ),
+                if (preview.descriptionLabel != null) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    preview.descriptionLabel!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: secondaryColor,
+                      height: 1.28,
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                Text(
+                  preview.displayUrl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: linkColor,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (showImage)
+          SizedBox(
+            width: imageWidth,
+            height: _height,
+            child: _PreviewImage(
+              imageUrl: imageUrl,
+              width: imageWidth,
+              height: _height,
+              fit: BoxFit.cover,
+            ),
+          ),
+      ],
+    );
+    final radius = style?.radius ?? BorderRadius.circular(NeuRadius.tag);
+    final button = InkWell(
+      onTap: () => onOpen(preview.uri),
+      borderRadius: radius,
+      child: style == null
+          ? Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: radius,
+                border: Border.all(color: border),
+              ),
+              child: content,
+            )
+          : content,
+    );
     return SizedBox(
       width: width,
       height: _height,
-      child: InkWell(
-        onTap: () => onOpen(preview.uri),
-        borderRadius: BorderRadius.circular(NeuRadius.tag),
-        child: Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(NeuRadius.tag),
-            border: Border.all(color: border),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _PreviewSourceRow(
-                        preview: preview,
-                        color: secondaryColor,
-                        fallbackColor: linkColor,
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        preview.titleLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.titleSmall?.copyWith(
-                          color: titleColor,
-                          height: 1.2,
-                        ),
-                      ),
-                      if (preview.descriptionLabel != null) ...[
-                        const SizedBox(height: 5),
-                        Text(
-                          preview.descriptionLabel!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: textTheme.bodySmall?.copyWith(
-                            color: secondaryColor,
-                            height: 1.28,
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      Text(
-                        preview.displayUrl,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: linkColor,
-                          fontWeight: FontWeight.w600,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (showImage)
-                SizedBox(
-                  width: imageWidth,
-                  height: _height,
-                  child: _PreviewImage(
-                    imageUrl: imageUrl,
-                    width: imageWidth,
-                    height: _height,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+      child: style == null
+          ? button
+          : Material(
+              color: style.fill,
+              borderRadius: radius,
+              clipBehavior: Clip.antiAlias,
+              child: button,
+            ),
     );
   }
 }

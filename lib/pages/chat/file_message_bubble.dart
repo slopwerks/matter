@@ -17,10 +17,9 @@ import 'file_download_saver.dart';
 import 'markdown_attachment_page.dart';
 import 'timeline/timeline_bubble_frame.dart'
     show
-        enabledNeuBubbleShadows,
-        neuBubbleShape,
-        outgoingBubbleForeground,
-        messageBubbleFill;
+        AttachmentBubbleIcon,
+        attachmentBubbleDecoration,
+        outgoingBubbleForeground;
 
 /// Converts an untrusted attachment name into a portable suggested filename.
 String sanitizeAttachmentFilename(String filename) {
@@ -85,6 +84,7 @@ class FileMessageBubble extends StatefulWidget {
   final bool isMe;
   final Widget metadata;
   final double maxWidth;
+  final BorderRadius? borderRadius;
 
   const FileMessageBubble({
     super.key,
@@ -100,6 +100,7 @@ class FileMessageBubble extends StatefulWidget {
     required this.isMe,
     required this.metadata,
     this.maxWidth = 260,
+    this.borderRadius,
   });
 
   @override
@@ -244,27 +245,30 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final caption = widget.caption?.trim();
     final foreground = widget.isMe
         ? outgoingBubbleForeground(context)
+        : context.isMaterial
+        ? scheme.onSurface
         : colors.text;
-    final secondary = widget.isMe
-        ? outgoingBubbleForeground(context).withValues(alpha: 0.7)
-        : colors.textTertiary;
-    final shape = neuBubbleShape(
+    final secondary = context.isMaterial
+        ? (widget.isMe ? foreground : scheme.onSurfaceVariant)
+        : (widget.isMe
+              ? foreground.withValues(alpha: 0.7)
+              : colors.textTertiary);
+    final decoration = attachmentBubbleDecoration(
       context,
-      BorderRadius.circular(NeuRadius.content),
+      isMe: widget.isMe,
+      borderRadius: widget.borderRadius,
     );
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: widget.maxWidth),
       child: Container(
-        decoration: ShapeDecoration(
-          shape: shape,
-          color: messageBubbleFill(context, isMe: widget.isMe),
-          shadows: enabledNeuBubbleShadows(context, colors),
-        ),
+        decoration: decoration,
         child: ClipPath.shape(
-          shape: shape,
+          shape: decoration.shape,
           child: Stack(
             children: [
               Material(
@@ -282,14 +286,11 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              _downloading
+                            AttachmentBubbleIcon(
+                              icon: _downloading
                                   ? Icons.downloading_rounded
                                   : Icons.insert_drive_file_rounded,
-                              size: 30,
-                              color: widget.isMe
-                                  ? outgoingBubbleForeground(context)
-                                  : colors.accent,
+                              isMe: widget.isMe,
                             ),
                             const SizedBox(width: 10),
                             Flexible(
@@ -297,8 +298,11 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                                 _safeFilename,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(color: foreground),
+                                style:
+                                    (context.isMaterial
+                                            ? theme.textTheme.titleSmall
+                                            : theme.textTheme.bodyMedium)
+                                        ?.copyWith(color: foreground),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -346,8 +350,9 @@ class _FileMessageBubbleState extends State<FileMessageBubble> {
                           const SizedBox(height: 8),
                           Text(
                             caption,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: foreground),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: foreground,
+                            ),
                           ),
                         ],
                       ],

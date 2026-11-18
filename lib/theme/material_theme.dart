@@ -17,6 +17,41 @@ const materialListItemShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.all(Radius.circular(materialSurfaceRadius)),
 );
 
+({
+  Color fill,
+  Color foreground,
+  Color supporting,
+  Color accent,
+  BorderRadius radius,
+})
+materialTimelinePreviewStyle(ThemeData theme) => (
+  fill: theme.colorScheme.surfaceContainerHighest,
+  foreground: theme.colorScheme.onSurface,
+  supporting: theme.colorScheme.onSurfaceVariant,
+  accent: theme.colorScheme.primary,
+  radius: const BorderRadius.all(Radius.circular(12)),
+);
+
+({Color fill, Color foreground, BorderRadius radius})
+materialTimelineAttachmentIconStyle(ThemeData theme, {required bool location}) {
+  final colors = theme.colorScheme;
+  return (
+    fill: location ? colors.tertiaryContainer : colors.secondaryContainer,
+    foreground: location
+        ? colors.onTertiaryContainer
+        : colors.onSecondaryContainer,
+    radius: const BorderRadius.all(Radius.circular(10)),
+  );
+}
+
+({Color selection, Color badge, Color badgeText, Color placeholder})
+materialGalleryStyle(ThemeData theme) => (
+  selection: theme.colorScheme.secondaryContainer,
+  badge: theme.colorScheme.primary,
+  badgeText: theme.colorScheme.onPrimary,
+  placeholder: theme.colorScheme.surfaceContainerHigh,
+);
+
 ({Color fill, ShapeBorder shape}) materialComposerPickerStyle(
   ThemeData theme,
 ) =>

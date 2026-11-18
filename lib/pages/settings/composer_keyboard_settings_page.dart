@@ -37,6 +37,54 @@ class ComposerKeyboardSettingsOptions extends ConsumerWidget {
   const ComposerKeyboardSettingsOptions({super.key, this.grouped = true});
   final bool grouped;
 
+  Widget _actionMenu(
+    BuildContext context,
+    WidgetRef ref,
+    ComposerEnterShortcut shortcut,
+    ComposerEnterAction selected,
+  ) {
+    final key = ValueKey('composer-key-action-${shortcut.name}');
+    void select(ComposerEnterAction? action) {
+      if (action == null) return;
+      ref
+          .read(composerKeyboardSettingsProvider.notifier)
+          .setAction(shortcut, action);
+    }
+
+    if (context.isMaterial) {
+      return DropdownMenu<ComposerEnterAction>(
+        key: key,
+        width: 132,
+        initialSelection: selected,
+        selectOnly: true,
+        enableSearch: false,
+        dropdownMenuEntries: const [
+          DropdownMenuEntry(value: ComposerEnterAction.send, label: '发送消息'),
+          DropdownMenuEntry(value: ComposerEnterAction.newline, label: '换行'),
+        ],
+        onSelected: select,
+      );
+    }
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<ComposerEnterAction>(
+        isDense: !grouped,
+        key: key,
+        value: selected,
+        items: const [
+          DropdownMenuItem(
+            value: ComposerEnterAction.send,
+            child: Text('发送消息'),
+          ),
+          DropdownMenuItem(
+            value: ComposerEnterAction.newline,
+            child: Text('换行'),
+          ),
+        ],
+        onChanged: select,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(composerKeyboardSettingsProvider);
@@ -57,28 +105,11 @@ class ComposerKeyboardSettingsOptions extends ConsumerWidget {
                     ComposerEnterShortcut.shiftEnter => 'Shift+Enter',
                     ComposerEnterShortcut.altEnter => 'Alt+Enter',
                   }),
-                  trailing: DropdownButtonHideUnderline(
-                    child: DropdownButton<ComposerEnterAction>(
-                      isDense: !grouped,
-                      key: ValueKey('composer-key-action-${shortcut.name}'),
-                      value: settings.actionFor(shortcut),
-                      items: const [
-                        DropdownMenuItem(
-                          value: ComposerEnterAction.send,
-                          child: Text('发送消息'),
-                        ),
-                        DropdownMenuItem(
-                          value: ComposerEnterAction.newline,
-                          child: Text('换行'),
-                        ),
-                      ],
-                      onChanged: (action) {
-                        if (action == null) return;
-                        ref
-                            .read(composerKeyboardSettingsProvider.notifier)
-                            .setAction(shortcut, action);
-                      },
-                    ),
+                  trailing: _actionMenu(
+                    context,
+                    ref,
+                    shortcut,
+                    settings.actionFor(shortcut),
                   ),
                 ),
             ];
