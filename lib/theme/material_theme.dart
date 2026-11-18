@@ -27,6 +27,19 @@ TextStyle materialReaderTextStyle(ThemeData theme) =>
     theme.textTheme.bodyLarge!.copyWith(height: 1.65);
 
 ({
+  Color brandFill,
+  Color brandForeground,
+  Color errorFill,
+  Color errorForeground,
+})
+materialAuthStyle(ThemeData theme) => (
+  brandFill: theme.colorScheme.primaryContainer,
+  brandForeground: theme.colorScheme.onPrimaryContainer,
+  errorFill: theme.colorScheme.errorContainer,
+  errorForeground: theme.colorScheme.onErrorContainer,
+);
+
+({
   Color foreground,
   TextStyle? title,
   TextStyle? label,

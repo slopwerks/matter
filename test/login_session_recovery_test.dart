@@ -128,7 +128,10 @@ void main() {
     WidgetTester tester, {
     bool resume = true,
   }) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    const material = bool.fromEnvironment('MATTER_TEST_MATERIAL');
+    await tester.binding.setSurfaceSize(
+      material ? const Size(320, 800) : const Size(1000, 1000),
+    );
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final container = ProviderContainer();
     addTearDown(container.dispose);
