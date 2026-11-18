@@ -23,6 +23,14 @@ class TimelineMessageMetadata extends StatelessWidget {
   void _showEditHistory(BuildContext context, ChatMessage message) {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
+    final material = context.isMaterial;
+    final history = message.editHistory;
+    String editLabel(int index) => index == 0
+        ? '原始'
+        : index == history.length - 1
+        ? '最新'
+        : '第 $index 次编辑';
+
     showNeuSheet(
       context: context,
       child: Padding(
@@ -35,48 +43,52 @@ class TimelineMessageMetadata extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
               child: Text('编辑记录', style: textTheme.titleMedium),
             ),
-            for (var index = 0; index < message.editHistory.length; index++)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: index == message.editHistory.length - 1
-                            ? colors.accentSoft
-                            : colors.card.withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(NeuRadius.tag),
-                      ),
-                      child: Text(
-                        index == 0
-                            ? '原始'
-                            : index == message.editHistory.length - 1
-                            ? '最新'
-                            : '第 $index 次编辑',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: index == message.editHistory.length - 1
-                              ? colors.accent
-                              : colors.textTertiary,
-                          fontWeight: FontWeight.w600,
+            for (var index = 0; index < history.length; index++)
+              if (material) ...[
+                if (index > 0)
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  title: Text(editLabel(index)),
+                  subtitle: Text(history[index]),
+                ),
+              ] else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: index == history.length - 1
+                              ? colors.accentSoft
+                              : colors.card.withValues(alpha: 0.8),
+                          borderRadius: BorderRadius.circular(NeuRadius.tag),
+                        ),
+                        child: Text(
+                          editLabel(index),
+                          style: textTheme.labelSmall?.copyWith(
+                            color: index == history.length - 1
+                                ? colors.accent
+                                : colors.textTertiary,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      message.editHistory[index],
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: colors.text,
-                        height: 1.4,
+                      const SizedBox(height: 6),
+                      Text(
+                        history[index],
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.text,
+                          height: 1.4,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
           ],
         ),
       ),

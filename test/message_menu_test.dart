@@ -6,11 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/providers/interaction_mode_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:matter/pages/chat/message_group.dart';
+import 'package:matter/pages/chat/timeline/timeline_message_menu.dart';
 import 'package:matter/src/rust/api/matrix.dart';
+import 'package:matter/theme/material_theme.dart';
+import 'package:matter/widgets/glass.dart';
 
 import 'helpers/neu_test_theme.dart';
 
-Widget _message({bool formatted = false}) {
+Widget _message({bool formatted = false, bool isMe = false, ThemeData? theme}) {
   final message = ChatMessage(
     id: r'$read',
     senderId: '@bob:example.org',
@@ -20,7 +23,7 @@ Widget _message({bool formatted = false}) {
     mentionedUserIds: const [],
     mentionsRoom: false,
     timestamp: '100',
-    isMe: false,
+    isMe: isMe,
     msgType: MessageType.text,
     isEdited: false,
     editHistory: const [],
@@ -30,13 +33,13 @@ Widget _message({bool formatted = false}) {
   );
   return ProviderScope(
     child: MaterialApp(
-      theme: neuTestTheme(),
+      theme: theme ?? neuTestTheme(),
       home: Scaffold(
         body: MessageGroupWidget(
           group: MessageGroup(
             senderId: message.senderId,
             senderName: message.senderName,
-            isMe: false,
+            isMe: isMe,
             messages: [message],
           ),
           roomId: '!room:example.org',
@@ -99,6 +102,47 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('复制'), findsWidgets);
   });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('M3 menu stays within a narrow viewport ($brightness)', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(320, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final theme = buildMaterialTheme(brightness);
+      await tester.pumpWidget(
+        _message(formatted: true, isMe: true, theme: theme),
+      );
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(
+        find.byKey(const ValueKey(r'text-bubble:$read')),
+      );
+      await tester.longPressAt(Offset(rect.right - 6, rect.top + 6));
+      await tester.pumpAndSettle();
+
+      final menu = find.byType(TimelineMessageMenu);
+      final surface = find.descendant(
+        of: menu,
+        matching: find.byType(Material),
+      );
+      expect(
+        find.descendant(of: menu, matching: find.byType(GlassPanel)),
+        findsNothing,
+      );
+      expect(
+        tester.widget<Material>(surface).color,
+        theme.popupMenuTheme.color,
+      );
+      expect(tester.getRect(surface).left, greaterThanOrEqualTo(8));
+      expect(tester.getRect(surface).right, lessThanOrEqualTo(312));
+      expect(find.text('全屏阅读'), findsOneWidget);
+      expect(find.text('撤回').hitTestable(), findsOneWidget);
+      expect(find.byTooltip('选择表情').hitTestable(), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+    });
+  }
 
   for (final formatted in [false, true]) {
     testWidgets(

@@ -134,6 +134,8 @@ class _LatestMessageControlState extends State<LatestMessageControl>
               Builder(
                 builder: (context) {
                   final colors = context.neu;
+                  final material = context.isMaterial;
+                  final scheme = Theme.of(context).colorScheme;
                   final start = 0.12 + index * 0.045;
                   final progress = _intervalProgress(
                     value,
@@ -148,7 +150,9 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                       child: Text(
                         characters[index],
                         style: TextStyle(
-                          color: isViewCharacter
+                          color: material
+                              ? scheme.onSecondaryContainer
+                              : isViewCharacter
                               ? colors.accentPressed
                               : colors.text,
                           fontSize: 13.5,
@@ -170,6 +174,9 @@ class _LatestMessageControlState extends State<LatestMessageControl>
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final radius = BorderRadius.circular(NeuRadius.surface);
     return IgnorePointer(
       ignoring: !widget.visible,
       child: AnimatedOpacity(
@@ -197,7 +204,7 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: widget.onPressed,
-                    borderRadius: BorderRadius.circular(NeuRadius.surface),
+                    borderRadius: radius,
                     child: Ink(
                       width: lerpDouble(
                         _collapsedWidth,
@@ -205,13 +212,20 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                         widthProgress,
                       ),
                       height: 44,
-                      decoration: BoxDecoration(
-                        color: colors.surfaceStrong.withValues(alpha: 0.96),
-                        borderRadius: BorderRadius.circular(NeuRadius.surface),
-                        border: Border.all(color: colors.glassBorder),
-                      ),
+                      decoration: material
+                          ? ShapeDecoration(
+                              color: theme.colorScheme.secondaryContainer,
+                              shape: const StadiumBorder(),
+                            )
+                          : BoxDecoration(
+                              color: colors.surfaceStrong.withValues(
+                                alpha: 0.96,
+                              ),
+                              borderRadius: radius,
+                              border: Border.all(color: colors.glassBorder),
+                            ),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(NeuRadius.surface),
+                        borderRadius: radius,
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
@@ -221,7 +235,9 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                                 offset: Offset(0, -6 * arrowExit),
                                 child: Icon(
                                   Icons.keyboard_arrow_down_rounded,
-                                  color: colors.text,
+                                  color: material
+                                      ? theme.colorScheme.onSecondaryContainer
+                                      : colors.text,
                                   size: 25,
                                 ),
                               ),

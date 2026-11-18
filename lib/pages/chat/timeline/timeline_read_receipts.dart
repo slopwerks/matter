@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/chat_provider.dart';
 import '../../../src/rust/api/matrix.dart';
+import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../widgets/app_avatar.dart';
 import '../../../widgets/sheets.dart';
@@ -71,14 +72,21 @@ class _ReadReceiptsSheet extends StatelessWidget {
                   style: textTheme.titleMedium,
                 ),
               ),
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Icon(
-                  Icons.close_rounded,
-                  color: colors.textTertiary,
-                  size: 22,
+              if (context.isMaterial)
+                IconButton(
+                  tooltip: '关闭',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                )
+              else
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: colors.textTertiary,
+                    size: 22,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -88,11 +96,17 @@ class _ReadReceiptsSheet extends StatelessWidget {
             child: Center(child: Text('暂无已读', style: textTheme.bodyMedium)),
           )
         else
-          ListView.builder(
+          ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 8),
             itemCount: message.readers.length,
+            separatorBuilder: (context, _) => context.isMaterial
+                ? const Divider(
+                    height: 1,
+                    indent: 16 + materialListAvatarSize + 8,
+                  )
+                : const SizedBox.shrink(),
             itemBuilder: (context, index) =>
                 _ReadReceiptRow(reader: message.readers[index], roomId: roomId),
           ),
@@ -127,27 +141,40 @@ class _ReadReceiptRowState extends ConsumerState<_ReadReceiptRow> {
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    child: Row(
-      children: [
-        AppAvatar(
-          fallback: widget.reader.displayName,
-          size: 40,
-          radius: NeuRadius.content,
-          url: _avatarUrl,
+  Widget build(BuildContext context) {
+    final avatar = AppAvatar(
+      fallback: widget.reader.displayName,
+      size: context.isMaterial ? materialListAvatarSize : 40,
+      radius: NeuRadius.content,
+      url: _avatarUrl,
+    );
+    if (context.isMaterial) {
+      return ListTile(
+        leading: avatar,
+        title: Text(
+          widget.reader.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            widget.reader.displayName,
-            style: Theme.of(context).textTheme.bodyLarge
-                ?.copyWith(fontWeight: FontWeight.w600),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          avatar,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              widget.reader.displayName,
+              style: Theme.of(context).textTheme.bodyLarge
+                  ?.copyWith(fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }

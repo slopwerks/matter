@@ -99,13 +99,20 @@ void main() {
                       )
                       .decoration!
                   as NeuDecoration;
-          expect(decoration().borderColor, isNotNull);
+          final materialChip = find.descendant(
+            of: chip,
+            matching: find.byType(FilterChip),
+          );
+          bool isSelected() => material
+              ? tester.widget<FilterChip>(materialChip).selected
+              : decoration().borderColor != null;
+          expect(isSelected(), isTrue);
           await tester.tap(chip);
           expect(toggled, ['👍']);
           container.read(activeUserIdProvider.notifier).value =
               '@carol:example.org';
           await tester.pump();
-          expect(decoration().borderColor, isNull);
+          expect(isSelected(), isFalse);
         },
       );
 

@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import '../../theme/neu_colors.dart';
 import 'chat_timestamp.dart';
+import 'date_separator.dart';
 
 /// A timeline day-boundary used by [FloatingDateHeader] to decide which date
 /// label is currently under the top edge of the viewport.
@@ -208,6 +210,9 @@ class _DateChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isMaterial) {
+      return MaterialTimelineDateLabel(label: label, floating: true);
+    }
     final colors = context.neu;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

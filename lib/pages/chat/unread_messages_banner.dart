@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
 
 const unreadMessagesBannerHeight = 48.0;
@@ -25,17 +27,26 @@ class UnreadMessagesBanner extends StatelessWidget {
   final VoidCallback onDismiss;
 
   @override
-  Widget build(BuildContext context) => GlassPanel(
-    height: unreadMessagesBannerHeight,
-    child: Row(
+  Widget build(BuildContext context) {
+    final material = context.isMaterial;
+    final scheme = Theme.of(context).colorScheme;
+    final content = Row(
       children: [
         Expanded(
           child: TextButton.icon(
+            style: material
+                ? TextButton.styleFrom(
+                    foregroundColor: scheme.onSecondaryContainer,
+                  )
+                : null,
             onPressed: loading || unavailable ? null : onPressed,
             icon: loading
-                ? const SizedBox.square(
+                ? SizedBox.square(
                     dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: material ? scheme.onSecondaryContainer : null,
+                    ),
                   )
                 : const Icon(Icons.vertical_align_top_rounded, size: 18),
             label: Text(
@@ -57,10 +68,19 @@ class UnreadMessagesBanner extends StatelessWidget {
         ),
         IconButton(
           tooltip: '关闭未读提示',
+          color: material ? scheme.onSecondaryContainer : null,
           onPressed: onDismiss,
           icon: const Icon(Icons.close_rounded, size: 18),
         ),
       ],
-    ),
-  );
+    );
+    if (material) {
+      return Material(
+        color: scheme.secondaryContainer,
+        shape: materialListItemShape,
+        child: SizedBox(height: unreadMessagesBannerHeight, child: content),
+      );
+    }
+    return GlassPanel(height: unreadMessagesBannerHeight, child: content);
+  }
 }
