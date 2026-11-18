@@ -90,14 +90,17 @@ void main() {
     url: 'https://example.org/one',
     mediaSourceJson: null,
   );
-  Widget host(Widget child, {bool dark = true, bool material = false}) =>
-      ProviderScope(
-        overrides: [audioPlaybackSessionProvider.overrideWithValue(session)],
-        child: MaterialApp(
-          theme: neuTestTheme(dark: dark, material: material),
-          home: Scaffold(body: Center(child: child)),
-        ),
-      );
+  Widget host(
+    Widget child, {
+    bool dark = true,
+    bool material = const bool.fromEnvironment('MATTER_TEST_MATERIAL'),
+  }) => ProviderScope(
+    overrides: [audioPlaybackSessionProvider.overrideWithValue(session)],
+    child: MaterialApp(
+      theme: neuTestTheme(dark: dark, material: material),
+      home: Scaffold(body: Center(child: child)),
+    ),
+  );
   const attachment = AudioAttachmentPlayer(
     url: 'https://example.org/one',
     mediaSourceJson: null,

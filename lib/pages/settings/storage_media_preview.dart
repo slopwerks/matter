@@ -8,6 +8,8 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../features/storage/storage_local_media.dart';
 import '../../features/storage/storage_models.dart';
 import '../../features/storage/storage_registry.dart';
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../theme/storage_visual_theme.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../chat/media_playback.dart';
@@ -184,33 +186,44 @@ class _StorageMediaPreviewPageState extends State<StorageMediaPreviewPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: buildFloatingAppBar(title: Text(widget.file.name)),
-    body: _error != null
-        ? Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(_error!, textAlign: TextAlign.center),
+  Widget build(BuildContext context) {
+    final material = context.isMaterial;
+    final style = materialMediaViewerStyle(Theme.of(context));
+    return Scaffold(
+      backgroundColor: material && _ready ? style.background : null,
+      appBar: buildFloatingAppBar(title: Text(widget.file.name)),
+      body: _error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(_error!, textAlign: TextAlign.center),
+              ),
+            )
+          : !_ready
+          ? const Center(child: CircularProgressIndicator())
+          : widget.file.kind == StorageKind.image
+          ? InteractiveViewer(
+              minScale: 1,
+              maxScale: 5,
+              child: Center(child: Image.memory(_image!, fit: BoxFit.contain)),
+            )
+          : VideoControls(
+              playback: _playback!,
+              onClose: () => Navigator.pop(context),
+              videoBuilder: (context, fit) => _video == null
+                  ? Center(
+                      child: Icon(
+                        Icons.graphic_eq,
+                        size: 64,
+                        color: material ? style.supporting : null,
+                      ),
+                    )
+                  : Video(
+                      controller: _video!,
+                      fit: fit,
+                      controls: NoVideoControls,
+                    ),
             ),
-          )
-        : !_ready
-        ? const Center(child: CircularProgressIndicator())
-        : widget.file.kind == StorageKind.image
-        ? InteractiveViewer(
-            minScale: 1,
-            maxScale: 5,
-            child: Center(child: Image.memory(_image!, fit: BoxFit.contain)),
-          )
-        : VideoControls(
-            playback: _playback!,
-            onClose: () => Navigator.pop(context),
-            videoBuilder: (context, fit) => _video == null
-                ? const Center(child: Icon(Icons.graphic_eq, size: 64))
-                : Video(
-                    controller: _video!,
-                    fit: fit,
-                    controls: NoVideoControls,
-                  ),
-          ),
-  );
+    );
+  }
 }

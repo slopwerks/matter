@@ -2,43 +2,67 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../theme/neu_colors.dart';
+import '../../widgets/material_press.dart';
 import 'audio_playback_session.dart';
 
 class AudioPlayButton extends StatelessWidget {
   final AudioPlaybackSession session;
   final Color? color;
-  const AudioPlayButton({super.key, required this.session, this.color});
+  final VoidCallback? onPlay;
+  const AudioPlayButton({
+    super.key,
+    required this.session,
+    this.color,
+    this.onPlay,
+  });
 
   @override
-  Widget build(BuildContext context) => session.loading
-      ? IconButton(
-          tooltip: '取消音频加载',
-          onPressed: session.cancelLoading,
-          icon: const SizedBox.square(
-            dimension: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        )
-      : IconButton(
-          color: color,
-          tooltip: session.error != null
-              ? '重试播放'
-              : session.isPlaying
-              ? '暂停音频'
-              : session.isCompleted
-              ? '重播音频'
-              : '播放音频',
-          onPressed: session.toggle,
-          icon: Icon(
-            session.error != null
-                ? Icons.refresh_rounded
-                : session.isPlaying
-                ? Icons.pause_rounded
-                : session.isCompleted
-                ? Icons.replay_rounded
-                : Icons.play_arrow_rounded,
-          ),
-        );
+  Widget build(BuildContext context) {
+    final active = onPlay == null;
+    final loading = active && session.loading;
+    final (tooltip, iconData) = switch ((
+      active && session.error != null,
+      active && session.isPlaying,
+      active && session.isCompleted,
+    )) {
+      (true, _, _) => ('重试播放', Icons.refresh_rounded),
+      (_, true, _) => ('暂停音频', Icons.pause_rounded),
+      (_, _, true) => ('重播音频', Icons.replay_rounded),
+      _ => ('播放音频', Icons.play_arrow_rounded),
+    };
+    final action = loading ? session.cancelLoading : onPlay ?? session.toggle;
+    final label = loading ? '取消音频加载' : tooltip;
+    if (context.isMaterial) {
+      return MaterialPress(
+        builder: (states) => IconButton.filled(
+          statesController: states,
+          tooltip: label,
+          onPressed: action,
+          icon: loading
+              ? SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                )
+              : Icon(iconData),
+        ),
+      );
+    }
+    return IconButton(
+      tooltip: label,
+      color: loading ? null : color,
+      onPressed: action,
+      icon: loading
+          ? const SizedBox.square(
+              dimension: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(iconData),
+    );
+  }
 }
 
 class AudioSpeedButton extends StatelessWidget {
@@ -47,24 +71,41 @@ class AudioSpeedButton extends StatelessWidget {
   const AudioSpeedButton({super.key, required this.session, this.color});
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<double>(
-    tooltip: '音频倍速',
-    initialValue: session.speed,
-    onSelected: session.setSpeed,
-    itemBuilder: (context) => AudioPlaybackSession.speeds
-        .map(
-          (speed) =>
-              PopupMenuItem(value: speed, child: Text('${audioSpeed(speed)}×')),
-        )
-        .toList(),
-    child: Padding(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final label = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       child: Text(
         '${audioSpeed(session.speed)}×',
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color),
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: material ? theme.colorScheme.onSecondaryContainer : color,
+        ),
       ),
-    ),
-  );
+    );
+    final button = PopupMenuButton<double>(
+      tooltip: '音频倍速',
+      initialValue: session.speed,
+      onSelected: session.setSpeed,
+      itemBuilder: (context) => AudioPlaybackSession.speeds
+          .map(
+            (speed) => PopupMenuItem(
+              value: speed,
+              child: Text('${audioSpeed(speed)}×'),
+            ),
+          )
+          .toList(),
+      child: label,
+    );
+    return material
+        ? Material(
+            color: theme.colorScheme.secondaryContainer,
+            shape: const StadiumBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: button,
+          )
+        : button;
+  }
 }
 
 class AudioMoreButton extends StatelessWidget {
@@ -121,6 +162,7 @@ Future<void> showAudioPlayerPanel(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
+  constraints: context.isMaterial ? const BoxConstraints(maxWidth: 560) : null,
   builder: (context) => FractionallySizedBox(
     heightFactor: 0.7,
     child: ListenableBuilder(
@@ -193,8 +235,14 @@ Future<void> showAudioPlayerPanel(
               itemCount: session.tracks.length,
               itemBuilder: (context, index) {
                 final track = session.tracks[index];
+                final scheme = Theme.of(context).colorScheme;
+                final material = context.isMaterial;
                 return ListTile(
                   selected: session.index == index,
+                  selectedTileColor: material
+                      ? scheme.secondaryContainer
+                      : null,
+                  selectedColor: material ? scheme.onSecondaryContainer : null,
                   leading: Icon(
                     session.index == index
                         ? Icons.audiotrack_rounded

@@ -73,7 +73,7 @@ class ImageViewerFooter extends StatelessWidget {
                 maxHeight: MediaQuery.sizeOf(context).height * .25,
               ),
               decoration: context.isMaterial
-                  ? style.captionDecoration
+                  ? style.overlayDecoration
                   : BoxDecoration(
                       color: Colors.black.withValues(alpha: .75),
                       borderRadius: BorderRadius.circular(12),

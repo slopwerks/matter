@@ -9,6 +9,7 @@ import '../../features/storage/storage_models.dart';
 import '../../features/storage/storage_providers.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/tokens.dart';
 import 'cached_chat_media_source.dart';
 import 'chat_media_source.dart';
 import 'media_preparation.dart';
@@ -16,7 +17,8 @@ import 'prepared_media_source.dart';
 import 'media_playback.dart';
 import 'media_progress_bar.dart';
 import 'video_controls.dart';
-import 'timeline/timeline_bubble_frame.dart' show enabledNeuBubbleShadows;
+import 'timeline/timeline_bubble_frame.dart'
+    show enabledNeuBubbleShadows, messageBubbleFill, outgoingBubbleForeground;
 
 class VideoMessageBubble extends ConsumerStatefulWidget {
   final String? videoUrl;
@@ -228,16 +230,29 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
               : controller?.aspectRatio,
         );
         final colors = context.neu;
+        final material = context.isMaterial;
+        final radius = BorderRadius.circular(
+          material ? context.tokens.radii.bubble : NeuRadius.button,
+        );
+        final foreground = material
+            ? widget.isMe
+                  ? outgoingBubbleForeground(context)
+                  : Theme.of(context).colorScheme.onSurface
+            : null;
         return Container(
           width: size.width,
           height: size.height,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: widget.isMe
+            color: material
+                ? messageBubbleFill(context, isMe: widget.isMe)
+                : widget.isMe
                 ? colors.accent.withValues(alpha: 0.3)
                 : colors.card,
-            borderRadius: BorderRadius.circular(NeuRadius.button),
-            boxShadow: enabledNeuBubbleShadows(context, colors),
+            borderRadius: radius,
+            boxShadow: material
+                ? null
+                : enabledNeuBubbleShadows(context, colors),
           ),
           child: Stack(
             children: [
@@ -245,6 +260,9 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
                 child: _downloadBlocked
                     ? TextButton.icon(
                         onPressed: () => _initialize(manual: true),
+                        style: foreground == null
+                            ? null
+                            : TextButton.styleFrom(foregroundColor: foreground),
                         icon: const Icon(Icons.download_rounded),
                         label: Text(
                           widget.fileSize == null
@@ -253,10 +271,10 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
                         ),
                       )
                     : controller == null
-                    ? _buildPlaceholder(_error != null)
+                    ? _buildPlaceholder(_error != null, foreground)
                     : controller.error != null
-                    ? _buildPlaceholder(true)
-                    : _buildPlayer(context, controller),
+                    ? _buildPlaceholder(true, foreground)
+                    : _buildPlayer(context, controller, radius),
               ),
               widget.metadata,
             ],
@@ -266,7 +284,11 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
     );
   }
 
-  Widget _buildPlayer(BuildContext context, MediaPlayback controller) {
+  Widget _buildPlayer(
+    BuildContext context,
+    MediaPlayback controller,
+    BorderRadius radius,
+  ) {
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -277,7 +299,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
             child: _VideoHeroSurface(
               videoController: _videoController!,
               fit: BoxFit.contain,
-              borderRadius: BorderRadius.circular(NeuRadius.button),
+              borderRadius: radius,
               showPlayButton: !controller.isPlaying,
             ),
           ),
@@ -305,7 +327,7 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
     );
   }
 
-  Widget _buildPlaceholder(bool failed) {
+  Widget _buildPlaceholder(bool failed, Color? foreground) {
     return GestureDetector(
       onTap: failed
           ? () {
@@ -318,17 +340,26 @@ class _VideoMessageBubbleState extends ConsumerState<VideoMessageBubble> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (failed)
-              const Icon(Icons.videocam_off_rounded, color: Colors.white70)
+              Icon(
+                Icons.videocam_off_rounded,
+                color: foreground ?? Colors.white70,
+              )
             else
-              const SizedBox(
+              SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: foreground,
+                ),
               ),
             const SizedBox(height: 8),
             Text(
               failed ? '无法播放此视频' : '正在加载视频…',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: foreground == null
+                  ? const TextStyle(color: Colors.white70, fontSize: 12)
+                  : Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: foreground),
             ),
           ],
         ),

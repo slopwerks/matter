@@ -40,7 +40,7 @@ materialMediaChromeStyle(ThemeData theme) => (
   Color foreground,
   Color supporting,
   ButtonStyle control,
-  Decoration captionDecoration,
+  Decoration overlayDecoration,
   TextStyle? caption,
   TextStyle? title,
 })
@@ -55,13 +55,18 @@ materialMediaViewerStyle(ThemeData theme) => (
     disabledForegroundColor: Colors.white38,
     shape: const StadiumBorder(),
   ),
-  captionDecoration: ShapeDecoration(
+  overlayDecoration: ShapeDecoration(
     color: Colors.black.withValues(alpha: .75),
     shape: materialListItemShape,
   ),
   caption: theme.textTheme.bodyLarge?.copyWith(color: Colors.white),
   title: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
 );
+
+Color materialMediaProgressColor(ThemeData theme) =>
+    theme.brightness == Brightness.dark
+    ? theme.colorScheme.primary
+    : theme.colorScheme.inversePrimary;
 
 const materialAttachmentCaptionDecoration = InputDecoration(
   hintText: '添加图片描述',
