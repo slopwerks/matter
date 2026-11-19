@@ -470,6 +470,29 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final panelContentHeight = attachmentKeyboard
         ? widget.pickerHeight
         : widget.pickerFullHeight;
+    final attachments = inlineImages && (hasImages || pendingImages.isSending)
+        ? AttachmentPicker(
+            key: _pendingImagesKey,
+            inline: true,
+            draft: pendingImages,
+            composerController: _controller,
+            onInlineSend: _sendPendingImages,
+            roomId: widget.roomId,
+            accountUserId: _draftKey.userId,
+            height: 0,
+            maxHeight: 0,
+            totalMembers: widget.totalMembers,
+            onRefresh: (_) => refreshMessagesContainer(
+              ProviderScope.containerOf(context, listen: false),
+              widget.roomId,
+            ),
+            resolveSendPresentation: widget.resolveSendPresentation,
+            onMessageQueued: widget.onMessageQueued,
+            onMessageSent: widget.onMessageSent,
+            onHeightChanged: (_) {},
+            onClose: _showKeyboard,
+          )
+        : null;
 
     final input = SafeArea(
       top: false,
@@ -520,6 +543,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
             ComposerSurface(
               expanded: expanded,
               compact: desktop,
+              attachments: context.isMaterial ? attachments : null,
               child: ComposerActionsBar(
                 expanded: expanded,
                 compact: desktop,
@@ -542,30 +566,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 onToggleAttachment: _toggleAttachmentPicker,
                 onShowTools: _tools.showToolsMenu,
                 onSend: _sendMessage,
-                attachments:
-                    inlineImages && (hasImages || pendingImages.isSending)
-                    ? AttachmentPicker(
-                        key: _pendingImagesKey,
-                        inline: true,
-                        draft: pendingImages,
-                        composerController: _controller,
-                        onInlineSend: _sendPendingImages,
-                        roomId: widget.roomId,
-                        accountUserId: _draftKey.userId,
-                        height: 0,
-                        maxHeight: 0,
-                        totalMembers: widget.totalMembers,
-                        onRefresh: (_) => refreshMessagesContainer(
-                          ProviderScope.containerOf(context, listen: false),
-                          widget.roomId,
-                        ),
-                        resolveSendPresentation: widget.resolveSendPresentation,
-                        onMessageQueued: widget.onMessageQueued,
-                        onMessageSent: widget.onMessageSent,
-                        onHeightChanged: (_) {},
-                        onClose: _showKeyboard,
-                      )
-                    : null,
+                attachments: context.isMaterial ? null : attachments,
                 editor: ComposerTextField(
                   key: _textFieldKey,
                   controller: _controller,

@@ -228,8 +228,14 @@ class _RemoteStickerPreviewState extends ConsumerState<RemoteStickerPreview> {
           return _StickerFallback(label: widget.fallback);
         }
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
+        return ClipPath(
+          clipper: ShapeBorderClipper(
+            shape: context.isMaterial
+                ? materialPreviewThumbnailShape
+                : RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+          ),
           child: AuthenticatedImageMessage(
             imageUrl: resolvedUrl,
             fit: widget.fit,
@@ -276,22 +282,30 @@ class _StickerFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
     final label = this.label;
     if (label != null && label.isNotEmpty) {
       return Center(
         child: Text(
           label,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: colors.textTertiary,
-            fontWeight: FontWeight.w700,
-          ),
+          style: material
+              ? theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                )
+              : theme.textTheme.bodyLarge?.copyWith(
+                  color: colors.textTertiary,
+                  fontWeight: FontWeight.w700,
+                ),
         ),
       );
     }
     return Center(
       child: Icon(
         Icons.sticky_note_2_rounded,
-        color: colors.textTertiary,
+        color: material
+            ? theme.colorScheme.onSurfaceVariant
+            : colors.textTertiary,
         size: 28,
       ),
     );

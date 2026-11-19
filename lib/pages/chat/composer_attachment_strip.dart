@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/interaction_mode_provider.dart';
 
 import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import 'attachment_media_draft.dart';
 
 class ComposerAttachmentStrip extends ConsumerWidget {
@@ -24,10 +25,12 @@ class ComposerAttachmentStrip extends ConsumerWidget {
         .watch(interactionModeProvider)
         .usesKeyboardMouse(Theme.of(context).platform);
     if (draft.selected.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
     final images = draft.selected.where((item) => item.isImage).toList();
-    return SizedBox(
+    final strip = SizedBox(
       key: const ValueKey('composer-attachment-strip'),
-      height: 96,
+      height: material ? 68 : 96,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -37,7 +40,7 @@ class ComposerAttachmentStrip extends ConsumerWidget {
           final item = images[index];
           return SizedBox(
             key: ValueKey('pending-attachment:${item.id}'),
-            width: 104,
+            width: material ? 56 : 104,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -74,6 +77,57 @@ class ComposerAttachmentStrip extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+    if (!material) return strip;
+    final style = materialAttachmentStageStyle(theme);
+    final gallery = materialGalleryStyle(theme);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Material(
+        color: style.fill,
+        shape: style.shape,
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text('待发送图片', style: style.title),
+                  const SizedBox(width: 6),
+                  Badge(
+                    backgroundColor: gallery.badge,
+                    textColor: gallery.badgeText,
+                    label: Text('${images.length}'),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      draft.isSending ? '正在发送…' : '点击预览',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: style.status,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: draft.isSending
+                        ? null
+                        : () {
+                            for (final item in images) {
+                              draft.toggle(item);
+                            }
+                          },
+                    child: const Text('清空'),
+                  ),
+                ],
+              ),
+              strip,
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -11,11 +11,13 @@ class ComposerSurface extends StatelessWidget {
     required this.expanded,
     required this.compact,
     required this.child,
+    this.attachments,
   });
 
   final bool expanded;
   final bool compact;
   final Widget child;
+  final Widget? attachments;
 
   @override
   Widget build(BuildContext context) {
@@ -25,14 +27,24 @@ class ComposerSurface extends StatelessWidget {
         heightFactor: 1,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 752),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Material(
-              key: const ValueKey('message-input-surface'),
-              color: Theme.of(context).colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(28),
-              child: Padding(padding: const EdgeInsets.all(4), child: child),
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ?attachments,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Material(
+                  key: const ValueKey('message-input-surface'),
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(28),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: child,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );

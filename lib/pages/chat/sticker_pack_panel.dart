@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
-import '../../theme/app_component_theme.dart';
 import '../../theme/material_theme.dart';
 import '../../widgets/material_press.dart';
 import 'sticker_catalog.dart';
@@ -316,6 +315,8 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
 
   Widget _buildPackStream(List<StickerPack> packs) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final style = context.isMaterial ? materialEmojiPickerStyle(theme) : null;
     if (packs.isEmpty) {
       return Center(
         child: Text(
@@ -354,7 +355,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
             ),
           ),
         ),
-        Divider(height: 1, color: colors.hairline),
+        Divider(height: 1, color: style == null ? colors.hairline : null),
         Expanded(
           child: KeyedSubtree(
             key: _scrollViewportKey,
@@ -377,26 +378,29 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                           padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
                           child: Row(
                             children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: i == _activePackIndex
-                                      ? colors.accent
-                                      : colors.textTertiary.withValues(
-                                          alpha: 0.65,
-                                        ),
-                                  shape: BoxShape.circle,
+                              if (style == null) ...[
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: i == _activePackIndex
+                                        ? colors.accent
+                                        : colors.textTertiary.withValues(
+                                            alpha: 0.65,
+                                          ),
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
+                                const SizedBox(width: 8),
+                              ],
                               Expanded(
                                 child: Text(
                                   packs[i].title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
+                                  style:
+                                      style?.heading ??
+                                      theme.textTheme.bodySmall?.copyWith(
                                         fontWeight: FontWeight.w700,
                                         color: i == _activePackIndex
                                             ? colors.text
@@ -474,6 +478,7 @@ class _PackThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.neu;
     if (context.isMaterial) {
+      final style = materialEmojiPickerStyle(Theme.of(context));
       return Tooltip(
         message: label,
         child: Semantics(
@@ -482,9 +487,7 @@ class _PackThumb extends StatelessWidget {
           child: MaterialPress(
             builder: (states) => Material(
               animationDuration: const Duration(milliseconds: 160),
-              color: selected
-                  ? AppComponentTheme.of(context).selectedRowFill
-                  : colors.card,
+              color: selected ? style.selected : style.fill,
               shape: materialPreviewThumbnailShape,
               clipBehavior: Clip.antiAlias,
               child: InkWell(
@@ -563,7 +566,7 @@ class _StickerCard extends StatelessWidget {
       child: Ink(
         decoration: context.isMaterial
             ? ShapeDecoration(
-                color: colors.card,
+                color: materialEmojiPickerStyle(Theme.of(context)).fill,
                 shape: materialPreviewThumbnailShape,
               )
             : BoxDecoration(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/app_search_field.dart';
 import 'emoji_data.dart';
@@ -65,6 +66,8 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final style = context.isMaterial ? materialEmojiPickerStyle(theme) : null;
     final emojis = _currentEmojis;
     return Column(
       children: [
@@ -115,7 +118,10 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
               itemBuilder: (context, index) {
                 final emoji = emojis[index];
                 return InkWell(
-                  borderRadius: BorderRadius.circular(NeuRadius.tag),
+                  customBorder: style?.cellShape,
+                  borderRadius: style == null
+                      ? BorderRadius.circular(NeuRadius.tag)
+                      : null,
                   onTap: () => widget.onEmojiSelected(emoji),
                   child: Center(
                     child: Text(emoji, style: const TextStyle(fontSize: 24)),
@@ -127,83 +133,86 @@ class _EmojiPickerPanelState extends State<EmojiPickerPanel> {
         ),
         // Category bar (hidden while searching).
         if (_query.isEmpty)
-          Container(
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: colors.hairline)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: List.generate(kEmojiCategories.length, (i) {
-                        final cat = kEmojiCategories[i];
-                        final selected = i == _categoryIndex;
-                        if (context.isMaterial) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 3,
-                              vertical: 4,
-                            ),
-                            child: ChoiceChip(
-                              label: Text(
-                                cat.icon,
-                                style: const TextStyle(fontSize: 20),
+          Column(
+            children: [
+              Divider(height: 1, color: style == null ? colors.hairline : null),
+              Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: List.generate(kEmojiCategories.length, (i) {
+                          final cat = kEmojiCategories[i];
+                          final selected = i == _categoryIndex;
+                          if (context.isMaterial) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 3,
+                                vertical: 4,
                               ),
-                              tooltip: cat.label,
-                              selected: selected,
-                              showCheckmark: false,
-                              onSelected: (_) =>
-                                  setState(() => _categoryIndex = i),
+                              child: ChoiceChip(
+                                label: Text(
+                                  cat.icon,
+                                  style: const TextStyle(fontSize: 20),
+                                ),
+                                tooltip: cat.label,
+                                selected: selected,
+                                showCheckmark: false,
+                                onSelected: (_) =>
+                                    setState(() => _categoryIndex = i),
+                              ),
+                            );
+                          }
+                          return IconButton(
+                            onPressed: () => setState(() => _categoryIndex = i),
+                            icon: Text(
+                              cat.icon,
+                              style: TextStyle(
+                                fontSize: 20,
+                                color: selected
+                                    ? colors.accent
+                                    : colors.textTertiary,
+                              ),
                             ),
+                            tooltip: cat.label,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            constraints: const BoxConstraints(),
                           );
-                        }
-                        return IconButton(
-                          onPressed: () => setState(() => _categoryIndex = i),
-                          icon: Text(
-                            cat.icon,
-                            style: TextStyle(
-                              fontSize: 20,
-                              color: selected
-                                  ? colors.accent
-                                  : colors.textTertiary,
-                            ),
-                          ),
-                          tooltip: cat.label,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          constraints: const BoxConstraints(),
-                        );
-                      }),
+                        }),
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _showSearch ? Icons.close_rounded : Icons.search_rounded,
-                    color: colors.textTertiary,
-                    size: 20,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _showSearch = !_showSearch;
-                      if (!_showSearch) {
-                        _query = '';
-                        _searchController.clear();
-                      }
-                    });
-                    if (_showSearch) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _searchFocus.requestFocus();
+                  IconButton(
+                    icon: Icon(
+                      _showSearch ? Icons.close_rounded : Icons.search_rounded,
+                      color: style == null
+                          ? colors.textTertiary
+                          : theme.colorScheme.onSurfaceVariant,
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _showSearch = !_showSearch;
+                        if (!_showSearch) {
+                          _query = '';
+                          _searchController.clear();
+                        }
                       });
-                    }
-                  },
-                ),
-              ],
-            ),
+                      if (_showSearch) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _searchFocus.requestFocus();
+                        });
+                      }
+                    },
+                    tooltip: _showSearch ? '关闭表情搜索' : '搜索表情',
+                  ),
+                ],
+              ),
+            ],
           ),
       ],
     );

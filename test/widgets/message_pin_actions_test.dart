@@ -185,7 +185,11 @@ void main() {
       MaterialApp(
         theme: neuTestTheme(),
         home: const Scaffold(
-          body: PinnedMessageIndicator(count: 27, index: 26),
+          body: PinnedMessageIndicator(
+            count: 27,
+            index: 26,
+            color: Colors.purple,
+          ),
         ),
       ),
     );

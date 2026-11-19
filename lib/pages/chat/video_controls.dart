@@ -433,12 +433,7 @@ class _VideoControlsState extends State<VideoControls>
                               : Icons.volume_up_rounded,
                         ),
                       ),
-                      Expanded(
-                        child: Slider(
-                          value: _playback.volume,
-                          onChanged: (value) => _playback.setVolume(value),
-                        ),
-                      ),
+                      Expanded(child: _volumeSlider()),
                     ],
                   ),
                 ),
@@ -467,8 +462,26 @@ class _VideoControlsState extends State<VideoControls>
             color: Colors.black87,
             borderRadius: BorderRadius.circular(12),
           ),
-    child: Text(text, style: const TextStyle(color: Colors.white)),
+    child: Text(
+      text,
+      style: context.isMaterial
+          ? materialMediaViewerStyle(Theme.of(context)).counter
+          : const TextStyle(color: Colors.white),
+    ),
   );
+
+  Widget _volumeSlider() {
+    final slider = Slider(
+      value: _playback.volume,
+      onChanged: (value) => _playback.setVolume(value),
+    );
+    return context.isMaterial
+        ? SliderTheme(
+            data: materialMediaViewerStyle(Theme.of(context)).slider,
+            child: slider,
+          )
+        : slider;
+  }
 
   Widget _toolbar(BuildContext context) {
     final material = context.isMaterial;
@@ -514,11 +527,13 @@ class _VideoControlsState extends State<VideoControls>
                     child: Text(
                       '${_time(_playback.position)} / ${_time(_playback.duration, unknownWhenZero: true)}',
                       maxLines: 1,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
+                      style: material
+                          ? materialMediaViewerStyle(Theme.of(context)).counter
+                          : const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                     ),
                   ),
                 ),
@@ -543,7 +558,11 @@ class _VideoControlsState extends State<VideoControls>
               ),
               PopupMenuButton<String>(
                 tooltip: '更多',
-                icon: const Icon(Icons.more_horiz_rounded, color: Colors.white),
+                style: material
+                    ? materialMediaViewerStyle(Theme.of(context)).control
+                    : null,
+                icon: const Icon(Icons.more_horiz_rounded),
+                iconColor: Colors.white,
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 padding: EdgeInsets.zero,
                 onOpened: _openMenu,
@@ -648,7 +667,9 @@ class _VideoControlsState extends State<VideoControls>
 
   Widget _speedMenu() {
     final value = _preferences.speed;
-    return PopupMenuButton<double>(
+    final material = context.isMaterial;
+    final style = material ? materialMediaViewerStyle(Theme.of(context)) : null;
+    final menu = PopupMenuButton<double>(
       tooltip: '设置播放速度',
       initialValue: value,
       onOpened: _openMenu,
@@ -659,8 +680,16 @@ class _VideoControlsState extends State<VideoControls>
       },
       itemBuilder: (context) => VideoPreferences.speeds
           .map(
-            (speed) =>
-                PopupMenuItem(value: speed, child: Text('${_speed(speed)}×')),
+            (speed) => material
+                ? CheckedPopupMenuItem<double>(
+                    value: speed,
+                    checked: speed == value,
+                    child: Text('${_speed(speed)}×'),
+                  )
+                : PopupMenuItem<double>(
+                    value: speed,
+                    child: Text('${_speed(speed)}×'),
+                  ),
           )
           .toList(),
       child: SizedBox(
@@ -669,11 +698,21 @@ class _VideoControlsState extends State<VideoControls>
         child: Center(
           child: Text(
             '${_speed(value)}×',
-            style: const TextStyle(color: Colors.white, fontSize: 12),
+            style:
+                style?.counter ??
+                const TextStyle(color: Colors.white, fontSize: 12),
           ),
         ),
       ),
     );
+    return style == null
+        ? menu
+        : Material(
+            color: style.control.backgroundColor?.resolve({}),
+            shape: style.control.shape?.resolve({}),
+            clipBehavior: Clip.antiAlias,
+            child: menu,
+          );
   }
 }
 

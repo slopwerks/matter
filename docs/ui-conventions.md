@@ -18,7 +18,9 @@ a reason to silently fall back to another skin.
 
 `lib/theme/neu_theme.dart` and `lib/theme/material_theme.dart` are the only
 places that decide type, shape and colour, together with Material palette
-roles in `material_color_scheme.dart`. A page that calls `copyWith` on a
+roles in `material_color_scheme.dart`. `material_chat_styles.dart` is a part of
+the Material theme library and owns its chat, picker and media presentation.
+A page that calls `copyWith` on a
 `titleTextStyle`, sets its own `shape`, or hard-codes a colour role is doing the
 theme's job, and the result will drift from the other pages.
 
@@ -148,6 +150,10 @@ chat and contact rows use a 44 dp avatar, 12 dp of horizontal row padding and a
 36 dp corners and `secondaryContainer` selection, producing a 72 dp default
 row. Dense rows retain 8 dp padding. Contact rows keep their own dimensions.
 New-skeuomorphic rows retain their original geometry and accent-soft selection.
+
+Room-management members and join requests follow the same bare-stream rule,
+with 44 dp avatars and 12 dp content gaps. Their lazy rows keep long rooms
+scrollable; request reasons wrap above the approval and rejection buttons.
 
 Material conversation titles use 16 dp type with a medium weight, rising to
 semibold for unread rooms. Previews stay on one line to preserve list density;
@@ -279,6 +285,10 @@ Toolbar icon controls use `MaterialToolbar` and a neutral filled pill, with the
 style defined in `material_theme.dart`; inline buttons keep their usual fill.
 Settings section headings use `titleSmall` rather than letter-spaced captions.
 
+The available-update dialog groups the version, platform and package size in a
+tonal summary card, followed by the release-note excerpt and full-notes link.
+The Material dialog scrolls when its content exceeds the available height.
+
 Material routes use Flutter's forward fade and horizontal slide on Android and
 desktop; iOS keeps its native back gesture. `NeuColors` is also used as the
 compatibility palette by shared widgets, so it interpolates every colour during
@@ -309,6 +319,14 @@ Material interaction/startup choices use grouped radio rows with a
 `secondaryContainer` selected fill. Attachment modes use the Material 3
 navigation indicator and filled send actions on tonal surfaces, not Neu
 shadows. Composer dialogs and menus inherit their theme's overlay shapes.
+
+Staged images use a `surfaceContainerLow` card above the composer, with 18 dp
+corners, a count, a clear action and 56 dp thumbnails. Sending disables both
+clearing and individual removal. Neu retains its existing thumbnail strip.
+Emoji cells use 10 dp corners; sticker pack headings use `titleSmall` and the
+selected pack uses `secondaryContainer`. Picker dividers inherit the theme.
+Video viewer counters use `labelMedium`; speed and menu controls share the
+viewer pills, and volume uses the viewer's high-contrast slider colours.
 
 ## Checking a change
 

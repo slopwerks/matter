@@ -286,6 +286,49 @@ void main() {
     },
   );
 
+  testWidgets('M3 staged images clear together and stay locked during send', (
+    tester,
+  ) async {
+    final draft = ComposerAttachmentDraft();
+    var released = false;
+    final staged = draft
+        .stage([
+          XFile.fromData(png, path: 'one.png', name: 'one.png'),
+          XFile.fromData(png, path: 'two.png', name: 'two.png'),
+        ])
+        .then((_) => released = true);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: neuTestTheme(material: true),
+          home: Scaffold(
+            body: ListenableBuilder(
+              listenable: draft,
+              builder: (context, _) =>
+                  ComposerAttachmentStrip(draft: draft, onPreview: (_, _) {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('待发送图片'), findsOneWidget);
+    draft.setSending(true);
+    await tester.pump();
+    await tester.tap(find.text('清空'));
+    expect(draft.selected, hasLength(2));
+    expect(released, isFalse);
+    draft.setSending(false);
+    await tester.pump();
+    await tester.tap(find.text('清空'));
+    await tester.pumpAndSettle();
+    await staged;
+    expect(draft.selected, isEmpty);
+    expect(released, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    draft.dispose();
+  });
+
   test('disposing the pending draft releases dropped file access', () async {
     final draft = ComposerAttachmentDraft();
     final staged = draft.stage([
