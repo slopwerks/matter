@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 import '../../features/storage/storage_appearance.dart';
 import '../../features/storage/storage_breakdown.dart';

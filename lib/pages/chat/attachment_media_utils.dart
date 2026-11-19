@@ -2,7 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' show Size;
+import 'package:flutter/material.dart' show Size;
 
 enum AttachmentMediaKind { image, video, file }
 

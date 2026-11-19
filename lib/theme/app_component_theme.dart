@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 enum ConversationRowLayout { inlineStatus, trailingStatus }
 

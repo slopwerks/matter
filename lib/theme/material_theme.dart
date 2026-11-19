@@ -1,5 +1,5 @@
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoPageTransitionsBuilder;
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+import 'package:flutter/material.dart';
 
 import 'app_component_theme.dart';
 import 'neu_colors.dart';

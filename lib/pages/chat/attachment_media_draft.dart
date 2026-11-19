@@ -1,6 +1,6 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' show TextEditingController;
+import 'package:flutter/material.dart' show TextEditingController;
 import 'package:photo_manager/photo_manager.dart';
 
 import 'attachment_media_utils.dart';

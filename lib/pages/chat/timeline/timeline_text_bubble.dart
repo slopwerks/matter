@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../../theme/neu_colors.dart';

@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 /// Animated title that cross-fades with a vertical slide when text changes.
 /// Old text slides up and fades out, new text slides in from below and fades in.

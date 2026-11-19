@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 import '../../theme/neu_colors.dart';
 import 'attachment_picker_controls.dart';
