@@ -49,6 +49,8 @@ import 'package:re_highlight/styles/vs.dart';
 import 'package:re_highlight/styles/vs2015.dart';
 
 import '../../providers/code_block_settings_provider.dart';
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import 'matrix_html_node.dart';
 
 class CodeHighlightThemeInfo {
@@ -482,9 +484,16 @@ class _MatrixCodeBlockState extends ConsumerState<MatrixCodeBlock> {
 
     final opacity = settings.opacity.clamp(0.1, 1.0);
     final blockBg = themeInfo.backgroundColor.withValues(alpha: opacity);
-    final headerBg = themeInfo.headerColor.withValues(alpha: opacity);
-    final dividerColor = themeInfo.dividerColor.withValues(alpha: opacity);
-    final headerFg = isDark ? const Color(0xFFABB2BF) : const Color(0xFF57606A);
+    final chrome = context.isMaterial
+        ? materialCodeBlockChromeStyle(Theme.of(context))
+        : null;
+    final headerBg =
+        chrome?.fill ?? themeInfo.headerColor.withValues(alpha: opacity);
+    final dividerColor =
+        chrome?.divider ?? themeInfo.dividerColor.withValues(alpha: opacity);
+    final headerFg =
+        chrome?.foreground ??
+        (isDark ? const Color(0xFFABB2BF) : const Color(0xFF57606A));
     final codeDefaultColor = isDark
         ? const Color(0xFFE5E9F0)
         : themeInfo.defaultTextColor;
@@ -549,7 +558,7 @@ class _MatrixCodeBlockState extends ConsumerState<MatrixCodeBlock> {
       width: widget.width,
       decoration: BoxDecoration(
         color: blockBg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: chrome?.radius ?? BorderRadius.circular(8),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -563,70 +572,96 @@ class _MatrixCodeBlockState extends ConsumerState<MatrixCodeBlock> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.code_rounded, size: 14, color: headerFg),
-                    const SizedBox(width: 6),
-                    Text(
-                      languageLabel,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: headerFg,
-                        letterSpacing: 0.3,
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.code_rounded, size: 14, color: headerFg),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          languageLabel,
+                          maxLines: chrome != null ? 2 : null,
+                          overflow: chrome != null
+                              ? TextOverflow.ellipsis
+                              : null,
+                          style:
+                              chrome?.label ??
+                              TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: headerFg,
+                                letterSpacing: 0.3,
+                              ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                Tooltip(
-                  message: _copied ? '已复制' : '复制代码',
-                  child: InkWell(
+                if (chrome != null)
+                  TextButton.icon(
                     key: const ValueKey('code-block-copy-button'),
-                    onTap: _handleCopy,
-                    borderRadius: BorderRadius.circular(4),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            transitionBuilder: (child, animation) =>
-                                ScaleTransition(scale: animation, child: child),
-                            child: _copied
-                                ? const Icon(
-                                    Icons.check_rounded,
-                                    key: ValueKey('copied-icon'),
-                                    size: 14,
-                                    color: Color(0xFF4CAF50),
-                                  )
-                                : Icon(
-                                    Icons.copy_rounded,
-                                    key: const ValueKey('copy-icon'),
-                                    size: 14,
-                                    color: headerFg,
+                    style: chrome.copyButton,
+                    onPressed: _handleCopy,
+                    icon: Icon(
+                      _copied ? Icons.check_rounded : Icons.copy_rounded,
+                      key: ValueKey(_copied ? 'copied-icon' : 'copy-icon'),
+                      size: 18,
+                    ),
+                    label: Text(_copied ? '已复制' : '复制'),
+                  )
+                else
+                  Tooltip(
+                    message: _copied ? '已复制' : '复制代码',
+                    child: InkWell(
+                      key: const ValueKey('code-block-copy-button'),
+                      onTap: _handleCopy,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              transitionBuilder: (child, animation) =>
+                                  ScaleTransition(
+                                    scale: animation,
+                                    child: child,
                                   ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _copied ? '已复制' : '复制',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: _copied
-                                  ? const Color(0xFF4CAF50)
-                                  : headerFg,
+                              child: _copied
+                                  ? const Icon(
+                                      Icons.check_rounded,
+                                      key: ValueKey('copied-icon'),
+                                      size: 14,
+                                      color: Color(0xFF4CAF50),
+                                    )
+                                  : Icon(
+                                      Icons.copy_rounded,
+                                      key: const ValueKey('copy-icon'),
+                                      size: 14,
+                                      color: headerFg,
+                                    ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 4),
+                            Text(
+                              _copied ? '已复制' : '复制',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: _copied
+                                    ? const Color(0xFF4CAF50)
+                                    : headerFg,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

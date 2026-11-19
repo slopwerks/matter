@@ -1872,7 +1872,9 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                                       if (_avatarPreviewBytes case final bytes?)
                                         ClipRRect(
                                           borderRadius: BorderRadius.circular(
-                                            NeuRadius.content,
+                                            context.isMaterial
+                                                ? 38
+                                                : NeuRadius.content,
                                           ),
                                           child: Image.memory(
                                             bytes,

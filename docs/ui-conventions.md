@@ -334,6 +334,19 @@ selected pack uses `secondaryContainer`. Picker dividers inherit the theme.
 Video viewer counters use `labelMedium`; speed and menu controls share the
 viewer pills, and volume uses the viewer's high-contrast slider colours.
 
+Material code blocks retain the selected syntax theme, opacity and line numbers
+inside a 12 dp frame; the language toolbar and copy action use Material surface,
+text and button roles. Rich-message image placeholders use semantic surface and
+icon colours in both brightnesses. Pending room-avatar previews match the circular
+Material avatar, while Neu retains its rounded rectangle.
+
+Notification message-mode selectors sit below their descriptions in Material.
+Autocomplete identities allow two lines for each name and ID, with a row extent
+derived from the active text scaler; keyboard scrolling uses that same extent.
+The sent-message notice measures its themed label, retains a 48 dp minimum target
+and clips its ink to the capsule. Send-flight start corners share the Material
+composer's 28 dp radius; Neu retains its original motion geometry.
+
 ## Checking a change
 
 Render the touched screen in both brightnesses at a phone width before and after.

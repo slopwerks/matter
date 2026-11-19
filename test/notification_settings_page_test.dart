@@ -116,6 +116,7 @@ void main() {
     FakeNotificationPreferencesApi? preferences,
     double width = 800,
     double height = 1600,
+    double textScale = 1,
   }) async {
     tester.view.physicalSize = Size(width, height);
     tester.view.devicePixelRatio = 1;
@@ -132,6 +133,11 @@ void main() {
         ],
         child: MaterialApp(
           theme: neuTestTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(textScale)),
+            child: child!,
+          ),
           home: const NotificationSettingsPage(userId: userId),
         ),
       ),
@@ -139,8 +145,20 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> scrollPage(WidgetTester tester, Finder target, double delta) =>
+      tester.scrollUntilVisible(
+        target,
+        delta,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+
   Future<void> openPushSettings(WidgetTester tester) async {
-    await tester.scrollUntilVisible(find.text('推送服务与网关'), 500);
+    await scrollPage(tester, find.text('推送服务与网关'), 500);
     await tester.ensureVisible(find.text('推送服务与网关'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('推送服务与网关'));
@@ -343,7 +361,8 @@ void main() {
     api.readError = null;
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
+    await scrollPage(
+      tester,
       find.byKey(const ValueKey(NotificationRule.displayName)),
       300,
     );
@@ -360,7 +379,7 @@ void main() {
   ) async {
     final api = FakeNotificationPreferencesApi();
     await showPage(tester, preferences: api, width: 390, height: 844);
-    await tester.scrollUntilVisible(find.byTooltip('添加关键词'), 500);
+    await scrollPage(tester, find.byTooltip('添加关键词'), 500);
     await tapVisible(tester, find.byTooltip('添加关键词'));
     await tester.enterText(find.byType(TextField), '  Matter  ');
     await tester.tap(find.text('添加'));
@@ -382,14 +401,14 @@ void main() {
     final keywordSave = Completer<void>();
     api.pendingKeywords['Matter'] = keywordSave;
     await showPage(tester, preferences: api);
-    await tester.scrollUntilVisible(find.byTooltip('添加关键词'), 500);
+    await scrollPage(tester, find.byTooltip('添加关键词'), 500);
     await tapVisible(tester, find.byTooltip('添加关键词'));
     await tester.enterText(find.byType(TextField), 'Matter');
     await tester.tap(find.text('添加'));
     await tester.pumpAndSettle();
     expect(tester.widget<InputChip>(find.byType(InputChip)).onDeleted, isNull);
     final mention = find.byKey(const ValueKey(NotificationRule.userMention));
-    await tester.scrollUntilVisible(mention, -500);
+    await scrollPage(tester, mention, -500);
     await tapVisible(tester, mention);
     expect(api.calls, [(userId, NotificationRule.userMention, false)]);
     expect(api.loadCalls, 1);
@@ -416,6 +435,28 @@ void main() {
     expect(api.calls, [(userId, NotificationRule.directMessage, false)]);
     expect(api.values[NotificationRule.encryptedDirectMessage], isTrue);
     expect(api.values[NotificationRule.userMention], isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('chat mode remains usable on a narrow view with large text', (
+    tester,
+  ) async {
+    final api = FakeNotificationPreferencesApi();
+    await showPage(
+      tester,
+      preferences: api,
+      width: 360,
+      height: 900,
+      textScale: 1.6,
+    );
+    final mode = find.byKey(const ValueKey(NotificationRule.directMessage));
+    await tapVisible(tester, mode);
+    final option = tester.widget(mode) is DropdownMenu<bool>
+        ? find.widgetWithText(MenuItemButton, '仅提及').hitTestable()
+        : find.text('仅提及').last;
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    expect(api.calls, [(userId, NotificationRule.directMessage, false)]);
     expect(tester.takeException(), isNull);
   });
 
@@ -523,7 +564,7 @@ void main() {
   ) async {
     await showPage(tester);
     expect(find.text('全部静音'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('桌面消息通知'), 500);
+    await scrollPage(tester, find.text('桌面消息通知'), 500);
     await tester.pumpAndSettle();
     expect(find.text('桌面消息通知'), findsOneWidget);
     expect(find.text('推送服务与网关'), findsNothing);

@@ -461,14 +461,18 @@ class _NotificationSettingsPageState
         }
 
         final key = ValueKey(rule);
-        return ListTile(
-          title: Text(title),
-          subtitle: Text(detail),
-          enabled: enabled,
-          trailing: context.isMaterial
-              ? DropdownMenu<bool>(
+        if (context.isMaterial) {
+          return ListTile(
+            title: Text(title),
+            enabled: enabled,
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(detail),
+                const SizedBox(height: 12),
+                DropdownMenu<bool>(
                   key: key,
-                  width: 132,
+                  expandedInsets: EdgeInsets.zero,
                   enabled: enabled,
                   initialSelection: selected,
                   selectOnly: true,
@@ -478,17 +482,26 @@ class _NotificationSettingsPageState
                     DropdownMenuEntry(value: false, label: '仅提及'),
                   ],
                   onSelected: enabled ? select : null,
-                )
-              : DropdownButton<bool>(
-                  key: key,
-                  value: selected,
-                  underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: true, child: Text('所有消息')),
-                    DropdownMenuItem(value: false, child: Text('仅提及')),
-                  ],
-                  onChanged: enabled ? select : null,
                 ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        }
+        return ListTile(
+          title: Text(title),
+          subtitle: Text(detail),
+          enabled: enabled,
+          trailing: DropdownButton<bool>(
+            key: key,
+            value: selected,
+            underline: const SizedBox.shrink(),
+            items: const [
+              DropdownMenuItem(value: true, child: Text('所有消息')),
+              DropdownMenuItem(value: false, child: Text('仅提及')),
+            ],
+            onChanged: enabled ? select : null,
+          ),
         );
       }
       return SwitchListTile.adaptive(

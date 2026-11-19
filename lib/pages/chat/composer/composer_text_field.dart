@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../features/markdown/markdown_format_toolbar.dart';
 import '../../../providers/chat_visual_settings_provider.dart';
 import '../../../theme/neu_colors.dart';
+import '../../../theme/material_theme.dart';
 import '../../../widgets/neu_decoration.dart';
 
 /// Inline editor presentation. The host owns focus, keyboard handling, drafts
@@ -74,19 +75,19 @@ class ComposerTextField extends StatelessWidget {
           ),
           border: context.isMaterial && !expanded
               ? const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,
           enabledBorder: context.isMaterial && !expanded
               ? const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,
           focusedBorder: context.isMaterial && !expanded
               ? const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,

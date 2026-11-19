@@ -3760,11 +3760,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 14,
+            width: 18,
             height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.5,
-              color: context.neu.textTertiary.withValues(alpha: 0.6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                for (var i = 0; i < 3; i++)
+                  Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: context.neu.textTertiary.withValues(alpha: 0.6),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(width: 8),

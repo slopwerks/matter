@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/message_insert_animation.dart';
 import 'package:matter/pages/chat/send_flight.dart';
 import 'package:matter/providers/chat_provider.dart';
+import 'package:matter/theme/material_theme.dart';
 
 import 'helpers/neu_test_theme.dart';
 
@@ -193,6 +194,18 @@ void main() {
     );
     expect(startPositioned.left, closeTo(sourceRect.left, 1));
     expect(startPositioned.top, closeTo(sourceRect.top, 1));
+    final startFrame = tester.widget<DecoratedBox>(
+      find.ancestor(
+        of: find.byKey(sourceKey),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    expectBorderRadiusClose(
+      (startFrame.decoration as BoxDecoration).borderRadius! as BorderRadius,
+      const bool.fromEnvironment('MATTER_TEST_MATERIAL')
+          ? materialComposerRadius
+          : BorderRadius.circular(22),
+    );
 
     // Halfway through the animation it should be between source and target.
     await tester.pump(const Duration(milliseconds: 180));

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import 'timeline/timeline_bubble_frame.dart';
 
 enum SendFlightKind { text, sticker }
@@ -462,7 +463,9 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
                         )
                       : outgoingTextBubbleBorderRadius);
               final borderRadius = BorderRadius.lerp(
-                BorderRadius.circular(NeuRadius.surface),
+                context.isMaterial
+                    ? materialComposerRadius
+                    : BorderRadius.circular(NeuRadius.surface),
                 endBorderRadius,
                 progress,
               )!;

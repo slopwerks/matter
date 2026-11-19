@@ -37,7 +37,7 @@ class ComposerSurface extends StatelessWidget {
                 child: Material(
                   key: const ValueKey('message-input-surface'),
                   color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: materialComposerRadius,
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: child,

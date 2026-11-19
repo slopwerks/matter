@@ -1,10 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
+import 'package:matter/theme/material_theme.dart';
 
 import 'helpers/neu_test_theme.dart';
 
 void main() {
+  testWidgets('Material sent notice fits a narrow view with enlarged text', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildMaterialTheme(Brightness.light),
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(320, 640),
+            textScaler: TextScaler.linear(2),
+          ),
+          child: Scaffold(
+            body: Center(
+              child: LatestMessageControl(
+                visible: true,
+                showSentNotice: true,
+                onPressed: () => taps++,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(Ink)).width, lessThanOrEqualTo(288));
+    expect(tester.getSize(find.byType(Ink)).height, greaterThanOrEqualTo(48));
+    expect(
+      tester.widget<InkWell>(find.byType(InkWell)).customBorder,
+      isA<StadiumBorder>(),
+    );
+    await tester.tap(find.bySemanticsLabel('消息已发送，查看最新消息'));
+    expect(taps, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   group('latest-message thresholds', () {
     test('selects flight, insertion, and quiet presentations', () {
       expect(

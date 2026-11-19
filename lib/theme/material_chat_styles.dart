@@ -1,5 +1,55 @@
 part of 'material_theme.dart';
 
+const materialComposerRadius = BorderRadius.all(Radius.circular(28));
+
+({Color headerFill, Color headerForeground, Color border})
+materialHtmlTableStyle(ThemeData theme) => (
+  headerFill: theme.colorScheme.surfaceContainerHighest,
+  headerForeground: theme.colorScheme.onSurface,
+  border: theme.dividerColor,
+);
+
+({Color fill, Color foreground, BorderRadius radius})
+materialHtmlImagePlaceholderStyle(ThemeData theme) => (
+  fill: theme.colorScheme.surfaceContainerHighest,
+  foreground: theme.colorScheme.onSurfaceVariant,
+  radius: const BorderRadius.all(Radius.circular(12)),
+);
+
+({
+  Color fill,
+  Color foreground,
+  Color divider,
+  BorderRadius radius,
+  TextStyle? label,
+  ButtonStyle copyButton,
+})
+materialCodeBlockChromeStyle(ThemeData theme) => (
+  fill: theme.colorScheme.surfaceContainerHigh,
+  foreground: theme.colorScheme.onSurfaceVariant,
+  divider: theme.dividerColor,
+  radius: const BorderRadius.all(Radius.circular(12)),
+  label: theme.textTheme.labelMedium?.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+  ),
+  copyButton: TextButton.styleFrom(
+    foregroundColor: theme.colorScheme.primary,
+    textStyle: theme.textTheme.labelLarge,
+  ),
+);
+
+({ShapeBorder shape, TextStyle notice, TextStyle action})
+materialLatestMessageStyle(ThemeData theme) {
+  final notice = theme.textTheme.labelLarge!.copyWith(
+    color: theme.colorScheme.onSecondaryContainer,
+  );
+  return (
+    shape: const StadiumBorder(),
+    notice: notice,
+    action: notice.copyWith(fontWeight: FontWeight.w700),
+  );
+}
+
 ({
   Color fill,
   Color foreground,

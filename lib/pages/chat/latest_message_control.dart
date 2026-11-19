@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 
 /// Sending while closer than this fraction of the visible timeline scrolls
 /// directly to the newest message.
@@ -119,53 +120,58 @@ class _LatestMessageControlState extends State<LatestMessageControl>
     );
   }
 
-  Widget _buildNotice(double value) {
+  Widget _buildNotice(double value, double expandedWidth) {
     final characters = _noticeText.runes
         .map(String.fromCharCode)
         .toList(growable: false);
     return ExcludeSemantics(
       child: OverflowBox(
         minWidth: 0,
-        maxWidth: _expandedWidth,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var index = 0; index < characters.length; index++)
-              Builder(
-                builder: (context) {
-                  final colors = context.neu;
-                  final material = context.isMaterial;
-                  final scheme = Theme.of(context).colorScheme;
-                  final start = 0.12 + index * 0.045;
-                  final progress = _intervalProgress(
-                    value,
-                    start: start,
-                    end: (start + 0.28).clamp(0.0, 1.0),
-                  );
-                  final isViewCharacter = index >= characters.length - 2;
-                  return Opacity(
-                    opacity: progress,
-                    child: Transform.translate(
-                      offset: Offset(0, 7 * (1 - progress)),
-                      child: Text(
-                        characters[index],
-                        style: TextStyle(
-                          color: material
-                              ? scheme.onSecondaryContainer
-                              : isViewCharacter
-                              ? colors.accentPressed
-                              : colors.text,
-                          fontSize: 13.5,
-                          fontWeight: isViewCharacter
-                              ? FontWeight.w700
-                              : FontWeight.w600,
+        maxWidth: expandedWidth,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < characters.length; index++)
+                Builder(
+                  builder: (context) {
+                    final colors = context.neu;
+                    final material = context.isMaterial;
+                    final style = material
+                        ? materialLatestMessageStyle(Theme.of(context))
+                        : null;
+                    final start = 0.12 + index * 0.045;
+                    final progress = _intervalProgress(
+                      value,
+                      start: start,
+                      end: (start + 0.28).clamp(0.0, 1.0),
+                    );
+                    final isViewCharacter = index >= characters.length - 2;
+                    return Opacity(
+                      opacity: progress,
+                      child: Transform.translate(
+                        offset: Offset(0, 7 * (1 - progress)),
+                        child: Text(
+                          characters[index],
+                          style: style != null
+                              ? (isViewCharacter ? style.action : style.notice)
+                              : TextStyle(
+                                  color: isViewCharacter
+                                      ? colors.accentPressed
+                                      : colors.text,
+                                  fontSize: 13.5,
+                                  fontWeight: isViewCharacter
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-          ],
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -177,6 +183,23 @@ class _LatestMessageControlState extends State<LatestMessageControl>
     final theme = Theme.of(context);
     final material = context.isMaterial;
     final radius = BorderRadius.circular(NeuRadius.surface);
+    final style = material ? materialLatestMessageStyle(theme) : null;
+    final shape = style?.shape ?? RoundedRectangleBorder(borderRadius: radius);
+    final painter = TextPainter(
+      text: TextSpan(text: _noticeText, style: style?.action),
+      textScaler: MediaQuery.textScalerOf(context),
+      textDirection: Directionality.of(context),
+    )..layout();
+    final expandedWidth = material
+        ? (painter.width + 32).clamp(
+            48.0,
+            MediaQuery.sizeOf(context).width - 32,
+          )
+        : _expandedWidth;
+    final height = material
+        ? (painter.height + 24).clamp(48.0, double.infinity)
+        : 44.0;
+    painter.dispose();
     return IgnorePointer(
       ignoring: !widget.visible,
       child: AnimatedOpacity(
@@ -204,18 +227,18 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: widget.onPressed,
-                    borderRadius: radius,
+                    customBorder: shape,
                     child: Ink(
                       width: lerpDouble(
-                        _collapsedWidth,
-                        _expandedWidth,
+                        material ? 48 : _collapsedWidth,
+                        expandedWidth,
                         widthProgress,
                       ),
-                      height: 44,
+                      height: height,
                       decoration: material
                           ? ShapeDecoration(
                               color: theme.colorScheme.secondaryContainer,
-                              shape: const StadiumBorder(),
+                              shape: shape,
                             )
                           : BoxDecoration(
                               color: colors.surfaceStrong.withValues(
@@ -224,8 +247,8 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                               borderRadius: radius,
                               border: Border.all(color: colors.glassBorder),
                             ),
-                      child: ClipRRect(
-                        borderRadius: radius,
+                      child: ClipPath(
+                        clipper: ShapeBorderClipper(shape: shape),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
@@ -242,7 +265,7 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                                 ),
                               ),
                             ),
-                            _buildNotice(value),
+                            _buildNotice(value, expandedWidth),
                           ],
                         ),
                       ),
