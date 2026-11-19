@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
+import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 
 import '../../../widgets/sheets.dart';
@@ -98,8 +99,20 @@ class TimelineMessageMetadata extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final labelStyle = Theme.of(context).textTheme.labelSmall;
-    final foreground = overlay
+    final theme = Theme.of(context);
+    final labelStyle = theme.textTheme.labelSmall;
+    final onSolidBubble =
+        context.isMaterial &&
+        overlay &&
+        switch (message.msgType) {
+          MessageType.file || MessageType.location || MessageType.poll => true,
+          _ => false,
+        };
+    final foreground = onSolidBubble
+        ? (message.isMe
+              ? outgoingBubbleForeground(context)
+              : theme.colorScheme.onSurfaceVariant)
+        : overlay
         ? Colors.white.withValues(alpha: 0.9)
         : message.isMe
         ? outgoingBubbleForeground(context).withValues(alpha: 0.65)
@@ -150,10 +163,12 @@ class TimelineMessageMetadata extends StatelessWidget {
       child: Container(
         key: ValueKey('message-metadata:${message.id}'),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(8),
-        ),
+        decoration: onSolidBubble
+            ? null
+            : BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
         child: content,
       ),
     );
@@ -205,6 +220,8 @@ IconData _eventIcon(ChatMessage message) {
 
 Widget buildEventMessage(BuildContext context, ChatMessage message) {
   final colors = context.neu;
+  final theme = Theme.of(context);
+  final style = context.isMaterial ? materialTimelineEventStyle(theme) : null;
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 4),
     child: Center(
@@ -214,21 +231,28 @@ Widget buildEventMessage(BuildContext context, ChatMessage message) {
           minHeight: 24,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: colors.card.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(NeuRadius.tag),
-        ),
+        decoration:
+            style?.decoration ??
+            BoxDecoration(
+              color: colors.card.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(NeuRadius.tag),
+            ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(_eventIcon(message), size: 13, color: colors.textTertiary),
+            Icon(
+              _eventIcon(message),
+              size: 13,
+              color: style?.foreground ?? colors.textTertiary,
+            ),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
                 message.content,
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(height: 1.2),
+                style:
+                    style?.label ??
+                    theme.textTheme.bodySmall?.copyWith(height: 1.2),
                 textAlign: TextAlign.center,
               ),
             ),

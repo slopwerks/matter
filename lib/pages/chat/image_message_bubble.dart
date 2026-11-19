@@ -15,6 +15,7 @@ import '../../providers/connection_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/image_view_history.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import 'image_media.dart';
 import 'image_message_loader.dart';
@@ -344,6 +345,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
       ),
     );
     final colors = context.neu;
+    final mediaStyle = context.isMaterial
+        ? materialMediaChromeStyle(Theme.of(context))
+        : null;
     final url = originalUrl ?? _loader.resolvedUrl;
     final serverBytes = _loader.decryptedBytes;
     final previewBytes = widget.previewBytes ?? _stickyPreviewBytes;
@@ -380,7 +384,7 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
                 child: SpoilerImageCover(
                   hash: widget.message?.imageMetadata?.blurhash,
                   reason: widget.message?.imageMetadata?.spoilerReason,
-                  color: colors.card,
+                  color: mediaStyle?.surface ?? colors.card,
                   onReveal: _revealSpoiler,
                 ),
               ),
@@ -394,6 +398,15 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
     }
 
     if (_loader.downloadBlocked && bytes == null) {
+      final download = TextButton.icon(
+        onPressed: () => _resolveUrl(manual: true),
+        icon: const Icon(Icons.download_rounded),
+        label: Text(
+          widget.fileSize == null
+              ? '点击下载图片'
+              : '下载 ${formatStorageBytes(widget.fileSize!)}',
+        ),
+      );
       return _withCaption(
         SizedBox(
           width: bubbleSize.width,
@@ -401,15 +414,14 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
           child: Stack(
             children: [
               Positioned.fill(
-                child: TextButton.icon(
-                  onPressed: () => _resolveUrl(manual: true),
-                  icon: const Icon(Icons.download_rounded),
-                  label: Text(
-                    widget.fileSize == null
-                        ? '点击下载图片'
-                        : '下载 ${formatStorageBytes(widget.fileSize!)}',
-                  ),
-                ),
+                child: mediaStyle == null
+                    ? download
+                    : Material(
+                        color: mediaStyle.surface,
+                        borderRadius: mediaBorderRadius,
+                        clipBehavior: Clip.antiAlias,
+                        child: download,
+                      ),
               ),
               widget.metadata,
             ],
@@ -649,12 +661,17 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
 
   Widget _buildBroken(BuildContext context, Size bubbleSize) {
     final colors = context.neu;
+    final style = context.isMaterial
+        ? materialMediaChromeStyle(Theme.of(context))
+        : null;
     return Container(
       width: bubbleSize.width,
       height: bubbleSize.height,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isMe ? colors.accent.withValues(alpha: 0.3) : colors.card,
+        color:
+            style?.surface ??
+            (isMe ? colors.accent.withValues(alpha: 0.3) : colors.card),
         borderRadius: _bubbleBorderRadius,
         boxShadow: widget.displaySize == null
             ? enabledNeuBubbleShadows(context, colors)
@@ -665,12 +682,12 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
         children: [
           BlurhashPlaceholder(
             hash: widget.message?.imageMetadata?.blurhash,
-            color: colors.card,
+            color: style?.surface ?? colors.card,
           ),
           Center(
             child: Icon(
               Icons.broken_image_rounded,
-              color: colors.textTertiary,
+              color: style?.textSecondary ?? colors.textTertiary,
               size: 32,
             ),
           ),
@@ -680,19 +697,19 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
   }
 
   Widget _buildLoading(BuildContext context, Size bubbleSize) {
+    final fill = context.isMaterial
+        ? materialMediaChromeStyle(Theme.of(context)).surface
+        : context.neu.card;
     return Container(
       width: bubbleSize.width,
       height: bubbleSize.height,
-      decoration: BoxDecoration(
-        color: context.neu.card,
-        borderRadius: _bubbleBorderRadius,
-      ),
+      decoration: BoxDecoration(color: fill, borderRadius: _bubbleBorderRadius),
       child: Stack(
         fit: StackFit.expand,
         children: [
           BlurhashPlaceholder(
             hash: widget.message?.imageMetadata?.blurhash,
-            color: context.neu.card,
+            color: fill,
           ),
           if (widget.message?.imageMetadata?.blurhash == null)
             const Center(child: CircularProgressIndicator(strokeWidth: 2)),
@@ -723,11 +740,24 @@ class ImageMessageCaption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final accent = isMe ? outgoingBubbleForeground(context) : colors.accent;
-    final style = Theme.of(context).textTheme.bodyLarge!.copyWith(
-      color: isMe ? outgoingBubbleForeground(context) : colors.text,
-      height: 1.35,
-    );
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final accent = isMe
+        ? outgoingBubbleForeground(context)
+        : material
+        ? theme.colorScheme.primary
+        : colors.accent;
+    final style =
+        (material
+                ? materialReaderTextStyle(theme)
+                : theme.textTheme.bodyLarge!.copyWith(height: 1.35))
+            .copyWith(
+              color: isMe
+                  ? outgoingBubbleForeground(context)
+                  : material
+                  ? theme.colorScheme.onSurface
+                  : colors.text,
+            );
     return Container(
       key: const ValueKey('image-caption'),
       width: double.infinity,

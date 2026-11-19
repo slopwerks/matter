@@ -33,10 +33,15 @@ class MaterialChatListContent extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final components = AppComponentTheme.of(context);
+    final pendingMembership = membershipActions != null;
+    final iconColor = pendingMembership
+        ? materialRoomMembershipColors(theme).foreground
+        : scheme.onSurfaceVariant;
     final text = materialConversationTextTheme(
       theme,
       unread: hasUnread,
       muted: room.isMuted,
+      pendingMembership: pendingMembership,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -63,7 +68,7 @@ class MaterialChatListContent extends StatelessWidget {
                               ? Icons.account_tree_outlined
                               : Icons.group_outlined,
                           size: 16,
-                          color: scheme.onSurfaceVariant,
+                          color: iconColor,
                         ),
                         const SizedBox(width: 4),
                       ],
@@ -81,7 +86,7 @@ class MaterialChatListContent extends StatelessWidget {
                           Icons.notifications_off_outlined,
                           key: ValueKey('room-muted-icon:${room.id}'),
                           size: 15,
-                          color: scheme.onSurfaceVariant,
+                          color: iconColor,
                         ),
                       ],
                     ],
@@ -138,9 +143,7 @@ class MaterialChatListContent extends StatelessWidget {
                         Icons.circle,
                         key: ValueKey('room-unread-dot:${room.id}'),
                         size: 10,
-                        color: room.isMuted
-                            ? scheme.onSurfaceVariant
-                            : scheme.primary,
+                        color: room.isMuted ? iconColor : scheme.primary,
                       ),
                   ],
                 ],

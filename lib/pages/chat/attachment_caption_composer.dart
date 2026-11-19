@@ -54,6 +54,8 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
     final count = widget.sendCount ?? widget.draft.selected.length;
     final content = Row(
       children: [
@@ -62,8 +64,10 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
             tooltip: '取消选择',
             onPressed: widget.draft.isSending ? null : widget.onClear,
             icon: Icon(
-              CupertinoIcons.xmark_circle,
-              color: colors.textSecondary,
+              material ? Icons.cancel_outlined : CupertinoIcons.xmark_circle,
+              color: material
+                  ? theme.colorScheme.onSurfaceVariant
+                  : colors.textSecondary,
               size: 22,
             ),
           ),
@@ -78,10 +82,10 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
                   maxLines: 3,
                   maxLength: 4096,
                   keyboardType: TextInputType.multiline,
-                  style: context.isMaterial
-                      ? Theme.of(context).textTheme.bodyLarge
+                  style: material
+                      ? theme.textTheme.bodyLarge
                       : TextStyle(color: colors.text),
-                  decoration: context.isMaterial
+                  decoration: material
                       ? materialAttachmentCaptionDecoration
                       : const InputDecoration(
                           hintText: '添加图片描述',
@@ -99,7 +103,12 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
                           counterText: '',
                         ),
                 )
-              : Text('已选 $count 项', style: TextStyle(color: colors.text)),
+              : Text(
+                  '已选 $count 项',
+                  style: material
+                      ? theme.textTheme.labelLarge
+                      : TextStyle(color: colors.text),
+                ),
         ),
         const SizedBox(width: 8),
         Tooltip(
@@ -109,7 +118,7 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
             onPressed: widget.draft.isSending || count == 0
                 ? null
                 : widget.onSend,
-            style: context.isMaterial
+            style: material
                 ? null
                 : FilledButton.styleFrom(
                     backgroundColor: colors.accent,
@@ -127,7 +136,10 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(CupertinoIcons.arrow_up, size: 18),
+                      Icon(
+                        material ? Icons.send_rounded : CupertinoIcons.arrow_up,
+                        size: 18,
+                      ),
                       const SizedBox(width: 4),
                       Text('$count'),
                     ],
@@ -139,13 +151,13 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
     return SafeArea(
       top: false,
       child: MaxContentWidth(
-        maxWidth: context.isMaterial ? 720 : double.infinity,
+        maxWidth: material ? 720 : double.infinity,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-          child: context.isMaterial
+          child: material
               ? Card(
                   margin: EdgeInsets.zero,
-                  color: materialMediaChromeStyle(Theme.of(context)).surface,
+                  color: materialMediaChromeStyle(theme).surface,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,

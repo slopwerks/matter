@@ -312,6 +312,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
 
   Widget _buildToolbar(BuildContext context, ImageViewerMedia media) {
     final neu = context.neu;
+    final material = context.isMaterial;
     final style = materialMediaViewerStyle(Theme.of(context));
     final colors = context.isMaterial
         ? (
@@ -425,7 +426,12 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                     strokeWidth: 2,
                   ),
                 )
-              : const Icon(CupertinoIcons.arrow_down_to_line, size: 22),
+              : Icon(
+                  material
+                      ? Icons.download_rounded
+                      : CupertinoIcons.arrow_down_to_line,
+                  size: 22,
+                ),
         ),
         if (supportsSaveAs ||
             canReply ||
@@ -436,7 +442,10 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
             key: const ValueKey('image-viewer-more'),
             tooltip: '更多操作',
             style: context.isMaterial ? style.control : null,
-            icon: const Icon(CupertinoIcons.ellipsis, size: 22),
+            icon: Icon(
+              material ? Icons.more_horiz_rounded : CupertinoIcons.ellipsis,
+              size: 22,
+            ),
             onOpened: () => _menuMedia = media,
             onCanceled: () => setState(() => _menuMedia = null),
             onSelected: (action) {
@@ -461,13 +470,18 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                   child: const Text('另存为…'),
                 ),
               if (canReply)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: _ViewerAction.reply,
                   child: Row(
                     children: [
-                      Icon(CupertinoIcons.arrowshape_turn_up_left, size: 20),
-                      SizedBox(width: 12),
-                      Text('回复'),
+                      Icon(
+                        material
+                            ? Icons.reply_rounded
+                            : CupertinoIcons.arrowshape_turn_up_left,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('回复'),
                     ],
                   ),
                 ),
@@ -475,22 +489,32 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                 PopupMenuItem(
                   value: _ViewerAction.forward,
                   enabled: !_forwarding.contains(source.id),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(CupertinoIcons.arrowshape_turn_up_right, size: 20),
-                      SizedBox(width: 12),
-                      Text('转发'),
+                      Icon(
+                        material
+                            ? Icons.forward_rounded
+                            : CupertinoIcons.arrowshape_turn_up_right,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('转发'),
                     ],
                   ),
                 ),
               if (canJump)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: _ViewerAction.jump,
                   child: Row(
                     children: [
-                      Icon(CupertinoIcons.chat_bubble_text, size: 20),
-                      SizedBox(width: 12),
-                      Text('转到消息'),
+                      Icon(
+                        material
+                            ? Icons.chat_bubble_outline_rounded
+                            : CupertinoIcons.chat_bubble_text,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('转到消息'),
                     ],
                   ),
                 ),
@@ -718,8 +742,10 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
                         media.original == OriginalImageState.failed
                     ? TextButton.icon(
                         onPressed: media.resolveImage,
-                        icon: const Icon(
-                          CupertinoIcons.arrow_clockwise,
+                        icon: Icon(
+                          context.isMaterial
+                              ? Icons.refresh_rounded
+                              : CupertinoIcons.arrow_clockwise,
                           color: Colors.white,
                           size: 22,
                         ),

@@ -59,6 +59,7 @@ class ImageViewerFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = materialMediaViewerStyle(Theme.of(context));
+    final material = context.isMaterial;
     return MaxContentWidth(
       maxWidth: context.isMaterial ? 720 : double.infinity,
       child: Column(
@@ -91,8 +92,10 @@ class ImageViewerFooter extends StatelessWidget {
             ImageViewerIconButton(
               tooltip: '重试描述',
               onPressed: onRetryCaption,
-              icon: const Icon(
-                CupertinoIcons.arrow_clockwise,
+              icon: Icon(
+                material
+                    ? Icons.refresh_rounded
+                    : CupertinoIcons.arrow_clockwise,
                 color: Colors.white,
               ),
             ),
@@ -113,7 +116,9 @@ class ImageViewerFooter extends StatelessWidget {
                           ),
                         )
                       : Icon(
-                          CupertinoIcons.chevron_left,
+                          material
+                              ? Icons.chevron_left_rounded
+                              : CupertinoIcons.chevron_left,
                           color: context.isMaterial ? null : Colors.white,
                           size: 22,
                         ),
@@ -127,7 +132,9 @@ class ImageViewerFooter extends StatelessWidget {
                   tooltip: '下一张',
                   onPressed: onNext,
                   icon: Icon(
-                    CupertinoIcons.chevron_right,
+                    material
+                        ? Icons.chevron_right_rounded
+                        : CupertinoIcons.chevron_right,
                     color: context.isMaterial ? null : Colors.white,
                     size: 22,
                   ),

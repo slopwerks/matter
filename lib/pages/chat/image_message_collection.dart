@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import 'image_mosaic_layout.dart';
 import 'image_stack_layout.dart';
+import 'timeline/timeline_bubble_frame.dart';
 
 typedef ImageCollectionTileBuilder = Widget Function(
   rust.ChatMessage message,
@@ -110,10 +112,9 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
     return widget.collapsedBuilder(
       LayoutBuilder(
         builder: (context, constraints) {
-          final colors = context.neu;
           final maxWidth = math.min(
             widget.album
-                ? math.min(MediaQuery.sizeOf(context).width * .68, 520.0)
+                ? TimelineBubbleFrame.maxWidth(context)
                 : MediaQuery.sizeOf(context).width,
             constraints.maxWidth,
           );
@@ -217,7 +218,7 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
               clipBehavior: mosaic ? Clip.antiAlias : Clip.none,
               decoration: BoxDecoration(
                 color: mosaic
-                    ? (widget.isMe ? colors.accent : colors.card)
+                    ? messageBubbleFill(context, isMe: widget.isMe)
                     : Colors.transparent,
                 borderRadius: widget.borderRadius,
                 boxShadow: mosaic ? widget.shadows : null,
@@ -287,9 +288,7 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
                     ),
                     if (caption != null)
                       ColoredBox(
-                        color: widget.isMe
-                            ? context.neu.accent
-                            : context.neu.card,
+                        color: messageBubbleFill(context, isMe: widget.isMe),
                         child: caption,
                       ),
                   ],
@@ -305,48 +304,66 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
   Widget _toggle(BuildContext context) =>
       Positioned(left: 9, bottom: 8, child: _toggleButton(context));
 
-  Widget _toggleButton(BuildContext context) => SizedBox(
-    height: _expanded ? 36 : 32,
-    child: IconButton(
-      key: ValueKey('image-stack-toggle:${widget.messages.first.id}'),
-      tooltip: _expanded
-          ? '收起图片，共${widget.messages.length}张'
-          : '展开全部${widget.messages.length}张图片',
-      style: IconButton.styleFrom(
-        backgroundColor: _expanded
-            ? context.neu.card
-            : const Color(0xff18241c).withValues(alpha: .73),
-        foregroundColor: _expanded ? context.neu.text : Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      ),
-      onPressed: _toggleExpanded,
-      icon: DefaultTextStyle.merge(
-        style: TextStyle(
-          color: _expanded ? context.neu.text : Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+  Widget _toggleButton(BuildContext context) {
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final colors = material
+        ? materialImageControlColors(theme, overPhoto: !_expanded)
+        : (
+            fill: _expanded
+                ? context.neu.card
+                : const Color(0xff18241c).withValues(alpha: .73),
+            foreground: _expanded ? context.neu.text : Colors.white,
+          );
+    return SizedBox(
+      height: _expanded ? 36 : 32,
+      child: IconButton(
+        key: ValueKey('image-stack-toggle:${widget.messages.first.id}'),
+        tooltip: _expanded
+            ? '收起图片，共${widget.messages.length}张'
+            : '展开全部${widget.messages.length}张图片',
+        style: IconButton.styleFrom(
+          backgroundColor: colors.fill,
+          foregroundColor: colors.foreground,
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+          shape: material
+              ? const StadiumBorder()
+              : RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _expanded
-                  ? CupertinoIcons.chevron_down
-                  : CupertinoIcons.square_stack,
-              size: 16,
-            ),
-            const SizedBox(width: 5),
-            if (_expanded) const Text('收起 ·'),
-            if (_expanded) const SizedBox(width: 5),
-            Text(
-              '${widget.messages.length}',
-              key: const ValueKey('image-stack-count'),
-            ),
-            if (_expanded) const Text(' 张'),
-          ],
+        onPressed: _toggleExpanded,
+        icon: DefaultTextStyle.merge(
+          style: material
+              ? theme.textTheme.labelMedium!.copyWith(color: colors.foreground)
+              : TextStyle(
+                  color: colors.foreground,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _expanded
+                    ? (material
+                          ? Icons.expand_more_rounded
+                          : CupertinoIcons.chevron_down)
+                    : (material
+                          ? Icons.layers_outlined
+                          : CupertinoIcons.square_stack),
+                size: 16,
+              ),
+              const SizedBox(width: 5),
+              if (_expanded) const Text('收起 ·'),
+              if (_expanded) const SizedBox(width: 5),
+              Text(
+                '${widget.messages.length}',
+                key: const ValueKey('image-stack-count'),
+              ),
+              if (_expanded) const Text(' 张'),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

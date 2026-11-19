@@ -10,8 +10,10 @@ import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/app_component_theme.dart';
+import '../../theme/material_theme.dart';
 import '../../theme/tokens.dart';
 import '../../theme/neu_colors.dart';
+import '../../widgets/material_press.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
@@ -126,7 +128,9 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
     }
 
     final selectedFill = components.selectedRowFill ?? colors.accentSoft;
-    final fillColor = _pressed || isSelected
+    final fillColor = context.isMaterial && isPendingMembership
+        ? materialRoomMembershipColors(Theme.of(context)).fill
+        : _pressed || isSelected
         ? selectedFill
         : isPendingMembership
         ? selectedFill.withValues(alpha: .45)
@@ -634,6 +638,35 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isMaterial) {
+      final theme = Theme.of(context);
+      final foreground = materialRoomMembershipColors(theme).foreground;
+      const padding = EdgeInsets.symmetric(horizontal: 8, vertical: 9);
+      final buttonIcon = Icon(icon, size: 16);
+      final buttonLabel = Text(label);
+      return MaterialPress(
+        builder: (states) => accent
+            ? FilledButton.icon(
+                statesController: states,
+                onPressed: onPressed,
+                style: FilledButton.styleFrom(padding: padding)
+                    .merge(MaterialPress.feedbackStyle),
+                icon: buttonIcon,
+                label: buttonLabel,
+              )
+            : OutlinedButton.icon(
+                statesController: states,
+                onPressed: onPressed,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: foreground,
+                  side: BorderSide(color: foreground),
+                  padding: padding,
+                ).merge(MaterialPress.feedbackStyle),
+                icon: buttonIcon,
+                label: buttonLabel,
+              ),
+      );
+    }
     final colors = context.neu;
     final color = destructive
         ? colors.error

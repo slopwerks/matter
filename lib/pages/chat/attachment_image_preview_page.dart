@@ -159,6 +159,7 @@ class _AttachmentImagePreviewPageState
     listenable: widget.draft,
     builder: (context, _) {
       final colors = context.neu;
+      final material = context.isMaterial;
       final order = widget.draft.order(_current);
       final busy = _editing || widget.draft.isSending;
       final selection = _toolButton(
@@ -267,8 +268,10 @@ class _AttachmentImagePreviewPageState
                                 snapshot.data!,
                                 fit: BoxFit.contain,
                                 cacheWidth: 2048,
-                                errorBuilder: (_, _, _) => const Icon(
-                                  CupertinoIcons.photo,
+                                errorBuilder: (_, _, _) => Icon(
+                                  material
+                                      ? Icons.broken_image_outlined
+                                      : CupertinoIcons.photo,
                                   color: Colors.white,
                                 ),
                               ),
@@ -302,15 +305,22 @@ class _AttachmentImagePreviewPageState
                                 onPressed: busy
                                     ? null
                                     : () => _edit(ChatImageEditorTool.crop),
-                                icon: const Icon(CupertinoIcons.crop, size: 24),
+                                icon: Icon(
+                                  material
+                                      ? Icons.crop_rounded
+                                      : CupertinoIcons.crop,
+                                  size: 24,
+                                ),
                               ),
                               _toolButton(
                                 tooltip: '笔刷',
                                 onPressed: busy
                                     ? null
                                     : () => _edit(ChatImageEditorTool.paint),
-                                icon: const Icon(
-                                  CupertinoIcons.paintbrush,
+                                icon: Icon(
+                                  material
+                                      ? Icons.brush_outlined
+                                      : CupertinoIcons.paintbrush,
                                   size: 24,
                                 ),
                               ),
@@ -347,17 +357,23 @@ class _AttachmentImagePreviewPageState
                                 color: _current.spoiler ? colors.accent : null,
                                 selected: _current.spoiler,
                                 icon: Icon(
-                                  _current.spoiler
-                                      ? CupertinoIcons.eye_slash
-                                      : CupertinoIcons.eye,
+                                  material
+                                      ? (_current.spoiler
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined)
+                                      : (_current.spoiler
+                                            ? CupertinoIcons.eye_slash
+                                            : CupertinoIcons.eye),
                                   size: 24,
                                 ),
                               ),
                               _toolButton(
                                 tooltip: '更多调整',
                                 onPressed: busy ? null : () => _edit(null),
-                                icon: const Icon(
-                                  CupertinoIcons.slider_horizontal_3,
+                                icon: Icon(
+                                  material
+                                      ? Icons.tune_rounded
+                                      : CupertinoIcons.slider_horizontal_3,
                                   size: 24,
                                 ),
                               ),

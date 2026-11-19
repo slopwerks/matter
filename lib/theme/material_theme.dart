@@ -105,6 +105,36 @@ materialMediaChromeStyle(ThemeData theme) => (
   accent: theme.colorScheme.primary,
 );
 
+({Color fill, Color foreground}) materialImageControlColors(
+  ThemeData theme, {
+  required bool overPhoto,
+}) => overPhoto
+    ? (fill: Colors.black.withValues(alpha: .72), foreground: Colors.white)
+    : (
+        fill: theme.colorScheme.secondaryContainer,
+        foreground: theme.colorScheme.onSecondaryContainer,
+      );
+
+({Decoration decoration, Color foreground, TextStyle? label})
+materialTimelineEventStyle(ThemeData theme) {
+  final foreground = theme.colorScheme.onSurfaceVariant;
+  return (
+    decoration: ShapeDecoration(
+      color: theme.colorScheme.surfaceContainer,
+      shape: const StadiumBorder(),
+    ),
+    foreground: foreground,
+    label: theme.textTheme.labelMedium?.copyWith(color: foreground),
+  );
+}
+
+({Color fill, Color foreground}) materialRoomMembershipColors(
+  ThemeData theme,
+) => (
+  fill: theme.colorScheme.tertiaryContainer,
+  foreground: theme.colorScheme.onTertiaryContainer,
+);
+
 ({
   Color background,
   Color foreground,
@@ -190,19 +220,28 @@ TextTheme materialConversationTextTheme(
   ThemeData theme, {
   required bool unread,
   required bool muted,
-}) => theme.textTheme.copyWith(
-  titleMedium: materialListTitleStyle(theme, unread: unread),
-  bodyMedium: theme.textTheme.bodyMedium?.copyWith(
-    color: unread
-        ? theme.colorScheme.onSurface
-        : theme.colorScheme.onSurfaceVariant,
-  ),
-  labelSmall: theme.textTheme.labelSmall?.copyWith(
-    color: unread && !muted
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurfaceVariant,
-  ),
-);
+  required bool pendingMembership,
+}) {
+  final scheme = theme.colorScheme;
+  final foreground = pendingMembership
+      ? materialRoomMembershipColors(theme).foreground
+      : null;
+  return theme.textTheme.copyWith(
+    titleMedium: materialListTitleStyle(
+      theme,
+      unread: unread,
+    )?.copyWith(color: foreground),
+    bodyMedium: theme.textTheme.bodyMedium?.copyWith(
+      color:
+          foreground ?? (unread ? scheme.onSurface : scheme.onSurfaceVariant),
+    ),
+    labelSmall: theme.textTheme.labelSmall?.copyWith(
+      color:
+          foreground ??
+          (unread && !muted ? scheme.primary : scheme.onSurfaceVariant),
+    ),
+  );
+}
 
 ({Color fill, Color foreground, TextStyle? title, TextStyle? subtitle})
 materialProfileCardStyle(ThemeData theme, {bool detail = false}) => (
