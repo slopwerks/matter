@@ -2492,4 +2492,48 @@ void main() {
     expect(find.text('@alice:example.org'), findsOneWidget);
     expect(find.text('成员刷新失败，显示缓存数据'), findsOneWidget);
   });
+
+  testWidgets('ignored-user sheet keeps failed writes available for retry', (
+    tester,
+  ) async {
+    rustApi.failSupplementalLoads = false;
+    await tester.binding.setSurfaceSize(const Size(900, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [_sessionReadyOverride],
+        child: MaterialApp(
+          theme: neuTestTheme(),
+          home: const RoomManagementPage(
+            roomId: '!room:example.org',
+            roomName: 'Project room',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('已忽略用户 (1)'));
+    await tester.tap(find.text('已忽略用户 (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('@blocked:example.org'), findsOneWidget);
+    final pending = Completer<List<String>>();
+    rustApi.pendingSetIgnored = pending;
+    final cancelIgnore = const bool.fromEnvironment('MATTER_TEST_MATERIAL')
+        ? find.text('取消忽略')
+        : find.byTooltip('取消忽略');
+    await tester.tap(cancelIgnore);
+    await tester.pump();
+    pending.completeError(StateError('offline'));
+    await tester.pumpAndSettle();
+    expect(find.text('@blocked:example.org'), findsOneWidget);
+    expect(find.textContaining('操作失败:'), findsOneWidget);
+    rustApi.pendingSetIgnored = null;
+    rustApi.ignoredUsers = const [];
+    await tester.tap(cancelIgnore);
+    await tester.pumpAndSettle();
+    expect(rustApi.setIgnoredCalls, 2);
+    expect(rustApi.ignoredUserId, '@blocked:example.org');
+    expect(rustApi.ignoredFlag, isFalse);
+    expect(find.text('已取消忽略 @blocked:example.org'), findsOneWidget);
+  });
 }

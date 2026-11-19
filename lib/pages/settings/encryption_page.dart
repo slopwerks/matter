@@ -16,6 +16,7 @@ import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'encryption_dialog_surface.dart';
 import 'encryption_verification_dialog.dart';
+import 'material_device_details_sheet.dart';
 import 'material_encryption_sections.dart';
 
 class EncryptionPage extends ConsumerStatefulWidget {
@@ -578,51 +579,63 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
   }
 
   Future<void> _openDeviceDetails(rust.AccountDevice device) async {
+    Future<void> rename() async {
+      Navigator.of(context).pop();
+      await _renameDevice(device);
+    }
+
+    Future<void> verify() async {
+      Navigator.of(context).pop();
+      await _startVerification(device.deviceId);
+    }
+
     await showNeuSheet<void>(
       context: context,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-            child: Text(
-              device.displayName?.trim().isNotEmpty == true
-                  ? device.displayName!
-                  : '未命名设备',
-              style: Theme.of(context).textTheme.titleMedium,
+      child: context.isMaterial
+          ? MaterialDeviceDetailsSheet(
+              device: device,
+              lastSeen: _formatLastSeen(device),
+              onRename: rename,
+              onVerify: _busy ? null : verify,
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                  child: Text(
+                    device.displayName?.trim().isNotEmpty == true
+                        ? device.displayName!
+                        : '未命名设备',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                _DeviceDetailRow(label: 'Device ID', value: device.deviceId),
+                _DeviceDetailRow(
+                  label: 'IP 地址',
+                  value: device.lastSeenIp ?? '未知',
+                ),
+                _DeviceDetailRow(label: '上次活动', value: _formatLastSeen(device)),
+                if (device.isCurrent)
+                  const _DeviceDetailRow(label: '状态', value: '当前设备'),
+                ...[
+                  const SizedBox(height: 4),
+                  NeuSheetItem(
+                    icon: Icons.edit_rounded,
+                    label: '重命名',
+                    onTap: rename,
+                  ),
+                  if (!device.isCurrent)
+                    NeuSheetItem(
+                      icon: Icons.shield_outlined,
+                      label: '验证',
+                      onTap: _busy ? () => {} : verify,
+                    ),
+                ],
+                const SizedBox(height: 8),
+              ],
             ),
-          ),
-          _DeviceDetailRow(label: 'Device ID', value: device.deviceId),
-          _DeviceDetailRow(label: 'IP 地址', value: device.lastSeenIp ?? '未知'),
-          _DeviceDetailRow(label: '上次活动', value: _formatLastSeen(device)),
-          if (device.isCurrent)
-            const _DeviceDetailRow(label: '状态', value: '当前设备'),
-          ...[
-            const SizedBox(height: 4),
-            NeuSheetItem(
-              icon: Icons.edit_rounded,
-              label: '重命名',
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _renameDevice(device);
-              },
-            ),
-            if (!device.isCurrent)
-              NeuSheetItem(
-                icon: Icons.shield_outlined,
-                label: '验证',
-                onTap: _busy
-                    ? () => {}
-                    : () async {
-                        Navigator.of(context).pop();
-                        await _startVerification(device.deviceId);
-                      },
-              ),
-          ],
-          const SizedBox(height: 8),
-        ],
-      ),
     );
   }
 

@@ -7,6 +7,7 @@ import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_action.dart';
+import 'material_room_member_rows.dart';
 
 /// Conversation information shared by the supporting pane and its modal view.
 class MaterialRoomDetailsPanel extends ConsumerWidget {
@@ -113,84 +114,66 @@ class MaterialRoomDetailsPanel extends ConsumerWidget {
             16,
             24 + MediaQuery.paddingOf(context).bottom,
           ),
-          sliver: DecoratedSliver(
-            decoration: ShapeDecoration(
-              color: theme.cardTheme.color,
-              shape: theme.cardTheme.shape ?? const RoundedRectangleBorder(),
-            ),
-            sliver: members.when(
-              data: (loaded) => SliverList.separated(
-                itemCount: loaded.length + 1,
-                separatorBuilder: (_, _) =>
-                    const Divider(height: 1, indent: 20, endIndent: 20),
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    return Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '成员 ${loaded.length}',
-                            style: theme.textTheme.titleSmall,
-                          ),
-                          if (loaded.isEmpty) ...[
-                            const SizedBox(height: 12),
-                            const Text('暂无成员'),
-                          ],
+          sliver: members.when(
+            data: (loaded) => SliverList.separated(
+              itemCount: loaded.length + 1,
+              separatorBuilder: (_, index) => Divider(
+                height: 1,
+                indent: index == 0
+                    ? 0
+                    : materialListAvatarSize + materialListContentGap,
+              ),
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '成员 ${loaded.length}',
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        if (loaded.isEmpty) ...[
+                          const SizedBox(height: 12),
+                          const Text('暂无成员'),
                         ],
-                      ),
-                    );
-                  }
-                  final member = loaded[index - 1];
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 4,
-                    ),
-                    leading: AppAvatar(
-                      fallback: member.name,
-                      size: 40,
-                      radius: NeuRadius.content,
-                      url: member.avatarUrl,
-                    ),
-                    title: Text(
-                      member.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      member.id,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      ],
                     ),
                   );
-                },
-              ),
-              loading: () => const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                }
+                final member = loaded[index - 1];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: MaterialMemberIdentity(
+                    name: member.name,
+                    userId: member.id,
+                    avatarUrl: member.avatarUrl,
                   ),
-                ),
+                );
+              },
+            ),
+            loading: () => const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
               ),
-              error: (_, _) => SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('成员', style: theme.textTheme.titleSmall),
-                      const SizedBox(height: 12),
-                      const Text('无法加载成员'),
-                      TextButton.icon(
-                        onPressed: () => ref.invalidate(membersProvider),
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('重试'),
-                      ),
-                    ],
-                  ),
+            ),
+            error: (_, _) => SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('成员', style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 12),
+                    const Text('无法加载成员'),
+                    TextButton.icon(
+                      onPressed: () => ref.invalidate(membersProvider),
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('重试'),
+                    ),
+                  ],
                 ),
               ),
             ),

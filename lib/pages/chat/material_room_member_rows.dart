@@ -25,7 +25,7 @@ class MaterialRoomMemberRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 12),
-    child: _MemberIdentity(
+    child: MaterialMemberIdentity(
       name: member.name,
       userId: member.id,
       avatarUrl: member.avatarUrl,
@@ -60,7 +60,7 @@ class MaterialRoomKnockRow extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _MemberIdentity(
+        MaterialMemberIdentity(
           name: request.displayName,
           userId: request.userId,
           avatarUrl: request.avatarUrl,
@@ -99,8 +99,10 @@ class MaterialRoomKnockRow extends StatelessWidget {
   );
 }
 
-class _MemberIdentity extends StatelessWidget {
-  const _MemberIdentity({
+/// Identity shared by room and space membership lists.
+class MaterialMemberIdentity extends StatelessWidget {
+  const MaterialMemberIdentity({
+    super.key,
     required this.name,
     required this.userId,
     this.avatarUrl,
@@ -140,4 +142,47 @@ class _MemberIdentity extends StatelessWidget {
       ],
     );
   }
+}
+
+class MaterialIgnoredUserRow extends StatelessWidget {
+  const MaterialIgnoredUserRow({
+    super.key,
+    required this.userId,
+    required this.onUnignore,
+  });
+
+  final String userId;
+  final VoidCallback onUnignore;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppAvatar(fallback: userId, size: materialListAvatarSize),
+            const SizedBox(width: materialListContentGap),
+            Expanded(
+              child: Text(
+                userId,
+                style: materialListTitleStyle(Theme.of(context)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: OutlinedButton.icon(
+            onPressed: onUnignore,
+            icon: const Icon(Icons.person_add_alt_rounded, size: 18),
+            label: const Text('取消忽略'),
+          ),
+        ),
+      ],
+    ),
+  );
 }

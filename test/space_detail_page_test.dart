@@ -7,6 +7,7 @@ import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/widgets/neu_surface.dart';
+import 'package:matter/widgets/app_avatar.dart';
 
 import 'helpers/neu_test_theme.dart';
 
@@ -93,4 +94,92 @@ void main() {
     );
     expect(find.textContaining('空间名称已更新'), findsOneWidget);
   });
+
+  testWidgets(
+    'Material space keeps room actions and readable member identities',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const room = rust.ChatRoom(
+        id: '!room:example.org',
+        name: '项目讨论房间',
+        lastMessage: '最近的讨论',
+        lastMessageTime: '0',
+        lastEventId: '',
+        unreadCount: 3,
+        isMarkedUnread: false,
+        roomType: 'group',
+        isEncrypted: false,
+        isMuted: false,
+        roomState: 'joined',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          spaceDetailsProvider.overrideWith(
+            (ref, id) async => rust.SpaceDetails(id: id, name: '项目空间'),
+          ),
+          spaceChildrenProvider.overrideWith((ref, id) async => const [room]),
+          allSpaceChildrenProvider.overrideWith(
+            (ref, id) async => const [room],
+          ),
+          roomMembersProvider.overrideWith(
+            (ref, id) async => const [
+              rust.Contact(
+                id: '@long-member-id:example.org',
+                name: '项目成员名称',
+                status: 'online',
+              ),
+            ],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      container.read(sessionReadyProvider.notifier).value = true;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(1.4)),
+              child: child!,
+            ),
+            home: const SpaceDetailPage(
+              space: rust.Space(id: spaceId, name: '项目空间'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('项目讨论房间'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('space-child-unread-badge:!room:example.org'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('从空间移除'));
+      await tester.pumpAndSettle();
+      expect(find.text('移出空间'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('成员'));
+      await tester.pumpAndSettle();
+      expect(find.text('@long-member-id:example.org'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppAvatar>(
+              find.byWidgetPredicate(
+                (w) => w is AppAvatar && w.fallback == '项目成员名称',
+              ),
+            )
+            .size,
+        44,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

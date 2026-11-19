@@ -1445,6 +1445,46 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
               // sheet through it (see the activeUserIdProvider listener).
               _ignoredUsersSheetContext = sheetContext;
               final colors = sheetContext.neu;
+              Future<void> unignore(String userId) async {
+                // Only close the sheet when the server write
+                // succeeded; on failure keep the list visible
+                // so the user can retry, and surface the error
+                // inside the sheet (see onError).
+                await _setUserIgnored(
+                  userId,
+                  false,
+                  onError: (message) {
+                    if (sheetContext.mounted) {
+                      setSheetState(() => _ignoredUsersSheetError = message);
+                    } else if (mounted) {
+                      // The sheet was dismissed while the
+                      // request was in flight: fall back to
+                      // the page snackbar (same discipline as
+                      // the invite dialog) — a silent failure
+                      // would look like a stuck row.
+                      _showSnackBar(message);
+                    }
+                  },
+                  onSuccess: (message) {
+                    // Close the sheet first, then report: a
+                    // page snackbar queued while the sheet is
+                    // still up would sit hidden behind its
+                    // barrier. `isCurrent` guard: the sheet may
+                    // already be in its exit animation.
+                    if (sheetContext.mounted &&
+                        ModalRoute.of(sheetContext)?.isCurrent == true) {
+                      Navigator.of(sheetContext).pop();
+                    }
+                    if (context.mounted) {
+                      _showSnackBar(message);
+                    }
+                  },
+                );
+                // The success path pops the sheet and reports
+                // via onSuccess; a failure keeps it open for
+                // retry.
+              }
+
               if (loadError != null) {
                 return Padding(
                   padding: const EdgeInsets.all(24),
@@ -1488,73 +1528,38 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                     ),
                   for (var index = 0; index < ignoredUsers.length; index++) ...[
                     if (index > 0) const NeuSheetDivider(),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: Text(
-                                ignoredUsers[index],
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(sheetContext)
-                                    .textTheme
-                                    .bodyLarge,
+                    if (sheetContext.isMaterial)
+                      MaterialIgnoredUserRow(
+                        userId: ignoredUsers[index],
+                        onUnignore: () => unignore(ignoredUsers[index]),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Text(
+                                  ignoredUsers[index],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(sheetContext)
+                                      .textTheme
+                                      .bodyLarge,
+                                ),
                               ),
                             ),
-                          ),
-                          NeuIconButton(
-                            icon: Icons.person_add_alt_rounded,
-                            size: 38,
-                            tooltip: '取消忽略',
-                            onPressed: () async {
-                              // Only close the sheet when the server write
-                              // succeeded; on failure keep the list visible
-                              // so the user can retry, and surface the error
-                              // inside the sheet (see onError).
-                              await _setUserIgnored(
-                                ignoredUsers[index],
-                                false,
-                                onError: (message) {
-                                  if (sheetContext.mounted) {
-                                    setSheetState(
-                                      () => _ignoredUsersSheetError = message,
-                                    );
-                                  } else if (mounted) {
-                                    // The sheet was dismissed while the
-                                    // request was in flight: fall back to
-                                    // the page snackbar (same discipline as
-                                    // the invite dialog) — a silent failure
-                                    // would look like a stuck row.
-                                    _showSnackBar(message);
-                                  }
-                                },
-                                onSuccess: (message) {
-                                  // Close the sheet first, then report: a
-                                  // page snackbar queued while the sheet is
-                                  // still up would sit hidden behind its
-                                  // barrier. `isCurrent` guard: the sheet may
-                                  // already be in its exit animation.
-                                  if (sheetContext.mounted &&
-                                      ModalRoute.of(sheetContext)?.isCurrent ==
-                                          true) {
-                                    Navigator.of(sheetContext).pop();
-                                  }
-                                  if (context.mounted) {
-                                    _showSnackBar(message);
-                                  }
-                                },
-                              );
-                              // The success path pops the sheet and reports
-                              // via onSuccess; a failure keeps it open for
-                              // retry.
-                            },
-                          ),
-                        ],
+                            NeuIconButton(
+                              icon: Icons.person_add_alt_rounded,
+                              size: 38,
+                              tooltip: '取消忽略',
+                              onPressed: () => unignore(ignoredUsers[index]),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ],
               );

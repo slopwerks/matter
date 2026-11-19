@@ -15,12 +15,14 @@ import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/material_detail_card.dart';
+import '../../widgets/material_press.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'action_failure_message.dart';
 import 'chat_detail_page.dart';
+import 'material_room_member_rows.dart';
 
 part 'material_space_detail.dart';
 
@@ -1152,23 +1154,29 @@ class _SpaceChildTile extends ConsumerWidget {
     if (unreadOverride != null && !overrideApplies) {
       clearStaleRoomUnreadOverride(ref, context, room.id, unreadOverride);
     }
+    final material = context.isMaterial;
     final content = Row(
       children: [
         AppAvatar(
           fallback: room.name,
-          size: 42,
+          size: material ? materialListAvatarSize : 42,
           radius: NeuRadius.content,
           url: room.avatarUrl,
         ),
-        const SizedBox(width: NeuSpacing.md),
+        SizedBox(width: material ? materialListContentGap : NeuSpacing.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 room.name,
-                style: Theme.of(context).textTheme.titleSmall,
-                maxLines: 1,
+                style: material
+                    ? materialListTitleStyle(
+                        Theme.of(context),
+                        unread: hasUnread,
+                      )
+                    : Theme.of(context).textTheme.titleSmall,
+                maxLines: material ? 2 : 1,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
@@ -1213,50 +1221,59 @@ class _SpaceChildTile extends ConsumerWidget {
           Icon(Icons.chevron_right_rounded, color: context.neu.textTertiary),
       ],
     );
+    void openRoom() {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => room.roomType == 'space'
+              ? SpaceDetailPage(
+                  space: Space(
+                    id: room.id,
+                    name: room.name,
+                    avatarUrl: room.avatarUrl,
+                  ),
+                )
+              : ChatDetailPage(
+                  roomId: room.id,
+                  roomName: room.name,
+                  avatarUrl: room.avatarUrl,
+                  nameEventId: room.nameEventId,
+                  avatarEventId: room.avatarEventId,
+                  isDm: room.roomType == 'dm',
+                  subtitle: hasUnread
+                      ? (room.unreadCount > 0
+                            ? '${room.unreadCount} 条未读消息'
+                            : '已标记未读')
+                      : '在线',
+                ),
+        ),
+      );
+    }
+
+    if (material) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: MaterialPress(
+          builder: (states) => Card(
+            child: InkWell(
+              statesController: states,
+              onTap: openRoom,
+              child: Padding(padding: const EdgeInsets.all(16), child: content),
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: NeuSpacing.sm),
       child: NeuAction(
         radius: NeuRadius.content,
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => room.roomType == 'space'
-                  ? SpaceDetailPage(
-                      space: Space(
-                        id: room.id,
-                        name: room.name,
-                        avatarUrl: room.avatarUrl,
-                      ),
-                    )
-                  : ChatDetailPage(
-                      roomId: room.id,
-                      roomName: room.name,
-                      avatarUrl: room.avatarUrl,
-                      nameEventId: room.nameEventId,
-                      avatarEventId: room.avatarEventId,
-                      isDm: room.roomType == 'dm',
-                      subtitle: hasUnread
-                          ? (room.unreadCount > 0
-                                ? '${room.unreadCount} 条未读消息'
-                                : '已标记未读')
-                          : '在线',
-                    ),
-            ),
-          );
-        },
-        child: context.isMaterial
-            ? Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: content,
-                ),
-              )
-            : NeuSurface(
-                color: context.neu.card,
-                radius: NeuRadius.content,
-                padding: const EdgeInsets.all(NeuSpacing.md),
-                child: content,
-              ),
+        onTap: openRoom,
+        child: NeuSurface(
+          color: context.neu.card,
+          radius: NeuRadius.content,
+          padding: const EdgeInsets.all(NeuSpacing.md),
+          child: content,
+        ),
       ),
     );
   }

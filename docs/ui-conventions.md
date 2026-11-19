@@ -154,6 +154,12 @@ New-skeuomorphic rows retain their original geometry and accent-soft selection.
 Room-management members and join requests follow the same bare-stream rule,
 with 44 dp avatars and 12 dp content gaps. Their lazy rows keep long rooms
 scrollable; request reasons wrap above the approval and rejection buttons.
+Space member previews use the same identity rows, including Matrix IDs.
+Conversation detail panes and their modal view use those same bare member rows,
+without truncating names or Matrix IDs.
+Ignored-user sheets wrap the full ID and place the unignore action below it.
+Space room directories retain the prototype's card grid; the card owns its
+ink and press feedback, with a 44 dp avatar and the shared list title style.
 
 Material conversation titles use 16 dp type with a medium weight, rising to
 semibold for unread rooms. Previews stay on one line to preserve list density;

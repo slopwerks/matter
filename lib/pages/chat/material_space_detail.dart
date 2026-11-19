@@ -91,26 +91,40 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
                 error: (error, _) => Text('加载房间失败: $error'),
               ),
               1 => members.when(
-                data: (people) => MaterialDetailCard(
-                  title: '成员',
-                  child: people.isEmpty
-                      ? const Text('暂无成员信息')
-                      : Column(
-                          children: [
-                            for (final person in people.take(8))
-                              ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: AppAvatar(
-                                  fallback: person.name,
-                                  size: 36,
-                                  url: person.avatarUrl,
+                data: (people) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('成员', style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 12),
+                    people.isEmpty
+                        ? const Text('暂无成员信息')
+                        : Column(
+                            children: [
+                              for (final (index, person)
+                                  in people.take(8).indexed) ...[
+                                if (index > 0)
+                                  const Divider(
+                                    height: 1,
+                                    indent:
+                                        materialListAvatarSize +
+                                        materialListContentGap,
+                                  ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  child: MaterialMemberIdentity(
+                                    name: person.name,
+                                    userId: person.id,
+                                    avatarUrl: person.avatarUrl,
+                                  ),
                                 ),
-                                title: Text(person.name),
-                              ),
-                            if (people.length > 8)
-                              Text('还有 ${people.length - 8} 位成员'),
-                          ],
-                        ),
+                              ],
+                              if (people.length > 8)
+                                Text('还有 ${people.length - 8} 位成员'),
+                            ],
+                          ),
+                  ],
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (error, _) => Text('加载成员失败: $error'),
