@@ -563,7 +563,7 @@ class _StickerCard extends StatelessWidget {
       onLongPressEnd: onLongPressEnd,
       onLongPressCancel: onLongPressCancel,
       behavior: HitTestBehavior.opaque,
-      child: Ink(
+      child: DecoratedBox(
         decoration: context.isMaterial
             ? ShapeDecoration(
                 color: materialEmojiPickerStyle(Theme.of(context)).fill,
