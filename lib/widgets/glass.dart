@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:inspire_blur/inspire_blur.dart';
 
 import '../providers/chat_visual_settings_provider.dart';

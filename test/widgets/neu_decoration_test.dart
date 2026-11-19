@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/providers/chat_visual_settings_provider.dart';

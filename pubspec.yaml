@@ -70,6 +70,7 @@ dependencies:
   # pro_image_editor 14 renders with the decoupled material_ui package, whose
   # ThemeData is not interchangeable with the SDK one.
   material_ui: ^1.6.0
+  cupertino_ui: ^1.1.7
   flutter_cache_manager: ^3.4.1
   riverpod: ^3.3.2
   package_info_plus: ^10.2.0

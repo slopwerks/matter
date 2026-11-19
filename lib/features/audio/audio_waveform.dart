@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Bars are supplied by decoded PCM. Missing data renders a neutral seek line,
 /// not a synthetic waveform. Drag cancellation never commits a position.
