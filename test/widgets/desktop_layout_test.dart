@@ -250,6 +250,88 @@ void main() {
     },
   );
 
+  testWidgets('split pane follows the latest room during a fade', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final rooms = [
+      for (final name in ['Alpha', 'Beta', 'Gamma'])
+        _room(id: '!$name:example.org', name: name, roomType: 'dm'),
+    ];
+    final container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => rooms),
+        spacesProvider.overrideWith((ref) async => const []),
+        for (final room in rooms)
+          roomMembersProvider(room.id).overrideWith((ref) async => const []),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pumpApp(tester, container, material: true);
+    await tester.pumpAndSettle();
+    final list = find.byType(ChatPage);
+    final listState = tester.state(list);
+    for (final room in rooms.skip(1)) {
+      await tester.tap(
+        find.descendant(of: list, matching: find.text(room.name)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      final chat = find.byType(ChatDetailPage);
+      expect(tester.widget<ChatDetailPage>(chat).roomId, room.id);
+      final opacity = find
+          .ancestor(of: chat, matching: find.byType(Opacity))
+          .first;
+      expect(tester.widget<Opacity>(opacity).opacity, inExclusiveRange(0, 1));
+      expect(tester.state(list), same(listState));
+    }
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('compact capsule accepts text and reverses during entry', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final room = _room(
+      id: '!morph:example.org',
+      name: 'Capsule room',
+      roomType: 'dm',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
+        spacesProvider.overrideWith((ref) async => const []),
+        roomMembersProvider(room.id).overrideWith((ref) async => const []),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pumpApp(tester, container, material: true);
+    final detail = find.byType(ChatDetailPage);
+    tester.widget<ChatDetailPage>(detail).onBack!();
+    await tester.pumpAndSettle();
+    final dock = find.byKey(const ValueKey('material-dock'));
+    expect(dock, findsOneWidget);
+    await tester.tap(find.text('Capsule room').first);
+    await tester.pump();
+    final input = find.descendant(
+      of: find.byType(MessageInput),
+      matching: find.byType(TextField),
+    );
+    await tester.tap(input);
+    await tester.enterText(input, 'hello');
+    await tester.pump(const Duration(milliseconds: 64));
+    expect(tester.widget<TextField>(input).controller!.text, 'hello');
+    tester.widget<ChatDetailPage>(detail).onBack!();
+    await tester.pump();
+    expect(dock, findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Capsule room'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('opens a nested space instead of its chat detail', (
     tester,
   ) async {

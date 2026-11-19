@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/tokens.dart';
+
 import 'mobile_tab_view.dart';
+import 'compact_capsule_transition.dart';
 import 'material_tab_navigation_bar.dart';
 
 /// Window classes belong to the app window, not the remaining chat pane.
@@ -101,7 +104,7 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell> {
     final scheme = Theme.of(context).colorScheme;
     final hideBottomBar =
         (chatOpen && index == 0) || _detailTabs.contains(index);
-    return Scaffold(
+    final scaffold = Scaffold(
       extendBody: true,
       floatingActionButton: _detailTabs.contains(index)
           ? null
@@ -209,6 +212,12 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell> {
               onNavigate: onNavigate,
             ),
     );
+    return CompactCapsuleTransition(
+      enabled: !window.hasRail && index == 0 && !_detailTabs.contains(0),
+      chatOpen: chatOpen,
+      accountKey: pagesKey,
+      child: scaffold,
+    );
   }
 }
 
@@ -240,24 +249,28 @@ class _MaterialDockState extends State<_MaterialDock> {
   Widget build(BuildContext context) => SafeArea(
     top: false,
     minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-    child: DockSurface(
-      radius: 31,
-      lift: _lift,
-      child: MaterialTabNavigationBar(
-        key: const ValueKey('material-dock'),
-        position: widget.position,
+    child: CompactCapsuleTransition.surface(
+      context,
+      composer: false,
+      child: DockSurface(
+        radius: 31,
         lift: _lift,
-        selectedIndex: widget.index,
-        onDestinationSelected: widget.onNavigate,
-        destinations: [
-          for (final destination in _destinations)
-            NavigationDestination(
-              icon: Icon(destination.icon),
-              selectedIcon: Icon(destination.selected),
-              label: destination.label,
-              tooltip: destination.label,
-            ),
-        ],
+        child: MaterialTabNavigationBar(
+          key: const ValueKey('material-dock'),
+          position: widget.position,
+          lift: _lift,
+          selectedIndex: widget.index,
+          onDestinationSelected: widget.onNavigate,
+          destinations: [
+            for (final destination in _destinations)
+              NavigationDestination(
+                icon: Icon(destination.icon),
+                selectedIcon: Icon(destination.selected),
+                label: destination.label,
+                tooltip: destination.label,
+              ),
+          ],
+        ),
       ),
     ),
   );
@@ -287,7 +300,7 @@ class MaterialConversationLayout extends StatelessWidget {
     required this.window,
     required this.list,
     required this.detail,
-    required this.selected,
+    required this.roomId,
     this.supporting,
     required this.onCloseSupporting,
   });
@@ -295,12 +308,15 @@ class MaterialConversationLayout extends StatelessWidget {
   final MaterialWindowClass window;
   final Widget list;
   final Widget detail;
-  final bool selected;
+  final String? roomId;
   final Widget? supporting;
   final VoidCallback onCloseSupporting;
 
   @override
   Widget build(BuildContext context) {
+    final selected = roomId != null;
+    final fade =
+        window.hasSplit && selected && !MediaQuery.disableAnimationsOf(context);
     final persistent = window == MaterialWindowClass.extraLarge;
     final modal = supporting != null && !persistent;
     return LayoutBuilder(
@@ -345,7 +361,17 @@ class MaterialConversationLayout extends StatelessWidget {
                     builder: (context, pane) => MediaQuery(
                       data: MediaQuery.of(context)
                           .copyWith(size: Size(pane.maxWidth, pane.maxHeight)),
-                      child: detail,
+                      child: TweenAnimationBuilder<double>(
+                        key: ValueKey(roomId),
+                        tween: Tween(begin: fade ? .35 : 1, end: 1),
+                        duration: fade
+                            ? context.tokens.motion.effectsDuration
+                            : Duration.zero,
+                        curve: Curves.easeOut,
+                        builder: (_, opacity, child) =>
+                            Opacity(opacity: fade ? opacity : 1, child: child),
+                        child: detail,
+                      ),
                     ),
                   ),
                 ),

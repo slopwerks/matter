@@ -95,7 +95,7 @@ extension _MaterialAppLayout on _MatterAppState {
             list: _buildDesktopRoomList(
               filters: _materialConversationFilters(),
             ),
-            selected: room != null,
+            roomId: room?.id,
             detail: room == null
                 ? const _DesktopEmptyChat()
                 : _buildSelectedChat(

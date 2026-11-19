@@ -3,8 +3,64 @@ import 'package:flutter/material.dart';
 import '../../../providers/chat_visual_settings_provider.dart';
 import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
+import '../../../theme/tokens.dart';
 import '../../../widgets/neu_decoration.dart';
 import '../../../widgets/neu_surface.dart';
+
+/// Retain the preview while it folds into the editor, with only the current
+/// reply/edit target available to pointer, keyboard and accessibility actions.
+class ComposerQuoteTransition extends StatefulWidget {
+  const ComposerQuoteTransition({super.key, required this.banner});
+  final ComposerQuoteBanner? banner;
+
+  @override
+  State<ComposerQuoteTransition> createState() =>
+      _ComposerQuoteTransitionState();
+}
+
+class _ComposerQuoteTransitionState extends State<ComposerQuoteTransition> {
+  ComposerQuoteBanner? _outgoing;
+
+  @override
+  void didUpdateWidget(ComposerQuoteTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.banner != null) {
+      _outgoing = widget.banner == null ? oldWidget.banner : null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hidden = widget.banner == null;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: hidden ? 0 : 1),
+      duration: context.tokens.motion.effectsDuration,
+      curve: Curves.easeOutCubic,
+      onEnd: () {
+        if (widget.banner == null && _outgoing != null) {
+          setState(() => _outgoing = null);
+        }
+      },
+      builder: (_, progress, child) => ClipRect(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          heightFactor: progress,
+          child: Opacity(opacity: progress, child: child),
+        ),
+      ),
+      child: ExcludeSemantics(
+        excluding: hidden,
+        child: ExcludeFocus(
+          excluding: hidden,
+          child: IgnorePointer(
+            ignoring: hidden,
+            child: widget.banner ?? _outgoing,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Reply/edit presentation only; the host owns provider updates and draft state.
 class ComposerQuoteBanner extends StatelessWidget {

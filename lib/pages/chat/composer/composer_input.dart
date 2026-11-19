@@ -494,6 +494,24 @@ class MessageInputState extends ConsumerState<MessageInput> {
           )
         : null;
 
+    final quote = editing != null
+        ? ComposerQuoteBanner.editing(
+            content: editing.content,
+            sendInFlight: editingSendInFlight,
+            onCancel: () {
+              ref.read(editingMessageProvider(_draftKey).notifier).value = null;
+              ref.read(editingDraftProvider(_draftKey).notifier).value = null;
+            },
+          )
+        : replyTo != null
+        ? ComposerQuoteBanner.reply(
+            senderName: replyTo.senderName,
+            content: replyTo.content,
+            onCancel: () =>
+                ref.read(replyingToProvider(_draftKey).notifier).value = null,
+          )
+        : null;
+
     final input = SafeArea(
       top: false,
       child: ColoredBox(
@@ -501,26 +519,10 @@ class MessageInputState extends ConsumerState<MessageInput> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Edit bar takes precedence; otherwise show reply bar.
-            if (editing != null)
-              ComposerQuoteBanner.editing(
-                content: editing.content,
-                sendInFlight: editingSendInFlight,
-                onCancel: () {
-                  ref.read(editingMessageProvider(_draftKey).notifier).value =
-                      null;
-                  ref.read(editingDraftProvider(_draftKey).notifier).value =
-                      null;
-                },
-              )
-            else if (replyTo != null)
-              ComposerQuoteBanner.reply(
-                senderName: replyTo.senderName,
-                content: replyTo.content,
-                onCancel: () {
-                  ref.read(replyingToProvider(_draftKey).notifier).value = null;
-                },
-              ),
+            if (context.isMaterial && !MediaQuery.disableAnimationsOf(context))
+              ComposerQuoteTransition(key: ValueKey(_draftKey), banner: quote)
+            else
+              ?quote,
             if (autocompleteMatch != null &&
                 (autocompleteOptions.isNotEmpty || autocompleteLoading))
               Flexible(

@@ -191,7 +191,11 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
           ? () => _showRoomListActions(context, ref, room)
           : null,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 110),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : context.isMaterial
+            ? context.tokens.motion.effectsDuration
+            : const Duration(milliseconds: 110),
         padding: EdgeInsets.symmetric(
           horizontal: components.rowHorizontalPadding,
           vertical: dense ? 8 : components.rowVerticalPadding,

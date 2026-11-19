@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/compact_capsule_transition.dart';
 
 /// M3 uses one floating capsule at every width; Neu retains its wide editor.
 class ComposerSurface extends StatelessWidget {
@@ -34,13 +35,17 @@ class ComposerSurface extends StatelessWidget {
               ?attachments,
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: Material(
-                  key: const ValueKey('message-input-surface'),
-                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                  borderRadius: materialComposerRadius,
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: child,
+                child: CompactCapsuleTransition.surface(
+                  context,
+                  composer: true,
+                  child: Material(
+                    key: const ValueKey('message-input-surface'),
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    borderRadius: materialComposerRadius,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: child,
+                    ),
                   ),
                 ),
               ),
