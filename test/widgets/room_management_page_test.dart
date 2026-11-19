@@ -11,7 +11,9 @@ import 'package:matter/providers/mutable_state.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../helpers/neu_test_theme.dart';
+
 import 'package:matter/widgets/neu_surface.dart';
 
 /// The knock-requests provider is gated on an active session; tests pump the
@@ -1036,14 +1038,27 @@ void main() {
     await tester.tap(find.byTooltip('批准'));
     await tester.pump();
 
-    IconButton actionButton(String tooltip) => tester.widget<IconButton>(
-      find.ancestor(
-        of: find.byTooltip(tooltip),
-        matching: find.byType(IconButton),
-      ),
-    );
-    expect(actionButton('批准').onPressed, isNull);
-    expect(actionButton('拒绝').onPressed, isNull);
+    VoidCallback? actionCallback(String tooltip) {
+      final action = find.byTooltip(tooltip);
+      if (const bool.fromEnvironment('MATTER_TEST_MATERIAL')) {
+        return tester
+            .widget<ButtonStyleButton>(
+              find.descendant(
+                of: action,
+                matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+              ),
+            )
+            .onPressed;
+      }
+      return tester
+          .widget<IconButton>(
+            find.ancestor(of: action, matching: find.byType(IconButton)),
+          )
+          .onPressed;
+    }
+
+    expect(actionCallback('批准'), isNull);
+    expect(actionCallback('拒绝'), isNull);
     await tester.tap(find.byTooltip('拒绝'));
     expect(rustApi.approveKnockCalls, 1);
     expect(rustApi.rejectKnockCalls, 0);
@@ -2442,6 +2457,8 @@ void main() {
     tester,
   ) async {
     rustApi.failSupplementalLoads = false;
+    await tester.binding.setSurfaceSize(const Size(900, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(
       ProviderScope(

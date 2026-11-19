@@ -13,6 +13,7 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
@@ -25,6 +26,7 @@ import '../../widgets/sheets.dart';
 import '../settings/avatar_crop_editor_page.dart';
 import '../settings/timeline_event_settings_page.dart';
 import 'pinned_messages_page.dart';
+import 'material_room_member_rows.dart';
 import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
 
@@ -1938,9 +1940,7 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                           ),
                         ),
                         const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                        // The header and every member tile share one rounded card,
-                        // and the tiles are built lazily: off-screen entries are not
-                        // constructed up front.
+                        // Keep member rows lazy even in long rooms.
                         _sliverSectionCard<rust.Contact>(
                           title: _membersLoadError == null
                               ? '成员 ${_members.length}'
@@ -2374,6 +2374,14 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
   }
 
   Widget _knockTile(rust.KnockRequest request) {
+    if (context.isMaterial) {
+      final pending = _pendingKnockUserIds.contains(request.userId);
+      return MaterialRoomKnockRow(
+        request: request,
+        onApprove: pending ? null : () => _runKnockAction(request, true),
+        onReject: pending ? null : () => _runKnockAction(request, false),
+      );
+    }
     final colors = context.neu;
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -2421,6 +2429,21 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     final activeUserId = ref.read(activeUserIdProvider);
     final isCurrentUser = member.id == activeUserId;
     final ignored = _ignoredUsers.contains(member.id);
+    if (context.isMaterial) {
+      return MaterialRoomMemberRow(
+        member: member,
+        isCurrentUser: isCurrentUser,
+        ignored: ignored,
+        tooltip: _ignoredUsersLoadError != null
+            ? '无法加载忽略状态'
+            : ignored
+            ? '取消忽略'
+            : '忽略用户',
+        onToggleIgnored: _ignoredUsersLoadError == null
+            ? () => _setUserIgnored(member.id, !ignored)
+            : null,
+      );
+    }
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: AppAvatar(
@@ -2515,10 +2538,7 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     );
   }
 
-  /// One rounded card holding a whole section: the title row, the optional
-  /// error tile and every data row, separated by hairlines. The rows stay lazy
-  /// through the inner [SliverList], so a long member list is not laid out up
-  /// front.
+  /// Lazy rows with hairlines: bare streams in Material, one card in Neu.
   Widget _sliverSectionCard<T>({
     required String title,
     Widget? action,
@@ -2528,59 +2548,57 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
   }) {
     final colors = context.neu;
     final theme = Theme.of(context);
-    // Hairlines under a data row start at the row title: card padding 16 +
-    // avatar 40 + ListTile's title gap 16 (same alignment as ChatListDivider).
-    const rowSeparatorIndent = 16.0 + 40 + 16;
-    return DecoratedSliver(
-      decoration: context.isMaterial
-          ? ShapeDecoration(
-              color: theme.cardTheme.color,
-              shape: theme.cardTheme.shape ?? const RoundedRectangleBorder(),
-            )
-          : NeuDecoration(
-              colors: colors,
-              superellipseEnabled: ChatVisualSettingsScope.of(context)
-                  .superellipseBorderEnabled,
-              color: colors.card,
-              radius: NeuRadius.surface,
-            ),
-      sliver: SliverList.separated(
-        // Item 0 is the section title; the rest are the error tiles followed
-        // by the data rows.
-        itemCount: leadingRows.length + rows.length + 1,
-        separatorBuilder: (context, index) => Divider(
-          height: 1,
-          // The title and error tiles keep the card's own left inset.
-          indent: index <= leadingRows.length ? 16 : rowSeparatorIndent,
-          endIndent: 16,
-          color: colors.hairline,
-        ),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                  ?action,
-                ],
-              ),
-            );
-          }
-          final rowIndex = index - 1;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: rowIndex < leadingRows.length
-                ? leadingRows[rowIndex]
-                : rowBuilder(rows[rowIndex - leadingRows.length]),
-          );
-        },
+    // Hairlines follow the identity text in each skin.
+    final rowSeparatorIndent = context.isMaterial
+        ? 16 + materialListAvatarSize + materialListContentGap
+        : 16.0 + 40 + 16;
+    final list = SliverList.separated(
+      // Item 0 is the section title; the rest are the error tiles followed
+      // by the data rows.
+      itemCount: leadingRows.length + rows.length + 1,
+      separatorBuilder: (context, index) => Divider(
+        height: 1,
+        // The title and error tiles keep the card's own left inset.
+        indent: index <= leadingRows.length ? 16 : rowSeparatorIndent,
+        endIndent: 16,
+        color: context.isMaterial ? theme.dividerTheme.color : colors.hairline,
       ),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                ?action,
+              ],
+            ),
+          );
+        }
+        final rowIndex = index - 1;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: rowIndex < leadingRows.length
+              ? leadingRows[rowIndex]
+              : rowBuilder(rows[rowIndex - leadingRows.length]),
+        );
+      },
+    );
+    if (context.isMaterial) return list;
+    return DecoratedSliver(
+      decoration: NeuDecoration(
+        colors: colors,
+        superellipseEnabled: ChatVisualSettingsScope.of(context)
+            .superellipseBorderEnabled,
+        color: colors.card,
+        radius: NeuRadius.surface,
+      ),
+      sliver: list,
     );
   }
 
