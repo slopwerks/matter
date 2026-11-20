@@ -32,9 +32,9 @@ jobs:
       # Workaround for flutter/flutter#186966
       - name: Temporarily redirect flutter_test definitions
         run: |
-          head -20 ${{ runner.tool_cache }}/flutter/${{ inputs.flutter-version }}/packages/flutter_test/lib/src/finders.dart
-          sed -e "s|flutter/material|material_ui/material_ui|" -i ${{ runner.tool_cache }}/flutter/${{ inputs.flutter-version }}/packages/flutter_test/lib/src/finders.dart
-          head -20 ${{ runner.tool_cache }}/flutter/${{ inputs.flutter-version }}/packages/flutter_test/lib/src/finders.dart
+          head -20 ${{ runner.tool_cache }}/flutter/${{ env.FLUTTER_VERSION }}/packages/flutter_test/lib/src/finders.dart
+          sed -e "s|flutter/material|material_ui/material_ui|" -i ${{ runner.tool_cache }}/flutter/${{ env.FLUTTER_VERSION }}/packages/flutter_test/lib/src/finders.dart
+          head -20 ${{ runner.tool_cache }}/flutter/${{ env.FLUTTER_VERSION }}/packages/flutter_test/lib/src/finders.dart
 
       - name: Analyze Dart code
         run: flutter analyze
