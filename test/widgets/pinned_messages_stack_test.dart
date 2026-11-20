@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/pinned_messages_stack.dart';
-import 'package:matter/pages/chat/unread_messages_banner.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
@@ -65,66 +64,51 @@ void main() {
     api.states.clear();
   });
 
-  testWidgets('pinned and unread notices align as the pane resizes', (
-    tester,
-  ) async {
-    const room = '!notices:example.org';
-    const user = '@me:example.org';
-    final container = ProviderContainer(
-      overrides: [
-        pinnedMessagesProvider((roomId: room, userId: user))
-            .overrideWith((_) async => [_message('pin', 'Pinned')]),
-        ignoredUserIdsProvider.overrideWith((_) async => <String>{}),
-      ],
-    );
-    addTearDown(container.dispose);
-    container.read(activeUserIdProvider.notifier).value = user;
-    await tester.binding.setSurfaceSize(const Size(1000, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    for (final width in [828.0, 390.0, 600.0]) {
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            theme: neuTestTheme(material: true),
-            home: Scaffold(
-              body: SizedBox(
-                width: width,
-                child: Column(
-                  children: [
-                    PinnedMessagesStack(roomId: room, onMessageTap: _noop),
-                    UnreadMessagesBanner(
-                      count: 3,
-                      loading: false,
-                      onPressed: () {},
-                      onDismiss: () {},
-                    ),
-                  ],
+  testWidgets(
+    'pinned notice retains its margins and maximum width as the pane resizes',
+    (tester) async {
+      const room = '!notices:example.org';
+      const user = '@me:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          pinnedMessagesProvider((roomId: room, userId: user))
+              .overrideWith((_) async => [_message('pin', 'Pinned')]),
+          ignoredUserIdsProvider.overrideWith((_) async => <String>{}),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value = user;
+      await tester.binding.setSurfaceSize(const Size(1000, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      for (final width in [828.0, 390.0, 600.0]) {
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: neuTestTheme(material: true),
+              home: Scaffold(
+                body: SizedBox(
+                  width: width,
+                  child: PinnedMessagesStack(roomId: room, onMessageTap: _noop),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      Finder surface(Type type) => find
-          .descendant(of: find.byType(type), matching: find.byType(Material))
-          .first;
-      final pins = surface(PinnedMessagesStack);
-      final unread = surface(UnreadMessagesBanner);
-      final a = tester.getRect(pins);
-      final b = tester.getRect(unread);
-      expect(b.left, a.left);
-      expect(b.right, a.right);
-      expect(a.width, (width - 32).clamp(0, 720));
-      expect(b.top - a.bottom, 4);
-      const shape = RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
-      );
-      expect(tester.widget<Material>(pins).shape, shape);
-      expect(tester.widget<Material>(unread).shape, shape);
-    }
-  });
+        );
+        await tester.pumpAndSettle();
+        Finder surface(Type type) => find
+            .descendant(of: find.byType(type), matching: find.byType(Material))
+            .first;
+        final pins = surface(PinnedMessagesStack);
+        final a = tester.getRect(pins);
+        expect(a.width, (width - 32).clamp(0, 720));
+        const shape = RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        );
+        expect(tester.widget<Material>(pins).shape, shape);
+      }
+    },
+  );
 
   testWidgets('pinned messages stack, jump, and unpin in the chat header', (
     tester,

@@ -56,6 +56,8 @@ import 'send_flight.dart';
 import 'timeline/timeline_clustering.dart' show clusterTimelineMessages;
 import 'unread_messages_banner.dart';
 import 'unread_navigation.dart';
+import 'material_unread_pill.dart';
+import 'action_failure_message.dart';
 
 final chatRouteObserver = _ChatRouteObserver();
 
@@ -244,6 +246,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   unread.RoomUnreadState? _entryUnread;
   String? _entryUnreadOwner;
   bool _jumpingToUnread = false;
+  bool _markingEntryRead = false;
+  AxisDirection? _unreadDirection = AxisDirection.up;
+  bool _unreadPositionScheduled = false;
   bool _refreshUnreadOnActivation = false;
   String? _unreadRetryTargetId;
   UnreadNavigation? _unreadNavigation;
@@ -255,7 +260,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   bool get _showUnreadNavigation => _entryUnread != null;
   double _unreadTopInset = 0;
   double get _noticeGap => context.isMaterial ? ChatNoticeFrame.topGap : 0;
-  double get _unreadBannerExtent => unreadMessagesBannerHeight + _noticeGap;
+  double get _unreadBannerExtent =>
+      context.isMaterial ? 0 : unreadMessagesBannerHeight;
   double _unreadBottomInset = 0;
   final _unreadPageTokens = <String>{};
   bool _olderLoadArmed = true;
@@ -871,6 +877,81 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
   }
 
+  Future<void> _markEntryRead() async {
+    final account = _entryUnreadOwner;
+    final entry = _entryUnread;
+    final room = widget.roomId;
+    if (_markingEntryRead ||
+        entry == null ||
+        account == null ||
+        ref.read(activeUserIdProvider) != account)
+      return;
+    setState(() => _markingEntryRead = true);
+    final revision = ref.read(roomAutoReadSuppressionRevisionProvider(room));
+    bool current() =>
+        mounted &&
+        identical(entry, _entryUnread) &&
+        widget.roomId == room &&
+        ref.read(activeUserIdProvider) == account &&
+        ref.read(roomAutoReadSuppressionRevisionProvider(room)) == revision;
+    try {
+      final cleared = await markRoomAsReadWithPushCleanup(
+        accountUserId: account,
+        roomId: room,
+        explicit: true,
+      );
+      if (!current()) return;
+      if (!cleared) throw StateError('未能清除未读标记');
+      setRoomAutoReadSuppressed(ref, room, suppressed: false);
+      setRoomUnreadOverrideById(ref, room, unread: false);
+      ref.invalidate(allChatRoomsProvider);
+      ref.invalidate(allUngroupedRoomsProvider);
+      ref.invalidate(allSpaceChildrenProvider);
+      ref.invalidate(searchRoomsProvider);
+      setState(_clearUnreadNavigation);
+    } catch (error) {
+      if (current())
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(actionFailureMessage(error))));
+    } finally {
+      if (mounted) setState(() => _markingEntryRead = false);
+    }
+  }
+
+  void _scheduleUnreadPosition() {
+    if (_entryUnread == null || !context.isMaterial || _unreadPositionScheduled)
+      return;
+    _unreadPositionScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _unreadPositionScheduled = false;
+      if (!mounted || _entryUnread == null) return;
+      final id = _unreadRetryTargetId ?? _unreadNavigation?.firstNavigableId;
+      final box = _messageAnchorKeys[id]?.currentContext?.findRenderObject();
+      final viewport = _scrollViewportKey.currentContext?.findRenderObject();
+      AxisDirection? direction = AxisDirection.up;
+      if (box is RenderBox &&
+          box.attached &&
+          box.hasSize &&
+          viewport is RenderBox &&
+          viewport.hasSize &&
+          _unreadMessagePainted(box, viewport)) {
+        final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+        direction = top < _unreadTopInset
+            ? AxisDirection.up
+            : top >= viewport.size.height - _unreadBottomInset
+            ? AxisDirection.down
+            : null;
+      } else if (id != null && _messageIndex.containsKey(id)) {
+        final target = _timelineEntryIndexForMessage(id);
+        final built = _builtMessageEntryIndices();
+        if (target != null && built.isNotEmpty && target < built.first)
+          direction = AxisDirection.down;
+      }
+      if (direction != _unreadDirection)
+        setState(() => _unreadDirection = direction);
+    });
+  }
+
   void _cancelUnreadScan() {
     _unreadScanGeneration++;
     _unreadScanRunning = false;
@@ -883,6 +964,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
     _cancelUnreadScan();
     _entryUnread = null;
+    _unreadDirection = AxisDirection.up;
     _unreadNavigation = null;
     _unreadNextBatch = null;
     _unreadScanError = null;
@@ -1175,6 +1257,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   bool _handleScrollNotification(ScrollNotification notification) {
     final metrics = notification.metrics;
     if (notification.depth != 0) return false;
+    _scheduleUnreadPosition();
     _updateLatestMessageControl(metrics);
     if (notification is UserScrollNotification) {
       _userScrollActive = notification.direction != ScrollDirection.idle;
@@ -2889,6 +2972,32 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final audioVisible = ref.watch(audioPlayerVisibleProvider);
     final audioHeight = audioVisible ? audioMessageBarHeight : 0.0;
     final entryUnread = _entryUnreadOwner == activeUserId ? _entryUnread : null;
+    final unreadLoading =
+        _jumpingToUnread ||
+        (_unreadScanError == null &&
+            !_unreadNeedsHistoryFallback &&
+            _unreadRetryTargetId == null &&
+            _unreadNavigation?.firstNavigableId == null &&
+            (!(_unreadNavigation?.complete ?? false) ||
+                (_unreadNavigation?.hasUnresolved ?? false)));
+    final unreadUnavailable =
+        _unreadScanError == null &&
+        !_unreadNeedsHistoryFallback &&
+        _unreadRetryTargetId == null &&
+        _unreadNavigation?.firstNavigableId == null &&
+        (_unreadNavigation?.complete ?? false) &&
+        !(_unreadNavigation?.hasUnresolved ?? false);
+    final showUnreadPill =
+        context.isMaterial &&
+        entryUnread != null &&
+        _unreadDirection != null &&
+        !_initialMessageJumpPending &&
+        _forwardNoticeRoom == null &&
+        !(mediaQuery.size.width < 600 && keepsStablePicker);
+    final showLatest =
+        !_initialMessageJumpPending &&
+        (_showLatestMessageControl || _focusedBrowsing) &&
+        _forwardNoticeRoom == null;
     final unreadHeight = entryUnread != null && _showUnreadNavigation
         ? _unreadBannerExtent
         : 0.0;
@@ -2940,6 +3049,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _unreadBottomInset =
         inputChromeHeight + math.max(panelReservedHeight, keyboardHeight);
     _scheduleUnreadCandidateUpdate();
+    _scheduleUnreadPosition();
     // The timeline fills the whole screen and runs under the floating glass
     // header (like the prototype); its clip edge sits at the screen edge
     // where the gradient-blur layer is nearly opaque, so no hard clip line
@@ -3358,28 +3468,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                         unawaited(showAudioPlayerPanel(context, audioSession)),
                   ),
                 ),
-              if (entryUnread != null && _showUnreadNavigation)
+              if (entryUnread != null && !context.isMaterial)
                 Positioned(
-                  left: context.isMaterial ? 0 : 12,
-                  right: context.isMaterial ? 0 : 12,
+                  left: 12,
+                  right: 12,
                   top: headerInset + pinnedStackHeight + audioHeight,
                   child: UnreadMessagesBanner(
                     count: _unreadNavigation?.candidateCount,
-                    loading:
-                        _jumpingToUnread ||
-                        (_unreadScanError == null &&
-                            !_unreadNeedsHistoryFallback &&
-                            _unreadRetryTargetId == null &&
-                            _unreadNavigation?.firstNavigableId == null &&
-                            (!(_unreadNavigation?.complete ?? false) ||
-                                (_unreadNavigation?.hasUnresolved ?? false))),
-                    unavailable:
-                        _unreadScanError == null &&
-                        !_unreadNeedsHistoryFallback &&
-                        _unreadRetryTargetId == null &&
-                        _unreadNavigation?.firstNavigableId == null &&
-                        (_unreadNavigation?.complete ?? false) &&
-                        !(_unreadNavigation?.hasUnresolved ?? false),
+                    loading: unreadLoading,
+                    unavailable: unreadUnavailable,
                     historyFallback: _unreadNeedsHistoryFallback,
                     failed: _unreadScanError != null,
                     onPressed: () => unawaited(
@@ -3409,23 +3506,55 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 bottom: messageBottomPadding + 12,
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOutCubic,
-                child: LatestMessageControl(
-                  visible:
-                      !_initialMessageJumpPending &&
-                      (_showLatestMessageControl || _focusedBrowsing) &&
-                      _forwardNoticeRoom == null,
-                  showSentNotice: _showSentNotice,
-                  onPressed: () {
-                    if (_focusedBrowsing) {
-                      _exitFocusedBrowsing();
-                    } else {
-                      // A pin's context may still be in flight before focused
-                      // browsing starts. Do not let it override this action.
-                      _messageJumpGeneration++;
-                      _isJumpingToMessage = false;
-                      _scrollToLatest();
-                    }
-                  },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (showUnreadPill)
+                      Padding(
+                        padding: EdgeInsets.only(bottom: showLatest ? 4 : 0),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: math.max(0, mediaQuery.size.width - 32),
+                          ),
+                          child: MaterialUnreadPill(
+                            label: _unreadScanError != null
+                                ? '加载失败 · 重试'
+                                : unreadUnavailable
+                                ? '暂无可定位的未读'
+                                : _unreadNeedsHistoryFallback
+                                ? '查看较早消息'
+                                : '${_unreadNavigation?.candidateCount ?? entryUnread.unreadCount} 条新消息',
+                            loading: unreadLoading,
+                            failed: _unreadScanError != null,
+                            below: _unreadDirection == AxisDirection.down,
+                            onMarkRead: _markingEntryRead
+                                ? null
+                                : _markEntryRead,
+                            onJump: unreadUnavailable || unreadLoading
+                                ? null
+                                : _unreadScanError != null
+                                ? _retryUnreadPages
+                                : _jumpToFirstUnread,
+                          ),
+                        ),
+                      ),
+                    if (!showUnreadPill || showLatest)
+                      LatestMessageControl(
+                        visible: showLatest,
+                        showSentNotice: _showSentNotice,
+                        onPressed: () {
+                          if (_focusedBrowsing) {
+                            _exitFocusedBrowsing();
+                          } else {
+                            // A pin's context may still be in flight before focused
+                            // browsing starts. Do not let it override this action.
+                            _messageJumpGeneration++;
+                            _isJumpingToMessage = false;
+                            _scrollToLatest();
+                          }
+                        },
+                      ),
+                  ],
                 ),
               ),
               if (_forwardNoticeRoom case final room?)

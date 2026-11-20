@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_detail_page.dart';
 import 'package:matter/pages/chat/unread_messages_banner.dart';
+import 'package:matter/pages/chat/material_unread_pill.dart';
 import 'package:matter/pages/chat/emoji_picker_panel.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/image_message_collection.dart';
@@ -4006,7 +4007,9 @@ void main() {
               unreadEventIds: [r'$single-target'],
             ),
           );
-          await tester.tap(find.byType(UnreadMessagesBanner));
+          await tester.tap(
+            material ? find.text('1 条新消息') : find.byType(UnreadMessagesBanner),
+          );
           await tester.pumpAndSettle();
           final bubble = tester.getRect(
             find.byKey(const ValueKey(r'text-bubble:$single-target')),
@@ -4022,11 +4025,17 @@ void main() {
             );
             expect(bubble.top, greaterThanOrEqualTo(material ? 56 : 82));
             expect(bubble.bottom, lessThanOrEqualTo(input.top + 1));
-            expect(find.byType(UnreadMessagesBanner), findsNothing);
+            expect(
+              find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
+              findsNothing,
+            );
           } else {
             expect(bubble.top, greaterThanOrEqualTo(material ? 56 : 82));
             expect(bubble.top, lessThan(input.top));
-            expect(find.byType(UnreadMessagesBanner), findsNothing);
+            expect(
+              find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
+              findsNothing,
+            );
           }
           expect(rustApi.unreadReadEventIds, isEmpty);
           await tester.pumpWidget(const SizedBox.shrink());
@@ -4119,6 +4128,37 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(UnreadMessagesBanner), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'Material unread pill floats beside the composer and marks the room read',
+    (tester) async {
+      await openGeometryUnread(
+        tester,
+        [_message('latest')],
+        material: true,
+        snapshot: const unread.RoomUnreadState(
+          unreadCount: 2,
+          boundaryResolved: true,
+          unreadEventIds: ['older1', 'older2'],
+        ),
+      );
+      final pill = tester.getRect(find.byType(MaterialUnreadPill));
+      final input = tester.getRect(
+        find.byKey(const ValueKey('message-input-surface')),
+      );
+      expect(pill.right, closeTo(384, 1));
+      expect(pill.width, lessThan(input.width));
+      expect(pill.bottom, lessThanOrEqualTo(input.top));
+      expect(pill.bottom, greaterThan(input.top - 60));
+      await tester.tap(find.byTooltip('全部标为已读'));
+      await tester.pumpAndSettle();
+      expect(rustApi.lastMarkReadExplicit, true);
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+      expect(rustApi.getMessagesAroundCalls, 0);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     },
@@ -4400,7 +4440,11 @@ void main() {
             ),
           );
           if (jump) {
-            await tester.tap(find.byType(UnreadMessagesBanner));
+            await tester.tap(
+              material
+                  ? find.text('2 条新消息')
+                  : find.byType(UnreadMessagesBanner),
+            );
             await tester.pumpAndSettle();
           }
           final controller = tester
@@ -4422,7 +4466,7 @@ void main() {
           await tester.pumpAndSettle();
           final before = tester.getRect(bubble);
           expect(
-            find.byType(UnreadMessagesBanner),
+            find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
             jump ? findsNothing : findsOneWidget,
           );
           final forwardBefore = List.of(rustApi.messagesAfterEventIds);
@@ -4435,7 +4479,7 @@ void main() {
           expect(after.bottom, lessThanOrEqualTo(input.top + 1));
           expect(after.top, closeTo(before.top - 300, 2));
           expect(
-            find.byType(UnreadMessagesBanner),
+            find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
             jump ? findsNothing : findsOneWidget,
           );
           expect(rustApi.messagesAfterEventIds, forwardBefore);
@@ -4460,8 +4504,8 @@ void main() {
             ),
           );
           expect(
-            find.byType(UnreadMessagesBanner),
-            jump ? findsNothing : findsOneWidget,
+            find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
+            jump || material ? findsNothing : findsOneWidget,
           );
           await tester.tap(find.byIcon(Icons.keyboard_rounded));
           tester.view.viewInsets = const FakeViewPadding(bottom: 300);
@@ -4714,11 +4758,16 @@ void main() {
           _message(r'$first-screen', timestamp: '2', content: 'visible unread'),
         ], material: material);
         expect(find.text('visible unread'), findsOneWidget);
-        expect(find.text('1 条未读 · 跳到最早未读'), findsOneWidget);
+
         expect(rustApi.readLifecycle.first, 'capture');
         expect(rustApi.markRoomAsReadCalls, greaterThan(0));
-        await tester.tap(find.byType(UnreadMessagesBanner));
-        await tester.pumpAndSettle();
+        if (material) {
+          expect(find.byType(MaterialUnreadPill), findsNothing);
+        } else {
+          expect(find.text('1 条未读 · 跳到最早未读'), findsOneWidget);
+          await tester.tap(find.byType(UnreadMessagesBanner));
+          await tester.pumpAndSettle();
+        }
         expect(find.byType(UnreadMessagesBanner), findsNothing);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
@@ -4798,7 +4847,9 @@ void main() {
           const roomId = '!unread-entry:example.org';
           const account = '@alice:example.org';
           final target = _message(r'$first-unread', timestamp: '201');
-          final entryLabel = hasMarker ? '123 条未读 · 跳到最早未读' : '查看较早消息';
+          final entryLabel = hasMarker
+              ? (material ? '123 条新消息' : '123 条未读 · 跳到最早未读')
+              : '查看较早消息';
           rustApi.entryUnread = unread.RoomUnreadState(
             unreadCount: 123,
             readEventId: hasMarker ? r'$read-boundary' : null,
