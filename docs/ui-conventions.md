@@ -238,11 +238,15 @@ Below 600 dp, the 62 dp lens dock sits in a capsule, inset 16 dp horizontally
 and 12 dp plus the bottom safe area. Pressing lifts the platter and magnifies
 the lens; sliding carries its spring and jelly deformation across destinations.
 Page swipes drive the same continuous position. It hides while a single-pane
-chat or a secondary detail is open. At 600 dp it becomes an 80 dp NavigationRail; at 1200 dp that
-rail expands to 256 dp.
+chat or a secondary detail is open. From 600 dp upwards the rail defaults to
+80 dp. Drag its inner divider to resize it, or double-click to reset. The
+device remembers the preferred width and limits it to fit the window.
+Its four labelled destinations share a moving indicator with the page
+transition. The chat list offers space shortcuts by name in its filter row.
 
-The 840 dp breakpoint opens a 320 dp conversation list beside the chat;
-at 1200 dp the list becomes 360 dp. At 1600 dp, room details default to a
+From 840 dp the conversation list opens beside the chat at a default width of
+320 dp. Its divider remembers the user's width separately from the navigation
+rail. Double-clicking resets it to 320 dp. At 1600 dp, room details default to a
 persistent 360 dp supporting pane. Below that, details overlay the chat as an
 end panel or, below 840 dp, a bottom panel. A modal panel can be dismissed by
 its close button, barrier, Escape or back. The modal takes focus from the

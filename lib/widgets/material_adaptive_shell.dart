@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'mobile_tab_view.dart';
 import 'compact_capsule_transition.dart';
@@ -23,9 +24,8 @@ enum MaterialWindowClass {
 
   bool get hasRail => this != compact;
   bool get hasSplit => index >= expanded.index;
-  bool get extendedRail => index >= large.index;
-  double get railWidth => hasRail ? (extendedRail ? 256 : 80) : 0;
-  double get listWidth => extendedRail ? 360 : 320;
+  double get railWidth => hasRail ? 80 : 0;
+  double get listWidth => index >= large.index ? 360 : 320;
 }
 
 const _destinations = [
@@ -60,7 +60,6 @@ class MaterialAdaptiveShell extends StatefulWidget {
     required this.position,
     required this.profile,
     required this.chatOpen,
-    this.railShortcuts,
     this.floatingActionButton,
     this.pagesKey,
   });
@@ -72,7 +71,6 @@ class MaterialAdaptiveShell extends StatefulWidget {
   final ValueNotifier<double> position;
   final Widget profile;
   final bool chatOpen;
-  final Widget? railShortcuts;
   final Widget? floatingActionButton;
   final Key? pagesKey;
 
@@ -80,8 +78,37 @@ class MaterialAdaptiveShell extends StatefulWidget {
   State<MaterialAdaptiveShell> createState() => _MaterialAdaptiveShellState();
 }
 
-class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell> {
+mixin _RememberWidth<T extends StatefulWidget> on State<T> {
+  String get _widthKey;
+  double? _preferredWidth;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreWidth();
+  }
+
+  Future<void> _restoreWidth() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_widthKey);
+    if (mounted && _preferredWidth == null && saved != null && saved.isFinite) {
+      setState(() => _preferredWidth = saved);
+    }
+  }
+
+  Future<void> _saveWidth() async {
+    final width = _preferredWidth;
+    if (width == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_widthKey, width);
+  }
+}
+
+class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
+    with _RememberWidth<MaterialAdaptiveShell> {
   final _detailTabs = <int>{};
+  @override
+  String get _widthKey => 'material_navigation_rail_width';
 
   @override
   void didUpdateWidget(MaterialAdaptiveShell oldWidget) {
@@ -90,13 +117,30 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _buildShell(context, constraints.maxWidth),
+  );
+
+  Widget _buildShell(BuildContext context, double available) {
     final window = widget.window;
+    final maxWidth =
+        (available - 360 - (window.hasSplit ? window.listWidth + 1 : 0)).clamp(
+          64.0,
+          256.0,
+        );
+    final railWidth = window.hasRail
+        ? (_preferredWidth ?? window.railWidth).clamp(64.0, maxWidth)
+        : 0.0;
+    void resize(double delta) {
+      final current = (_preferredWidth ?? railWidth).clamp(64.0, maxWidth);
+      setState(() => _preferredWidth = (current + delta).clamp(64.0, maxWidth));
+    }
+
     final index = widget.index;
     final onNavigate = widget.onNavigate;
     final position = widget.position;
     final profile = widget.profile;
-    final railShortcuts = widget.railShortcuts;
     final pagesKey = widget.pagesKey;
     final chatOpen = widget.chatOpen;
     final scheme = Theme.of(context).colorScheme;
@@ -115,58 +159,32 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell> {
               start: 0,
               top: 0,
               bottom: 0,
-              width: window.railWidth,
+              width: railWidth,
               child: ColoredBox(
                 color: scheme.surfaceContainerLow,
                 child: SafeArea(
                   right: false,
-                  child: NavigationRail(
-                    extended: window.extendedRail,
-                    minWidth: 80,
-                    minExtendedWidth: 256,
-                    scrollable: true,
-                    backgroundColor: scheme.surfaceContainerLow,
-                    labelType: window.extendedRail
-                        ? NavigationRailLabelType.none
-                        : NavigationRailLabelType.all,
-                    leading: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: window.extendedRail
-                          ? SizedBox(
-                              width: 224,
-                              child: Row(
-                                children: [
-                                  profile,
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Matter',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge,
-                                  ),
-                                ],
-                              ),
-                            )
-                          : profile,
-                    ),
-                    trailing: railShortcuts,
-                    selectedIndex: index,
-                    onDestinationSelected: onNavigate,
-                    destinations: [
-                      for (final destination in _destinations)
-                        NavigationRailDestination(
-                          icon: Icon(destination.icon),
-                          selectedIcon: Icon(destination.selected),
-                          label: Text(destination.label),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: profile,
                         ),
-                    ],
+                        _RailDestinations(
+                          index: index,
+                          position: position,
+                          onNavigate: onNavigate,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           PositionedDirectional(
             key: const ValueKey('material-shell-content'),
-            start: window.railWidth,
+            start: railWidth,
             end: 0,
             top: 0,
             bottom: 0,
@@ -200,6 +218,31 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell> {
               ),
             ),
           ),
+          if (window.hasRail)
+            PositionedDirectional(
+              start: railWidth - 4,
+              top: 0,
+              bottom: 0,
+              width: 8,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeColumn,
+                child: GestureDetector(
+                  key: const ValueKey('material-rail-divider'),
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragUpdate: (event) => resize(
+                    Directionality.of(context) == TextDirection.rtl
+                        ? -event.delta.dx
+                        : event.delta.dx,
+                  ),
+                  onHorizontalDragEnd: (_) => _saveWidth(),
+                  onDoubleTap: () {
+                    setState(() => _preferredWidth = window.railWidth);
+                    _saveWidth();
+                  },
+                  child: const VerticalDivider(width: 1, thickness: 1),
+                ),
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: window.hasRail || hideBottomBar
@@ -215,6 +258,99 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell> {
       chatOpen: chatOpen,
       accountKey: pagesKey,
       child: scaffold,
+    );
+  }
+}
+
+class _RailDestinations extends StatelessWidget {
+  const _RailDestinations({
+    required this.index,
+    required this.position,
+    required this.onNavigate,
+  });
+
+  final int index;
+  final ValueNotifier<double> position;
+  final ValueChanged<int> onNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = Theme.of(context).textTheme.labelMedium!;
+    final pitch =
+        48 +
+        MediaQuery.textScalerOf(context).scale(label.fontSize!) *
+            (label.height ?? 1.4);
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    return Stack(
+      children: [
+        ValueListenableBuilder<double>(
+          valueListenable: position,
+          builder: (_, page, child) => Positioned(
+            top: 4 + (reduced ? index.toDouble() : page) * pitch,
+            left: 12,
+            right: 12,
+            height: 32,
+            child: child!,
+          ),
+          child: DecoratedBox(
+            key: const ValueKey('rail-indicator'),
+            decoration: ShapeDecoration(
+              color: scheme.secondaryContainer,
+              shape: const StadiumBorder(),
+            ),
+          ),
+        ),
+        Material(
+          type: MaterialType.transparency,
+          child: Column(
+            children: [
+              for (final (i, destination) in _destinations.indexed)
+                Semantics(
+                  button: true,
+                  selected: index == i,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => onNavigate(i),
+                    child: SizedBox(
+                      height: pitch,
+                      width: double.infinity,
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            height: 32,
+                            child: Center(
+                              child: Icon(
+                                index == i
+                                    ? destination.selected
+                                    : destination.icon,
+                                color: index == i
+                                    ? scheme.onSecondaryContainer
+                                    : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            destination.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: label.copyWith(
+                              color: index == i
+                                  ? scheme.onSurface
+                                  : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -292,7 +428,7 @@ class _MaterialShellProfile extends InheritedWidget {
 /// Keep list and detail at stable positions in the tree when panes collapse.
 /// The detail's MediaQuery describes its own viewport, as media and composer
 /// decisions must never use the complete window's width.
-class MaterialConversationLayout extends StatelessWidget {
+class MaterialConversationLayout extends StatefulWidget {
   const MaterialConversationLayout({
     super.key,
     required this.window,
@@ -311,17 +447,33 @@ class MaterialConversationLayout extends StatelessWidget {
   final VoidCallback onCloseSupporting;
 
   @override
+  State<MaterialConversationLayout> createState() =>
+      _MaterialConversationLayoutState();
+}
+
+class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
+    with _RememberWidth<MaterialConversationLayout> {
+  @override
+  String get _widthKey => 'material_conversation_list_width';
+
+  @override
   Widget build(BuildContext context) {
-    final selected = roomId != null;
+    final window = widget.window;
+    final supporting = widget.supporting;
+    final selected = widget.roomId != null;
     final persistent = window == MaterialWindowClass.extraLarge;
     final modal = supporting != null && !persistent;
     return LayoutBuilder(
       builder: (context, constraints) {
+        final supportingWidth = persistent && supporting != null ? 361.0 : 0.0;
+        final maxWidth = (constraints.maxWidth - supportingWidth - 361).clamp(
+          260.0,
+          480.0,
+        );
         final listWidth = window.hasSplit
-            ? window.listWidth
+            ? (_preferredWidth ?? 320.0).clamp(260.0, maxWidth)
             : constraints.maxWidth;
         final detailStart = window.hasSplit ? listWidth + 1 : 0.0;
-        final supportingWidth = persistent && supporting != null ? 361.0 : 0.0;
         return Stack(
           children: [
             PositionedDirectional(
@@ -332,17 +484,9 @@ class MaterialConversationLayout extends StatelessWidget {
               width: listWidth,
               child: Offstage(
                 offstage: selected && !window.hasSplit,
-                child: ExcludeFocus(excluding: modal, child: list),
+                child: ExcludeFocus(excluding: modal, child: widget.list),
               ),
             ),
-            if (window.hasSplit)
-              PositionedDirectional(
-                start: listWidth,
-                top: 0,
-                bottom: 0,
-                width: 1,
-                child: const VerticalDivider(width: 1),
-              ),
             PositionedDirectional(
               key: const ValueKey('material-conversation-detail'),
               start: detailStart,
@@ -357,17 +501,52 @@ class MaterialConversationLayout extends StatelessWidget {
                     builder: (context, pane) => MediaQuery(
                       data: MediaQuery.of(context)
                           .copyWith(size: Size(pane.maxWidth, pane.maxHeight)),
-                      child: detail,
+                      child: widget.detail,
                     ),
                   ),
                 ),
               ),
             ),
+            if (window.hasSplit)
+              PositionedDirectional(
+                start: listWidth - 3.5,
+                top: 0,
+                bottom: 0,
+                width: 8,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.resizeColumn,
+                  child: GestureDetector(
+                    key: const ValueKey('conversation-list-divider'),
+                    behavior: HitTestBehavior.opaque,
+                    onHorizontalDragUpdate: (event) {
+                      final delta =
+                          Directionality.of(context) == TextDirection.rtl
+                          ? -event.delta.dx
+                          : event.delta.dx;
+                      setState(
+                        () => _preferredWidth =
+                            ((_preferredWidth ?? listWidth).clamp(
+                                      260.0,
+                                      maxWidth,
+                                    ) +
+                                    delta)
+                                .clamp(260.0, maxWidth),
+                      );
+                    },
+                    onHorizontalDragEnd: (_) => _saveWidth(),
+                    onDoubleTap: () {
+                      setState(() => _preferredWidth = 320);
+                      _saveWidth();
+                    },
+                    child: const VerticalDivider(width: 1, thickness: 1),
+                  ),
+                ),
+              ),
             if (supporting != null && !persistent)
               Positioned.fill(
                 child: ModalBarrier(
                   color: Colors.black.withValues(alpha: .32),
-                  onDismiss: onCloseSupporting,
+                  onDismiss: widget.onCloseSupporting,
                   semanticsLabel: '关闭房间详情',
                 ),
               ),
@@ -381,7 +560,7 @@ class MaterialConversationLayout extends StatelessWidget {
                   bindings: {
                     if (!persistent)
                       const SingleActivator(LogicalKeyboardKey.escape):
-                          onCloseSupporting,
+                          widget.onCloseSupporting,
                   },
                   child: FocusScope(
                     autofocus: !persistent,
@@ -395,9 +574,11 @@ class MaterialConversationLayout extends StatelessWidget {
                         children: [
                           Align(
                             alignment: AlignmentDirectional.centerEnd,
-                            child: CloseButton(onPressed: onCloseSupporting),
+                            child: CloseButton(
+                              onPressed: widget.onCloseSupporting,
+                            ),
                           ),
-                          Expanded(child: supporting!),
+                          Expanded(child: supporting),
                         ],
                       ),
                     ),

@@ -62,38 +62,15 @@ extension _MaterialAppLayout on _MatterAppState {
             url: me?.avatarUrl,
           ),
         ),
-        railShortcuts: ref
-            .watch(spacesProvider)
-            .when(
-              data: (spaces) => Column(
-                children: [
-                  if (spaces.isNotEmpty) const SizedBox(height: 20),
-                  for (final space in spaces)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: IconButton.filledTonal(
-                        tooltip: space.name,
-                        isSelected:
-                            navigationIndex == 0 &&
-                            _selectedDesktopSpace?.id == space.id,
-                        onPressed: () => _showSpace(space),
-                        icon: AppAvatar(
-                          fallback: space.name,
-                          size: 32,
-                          url: space.avatarUrl,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              loading: () => const SizedBox.shrink(),
-              error: (_, _) => const SizedBox.shrink(),
-            ),
         pages: [
           MaterialConversationLayout(
             window: window,
             list: _buildDesktopRoomList(
-              filters: _materialConversationFilters(),
+              filters: _materialConversationFilters(
+                window.hasRail
+                    ? ref.watch(spacesProvider).value ?? const []
+                    : const [],
+              ),
             ),
             roomId: room?.id,
             detail: room == null
@@ -140,34 +117,54 @@ extension _MaterialAppLayout on _MatterAppState {
     );
   }
 
-  Widget _materialConversationFilters() => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-    child: Row(
-      spacing: 8,
-      children: [
-        ChoiceChip(
-          label: const Text('全部'),
-          selected: _desktopRoomSource == _DesktopRoomSource.allChats,
-          onSelected: (_) => _showAllChats(),
+  Widget _materialConversationFilters(List<rust.Space> spaces) =>
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Row(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text('全部'),
+              selected: _desktopRoomSource == _DesktopRoomSource.allChats,
+              onSelected: (_) => _showAllChats(),
+            ),
+            ChoiceChip(
+              label: const Text('私聊'),
+              selected: _desktopRoomSource == _DesktopRoomSource.directMessages,
+              onSelected: (_) => _showDirectMessages(),
+            ),
+            ChoiceChip(
+              label: const Text('未归属群组'),
+              selected: _desktopRoomSource == _DesktopRoomSource.ungroupedRooms,
+              onSelected: (_) => _showUngroupedRooms(),
+            ),
+            if (spaces.isNotEmpty)
+              MenuAnchor(
+                menuChildren: [
+                  for (final space in spaces)
+                    MenuItemButton(
+                      onPressed: () => _showSpace(space),
+                      child: Text(space.name),
+                    ),
+                ],
+                builder: (_, menu, _) => ActionChip(
+                  label: Text(
+                    _desktopRoomSource == _DesktopRoomSource.space
+                        ? _selectedDesktopSpace?.name ?? '按空间筛选'
+                        : '按空间筛选',
+                  ),
+                  avatar: const Icon(Icons.arrow_drop_down),
+                  onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+                ),
+              )
+            else if (_desktopRoomSource == _DesktopRoomSource.space)
+              ChoiceChip(
+                label: Text(_selectedDesktopSpace?.name ?? '空间'),
+                selected: true,
+                onSelected: (_) {},
+              ),
+          ],
         ),
-        ChoiceChip(
-          label: const Text('私聊'),
-          selected: _desktopRoomSource == _DesktopRoomSource.directMessages,
-          onSelected: (_) => _showDirectMessages(),
-        ),
-        ChoiceChip(
-          label: const Text('未归属群组'),
-          selected: _desktopRoomSource == _DesktopRoomSource.ungroupedRooms,
-          onSelected: (_) => _showUngroupedRooms(),
-        ),
-        if (_desktopRoomSource == _DesktopRoomSource.space)
-          ChoiceChip(
-            label: Text(_selectedDesktopSpace?.name ?? '空间'),
-            selected: true,
-            onSelected: (_) {},
-          ),
-      ],
-    ),
-  );
+      );
 }

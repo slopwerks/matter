@@ -210,7 +210,7 @@ void main() {
         final expectedWidth =
             width -
             window.railWidth -
-            (window.hasSplit ? window.listWidth + 1 : 0) -
+            (window.hasSplit ? 321 : 0) -
             (width >= 1600 ? 361 : 0);
         expect(tester.getSize(detail).width, expectedWidth);
         expect(MediaQuery.sizeOf(tester.element(detail)).width, expectedWidth);
@@ -219,7 +219,7 @@ void main() {
           window.hasSplit,
         );
         expect(
-          find.byType(NavigationRail),
+          find.byKey(const ValueKey('material-navigation-rail')),
           window.hasRail ? findsOneWidget : findsNothing,
         );
         expect(find.byType(NavigationBar), findsNothing);

@@ -83,7 +83,9 @@ void main() {
         }
         final desktop = width >= 600;
         expect(
-          find.byType(desktop ? NavigationRail : MaterialTabNavigationBar),
+          desktop
+              ? find.byKey(const ValueKey('material-navigation-rail'))
+              : find.byType(MaterialTabNavigationBar),
           findsOneWidget,
         );
         if (!desktop) {
@@ -116,9 +118,9 @@ void main() {
           (label: '通讯录', icon: Icons.people_outline),
           (label: '设置', icon: Icons.settings_outlined),
         ]) {
-          final navigation = find.byType(
-            desktop ? NavigationRail : MaterialTabNavigationBar,
-          );
+          final navigation = desktop
+              ? find.byKey(const ValueKey('material-navigation-rail'))
+              : find.byType(MaterialTabNavigationBar);
           await tester.tap(
             find.descendant(
               of: navigation,
@@ -172,7 +174,9 @@ void main() {
           AppThemeStyle.materialDark,
         );
         expect(
-          find.byType(desktop ? NavigationRail : MaterialTabNavigationBar),
+          desktop
+              ? find.byKey(const ValueKey('material-navigation-rail'))
+              : find.byType(MaterialTabNavigationBar),
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);

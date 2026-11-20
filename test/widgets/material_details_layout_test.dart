@@ -215,7 +215,7 @@ void main() {
     await tester.tap(find.text('Alice'));
     await tester.pumpAndSettle();
     final profile = tester.element(find.byType(ContactProfilePage));
-    final rail = find.byType(NavigationRail);
+    final rail = find.byKey(const ValueKey('material-navigation-rail'));
     await tester.tap(find.descendant(of: rail, matching: find.text('设置')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('键盘发送与换行'));

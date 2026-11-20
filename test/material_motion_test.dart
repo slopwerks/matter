@@ -570,13 +570,74 @@ void main() {
     expect(find.text('连接中…'), findsNothing);
   });
 
+  testWidgets(
+    'conversation list keeps its width across the large window breakpoint',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1199, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pumpApp(tester);
+      final list = find.byKey(const ValueKey('material-conversation-list'));
+      expect(tester.getSize(list).width, 320);
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(list).width, 320);
+      await tester.drag(
+        find.byKey(const ValueKey('conversation-list-divider')),
+        const Offset(100, 0),
+      );
+      await tester.pumpAndSettle();
+      final preferred = tester.getSize(list).width;
+      expect(preferred, greaterThan(320));
+      await tester.binding.setSurfaceSize(const Size(840, 800));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(list).width, lessThan(preferred));
+      await tester.binding.setSurfaceSize(const Size(1199, 800));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(list).width, preferred);
+      await tester.pumpWidget(const SizedBox());
+      await _pumpApp(tester);
+      expect(tester.getSize(list).width, preferred);
+    },
+  );
+
+  testWidgets('desktop rail remembers a drag across resizing and reopening', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpApp(tester);
+    final rail = find.byKey(const ValueKey('material-navigation-rail'));
+    final divider = find.byKey(const ValueKey('material-rail-divider'));
+    await tester.drag(divider, const Offset(150, 0));
+    await tester.pumpAndSettle();
+    final width = tester.getSize(rail).width;
+    expect(width, greaterThan(160));
+    await tester.binding.setSurfaceSize(const Size(840, 800));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rail).width, lessThan(width));
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rail).width, width);
+    await tester.pumpWidget(const SizedBox());
+    await _pumpApp(tester);
+    expect(tester.getSize(rail).width, width);
+    await tester.tap(divider);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(divider);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rail).width, 80);
+  });
+
   testWidgets('desktop destination changes have a visible transition', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpApp(tester);
-    final navigation = find.byType(NavigationRail);
+    final navigation = find.byKey(const ValueKey('material-navigation-rail'));
+    expect(tester.getSize(navigation).width, 80);
+    final indicator = find.byKey(const ValueKey('rail-indicator'));
+    final startY = tester.getCenter(indicator).dy;
     await tester.tap(
       find.descendant(
         of: navigation,
@@ -585,6 +646,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 64));
+    final movingY = tester.getCenter(indicator).dy;
+    expect(movingY, greaterThan(startY));
     final fades = find.ancestor(
       of: find.byType(ContactsPage),
       matching: find.byType(Opacity),
@@ -592,6 +655,7 @@ void main() {
     expect(fades, findsWidgets);
     expect(tester.widget<Opacity>(fades.first).opacity, inExclusiveRange(0, 1));
     await tester.pumpAndSettle();
+    expect(tester.getCenter(indicator).dy, greaterThan(movingY));
     expect(tester.widget<Opacity>(fades.first).opacity, 1);
   });
 }
