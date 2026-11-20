@@ -273,6 +273,13 @@ void main() {
     final list = find.byType(ChatPage);
     final listState = tester.state(list);
     for (final room in rooms.skip(1)) {
+      container
+              .read(
+                messageDraftProvider((roomId: room.id, userId: 'anonymous'))
+                    .notifier,
+              )
+              .value =
+          'Draft ${room.name}';
       await tester.tap(
         find.descendant(of: list, matching: find.text(room.name)),
       );
@@ -280,10 +287,24 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
       final chat = find.byType(ChatDetailPage);
       expect(tester.widget<ChatDetailPage>(chat).roomId, room.id);
-      final opacity = find
-          .ancestor(of: chat, matching: find.byType(Opacity))
-          .first;
-      expect(tester.widget<Opacity>(opacity).opacity, inExclusiveRange(0, 1));
+      final field = find.descendant(
+        of: find.byType(MessageInput),
+        matching: find.byType(TextField),
+      );
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        'Draft ${room.name}',
+      );
+      final opacity = find.byKey(const ValueKey('room-timeline-opacity'));
+      expect(tester.widget<Opacity>(opacity).opacity, inExclusiveRange(.8, 1));
+      expect(
+        find.descendant(of: opacity, matching: find.byType(MessageInput)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: chat, matching: find.text(room.name)),
+        findsOneWidget,
+      );
       expect(tester.state(list), same(listState));
     }
     await tester.pumpAndSettle();

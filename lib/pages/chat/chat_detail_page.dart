@@ -26,6 +26,7 @@ import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../src/rust/api/matrix/unread.dart' as unread;
 import '../../theme/neu_colors.dart';
+import '../../theme/tokens.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/max_content_width.dart';
@@ -2988,7 +2989,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             children: [
               Positioned.fill(child: ColoredBox(color: colors.base)),
               Positioned.fill(
-                child: Builder(
+                child: _TimelineEntrance(
+                  enabled: widget.embedded && context.isMaterial,
                   builder: (context) {
                     final messages = messageCacheOwner == activeUserId
                         ? history.anchorId == null
@@ -3944,6 +3946,29 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 }
 
 enum _TimelineEntryType { group, date }
+
+class _TimelineEntrance extends StatelessWidget {
+  const _TimelineEntrance({required this.enabled, required this.builder});
+
+  final bool enabled;
+  final WidgetBuilder builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final fade = enabled && !MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: fade ? .8 : 1, end: 1),
+      duration: fade ? context.tokens.motion.effectsDuration : Duration.zero,
+      curve: Curves.easeOut,
+      builder: (_, opacity, child) => Opacity(
+        key: const ValueKey('room-timeline-opacity'),
+        opacity: fade ? opacity : 1,
+        child: child,
+      ),
+      child: Builder(builder: builder),
+    );
+  }
+}
 
 class _TimelineEntry {
   final _TimelineEntryType type;

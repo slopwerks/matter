@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../theme/tokens.dart';
-
 import 'mobile_tab_view.dart';
 import 'compact_capsule_transition.dart';
 import 'material_tab_navigation_bar.dart';
@@ -315,8 +313,6 @@ class MaterialConversationLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = roomId != null;
-    final fade =
-        window.hasSplit && selected && !MediaQuery.disableAnimationsOf(context);
     final persistent = window == MaterialWindowClass.extraLarge;
     final modal = supporting != null && !persistent;
     return LayoutBuilder(
@@ -361,17 +357,7 @@ class MaterialConversationLayout extends StatelessWidget {
                     builder: (context, pane) => MediaQuery(
                       data: MediaQuery.of(context)
                           .copyWith(size: Size(pane.maxWidth, pane.maxHeight)),
-                      child: TweenAnimationBuilder<double>(
-                        key: ValueKey(roomId),
-                        tween: Tween(begin: fade ? .35 : 1, end: 1),
-                        duration: fade
-                            ? context.tokens.motion.effectsDuration
-                            : Duration.zero,
-                        curve: Curves.easeOut,
-                        builder: (_, opacity, child) =>
-                            Opacity(opacity: fade ? opacity : 1, child: child),
-                        child: detail,
-                      ),
+                      child: detail,
                     ),
                   ),
                 ),
