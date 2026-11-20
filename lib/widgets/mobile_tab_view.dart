@@ -54,6 +54,19 @@ class _MobileTabViewState extends State<MobileTabView>
   @override
   void didUpdateWidget(MobileTabView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.swipeEnabled &&
+        _dragOrigin != null &&
+        widget.index == _target) {
+      _dragOrigin = null;
+      final frames = _frames;
+      _animate(frames, {
+        for (final index in frames.keys)
+          index: (
+            offset: (index - _target).sign.toDouble(),
+            opacity: index == _target ? 1 : 0,
+          ),
+      });
+    }
     if (widget.index == _target) return;
     final frames = _visibleFrames;
     final direction = (widget.index - _target).sign.toDouble();
@@ -201,9 +214,9 @@ class _MobileTabViewState extends State<MobileTabView>
         onHorizontalDragEnd: widget.swipeEnabled
             ? (details) => _endDrag(details.primaryVelocity!, direction)
             : null,
-        onHorizontalDragCancel: () {
-          if (_dragOrigin != null) _endDrag(0, direction);
-        },
+        onHorizontalDragCancel: widget.swipeEnabled
+            ? () => _endDrag(0, direction)
+            : null,
         child: ClipRect(
           child: AnimatedBuilder(
             animation: _controller,

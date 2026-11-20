@@ -197,8 +197,9 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
                 position: position,
                 onChanged: onNavigate,
                 swipeEnabled:
+                    !window.hasRail &&
                     !_detailTabs.contains(index) &&
-                    (!chatOpen || window.hasSplit || index != 0),
+                    (!chatOpen || index != 0),
                 children: [
                   for (var tab = 0; tab < widget.pages.length; tab++)
                     NotificationListener<MaterialDetailVisibility>(

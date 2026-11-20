@@ -628,6 +628,28 @@ void main() {
     expect(tester.getSize(rail).width, 80);
   });
 
+  testWidgets('dragging wide content stays on the selected destination', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(600, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = await _pumpApp(tester);
+    for (final width in [600.0, 1200.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 700));
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(Offset(width - 30, 350));
+      await gesture.moveBy(Offset(-width * .65, 0));
+      await tester.pump();
+      expect(
+        tester.widget<MobileTabView>(find.byType(MobileTabView)).position.value,
+        0,
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(container.read(navigationIndexProvider), 0);
+    }
+  });
+
   testWidgets('desktop destination changes have a visible transition', (
     tester,
   ) async {

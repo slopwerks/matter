@@ -237,7 +237,8 @@ Material uses four destinations: chats, spaces, contacts and settings.
 Below 600 dp, the 62 dp lens dock sits in a capsule, inset 16 dp horizontally
 and 12 dp plus the bottom safe area. Pressing lifts the platter and magnifies
 the lens; sliding carries its spring and jelly deformation across destinations.
-Page swipes drive the same continuous position. It hides while a single-pane
+In the compact layout, page swipes drive the same continuous position. Wider
+layouts use the side rail to switch destinations. The dock hides while a single-pane
 chat or a secondary detail is open. From 600 dp upwards the rail defaults to
 80 dp. Drag its inner divider to resize it, or double-click to reset. The
 device remembers the preferred width and limits it to fit the window.
