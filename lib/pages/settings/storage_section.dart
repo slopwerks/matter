@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// One heading rhythm for storage overview and settings categories.
 class StorageSection extends StatelessWidget {

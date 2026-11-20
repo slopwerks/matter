@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/markdown/markdown_composer.dart';
 import 'package:matter/features/matrix_html/matrix_code_block.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 动效参数。字段为 null 表示该皮肤没有这种动效，组件按"无动效"处理，
 /// 不再查 `context.isMaterial` 分支：
