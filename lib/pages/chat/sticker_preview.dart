@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
-import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import 'sticker_catalog.dart';
 
@@ -30,19 +29,6 @@ class StickerHoldPreviewOverlay extends StatelessWidget {
     final colors = context.neu;
     final screenSize = MediaQuery.sizeOf(context);
     final previewMaxSide = math.min(screenSize.width * 0.62, 260.0);
-    final preview = AspectRatio(
-      aspectRatio: sticker.aspectRatio,
-      child: ClipPath(
-        clipper: ShapeBorderClipper(
-          shape: context.isMaterial
-              ? materialPreviewThumbnailShape
-              : RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(NeuRadius.content),
-                ),
-        ),
-        child: RemoteStickerPreview(sticker: sticker, fit: BoxFit.contain),
-      ),
-    );
 
     return IgnorePointer(
       child: Material(
@@ -65,77 +51,56 @@ class StickerHoldPreviewOverlay extends StatelessWidget {
                   key: ValueKey(sticker.id),
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (context.isMaterial)
-                      Card(
-                        margin: EdgeInsets.zero,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: previewMaxSide,
-                            maxHeight: previewMaxSide,
+                    Container(
+                      constraints: BoxConstraints(
+                        maxWidth: previewMaxSide,
+                        maxHeight: previewMaxSide,
+                      ),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceStrong.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(NeuRadius.surface),
+                        border: Border.all(color: colors.hairline),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.28),
+                            blurRadius: 28,
+                            offset: const Offset(0, 16),
                           ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: preview,
-                          ),
-                        ),
-                      )
-                    else
-                      Container(
-                        constraints: BoxConstraints(
-                          maxWidth: previewMaxSide,
-                          maxHeight: previewMaxSide,
-                        ),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: colors.surfaceStrong.withValues(alpha: 0.94),
+                        ],
+                      ),
+                      child: AspectRatio(
+                        aspectRatio: sticker.aspectRatio,
+                        child: ClipRRect(
                           borderRadius: BorderRadius.circular(
-                            NeuRadius.surface,
+                            NeuRadius.content,
                           ),
-                          border: Border.all(color: colors.hairline),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.28),
-                              blurRadius: 28,
-                              offset: const Offset(0, 16),
-                            ),
-                          ],
+                          child: RemoteStickerPreview(
+                            sticker: sticker,
+                            fit: BoxFit.contain,
+                          ),
                         ),
-                        child: preview,
                       ),
+                    ),
                     const SizedBox(height: 12),
-                    if (context.isMaterial)
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: screenSize.width - 32,
-                        ),
-                        child: Chip(
-                          label: Text(
-                            sticker.label,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.surfaceStrong,
-                          borderRadius: BorderRadius.circular(NeuRadius.button),
-                        ),
-                        child: Text(
-                          sticker.label,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: colors.text,
-                                fontWeight: FontWeight.w600,
-                              ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceStrong,
+                        borderRadius: BorderRadius.circular(NeuRadius.button),
+                      ),
+                      child: Text(
+                        sticker.label,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.text,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -228,14 +193,8 @@ class _RemoteStickerPreviewState extends ConsumerState<RemoteStickerPreview> {
           return _StickerFallback(label: widget.fallback);
         }
 
-        return ClipPath(
-          clipper: ShapeBorderClipper(
-            shape: context.isMaterial
-                ? materialPreviewThumbnailShape
-                : RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-          ),
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(10),
           child: AuthenticatedImageMessage(
             imageUrl: resolvedUrl,
             fit: widget.fit,
@@ -282,30 +241,22 @@ class _StickerFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final theme = Theme.of(context);
-    final material = context.isMaterial;
     final label = this.label;
     if (label != null && label.isNotEmpty) {
       return Center(
         child: Text(
           label,
-          style: material
-              ? theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                )
-              : theme.textTheme.bodyLarge?.copyWith(
-                  color: colors.textTertiary,
-                  fontWeight: FontWeight.w700,
-                ),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            color: colors.textTertiary,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       );
     }
     return Center(
       child: Icon(
         Icons.sticky_note_2_rounded,
-        color: material
-            ? theme.colorScheme.onSurfaceVariant
-            : colors.textTertiary,
+        color: colors.textTertiary,
         size: 28,
       ),
     );

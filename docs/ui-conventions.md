@@ -329,8 +329,9 @@ shadows. Composer dialogs and menus inherit their theme's overlay shapes.
 Staged images use a `surfaceContainerLow` card above the composer, with 18 dp
 corners, a count, a clear action and 56 dp thumbnails. Sending disables both
 clearing and individual removal. Neu retains its existing thumbnail strip.
-Emoji cells use 10 dp corners; sticker pack headings use `titleSmall` and the
-selected pack uses `secondaryContainer`. Picker dividers inherit the theme.
+The emoji and sticker picker uses the classic left-aligned tabs, compact emoji
+grid and outlined sticker thumbnails in both themes. The active pack uses an
+accent outline, and long-press previews use the floating rounded panel.
 Video viewer counters use `labelMedium`; speed and menu controls share the
 viewer pills, and volume uses the viewer's high-contrast slider colours.
 

@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../providers/chat_visual_settings_provider.dart';
-import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
@@ -197,84 +196,52 @@ class _ComposerPickerPanelState extends State<ComposerPickerPanel> {
 
   Widget _buildSheet(BuildContext context, ScrollController scrollController) {
     final colors = context.neu;
-    final material = context.isMaterial;
-    final content = Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-          child: material
-              ? SegmentedButton<ComposerPickerTab>(
-                  segments: const [
-                    ButtonSegment(
-                      value: ComposerPickerTab.emoji,
-                      label: Text('Emoji'),
-                    ),
-                    ButtonSegment(
-                      value: ComposerPickerTab.sticker,
-                      label: Text('贴纸'),
-                    ),
-                  ],
-                  selected: {widget.tab},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (tabs) =>
-                      widget.onTabChanged(tabs.single),
-                )
-              : Row(
-                  children: [
-                    NeuChip(
-                      label: 'Emoji',
-                      selected: widget.tab == ComposerPickerTab.emoji,
-                      onTap: () => widget.onTabChanged(ComposerPickerTab.emoji),
-                    ),
-                    const SizedBox(width: 8),
-                    NeuChip(
-                      label: '贴纸',
-                      selected: widget.tab == ComposerPickerTab.sticker,
-                      onTap: () =>
-                          widget.onTabChanged(ComposerPickerTab.sticker),
-                    ),
-                  ],
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      decoration: NeuDecoration(
+        colors: colors,
+        superellipseEnabled: ChatVisualSettingsScope.of(context)
+            .superellipseBorderEnabled,
+        radius: NeuRadius.surface,
+        intensity: .7,
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Row(
+              children: [
+                NeuChip(
+                  label: 'Emoji',
+                  selected: widget.tab == ComposerPickerTab.emoji,
+                  onTap: () => widget.onTabChanged(ComposerPickerTab.emoji),
                 ),
-        ),
-        Divider(height: 1, color: material ? null : colors.hairline),
-        Expanded(
-          child: switch (widget.tab) {
-            ComposerPickerTab.emoji => EmojiPickerPanel(
-              onEmojiSelected: widget.onEmojiSelected,
-              scrollController: scrollController,
+                const SizedBox(width: 8),
+                NeuChip(
+                  label: '贴纸',
+                  selected: widget.tab == ComposerPickerTab.sticker,
+                  onTap: () => widget.onTabChanged(ComposerPickerTab.sticker),
+                ),
+              ],
             ),
-            ComposerPickerTab.sticker => StickerPackPanel(
-              roomId: widget.roomId,
-              onStickerSelected: _handleStickerSelected,
-              onPackNavigation: _expandForStickerPackNavigation,
-              scrollController: scrollController,
-            ),
-          },
-        ),
-      ],
-    );
-    final style = material
-        ? materialComposerPickerStyle(Theme.of(context))
-        : null;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: style == null
-          ? DecoratedBox(
-              decoration: NeuDecoration(
-                colors: colors,
-                superellipseEnabled: ChatVisualSettingsScope.of(context)
-                    .superellipseBorderEnabled,
-                radius: NeuRadius.surface,
-                intensity: .7,
+          ),
+          Divider(height: 1, color: colors.hairline),
+          Expanded(
+            child: switch (widget.tab) {
+              ComposerPickerTab.emoji => EmojiPickerPanel(
+                onEmojiSelected: widget.onEmojiSelected,
+                scrollController: scrollController,
               ),
-              child: content,
-            )
-          : Material(
-              color: style.fill,
-              shape: style.shape,
-              clipBehavior: Clip.antiAlias,
-              child: content,
-            ),
+              ComposerPickerTab.sticker => StickerPackPanel(
+                roomId: widget.roomId,
+                onStickerSelected: _handleStickerSelected,
+                onPackNavigation: _expandForStickerPackNavigation,
+                scrollController: scrollController,
+              ),
+            },
+          ),
+        ],
+      ),
     );
   }
 }

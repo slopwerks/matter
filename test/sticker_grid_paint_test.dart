@@ -38,19 +38,21 @@ void main() {
         ],
         child: MaterialApp(
           theme: theme,
-          home: Center(
-            child: RepaintBoundary(
-              key: boundary,
-              child: SizedBox(
-                width: 400,
-                height: 316,
-                child: ComposerPickerPanel(
-                  roomId: 'room',
-                  maxHeight: 316,
-                  tab: ComposerPickerTab.sticker,
-                  onTabChanged: (_) {},
-                  onEmojiSelected: (_) {},
-                  onStickerSelected: (_, _) {},
+          home: Material(
+            child: Center(
+              child: RepaintBoundary(
+                key: boundary,
+                child: SizedBox(
+                  width: 400,
+                  height: 316,
+                  child: ComposerPickerPanel(
+                    roomId: 'room',
+                    maxHeight: 316,
+                    tab: ComposerPickerTab.sticker,
+                    onTabChanged: (_) {},
+                    onEmojiSelected: (_) {},
+                    onStickerSelected: (_, _) {},
+                  ),
                 ),
               ),
             ),
@@ -61,31 +63,31 @@ void main() {
     await tester.pump();
     await tester.pump();
     final grid = tester.widget<CustomScrollView>(find.byType(CustomScrollView));
-    grid.controller!.jumpTo(160);
-    await tester.pump();
-
-    // The band left of the tab buttons contains only the panel surface.
+    // Scrolling the grid must not repaint the empty band beside the tabs.
     final render =
         boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
     final headerY = render
         .globalToLocal(tester.getCenter(find.text('Emoji')))
         .dy
         .round();
-    final expected = materialComposerPickerStyle(theme).fill.toARGB32();
-    final actual = await tester.runAsync(() async {
+    Future<List<int>> headerPixels() async {
       final image = await render.toImage();
       try {
         final bytes = (await image.toByteData(
           format: ui.ImageByteFormat.rawRgba,
         ))!;
         return [
-          for (var x = 32; x < 100; x++)
+          for (var x = 250; x < 360; x++)
             bytes.getUint32(4 * (headerY * image.width + x)),
         ];
       } finally {
         image.dispose();
       }
-    });
-    expect(actual, everyElement(((expected & 0xffffff) << 8) | 0xff));
+    }
+
+    final before = await tester.runAsync(headerPixels);
+    grid.controller!.jumpTo(160);
+    await tester.pump();
+    expect(await tester.runAsync(headerPixels), before);
   });
 }
