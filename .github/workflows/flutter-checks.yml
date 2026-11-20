@@ -30,11 +30,10 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
 
       # Workaround for flutter/flutter#186966
-      - name: Temporarily redirect flutter_test definitions
-        run: |
-          head -20 ${{ runner.tool_cache }}/flutter/${{ env.FLUTTER_VERSION }}/flutter/packages/flutter_test/lib/src/finders.dart
-          sed -e "s|flutter/material|material_ui/material_ui|" -i ${{ runner.tool_cache }}/flutter/${{ env.FLUTTER_VERSION }}/flutter/packages/flutter_test/lib/src/finders.dart
-          head -20 ${{ runner.tool_cache }}/flutter/${{ env.FLUTTER_VERSION }}/flutter/packages/flutter_test/lib/src/finders.dart
+      # This should be reverted once the issue is resolved.
+      # And I hope this doesn't poison the cache...
+      - name: \[HACK\] Temporarily redirect flutter_test definitions
+        run: sed -e "s|flutter/material|material_ui/material_ui|" -i ${{ runner.tool_cache }}/flutter/${{ env.FLUTTER_VERSION }}/flutter/packages/flutter_test/lib/src/finders.dart
 
       - name: Analyze Dart code
         run: flutter analyze
