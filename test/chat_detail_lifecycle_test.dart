@@ -819,6 +819,44 @@ void main() {
     expect(rustApi.roomSubscriptionAccounts.last, '@alice:example.org');
   });
 
+  testWidgets(
+    'Material uses the pin strip as the single visible pin list entry',
+    (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      rustApi.pinnedMessages = [_message(r'$pin')];
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true),
+            home: ChatDetailPage(roomId: '!room:example.org', roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final header = find.byType(AppBar);
+      expect(
+        find.descendant(of: header, matching: find.byTooltip('置顶消息')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: header, matching: find.byTooltip('更多')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: header, matching: find.byTooltip('房间详情')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('查看全部置顶消息'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PinnedMessagesPage), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets('the chat header opens the pinned messages page', (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -4998,7 +5036,8 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    final more = find.byIcon(Icons.more_vert_rounded);
+    await tester.tap(more.evaluate().isEmpty ? find.byTooltip('房间详情') : more);
     await tester.pumpAndSettle();
     await tester.tap(find.text('房间管理'));
     await tester.pumpAndSettle();

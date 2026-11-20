@@ -28,13 +28,13 @@ import '../../src/rust/api/matrix/unread.dart' as unread;
 import '../../theme/neu_colors.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_avatar.dart';
-import '../../widgets/floating_app_bar.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'attachment_caption_composer.dart' show attachmentCaptionClearance;
 import 'chat_timestamp.dart';
+import 'chat_notice_frame.dart';
 import 'composer_picker_panel.dart';
 import 'desktop_file_drop.dart';
 import 'date_separator.dart';
@@ -254,6 +254,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   bool _unreadCandidateUpdateScheduled = false;
   bool get _showUnreadNavigation => _entryUnread != null;
   double _unreadTopInset = 0;
+  double get _noticeGap => context.isMaterial ? ChatNoticeFrame.topGap : 0;
+  double get _unreadBannerExtent => unreadMessagesBannerHeight + _noticeGap;
   double _unreadBottomInset = 0;
   final _unreadPageTokens = <String>{};
   bool _olderLoadArmed = true;
@@ -1600,8 +1602,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           throw StateError('目标消息尚未完成布局');
         }
         final readableTop =
-            _unreadTopInset +
-            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
+            _unreadTopInset + (_showUnreadNavigation ? _unreadBannerExtent : 0);
         final readableHeight =
             viewport.size.height - _unreadBottomInset - readableTop;
         if (readableHeight <= 0) return false;
@@ -1644,8 +1645,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
         final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
         final readableTop =
-            _unreadTopInset +
-            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
+            _unreadTopInset + (_showUnreadNavigation ? _unreadBannerExtent : 0);
         final bottom = viewport.size.height - _unreadBottomInset;
         if (!_unreadMessagePainted(box, viewport) ||
             top < readableTop - 1 ||
@@ -2890,7 +2890,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final audioHeight = audioVisible ? audioMessageBarHeight : 0.0;
     final entryUnread = _entryUnreadOwner == activeUserId ? _entryUnread : null;
     final unreadHeight = entryUnread != null && _showUnreadNavigation
-        ? unreadMessagesBannerHeight
+        ? _unreadBannerExtent
         : 0.0;
     final audioSession = ref.read(audioPlaybackSessionProvider);
     final colors = context.neu;
@@ -2935,7 +2935,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final messageBottomPadding = inputChromeHeight + panelReservedHeight;
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
     final pinnedStackHeight =
-        kPinnedMessageRowHeight * _pinnedStackVisibleCount;
+        (kPinnedMessageRowHeight + _noticeGap) * _pinnedStackVisibleCount;
     _unreadTopInset = headerInset + pinnedStackHeight + audioHeight;
     _unreadBottomInset =
         inputChromeHeight + math.max(panelReservedHeight, keyboardHeight);
@@ -3550,8 +3550,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// Floating glass top bar: back/avatar/title plus the room actions. The
   /// only persistent glass layer on this page (see GlassPanel discipline).
   AppBar _buildMaterialTopBar(String subtitle) {
-    final compact = MediaQuery.sizeOf(context).width < _headerCompactBreakpoint;
-    return buildFloatingAppBar(
+    final theme = Theme.of(context);
+    return AppBar(
+      actionsPadding: const EdgeInsetsDirectional.only(end: 12),
       automaticallyImplyLeading: !widget.embedded,
       leading: widget.onBack == null
           ? null
@@ -3570,13 +3571,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   _roomName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: theme.textTheme.titleMedium,
                 ),
                 Text(
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -3584,30 +3587,27 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ],
       ),
       actions: [
-        NeuIconButton(
-          icon: Icons.search_rounded,
+        IconButton(
+          icon: const Icon(Icons.search_rounded),
           tooltip: '搜索消息',
           onPressed: () => unawaited(_openMessageSearch()),
         ),
-        if (!compact)
+        if (_pinnedStackVisibleCount == 0)
           IconButton(
             icon: const Icon(Icons.push_pin_outlined),
             tooltip: '置顶消息',
             onPressed: () => unawaited(_openPinnedMessages()),
           ),
-        if (widget.onToggleDetailsPanel != null)
-          IconButton(
-            icon: const Icon(Icons.people_outline),
-            tooltip: widget.detailsPanelOpen ? '隐藏详情' : '显示详情',
-            isSelected: widget.detailsPanelOpen,
-            onPressed: widget.onToggleDetailsPanel,
-          ),
         IconButton(
-          icon: const Icon(Icons.more_vert_rounded),
-          tooltip: '更多',
-          onPressed: compact
-              ? _showMoreActions
-              : () => _showRoomDetails(context),
+          icon: const Icon(Icons.people_outline),
+          tooltip: widget.onToggleDetailsPanel == null
+              ? '房间详情'
+              : widget.detailsPanelOpen
+              ? '隐藏详情'
+              : '显示详情',
+          isSelected: widget.detailsPanelOpen,
+          onPressed:
+              widget.onToggleDetailsPanel ?? () => _showRoomDetails(context),
         ),
       ],
     );

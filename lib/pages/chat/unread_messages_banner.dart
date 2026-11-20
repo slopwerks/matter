@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
+import 'chat_notice_frame.dart';
 
 const unreadMessagesBannerHeight = 48.0;
 
@@ -75,10 +75,13 @@ class UnreadMessagesBanner extends StatelessWidget {
       ],
     );
     if (material) {
-      return Material(
-        color: scheme.secondaryContainer,
-        shape: materialListItemShape,
-        child: SizedBox(height: unreadMessagesBannerHeight, child: content),
+      return ChatNoticeFrame(
+        child: Material(
+          color: scheme.secondaryContainer,
+          shape: ChatNoticeFrame.shape,
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(height: unreadMessagesBannerHeight, child: content),
+        ),
       );
     }
     return GlassPanel(height: unreadMessagesBannerHeight, child: content);

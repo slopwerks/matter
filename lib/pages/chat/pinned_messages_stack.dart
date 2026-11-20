@@ -9,7 +9,7 @@ import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
-import '../../widgets/max_content_width.dart';
+import 'chat_notice_frame.dart';
 import 'action_failure_message.dart';
 import 'message_pin_actions.dart';
 import 'pinned_message_indicator.dart';
@@ -264,7 +264,11 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '置顶消息 #${index + 1} · 共 ${messages.length} 条',
+                        style == null
+                            ? '置顶消息 #${index + 1} · 共 ${messages.length} 条'
+                            : messages.length == 1
+                            ? '置顶消息'
+                            : '置顶消息  ${index + 1}/${messages.length}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style:
@@ -298,19 +302,20 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
                     onPressed: widget.onShowAll,
                     icon: const Icon(Icons.list_alt, size: 20),
                   ),
-                IconButton(
-                  key: ValueKey('unpin-message:${message.id}'),
-                  tooltip: '取消置顶',
-                  color: style?.foreground,
-                  onPressed: _unpinningMessageIds.contains(message.id)
-                      ? null
-                      : () => unawaited(_unpin(message)),
-                  icon: Icon(
-                    Icons.push_pin_outlined,
-                    color: style == null ? colors.textTertiary : null,
-                    size: 19,
+                if (style == null || widget.onShowAll == null)
+                  IconButton(
+                    key: ValueKey('unpin-message:${message.id}'),
+                    tooltip: '取消置顶',
+                    color: style?.foreground,
+                    onPressed: _unpinningMessageIds.contains(message.id)
+                        ? null
+                        : () => unawaited(_unpin(message)),
+                    icon: Icon(
+                      Icons.push_pin_outlined,
+                      color: style == null ? colors.textTertiary : null,
+                      size: 19,
+                    ),
                   ),
-                ),
                 const SizedBox(width: 2),
               ],
             ),
@@ -321,18 +326,12 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
     if (style == null) {
       return GlassPanel(radius: NeuRadius.surface, child: row);
     }
-    return SizedBox(
-      height: rowHeight,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: MaxContentWidth(
-          child: Material(
-            color: style.fill,
-            shape: style.shape,
-            clipBehavior: Clip.antiAlias,
-            child: row,
-          ),
-        ),
+    return ChatNoticeFrame(
+      child: Material(
+        color: style.fill,
+        shape: ChatNoticeFrame.shape,
+        clipBehavior: Clip.antiAlias,
+        child: row,
       ),
     );
   }

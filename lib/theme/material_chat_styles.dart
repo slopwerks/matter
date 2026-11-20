@@ -122,15 +122,19 @@ materialEmojiPickerStyle(ThemeData theme) => (
   TextStyle? preview,
 })
 materialPinnedStripStyle(ThemeData theme) {
-  final foreground = theme.colorScheme.onTertiaryContainer;
+  final foreground = theme.colorScheme.primary;
   return (
-    fill: theme.colorScheme.tertiaryContainer,
+    fill: theme.colorScheme.surfaceContainerLow,
     foreground: foreground,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(12)),
     ),
-    title: theme.textTheme.labelMedium?.copyWith(color: foreground),
-    preview: theme.textTheme.bodySmall?.copyWith(color: foreground),
+    title: theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    ),
+    preview: theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurface,
+    ),
   );
 }
 
