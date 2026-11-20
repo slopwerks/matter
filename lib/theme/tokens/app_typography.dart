@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 语义字阶槽位。字号字重由各皮肤的主题构建器决定，页面只按语义取槽，
 /// 不再各自 copyWith 数字。
