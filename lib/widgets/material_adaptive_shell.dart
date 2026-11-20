@@ -47,6 +47,12 @@ class MaterialAdaptiveShell extends StatefulWidget {
       .dependOnInheritedWidgetOfExactType<_MaterialShellProfile>()
       ?.profile;
 
+  static bool expandedRailOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_MaterialShellProfile>()
+          ?.expandedRail ??
+      false;
+
   static MaterialWindowClass? windowOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<_MaterialShellProfile>()
       ?.window;
@@ -59,6 +65,10 @@ class MaterialAdaptiveShell extends StatefulWidget {
     required this.pages,
     required this.position,
     required this.profile,
+    required this.railAccount,
+    required this.railActions,
+    required this.railSpaces,
+    required this.unreadCount,
     required this.chatOpen,
     this.floatingActionButton,
     this.pagesKey,
@@ -70,6 +80,10 @@ class MaterialAdaptiveShell extends StatefulWidget {
   final List<Widget> pages;
   final ValueNotifier<double> position;
   final Widget profile;
+  final Widget railAccount;
+  final Widget Function(bool extended) railActions;
+  final Widget railSpaces;
+  final int unreadCount;
   final bool chatOpen;
   final Widget? floatingActionButton;
   final Key? pagesKey;
@@ -160,24 +174,48 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
               top: 0,
               bottom: 0,
               width: railWidth,
-              child: ColoredBox(
+              child: Material(
                 color: scheme.surfaceContainerLow,
                 child: SafeArea(
                   right: false,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        Padding(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: ListView(
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: profile,
+                          children: [
+                            if (railWidth >= 192) widget.railAccount,
+                            widget.railActions(railWidth >= 192),
+                            _RailDestinations(
+                              index: index,
+                              position: position,
+                              onNavigate: onNavigate,
+                              extended: railWidth >= 192,
+                              unreadCount: widget.unreadCount,
+                            ),
+                            if (railWidth >= 192) widget.railSpaces,
+                          ],
                         ),
-                        _RailDestinations(
-                          index: index,
-                          position: position,
-                          onNavigate: onNavigate,
+                      ),
+                      if (railWidth < 192) profile,
+                      if (maxWidth >= 192)
+                        IconButton(
+                          tooltip: railWidth >= 192 ? '收起侧栏' : '展开侧栏',
+                          icon: Icon(
+                            railWidth >= 192
+                                ? Icons.chevron_left
+                                : Icons.chevron_right,
+                          ),
+                          onPressed: () {
+                            setState(
+                              () =>
+                                  _preferredWidth = railWidth >= 192 ? 80 : 256,
+                            );
+                            _saveWidth();
+                          },
                         ),
-                      ],
-                    ),
+                      const SizedBox(height: 8),
+                    ],
                   ),
                 ),
               ),
@@ -191,6 +229,7 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
             child: _MaterialShellProfile(
               profile: profile,
               window: window,
+              expandedRail: railWidth >= 192,
               child: MobileTabView(
                 key: pagesKey,
                 index: index,
@@ -265,11 +304,15 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
 
 class _RailDestinations extends StatelessWidget {
   const _RailDestinations({
+    required this.extended,
+    required this.unreadCount,
     required this.index,
     required this.position,
     required this.onNavigate,
   });
 
+  final bool extended;
+  final int unreadCount;
   final int index;
   final ValueNotifier<double> position;
   final ValueChanged<int> onNavigate;
@@ -278,10 +321,11 @@ class _RailDestinations extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final label = Theme.of(context).textTheme.labelMedium!;
-    final pitch =
-        48 +
-        MediaQuery.textScalerOf(context).scale(label.fontSize!) *
-            (label.height ?? 1.4);
+    final pitch = extended
+        ? 52.0
+        : 48 +
+              MediaQuery.textScalerOf(context).scale(label.fontSize!) *
+                  (label.height ?? 1.4);
     final reduced = MediaQuery.disableAnimationsOf(context);
     return Stack(
       children: [
@@ -291,7 +335,7 @@ class _RailDestinations extends StatelessWidget {
             top: 4 + (reduced ? index.toDouble() : page) * pitch,
             left: 12,
             right: 12,
-            height: 32,
+            height: extended ? pitch - 8 : 32,
             child: child!,
           ),
           child: DecoratedBox(
@@ -316,35 +360,64 @@ class _RailDestinations extends StatelessWidget {
                     child: SizedBox(
                       height: pitch,
                       width: double.infinity,
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            height: 32,
-                            child: Center(
-                              child: Icon(
-                                index == i
-                                    ? destination.selected
-                                    : destination.icon,
-                                color: index == i
-                                    ? scheme.onSecondaryContainer
-                                    : scheme.onSurfaceVariant,
+                      child: extended
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 28,
                               ),
+                              child: Row(
+                                spacing: 12,
+                                children: [
+                                  Icon(
+                                    index == i
+                                        ? destination.selected
+                                        : destination.icon,
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      destination.label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (i == 0 && unreadCount > 0)
+                                    Badge.count(count: unreadCount),
+                                ],
+                              ),
+                            )
+                          : Column(
+                              children: [
+                                const SizedBox(height: 4),
+                                SizedBox(
+                                  height: 32,
+                                  child: Center(
+                                    child: Badge.count(
+                                      count: unreadCount,
+                                      isLabelVisible: i == 0 && unreadCount > 0,
+                                      child: Icon(
+                                        index == i
+                                            ? destination.selected
+                                            : destination.icon,
+                                        color: index == i
+                                            ? scheme.onSecondaryContainer
+                                            : scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  destination.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: label.copyWith(
+                                    color: index == i
+                                        ? scheme.onSurface
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            destination.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: label.copyWith(
-                              color: index == i
-                                  ? scheme.onSurface
-                                  : scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ),
@@ -415,15 +488,20 @@ class _MaterialShellProfile extends InheritedWidget {
   const _MaterialShellProfile({
     required this.profile,
     required this.window,
+    required this.expandedRail,
     required super.child,
   });
 
   final Widget profile;
   final MaterialWindowClass window;
 
+  final bool expandedRail;
+
   @override
   bool updateShouldNotify(_MaterialShellProfile oldWidget) =>
-      profile != oldWidget.profile || window != oldWidget.window;
+      profile != oldWidget.profile ||
+      window != oldWidget.window ||
+      expandedRail != oldWidget.expandedRail;
 }
 
 /// Keep list and detail at stable positions in the tree when panes collapse.

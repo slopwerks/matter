@@ -184,12 +184,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 MaterialPageRoute(builder: (_) => const HiddenRoomsPage()),
               ),
             ),
-          if (!compact && widget.embedded)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: '新聊天',
-              onPressed: _openCreateChat,
-            ),
         ],
       );
     }
