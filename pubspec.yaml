@@ -52,8 +52,8 @@ dependencies:
   image: ^4.9.1
   cached_network_image: ^4.0.4
   media_kit: ^1.2.6
-  # The published video plugin lacks Swift Package Manager support. Pin the
-  # upstream SPM implementation to match this project's Apple builds.
+  # The published video plugin is missing some latest changes from upstream.
+  # See dependency_overrides below.
   media_kit_video:
     git:
       url: https://github.com/media-kit/media-kit.git
@@ -91,9 +91,11 @@ dependencies:
   pasteboard: ^0.6.0
   desktop_drop: ^0.8.4
   connectivity_plus: ^7.0.0
-# Keep the Apple native libraries on the same SPM-capable upstream revision.
   path: any
 dependency_overrides:
+  # Upstream has some fixes related to iOS/macOS (SPM support) and
+  # Windows (some CMake changes) that are not in any pub.dev release
+  # yet (media-kit/media-kit#1473).
   media_kit_libs_ios_video:
     git:
       url: https://github.com/media-kit/media-kit.git
@@ -104,6 +106,11 @@ dependency_overrides:
       url: https://github.com/media-kit/media-kit.git
       ref: c533e446755f51cf53c7e57aea873f2aa5355f81
       path: libs/macos/media_kit_libs_macos_video
+  media_kit_libs_windows_video:
+    git:
+      url: https://github.com/media-kit/media-kit.git
+      ref: c533e446755f51cf53c7e57aea873f2aa5355f81
+      path: libs/windows/media_kit_libs_windows_video
 
 dev_dependencies:
   flutter_test:
