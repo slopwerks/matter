@@ -239,8 +239,9 @@ and 12 dp plus the bottom safe area. Pressing lifts the platter and magnifies
 the lens; sliding carries its spring and jelly deformation across destinations.
 In the compact layout, page swipes drive the same continuous position. Wider
 layouts use the side rail to switch destinations. The dock hides while a single-pane
-chat or a secondary detail is open. From 600 dp upwards the rail defaults to
-80 dp. Drag its inner divider to resize it, or double-click to reset. The
+chat or a secondary detail is open. The rail defaults to 80 dp from 600 dp and 256 dp from 1200 dp.
+The toggle animates its width and fades between layouts. Dragging follows the
+pointer directly. Double-clicking the divider restores the responsive default. The
 device remembers the preferred width and limits it to fit the window.
 Its four labelled destinations share a moving indicator with the page
 transition. The chat list offers space shortcuts by name in its filter row.

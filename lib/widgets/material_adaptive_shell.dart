@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../theme/tokens.dart';
 import 'mobile_tab_view.dart';
 import 'compact_capsule_transition.dart';
 import 'material_tab_navigation_bar.dart';
@@ -24,7 +25,11 @@ enum MaterialWindowClass {
 
   bool get hasRail => this != compact;
   bool get hasSplit => index >= expanded.index;
-  double get railWidth => hasRail ? 80 : 0;
+  double get railWidth => switch (this) {
+    compact => 0,
+    medium || expanded => 80,
+    large || extraLarge => 256,
+  };
   double get listWidth => index >= large.index ? 360 : 320;
 }
 
@@ -112,15 +117,19 @@ mixin _RememberWidth<T extends StatefulWidget> on State<T> {
 
   Future<void> _saveWidth() async {
     final width = _preferredWidth;
-    if (width == null) return;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_widthKey, width);
+    if (width == null) {
+      await prefs.remove(_widthKey);
+    } else {
+      await prefs.setDouble(_widthKey, width);
+    }
   }
 }
 
 class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
     with _RememberWidth<MaterialAdaptiveShell> {
   final _detailTabs = <int>{};
+  bool _draggingRail = false;
   @override
   String get _widthKey => 'material_navigation_rail_width';
 
@@ -143,14 +152,40 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
           64.0,
           256.0,
         );
-    final railWidth = window.hasRail
-        ? (_preferredWidth ?? window.railWidth).clamp(64.0, maxWidth)
-        : 0.0;
-    void resize(double delta) {
-      final current = (_preferredWidth ?? railWidth).clamp(64.0, maxWidth);
-      setState(() => _preferredWidth = (current + delta).clamp(64.0, maxWidth));
-    }
+    final target =
+        (_preferredWidth ?? (window.hasRail ? window.railWidth : 80.0)).clamp(
+          64.0,
+          maxWidth,
+        );
+    final duration = MediaQuery.disableAnimationsOf(context) || _draggingRail
+        ? Duration.zero
+        : context.tokens.motion.effectsDuration;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: target),
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      builder: (context, width, _) => _buildPanes(
+        context,
+        railWidth: window.hasRail
+            ? (_draggingRail || duration == Duration.zero
+                  ? target
+                  : width.clamp(64.0, maxWidth))
+            : 0,
+        maxWidth: maxWidth,
+        expanded: target >= 192,
+        duration: duration,
+      ),
+    );
+  }
 
+  Widget _buildPanes(
+    BuildContext context, {
+    required double railWidth,
+    required double maxWidth,
+    required bool expanded,
+    required Duration duration,
+  }) {
+    final window = widget.window;
     final index = widget.index;
     final onNavigate = widget.onNavigate;
     final position = widget.position;
@@ -181,35 +216,60 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
                   child: Column(
                     children: [
                       Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          children: [
-                            if (railWidth >= 192) widget.railAccount,
-                            widget.railActions(railWidth >= 192),
-                            _RailDestinations(
-                              index: index,
-                              position: position,
-                              onNavigate: onNavigate,
-                              extended: railWidth >= 192,
-                              unreadCount: widget.unreadCount,
+                        child: ClipRect(
+                          child: AnimatedSwitcher(
+                            duration: duration,
+                            switchInCurve: Curves.easeOut,
+                            switchOutCurve: Curves.easeIn,
+                            child: OverflowBox(
+                              key: ValueKey(expanded),
+                              alignment: AlignmentDirectional.centerStart,
+                              minWidth: expanded
+                                  ? railWidth.clamp(192.0, 256.0)
+                                  : railWidth.clamp(64.0, 191.0),
+                              maxWidth: expanded
+                                  ? railWidth.clamp(192.0, 256.0)
+                                  : railWidth.clamp(64.0, 191.0),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: ListView(
+                                      primary: false,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      children: [
+                                        if (expanded) widget.railAccount,
+                                        widget.railActions(expanded),
+                                        _RailDestinations(
+                                          index: index,
+                                          position: position,
+                                          onNavigate: onNavigate,
+                                          extended: expanded,
+                                          unreadCount: widget.unreadCount,
+                                        ),
+                                        if (expanded) widget.railSpaces,
+                                      ],
+                                    ),
+                                  ),
+                                  if (!expanded) profile,
+                                ],
+                              ),
                             ),
-                            if (railWidth >= 192) widget.railSpaces,
-                          ],
+                          ),
                         ),
                       ),
-                      if (railWidth < 192) profile,
                       if (maxWidth >= 192)
                         IconButton(
-                          tooltip: railWidth >= 192 ? '收起侧栏' : '展开侧栏',
-                          icon: Icon(
-                            railWidth >= 192
-                                ? Icons.chevron_left
-                                : Icons.chevron_right,
+                          tooltip: expanded ? '收起侧栏' : '展开侧栏',
+                          icon: AnimatedRotation(
+                            turns: expanded ? .5 : 0,
+                            duration: duration,
+                            child: const Icon(Icons.chevron_right),
                           ),
                           onPressed: () {
                             setState(
-                              () =>
-                                  _preferredWidth = railWidth >= 192 ? 80 : 256,
+                              () => _preferredWidth = expanded ? 80 : 256,
                             );
                             _saveWidth();
                           },
@@ -229,7 +289,7 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
             child: _MaterialShellProfile(
               profile: profile,
               window: window,
-              expandedRail: railWidth >= 192,
+              expandedRail: expanded,
               child: MobileTabView(
                 key: pagesKey,
                 index: index,
@@ -269,14 +329,30 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
                 child: GestureDetector(
                   key: const ValueKey('material-rail-divider'),
                   behavior: HitTestBehavior.opaque,
-                  onHorizontalDragUpdate: (event) => resize(
-                    Directionality.of(context) == TextDirection.rtl
+                  onHorizontalDragStart: (_) => setState(() {
+                    _preferredWidth = railWidth;
+                    _draggingRail = true;
+                  }),
+                  onHorizontalDragUpdate: (event) {
+                    final delta =
+                        Directionality.of(context) == TextDirection.rtl
                         ? -event.delta.dx
-                        : event.delta.dx,
-                  ),
-                  onHorizontalDragEnd: (_) => _saveWidth(),
+                        : event.delta.dx;
+                    setState(
+                      () => _preferredWidth = (_preferredWidth! + delta).clamp(
+                        64.0,
+                        maxWidth,
+                      ),
+                    );
+                  },
+                  onHorizontalDragEnd: (_) {
+                    setState(() => _draggingRail = false);
+                    _saveWidth();
+                  },
+                  onHorizontalDragCancel: () =>
+                      setState(() => _draggingRail = false),
                   onDoubleTap: () {
-                    setState(() => _preferredWidth = window.railWidth);
+                    setState(() => _preferredWidth = null);
                     _saveWidth();
                   },
                   child: const VerticalDivider(width: 1, thickness: 1),
@@ -321,110 +397,123 @@ class _RailDestinations extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final label = Theme.of(context).textTheme.labelMedium!;
+    const rowHeight = 56.0;
+    const gap = 4.0;
     final pitch = extended
-        ? 52.0
+        ? rowHeight + gap
         : 48 +
               MediaQuery.textScalerOf(context).scale(label.fontSize!) *
                   (label.height ?? 1.4);
     final reduced = MediaQuery.disableAnimationsOf(context);
-    return Stack(
-      children: [
-        ValueListenableBuilder<double>(
-          valueListenable: position,
-          builder: (_, page, child) => Positioned(
-            top: 4 + (reduced ? index.toDouble() : page) * pitch,
-            left: 12,
-            right: 12,
-            height: extended ? pitch - 8 : 32,
-            child: child!,
-          ),
-          child: DecoratedBox(
-            key: const ValueKey('rail-indicator'),
-            decoration: ShapeDecoration(
-              color: scheme.secondaryContainer,
-              shape: const StadiumBorder(),
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: extended ? 12 : 0),
+      child: Stack(
+        children: [
+          ValueListenableBuilder<double>(
+            valueListenable: position,
+            builder: (_, page, child) => Positioned(
+              top:
+                  (extended ? 0 : 4) +
+                  (reduced ? index.toDouble() : page) * pitch,
+              left: extended ? 0 : 12,
+              right: extended ? 0 : 12,
+              height: extended ? rowHeight : 32,
+              child: child!,
+            ),
+            child: DecoratedBox(
+              key: const ValueKey('rail-indicator'),
+              decoration: ShapeDecoration(
+                color: scheme.secondaryContainer,
+                shape: const StadiumBorder(),
+              ),
             ),
           ),
-        ),
-        Material(
-          type: MaterialType.transparency,
-          child: Column(
-            children: [
-              for (final (i, destination) in _destinations.indexed)
-                Semantics(
-                  button: true,
-                  selected: index == i,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () => onNavigate(i),
-                    child: SizedBox(
-                      height: pitch,
-                      width: double.infinity,
-                      child: extended
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 28,
-                              ),
-                              child: Row(
-                                spacing: 12,
-                                children: [
-                                  Icon(
-                                    index == i
-                                        ? destination.selected
-                                        : destination.icon,
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      destination.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+          Material(
+            type: MaterialType.transparency,
+            child: Column(
+              spacing: extended ? gap : 0,
+              children: [
+                for (final (i, destination) in _destinations.indexed)
+                  Semantics(
+                    button: true,
+                    selected: index == i,
+                    child: InkWell(
+                      customBorder: extended ? const StadiumBorder() : null,
+                      borderRadius: extended ? null : BorderRadius.circular(16),
+                      hoverColor: extended && index == i
+                          ? Colors.transparent
+                          : null,
+                      onTap: () => onNavigate(i),
+                      child: SizedBox(
+                        height: extended ? rowHeight : pitch,
+                        width: double.infinity,
+                        child: extended
+                            ? Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                ),
+                                child: Row(
+                                  spacing: 12,
+                                  children: [
+                                    Icon(
+                                      index == i
+                                          ? destination.selected
+                                          : destination.icon,
                                     ),
-                                  ),
-                                  if (i == 0 && unreadCount > 0)
-                                    Badge.count(count: unreadCount),
-                                ],
-                              ),
-                            )
-                          : Column(
-                              children: [
-                                const SizedBox(height: 4),
-                                SizedBox(
-                                  height: 32,
-                                  child: Center(
-                                    child: Badge.count(
-                                      count: unreadCount,
-                                      isLabelVisible: i == 0 && unreadCount > 0,
-                                      child: Icon(
-                                        index == i
-                                            ? destination.selected
-                                            : destination.icon,
-                                        color: index == i
-                                            ? scheme.onSecondaryContainer
-                                            : scheme.onSurfaceVariant,
+                                    Expanded(
+                                      child: Text(
+                                        destination.label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (i == 0 && unreadCount > 0)
+                                      Badge.count(count: unreadCount),
+                                  ],
+                                ),
+                              )
+                            : Column(
+                                children: [
+                                  const SizedBox(height: 4),
+                                  SizedBox(
+                                    height: 32,
+                                    child: Center(
+                                      child: Badge.count(
+                                        count: unreadCount,
+                                        isLabelVisible:
+                                            i == 0 && unreadCount > 0,
+                                        child: Icon(
+                                          index == i
+                                              ? destination.selected
+                                              : destination.icon,
+                                          color: index == i
+                                              ? scheme.onSecondaryContainer
+                                              : scheme.onSurfaceVariant,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  destination.label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: label.copyWith(
-                                    color: index == i
-                                        ? scheme.onSurface
-                                        : scheme.onSurfaceVariant,
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    destination.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: label.copyWith(
+                                      color: index == i
+                                          ? scheme.onSurface
+                                          : scheme.onSurfaceVariant,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              ),
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -194,6 +194,7 @@ void main() {
       ]) {
         await tester.binding.setSurfaceSize(Size(width, 800));
         await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
         final window = MaterialWindowClass.fromWidth(width);
         final detail = find.byType(ChatDetailPage);
         expect(tester.state(detail), same(chatState));

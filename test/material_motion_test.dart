@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
@@ -608,7 +609,7 @@ void main() {
     await _pumpApp(tester);
     final rail = find.byKey(const ValueKey('material-navigation-rail'));
     final divider = find.byKey(const ValueKey('material-rail-divider'));
-    await tester.drag(divider, const Offset(150, 0));
+    await tester.drag(divider, const Offset(-50, 0));
     await tester.pumpAndSettle();
     final width = tester.getSize(rail).width;
     expect(width, greaterThan(160));
@@ -625,8 +626,39 @@ void main() {
     await tester.pump(const Duration(milliseconds: 80));
     await tester.tap(divider);
     await tester.pumpAndSettle();
-    expect(tester.getSize(rail).width, 80);
+    expect(tester.getSize(rail).width, 256);
   });
+
+  testWidgets(
+    'wide rail toggle can reverse mid-transition and respects reduced motion',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pumpApp(tester);
+      final rail = find.byKey(const ValueKey('material-navigation-rail'));
+      final pane = find.byKey(const ValueKey('material-shell-content'));
+      await tester.tap(find.byTooltip('收起侧栏'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      final width = tester.getSize(rail).width;
+      expect(width, inExclusiveRange(80, 256));
+      expect(tester.getTopLeft(pane).dx, width);
+      await tester.tap(find.byTooltip('展开侧栏'));
+      await tester.pump();
+      expect(tester.getSize(rail).width, closeTo(width, 1));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(rail).width, 256);
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('收起侧栏'));
+      await tester.pump();
+      expect(tester.getSize(rail).width, 80);
+    },
+  );
 
   testWidgets('dragging wide content stays on the selected destination', (
     tester,
@@ -650,6 +682,41 @@ void main() {
     }
   });
 
+  testWidgets('expanded rail hover matches the selected space capsule', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpApp(tester);
+    final rail = find.byKey(const ValueKey('material-navigation-rail'));
+    final space = find.ancestor(
+      of: find.descendant(
+        of: rail,
+        matching: find.byIcon(Icons.workspaces_outline),
+      ),
+      matching: find.byType(InkWell),
+    );
+    final point = tester.getCenter(space);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: point);
+    await mouse.down(point);
+    await mouse.up();
+    await tester.pumpAndSettle();
+    final selected = find.ancestor(
+      of: find.descendant(of: rail, matching: find.byIcon(Icons.workspaces)),
+      matching: find.byType(InkWell),
+    );
+    final indicator = find.byKey(const ValueKey('rail-indicator'));
+    expect(tester.getRect(selected), tester.getRect(indicator));
+    expect(tester.getSize(selected), const Size(232, 56));
+    expect(
+      tester.widget<InkWell>(selected).customBorder,
+      const StadiumBorder(),
+    );
+    expect(tester.widget<InkWell>(selected).hoverColor, Colors.transparent);
+    await mouse.removePointer();
+  });
+
   testWidgets('desktop destination changes have a visible transition', (
     tester,
   ) async {
@@ -657,7 +724,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpApp(tester);
     final navigation = find.byKey(const ValueKey('material-navigation-rail'));
-    expect(tester.getSize(navigation).width, 80);
+    expect(tester.getSize(navigation).width, 256);
     final indicator = find.byKey(const ValueKey('rail-indicator'));
     final startY = tester.getCenter(indicator).dy;
     await tester.tap(
