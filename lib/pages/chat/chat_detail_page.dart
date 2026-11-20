@@ -3506,13 +3506,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 bottom: messageBottomPadding + 12,
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOutCubic,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (showUnreadPill)
-                      Padding(
-                        padding: EdgeInsets.only(bottom: showLatest ? 4 : 0),
-                        child: ConstrainedBox(
+                child: LatestMessageControl(
+                  unreadControl: showUnreadPill
+                      ? ConstrainedBox(
                           constraints: BoxConstraints(
                             maxWidth: math.max(0, mediaQuery.size.width - 32),
                           ),
@@ -3536,25 +3532,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                 ? _retryUnreadPages
                                 : _jumpToFirstUnread,
                           ),
-                        ),
-                      ),
-                    if (!showUnreadPill || showLatest)
-                      LatestMessageControl(
-                        visible: showLatest,
-                        showSentNotice: _showSentNotice,
-                        onPressed: () {
-                          if (_focusedBrowsing) {
-                            _exitFocusedBrowsing();
-                          } else {
-                            // A pin's context may still be in flight before focused
-                            // browsing starts. Do not let it override this action.
-                            _messageJumpGeneration++;
-                            _isJumpingToMessage = false;
-                            _scrollToLatest();
-                          }
-                        },
-                      ),
-                  ],
+                        )
+                      : null,
+                  visible: showUnreadPill || showLatest,
+                  showSentNotice: _showSentNotice,
+                  onPressed: () {
+                    if (_focusedBrowsing) {
+                      _exitFocusedBrowsing();
+                    } else {
+                      // A pin's context may still be in flight before focused
+                      // browsing starts. Do not let it override this action.
+                      _messageJumpGeneration++;
+                      _isJumpingToMessage = false;
+                      _scrollToLatest();
+                    }
+                  },
                 ),
               ),
               if (_forwardNoticeRoom case final room?)

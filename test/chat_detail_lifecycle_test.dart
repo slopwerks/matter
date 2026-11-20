@@ -4138,14 +4138,28 @@ void main() {
     (tester) async {
       await openGeometryUnread(
         tester,
-        [_message('latest')],
+        List.generate(
+          90,
+          (i) => _message(
+            'msg-$i',
+            timestamp: '${500 + i}',
+            content: '消息 ${i + 1}',
+          ),
+        ),
         material: true,
         snapshot: const unread.RoomUnreadState(
-          unreadCount: 2,
+          unreadCount: 1,
           boundaryResolved: true,
-          unreadEventIds: ['older1', 'older2'],
+          unreadEventIds: ['msg-88'],
         ),
       );
+      final scroll = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .controller!;
+      scroll.jumpTo(scroll.position.viewportDimension * 2);
+      await tester.pumpAndSettle();
+      expect(find.text('1 条新消息'), findsOneWidget);
+      expect(find.text('回到最新'), findsNothing);
       final pill = tester.getRect(find.byType(MaterialUnreadPill));
       final input = tester.getRect(
         find.byKey(const ValueKey('message-input-surface')),
@@ -4154,13 +4168,68 @@ void main() {
       expect(pill.width, lessThan(input.width));
       expect(pill.bottom, lessThanOrEqualTo(input.top));
       expect(pill.bottom, greaterThan(input.top - 60));
+      Future<void> sendFromHistory(String text) async {
+        await tester.enterText(find.byType(TextField), text);
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pump();
+        rustApi.pendingSend!.complete('sent-$text');
+        await tester.pump();
+      }
+
+      final latest = find.byType(LatestMessageControl);
+      final ink = find.descendant(of: latest, matching: find.byType(Ink));
+      await sendFromHistory('first');
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+      final expanding = tester.getSize(ink).width;
+      await tester.pump(const Duration(milliseconds: 500));
+      final full = tester.getSize(ink).width;
+      expect(full, greaterThan(expanding));
+      await tester.pump(const Duration(milliseconds: 2800));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.getSize(ink).width, lessThan(full));
+      await tester.pumpAndSettle();
+      expect(find.byType(MaterialUnreadPill), findsOneWidget);
+      final readOffset = scroll.offset;
+      final unreadSurface = tester.getRect(
+        find
+            .descendant(
+              of: find.byType(MaterialUnreadPill),
+              matching: find.byType(Material),
+            )
+            .last,
+      );
       await tester.tap(find.byTooltip('全部标为已读'));
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<LatestMessageControl>(find.byType(LatestMessageControl))
+            .visible,
+        isTrue,
+      );
+      final latestSurface = tester.getRect(
+        find.descendant(
+          of: find.byType(LatestMessageControl),
+          matching: find.byType(Ink),
+        ),
+      );
+      expect(latestSurface.bottom, unreadSurface.bottom);
+      expect(scroll.offset, readOffset);
+      await sendFromHistory('second');
+      await tester.pump(const Duration(milliseconds: 550));
+      expect(
+        tester.widget<LatestMessageControl>(latest).showSentNotice,
+        isTrue,
+      );
+      await tester.tap(find.byType(LatestMessageControl));
+      await tester.pumpAndSettle();
+      expect(scroll.offset, closeTo(scroll.position.minScrollExtent, 1));
       expect(rustApi.lastMarkReadExplicit, true);
       expect(find.byType(MaterialUnreadPill), findsNothing);
       expect(rustApi.getMessagesAroundCalls, 0);
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
+      await tester.pump(const Duration(seconds: 5));
     },
   );
 

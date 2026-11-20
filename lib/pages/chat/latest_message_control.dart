@@ -61,12 +61,14 @@ bool shouldShowLatestMessageControl({
 class LatestMessageControl extends StatefulWidget {
   final bool visible;
   final bool showSentNotice;
+  final Widget? unreadControl;
   final VoidCallback onPressed;
 
   const LatestMessageControl({
     super.key,
     required this.visible,
     required this.showSentNotice,
+    this.unreadControl,
     required this.onPressed,
   });
 
@@ -199,6 +201,10 @@ class _LatestMessageControlState extends State<LatestMessageControl>
     final height = material
         ? (painter.height + 24).clamp(48.0, double.infinity)
         : 44.0;
+    painter.text = TextSpan(text: '回到最新', style: theme.textTheme.labelMedium);
+    painter.layout();
+    final jumpWidth = painter.width + 44;
+    final jumpHeight = (painter.height + 8).clamp(36.0, double.infinity);
     painter.dispose();
     return IgnorePointer(
       ignoring: !widget.visible,
@@ -214,6 +220,13 @@ class _LatestMessageControlState extends State<LatestMessageControl>
             animation: _replacementController,
             builder: (context, _) {
               final value = _replacementController.value;
+              // Keep the controller mounted while unread navigation occupies the slot.
+              // Restore it only after the sent notice has finished retracting.
+              if (!widget.showSentNotice &&
+                  _replacementController.isDismissed &&
+                  widget.unreadControl != null) {
+                return widget.unreadControl!;
+              }
               final widthProgress = _intervalProgress(
                 value,
                 start: 0,
@@ -228,45 +241,89 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                   child: InkWell(
                     onTap: widget.onPressed,
                     customBorder: shape,
-                    child: Ink(
-                      width: lerpDouble(
-                        material ? 48 : _collapsedWidth,
-                        expandedWidth,
-                        widthProgress,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        vertical:
+                            material &&
+                                theme.materialTapTargetSize ==
+                                    MaterialTapTargetSize.padded
+                            ? (kMinInteractiveDimension - jumpHeight).clamp(
+                                    0.0,
+                                    double.infinity,
+                                  ) /
+                                  2 *
+                                  (1 - widthProgress)
+                            : 0,
                       ),
-                      height: height,
-                      decoration: material
-                          ? ShapeDecoration(
-                              color: theme.colorScheme.secondaryContainer,
-                              shape: shape,
-                            )
-                          : BoxDecoration(
-                              color: colors.surfaceStrong.withValues(
-                                alpha: 0.96,
+                      child: Ink(
+                        width: lerpDouble(
+                          material ? jumpWidth : _collapsedWidth,
+                          expandedWidth,
+                          widthProgress,
+                        ),
+                        height: material
+                            ? lerpDouble(jumpHeight, height, widthProgress)
+                            : height,
+                        decoration: material
+                            ? ShapeDecoration(
+                                color: theme.colorScheme.secondaryContainer,
+                                shape: shape,
+                              )
+                            : BoxDecoration(
+                                color: colors.surfaceStrong.withValues(
+                                  alpha: 0.96,
+                                ),
+                                borderRadius: radius,
+                                border: Border.all(color: colors.glassBorder),
                               ),
-                              borderRadius: radius,
-                              border: Border.all(color: colors.glassBorder),
-                            ),
-                      child: ClipPath(
-                        clipper: ShapeBorderClipper(shape: shape),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Opacity(
-                              opacity: 1 - arrowExit,
-                              child: Transform.translate(
-                                offset: Offset(0, -6 * arrowExit),
-                                child: Icon(
-                                  Icons.keyboard_arrow_down_rounded,
-                                  color: material
-                                      ? theme.colorScheme.onSecondaryContainer
-                                      : colors.text,
-                                  size: 25,
+                        child: ClipPath(
+                          clipper: ShapeBorderClipper(shape: shape),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Opacity(
+                                opacity: 1 - arrowExit,
+                                child: Transform.translate(
+                                  offset: Offset(0, -6 * arrowExit),
+                                  child: material
+                                      ? FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            spacing: 4,
+                                            children: [
+                                              Icon(
+                                                Icons
+                                                    .keyboard_arrow_down_rounded,
+                                                size: 16,
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSecondaryContainer,
+                                              ),
+                                              Text(
+                                                '回到最新',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelMedium
+                                                    ?.copyWith(
+                                                      color: theme
+                                                          .colorScheme
+                                                          .onSecondaryContainer,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          color: colors.text,
+                                          size: 25,
+                                        ),
                                 ),
                               ),
-                            ),
-                            _buildNotice(value, expandedWidth),
-                          ],
+                              _buildNotice(value, expandedWidth),
+                            ],
+                          ),
                         ),
                       ),
                     ),

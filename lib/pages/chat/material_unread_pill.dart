@@ -29,11 +29,15 @@ class MaterialUnreadPill extends StatelessWidget {
         tooltip: '全部标为已读',
         onPressed: onMarkRead,
         style: IconButton.styleFrom(
-          minimumSize: const Size.square(36),
+          fixedSize: const Size.square(36),
+          minimumSize: Size.zero,
+          visualDensity: VisualDensity.standard,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
           padding: EdgeInsets.zero,
           shape: const CircleBorder(),
         ),
-        icon: const Icon(Icons.done_all_rounded, size: 18),
+        icon: const Icon(Icons.check_rounded, size: 18),
       ),
       Flexible(
         child: MaterialPress(
@@ -41,6 +45,8 @@ class MaterialUnreadPill extends StatelessWidget {
             statesController: states,
             style: FilledButton.styleFrom(
               minimumSize: const Size(0, 36),
+              visualDensity: VisualDensity.standard,
+              textStyle: Theme.of(context).textTheme.labelMedium,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               shape: const StadiumBorder(),
             ),
