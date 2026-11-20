@@ -238,6 +238,7 @@ class TimelineMessageActions {
           ref.read(replyingToProvider(roomAccountKey).notifier).value = null;
           ref.read(editingMessageProvider(roomAccountKey).notifier).value =
               message;
+          onReplyRequested?.call();
         },
         onRecall: () async {
           try {

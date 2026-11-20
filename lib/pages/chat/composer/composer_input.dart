@@ -501,6 +501,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
             onCancel: () {
               ref.read(editingMessageProvider(_draftKey).notifier).value = null;
               ref.read(editingDraftProvider(_draftKey).notifier).value = null;
+              if (desktop) _focusNode.requestFocus();
             },
           )
         : replyTo != null

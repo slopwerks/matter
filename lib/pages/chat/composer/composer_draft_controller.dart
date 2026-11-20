@@ -49,6 +49,7 @@ class ComposerDraftController {
   static const _sourceStore = MarkdownSourceStore();
   String? _lastEditingId;
   String? _sourceLoadingId;
+  TextSelection? _ordinarySelection;
   bool _disposed = false;
 
   bool get isSourceLoading => _sourceLoadingId != null;
@@ -73,6 +74,7 @@ class ComposerDraftController {
   /// Call during the host's build: WidgetRef owns these subscriptions.
   void synchronize(rust.ChatMessage? editing) {
     if (editing != null && editing.id != _lastEditingId) {
+      if (_lastEditingId == null) _ordinarySelection = textController.selection;
       _lastEditingId = editing.id;
       _sourceLoadingId = editing.id;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -100,10 +102,13 @@ class ComposerDraftController {
     });
   }
 
-  void _replaceText(String text) {
+  void _replaceText(String text, {TextSelection? selection}) {
     textController.value = TextEditingValue(
       text: text,
-      selection: TextSelection.collapsed(offset: text.length),
+      selection:
+          selection != null && selection.isValid && selection.end <= text.length
+          ? selection
+          : TextSelection.collapsed(offset: text.length),
     );
   }
 
@@ -157,7 +162,11 @@ class ComposerDraftController {
     onEditingCancelled();
     // Restoring the ordinary draft must not save it as an edit or start typing.
     textController.removeListener(onTextChanged);
-    _replaceText(ref.read(messageDraftProvider(draftKey)));
+    _replaceText(
+      ref.read(messageDraftProvider(draftKey)),
+      selection: _ordinarySelection,
+    );
+    _ordinarySelection = null;
     textController.addListener(onTextChanged);
     onTextRestored();
   }
