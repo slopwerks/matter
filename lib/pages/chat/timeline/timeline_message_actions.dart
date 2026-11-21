@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -297,6 +299,9 @@ class TimelineMessageActions {
                   );
                 }
               },
+        onPlusOne: message.msgType == MessageType.text
+            ? () => unawaited(resendMessage(overlayContext, ref, message))
+            : null,
         onReact: (emoji) => toggleTimelineReaction(
           overlayContext,
           ref,
@@ -352,6 +357,44 @@ class TimelineMessageActions {
       ),
     );
     return true;
+  }
+
+  /// Re-sends [message] into this room as a new event ("+1").
+  ///
+  /// Reuses the forward path so text keeps the aggregated body the user sees
+  /// and media keeps its original Matrix source; any reply relation is dropped
+  /// so the repeated copy stands on its own.
+  Future<void> resendMessage(
+    BuildContext context,
+    WidgetRef ref,
+    ChatMessage message,
+  ) async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final messengerContext = Overlay.of(context, rootOverlay: true).context;
+    try {
+      await forwardMessage(
+        sourceRoomId: roomId,
+        targetRoomId: roomId,
+        eventId: message.id,
+        text: FormattedMessageInput(
+          body: message.content,
+          formattedBody: message.formattedBody,
+          mentionedUserIds: message.mentionedUserIds,
+          mentionsRoom: message.mentionsRoom,
+        ),
+      );
+      if (!messengerContext.mounted) return;
+      neuToast(messengerContext, '已 +1');
+      unawaited(refreshMessagesContainer(container, roomId));
+    } catch (error) {
+      if (!messengerContext.mounted) return;
+      ScaffoldMessenger.of(messengerContext).showSnackBar(
+        SnackBar(
+          content: Text('+1 失败: ${actionFailureMessage(error)}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void startReply(BuildContext context, WidgetRef ref, ChatMessage message) {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ import 'timeline_swipe_reply.dart';
 import 'timeline_text_bubble.dart';
 import 'timeline_message_metadata.dart';
 import 'timeline_message_actions.dart';
+import 'timeline_plus_one.dart';
 
 class TimelineMessagePresenter {
   const TimelineMessagePresenter({
@@ -33,6 +35,7 @@ class TimelineMessagePresenter {
     required this.insertionAnimationIds,
     required this.lateralInsertionAnimationIds,
     required this.localImagePreviews,
+    this.plusOneIds = const {},
     required this.actions,
     required this.anchor,
     this.scrollController,
@@ -49,6 +52,9 @@ class TimelineMessagePresenter {
   final Set<String> insertionAnimationIds;
   final Set<String> lateralInsertionAnimationIds;
   final Map<String, Uint8List> localImagePreviews;
+
+  /// Messages that repeat the last copy of a text and offer the inline +1.
+  final Set<String> plusOneIds;
   final TimelineMessageActions actions;
   final Widget Function(
     ChatMessage,
@@ -103,6 +109,7 @@ class TimelineMessagePresenter {
     final isLocalOutgoing = isLocalOutgoingMessage(message.id);
     final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
     final isLocalSent = isLocalOutgoingSentMessage(message.id);
+    final offersPlusOne = plusOneIds.contains(message.id) && !isLocalOutgoing;
     // An optimistic image has no `mxc://` source yet, so its bubble is fed
     // the picked bytes instead of resolving a URL.
     final previewBytes = localImagePreviews[message.id];
@@ -392,11 +399,25 @@ class TimelineMessagePresenter {
                   ),
                   const SizedBox(width: 6),
                 ],
+                if (isMe && offersPlusOne) ...[
+                  PlusOneButton(
+                    onTap: () =>
+                        unawaited(actions.resendMessage(context, ref, message)),
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 Flexible(
                   key: ValueKey('message-bubble-slot:$visualMessageId'),
                   fit: FlexFit.loose,
                   child: displayedBubble,
                 ),
+                if (!isMe && offersPlusOne) ...[
+                  const SizedBox(width: 6),
+                  PlusOneButton(
+                    onTap: () =>
+                        unawaited(actions.resendMessage(context, ref, message)),
+                  ),
+                ],
                 if (!isMe && isLocalOutgoing) ...[
                   const SizedBox(width: 6),
                   _buildLocalOutgoingStatus(
