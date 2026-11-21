@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../theme/neu_colors.dart';
 import 'attachment_caption_composer.dart';
