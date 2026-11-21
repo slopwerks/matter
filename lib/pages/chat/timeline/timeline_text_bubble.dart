@@ -62,11 +62,10 @@ class TimelineTextBubble extends StatelessWidget {
         ? message.content
         : matrixHtmlTextExcludingCode(formattedBody);
     final urlMatches = detectMessageUrls(previewTextSource);
-    Uri? previewUri;
+    List<Uri> previewUris = [];
     for (final match in urlMatches) {
       if (matrixUserIdFromUri(match.uri) == null) {
-        previewUri = match.uri;
-        break;
+        previewUris.add(match.uri);
       }
     }
     const linkRouter = MatrixLinkRouter();
@@ -89,15 +88,22 @@ class TimelineTextBubble extends StatelessWidget {
             ),
           )
         : null;
-    final linkPreview = previewUri != null
+    final linkPreview = previewUris.isNotEmpty
         ? Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: LinkPreviewCard(
-              key: ValueKey('link-preview:${message.id}:$previewUri'),
-              uri: previewUri,
-              isMe: isMe,
-              width: maxBubbleWidth - 28,
-              onOpen: linkRouter.open,
+            child: Column(
+              spacing: 7,
+              children: previewUris
+                  .map(
+                    (previewUri) => LinkPreviewCard(
+                      key: ValueKey('link-preview:${message.id}:$previewUri'),
+                      uri: previewUri,
+                      isMe: isMe,
+                      width: maxBubbleWidth - 28,
+                      onOpen: linkRouter.open,
+                    ),
+                  )
+                  .toList(),
             ),
           )
         : null;
