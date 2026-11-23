@@ -13,6 +13,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
   final String roomId;
   final String roomName;
   final String? avatarUrl;
+  final ValueChanged<RoomPanelAction>? onTimelineAction;
   final VoidCallback? onRoomLeft;
   final ValueChanged<RoomMetadataPatch>? onRoomDetailsChanged;
 
@@ -22,6 +23,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
     required this.roomName,
     this.avatarUrl,
     this.onRoomLeft,
+    this.onTimelineAction,
     this.onRoomDetailsChanged,
   });
 
@@ -32,6 +34,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
         roomId: roomId,
         roomName: roomName,
         avatarUrl: avatarUrl,
+        onTimelineAction: onTimelineAction,
         onManage: () => _openRoomManagement(context),
       );
     }

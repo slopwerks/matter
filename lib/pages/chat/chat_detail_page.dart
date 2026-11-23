@@ -126,6 +126,11 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final String? initialMessageId;
   final bool embedded;
   final VoidCallback? onBack;
+  static void openPanelAction(GlobalKey chatKey, RoomPanelAction action) {
+    final state = chatKey.currentState;
+    if (state is _ChatDetailPageState) state._openPanelAction(action);
+  }
+
   final bool detailsPanelOpen;
   final VoidCallback? onToggleDetailsPanel;
   final VoidCallback? onRoomLeft;
@@ -1791,10 +1796,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (_searchRouteOpen) return;
     _searchRouteOpen = true;
     try {
-      final messageId = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => ChatSearchPage(roomId: widget.roomId),
-        ),
+      final messageId = await ChatSearchPage.open(
+        context,
+        roomId: widget.roomId,
       );
       if (messageId != null && mounted) {
         await _jumpToMessage(messageId);
@@ -1825,6 +1829,17 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ),
       ),
     );
+  }
+
+  void _openPanelAction(RoomPanelAction action) {
+    switch (action) {
+      case RoomPanelAction.search:
+        unawaited(_openMessageSearch());
+      case RoomPanelAction.pins:
+        unawaited(_openPinnedMessages());
+      case RoomPanelAction.manage:
+        break;
+    }
   }
 
   Future<void> _openPinnedMessages() async {
@@ -3936,7 +3951,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
 
     if (context.isMaterial) {
-      final manage = await showModalBottomSheet<bool>(
+      final action = await showModalBottomSheet<RoomPanelAction>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
@@ -3949,11 +3964,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             roomId: roomId,
             roomName: _roomName,
             avatarUrl: _avatarUrl,
-            onManage: () => Navigator.of(sheetContext).pop(true),
+            onManage: () =>
+                Navigator.of(sheetContext).pop(RoomPanelAction.manage),
+            onTimelineAction: (action) =>
+                Navigator.of(sheetContext).pop(action),
           ),
         ),
       );
-      if (manage == true) openManagement();
+      if (!mounted || widget.roomId != roomId || action == null) return;
+      if (action == RoomPanelAction.manage) {
+        openManagement();
+      } else {
+        _openPanelAction(action);
+      }
       return;
     }
 

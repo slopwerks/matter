@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
 import 'package:matter/pages/chat/space_detail_page.dart';
+import 'package:matter/pages/chat/search_page.dart';
+import 'package:matter/pages/login/login_page.dart';
+import 'package:matter/pages/chat/space_page.dart';
 import 'package:matter/pages/contacts/contact_profile_page.dart';
 import 'package:matter/pages/contacts/contacts_page.dart';
 import 'package:matter/pages/settings/composer_keyboard_settings_page.dart';
@@ -113,10 +116,50 @@ void main() {
     api.dm = null;
   });
 
+  testWidgets(
+    'wide search docks at the entry and dismisses to the unread list',
+    (tester) async {
+      await _pump(tester, start: StartupPage.allChats, width: 1200);
+      await tester.tap(find.text('未读').first);
+      await tester.pumpAndSettle();
+      expect(find.text('没有未读会话'), findsOneWidget);
+      final entry = find.byKey(const ValueKey('open-chat-search'));
+      final origin = tester.getTopLeft(entry);
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.byType(ChatSearchPage)), origin);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('没有未读会话'), findsOneWidget);
+    },
+  );
+
+  testWidgets('first login opens credentials and returns to the M3 welcome', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildMaterialTheme(Brightness.light),
+          home: const LoginPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('登录已有账号'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsWidgets);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    expect(find.text('创建账号'), findsOneWidget);
+  });
+
   testWidgets('settings keep the detail and edited preference across widths', (
     tester,
   ) async {
     final container = await _pump(tester, start: StartupPage.settings);
+    await tester.enterText(find.byType(TextField), '键盘发送');
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('键盘发送与换行'));
     await tester.tap(find.text('键盘发送与换行'));
     await tester.pumpAndSettle();
@@ -179,7 +222,12 @@ void main() {
       tester,
     ) async {
       await _pump(tester, start: StartupPage.spaces, width: 1600, dark: dark);
-      await tester.tap(find.text(_space.name));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(SpacePage),
+          matching: find.text(_space.name),
+        ),
+      );
       await tester.pumpAndSettle();
       final detail = tester.state(find.byType(SpaceDetailPage));
       await tester.tap(find.text('成员'));
@@ -191,19 +239,24 @@ void main() {
       expect(find.byType(MaterialTabNavigationBar), findsNothing);
       await tester.tap(find.text('关于'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('编辑空间'));
+      await tester.tap(find.text('名称'));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsOneWidget);
-      expect(find.byType(TextField), findsNWidgets(2));
-      await tester.enterText(find.byType(TextField).first, '尚未保存的名称');
+      final fields = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      expect(fields, findsNWidgets(2));
+      await tester.enterText(fields.first, '尚未保存的名称');
       await _resize(tester, 1600);
       expect(
-        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        tester.widget<TextField>(fields.first).controller!.text,
         '尚未保存的名称',
       );
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      expect(find.text('空间管理'), findsOneWidget);
+      expect(find.text('共享与管理'), findsOneWidget);
+      expect(find.text('复制空间链接'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -217,6 +270,8 @@ void main() {
     final profile = tester.element(find.byType(ContactProfilePage));
     final rail = find.byKey(const ValueKey('material-navigation-rail'));
     await tester.tap(find.descendant(of: rail, matching: find.text('设置')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '键盘发送');
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('键盘发送与换行'));
     await tester.tap(find.text('键盘发送与换行'));
@@ -266,12 +321,12 @@ void main() {
           null,
         ),
       );
-      await tester.tap(find.text('复制 ID'));
+      await tester.tap(find.widgetWithText(TextButton, _contact.id));
       await tester.pumpAndSettle();
       expect(copiedId, _contact.id);
       await tester.enterText(find.byType(TextField), 'nobody');
       await tester.pumpAndSettle();
-      expect(find.text('暂无联系人'), findsOneWidget);
+      expect(find.text('没有匹配的联系人'), findsOneWidget);
       await tester.tap(find.text('发消息'));
       await tester.pump();
       expect(api.requests, [(account: '@me:example.org', user: _contact.id)]);

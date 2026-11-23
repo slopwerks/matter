@@ -115,11 +115,8 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
         ? draft.trim().replaceAll(RegExp(r'\s+'), ' ')
         : chatListPreview(room);
     final unreadOverride = ref.watch(roomUnreadOverrideProvider(room.id));
-    final syncedHasUnread = room.unreadCount > 0 || room.isMarkedUnread;
     final overrideApplies = unreadOverride?.appliesTo(room) ?? false;
-    final hasUnread = overrideApplies
-        ? unreadOverride!.unread
-        : syncedHasUnread;
+    final hasUnread = roomHasUnread(room, unreadOverride);
     final unreadAccent = room.isMuted ? colors.textTertiary : colors.accent;
     // Same stale-override cleanup as the main room list: only a no-longer-
     // applicable override is dropped.

@@ -10,6 +10,7 @@ import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
 import 'chat_notice_frame.dart';
+import '../../widgets/material_press.dart';
 import 'action_failure_message.dart';
 import 'message_pin_actions.dart';
 import 'pinned_message_indicator.dart';
@@ -217,7 +218,7 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
     final style = context.isMaterial
         ? materialPinnedStripStyle(Theme.of(context))
         : null;
-    final row = SizedBox(
+    Widget buildRow([WidgetStatesController? states]) => SizedBox(
       key: const ValueKey('pinned-messages-stack'),
       height: rowHeight * visibleRows,
       child: Builder(
@@ -232,6 +233,7 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
               ? (message.filename ?? '媒体消息')
               : message.content;
           return InkWell(
+            statesController: states,
             key: ValueKey('pinned-message:${message.id}'),
             onLongPress: widget.onShowAll,
             onTap: () {
@@ -324,14 +326,16 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
       ),
     );
     if (style == null) {
-      return GlassPanel(radius: NeuRadius.surface, child: row);
+      return GlassPanel(radius: NeuRadius.surface, child: buildRow());
     }
     return ChatNoticeFrame(
-      child: Material(
-        color: style.fill,
-        shape: ChatNoticeFrame.shape,
-        clipBehavior: Clip.antiAlias,
-        child: row,
+      child: MaterialPress(
+        builder: (states) => Material(
+          color: style.fill,
+          shape: ChatNoticeFrame.shape,
+          clipBehavior: Clip.antiAlias,
+          child: buildRow(states),
+        ),
       ),
     );
   }

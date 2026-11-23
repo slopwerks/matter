@@ -401,9 +401,10 @@ class _RailDestinations extends StatelessWidget {
     const gap = 4.0;
     final pitch = extended
         ? rowHeight + gap
-        : 48 +
-              MediaQuery.textScalerOf(context).scale(label.fontSize!) *
-                  (label.height ?? 1.4);
+        : (40 +
+                  MediaQuery.textScalerOf(context).scale(label.fontSize!) *
+                      (label.height ?? 1.4))
+              .clamp(rowHeight, double.infinity);
     final reduced = MediaQuery.disableAnimationsOf(context);
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: extended ? 12 : 0),
@@ -415,16 +416,20 @@ class _RailDestinations extends StatelessWidget {
               top:
                   (extended ? 0 : 4) +
                   (reduced ? index.toDouble() : page) * pitch,
-              left: extended ? 0 : 12,
-              right: extended ? 0 : 12,
+              left: 0,
+              right: 0,
               height: extended ? rowHeight : 32,
               child: child!,
             ),
-            child: DecoratedBox(
-              key: const ValueKey('rail-indicator'),
-              decoration: ShapeDecoration(
-                color: scheme.secondaryContainer,
-                shape: const StadiumBorder(),
+            child: Align(
+              child: Container(
+                key: const ValueKey('rail-indicator'),
+                width: extended ? double.infinity : 56,
+                height: double.infinity,
+                decoration: ShapeDecoration(
+                  color: scheme.secondaryContainer,
+                  shape: const StadiumBorder(),
+                ),
               ),
             ),
           ),
@@ -459,10 +464,21 @@ class _RailDestinations extends StatelessWidget {
                                       index == i
                                           ? destination.selected
                                           : destination.icon,
+                                      color: index == i
+                                          ? scheme.onSecondaryContainer
+                                          : scheme.onSurfaceVariant,
                                     ),
                                     Expanded(
                                       child: Text(
                                         destination.label,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: index == i
+                                                  ? scheme.onSecondaryContainer
+                                                  : scheme.onSurfaceVariant,
+                                            ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),

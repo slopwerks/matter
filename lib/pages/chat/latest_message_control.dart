@@ -193,18 +193,19 @@ class _LatestMessageControlState extends State<LatestMessageControl>
       textDirection: Directionality.of(context),
     )..layout();
     final expandedWidth = material
-        ? (painter.width + 32).clamp(
+        ? (painter.width + 2 * materialTimelinePillInset).clamp(
             48.0,
             MediaQuery.sizeOf(context).width - 32,
           )
         : _expandedWidth;
-    final height = material
-        ? (painter.height + 24).clamp(48.0, double.infinity)
-        : 44.0;
+    final height = material ? materialTimelinePillHeight(context) : 44.0;
     painter.text = TextSpan(text: '回到最新', style: theme.textTheme.labelMedium);
     painter.layout();
-    final jumpWidth = painter.width + 44;
-    final jumpHeight = (painter.height + 8).clamp(36.0, double.infinity);
+    final jumpWidth =
+        painter.width +
+        materialTimelinePillIcon +
+        4 +
+        2 * materialTimelinePillInset;
     painter.dispose();
     return IgnorePointer(
       ignoring: !widget.visible,
@@ -247,12 +248,11 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                             material &&
                                 theme.materialTapTargetSize ==
                                     MaterialTapTargetSize.padded
-                            ? (kMinInteractiveDimension - jumpHeight).clamp(
+                            ? (kMinInteractiveDimension - height).clamp(
                                     0.0,
                                     double.infinity,
                                   ) /
-                                  2 *
-                                  (1 - widthProgress)
+                                  2
                             : 0,
                       ),
                       child: Ink(
@@ -261,9 +261,7 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                           expandedWidth,
                           widthProgress,
                         ),
-                        height: material
-                            ? lerpDouble(jumpHeight, height, widthProgress)
-                            : height,
+                        height: height,
                         decoration: material
                             ? ShapeDecoration(
                                 color: theme.colorScheme.secondaryContainer,
@@ -276,6 +274,9 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                                 borderRadius: radius,
                                 border: Border.all(color: colors.glassBorder),
                               ),
+                        padding: material
+                            ? const EdgeInsets.all(materialTimelinePillInset)
+                            : EdgeInsets.zero,
                         child: ClipPath(
                           clipper: ShapeBorderClipper(shape: shape),
                           child: Stack(
@@ -295,7 +296,7 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                                               Icon(
                                                 Icons
                                                     .keyboard_arrow_down_rounded,
-                                                size: 16,
+                                                size: materialTimelinePillIcon,
                                                 color: theme
                                                     .colorScheme
                                                     .onSecondaryContainer,
@@ -321,7 +322,13 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                                         ),
                                 ),
                               ),
-                              _buildNotice(value, expandedWidth),
+                              _buildNotice(
+                                value,
+                                material
+                                    ? expandedWidth -
+                                          2 * materialTimelinePillInset
+                                    : expandedWidth,
+                              ),
                             ],
                           ),
                         ),

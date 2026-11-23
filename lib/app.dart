@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'features/push/push_runtime.dart';
 import 'pages/chat/chat_detail_page.dart';
 import 'pages/chat/create_chat_page.dart';
+import 'pages/chat/room_directory_page.dart';
 import 'pages/chat/chat_page.dart';
 import 'pages/chat/desktop_room_details_panel.dart';
 import 'pages/chat/desktop_split_view.dart';
@@ -25,7 +26,7 @@ import 'widgets/app_avatar.dart';
 import 'widgets/glass.dart';
 import 'widgets/material_adaptive_shell.dart';
 import 'widgets/material_list_detail.dart';
-import 'widgets/material_press.dart';
+import 'widgets/material_rail_actions.dart';
 import 'widgets/mobile_tab_view.dart';
 import 'widgets/neu_action.dart';
 import 'widgets/neu_surface.dart';
@@ -35,7 +36,13 @@ import 'widgets/sheets.dart';
 part 'app_material_layout.dart';
 part 'app_legacy_navigation.dart';
 
-enum _DesktopRoomSource { allChats, directMessages, ungroupedRooms, space }
+enum _DesktopRoomSource {
+  allChats,
+  unread,
+  directMessages,
+  ungroupedRooms,
+  space,
+}
 
 class MatterApp extends ConsumerStatefulWidget {
   const MatterApp({super.key});
@@ -199,6 +206,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       2 => NavigationDestinationPage.contacts,
       3 => NavigationDestinationPage.settings,
       _ => switch (_desktopRoomSource) {
+        _DesktopRoomSource.unread ||
         _DesktopRoomSource.allChats => NavigationDestinationPage.allChats,
         _DesktopRoomSource.directMessages =>
           NavigationDestinationPage.directMessages,
@@ -457,11 +465,13 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     });
   }
 
-  void _showAllChats() {
+  void _showAllChats({bool unreadOnly = false}) {
     _navigationRevision++;
     ref.read(navigationIndexProvider.notifier).value = 0;
     setState(() {
-      _desktopRoomSource = _DesktopRoomSource.allChats;
+      _desktopRoomSource = unreadOnly
+          ? _DesktopRoomSource.unread
+          : _DesktopRoomSource.allChats;
       _selectedDesktopSpace = null;
       _selectedRoom = null;
       _clearSelectedRoomDetailsEdits();
@@ -793,9 +803,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   }) {
     final room = _selectedRoom!;
     final unreadOverride = ref.watch(roomUnreadOverrideProvider(room.id));
-    final hasUnread = unreadOverride?.appliesTo(room) == true
-        ? unreadOverride!.unread
-        : room.unreadCount > 0 || room.isMarkedUnread;
+    final hasUnread = roomHasUnread(room, unreadOverride);
     return ChatDetailPage(
       key: _selectedChatKey,
       roomId: room.id,
@@ -831,10 +839,12 @@ class _MatterAppState extends ConsumerState<MatterApp> {
     )),
     title: switch (_desktopRoomSource) {
       _DesktopRoomSource.allChats => null,
+      _DesktopRoomSource.unread => '未读',
       _DesktopRoomSource.directMessages => '私聊',
       _DesktopRoomSource.ungroupedRooms => '未归属群组',
       _DesktopRoomSource.space => _selectedDesktopSpace?.name,
     },
+    unreadOnly: _desktopRoomSource == _DesktopRoomSource.unread,
     directMessagesOnly: _desktopRoomSource == _DesktopRoomSource.directMessages,
     ungroupedRoomsOnly: _desktopRoomSource == _DesktopRoomSource.ungroupedRooms,
     spaceId: _selectedDesktopSpace?.id,
@@ -843,8 +853,12 @@ class _MatterAppState extends ConsumerState<MatterApp> {
 
   Widget _buildDesktopRoomList({Widget? filters}) {
     return switch (_desktopRoomSource) {
-      _DesktopRoomSource.allChats => ChatPage(
-        key: const ValueKey('desktop-all-chats'),
+      _DesktopRoomSource.unread || _DesktopRoomSource.allChats => ChatPage(
+        key: ValueKey(_desktopRoomSource),
+        unreadOnly: _desktopRoomSource == _DesktopRoomSource.unread,
+        emptyLabel: _desktopRoomSource == _DesktopRoomSource.unread
+            ? '没有未读会话'
+            : null,
         embedded: true,
         filters: filters,
         title: filters == null ? '全部会话' : '聊天',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
 
@@ -46,21 +47,17 @@ class MaterialTimelineDateLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final style = materialTimelineDateStyle(
+      Theme.of(context),
+      floating: floating,
+    );
     return Material(
-      color: floating
-          ? theme.colorScheme.surfaceContainerHigh
-          : theme.colorScheme.surfaceContainer,
-      shape: const StadiumBorder(),
-      elevation: floating ? 1 : 0,
+      color: style.fill,
+      shape: style.shape,
+      elevation: style.elevation,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        child: Text(
-          label,
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
+        child: Text(label, style: style.label),
       ),
     );
   }

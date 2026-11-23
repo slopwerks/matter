@@ -32,7 +32,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(Ink)).width, lessThanOrEqualTo(288));
-    expect(tester.getSize(find.byType(Ink)).height, greaterThanOrEqualTo(48));
+    expect(
+      tester.getSize(find.byType(InkWell)).height,
+      greaterThanOrEqualTo(48),
+    );
     expect(
       tester.widget<InkWell>(find.byType(InkWell)).customBorder,
       isA<StadiumBorder>(),

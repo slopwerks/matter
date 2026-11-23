@@ -2,6 +2,48 @@ part of 'material_theme.dart';
 
 const materialComposerRadius = BorderRadius.all(Radius.circular(28));
 
+const double materialMessageMenuMaxWidth = 320;
+
+ButtonStyle materialMessageMenuActionStyle(
+  ThemeData theme, {
+  bool destructive = false,
+}) => TextButton.styleFrom(
+  foregroundColor: destructive
+      ? theme.colorScheme.error
+      : theme.colorScheme.onSurface,
+  textStyle: theme.textTheme.labelLarge,
+  alignment: Alignment.centerLeft,
+  minimumSize: const Size(0, 48),
+  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+  shape: materialEmojiPickerStyle(theme).cellShape,
+);
+
+({Color fill, ShapeBorder shape, double elevation, TextStyle? label})
+materialTimelineDateStyle(ThemeData theme, {required bool floating}) => (
+  fill: floating
+      ? theme.colorScheme.surfaceContainerHigh
+      : theme.colorScheme.surfaceContainer,
+  shape: const StadiumBorder(),
+  elevation: floating ? 1 : 0,
+  label: theme.textTheme.labelMedium?.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+  ),
+);
+
+({Color fill, ShapeBorder shape, ButtonStyle action, Color foreground})
+materialUnreadBannerStyle(ThemeData theme) => (
+  fill: theme.colorScheme.secondaryContainer,
+  shape: materialListItemShape,
+  foreground: theme.colorScheme.onSecondaryContainer,
+  action: TextButton.styleFrom(
+    foregroundColor: theme.colorScheme.onSecondaryContainer,
+    disabledForegroundColor: theme.colorScheme.onSecondaryContainer.withValues(
+      alpha: .38,
+    ),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+  ),
+);
+
 ({Color headerFill, Color headerForeground, Color border})
 materialHtmlTableStyle(ThemeData theme) => (
   headerFill: theme.colorScheme.surfaceContainerHighest,
@@ -38,9 +80,36 @@ materialCodeBlockChromeStyle(ThemeData theme) => (
   ),
 );
 
+const materialTimelinePillInset = 8.0;
+const materialTimelinePillIcon = 20.0;
+
+const materialTimelineArrow = 16.0;
+const materialTimelineJumpPadding = EdgeInsetsDirectional.only(
+  start: 10,
+  end: 14,
+);
+
+ButtonStyle materialUnreadJumpStyle(BuildContext context) =>
+    FilledButton.styleFrom(
+      minimumSize: Size(0, materialTimelinePillHeight(context)),
+      visualDensity: VisualDensity.standard,
+      textStyle: Theme.of(context).textTheme.labelMedium
+          ?.copyWith(fontWeight: FontWeight.w600),
+      padding: materialTimelineJumpPadding,
+      shape: const StadiumBorder(),
+    );
+
+double materialTimelinePillHeight(BuildContext context) {
+  final label = Theme.of(context).textTheme.labelMedium!;
+  final lineHeight =
+      MediaQuery.textScalerOf(context).scale(label.fontSize!) * label.height!;
+  return lineHeight.clamp(materialTimelinePillIcon, double.infinity) +
+      2 * materialTimelinePillInset;
+}
+
 ({ShapeBorder shape, TextStyle notice, TextStyle action})
 materialLatestMessageStyle(ThemeData theme) {
-  final notice = theme.textTheme.labelLarge!.copyWith(
+  final notice = theme.textTheme.labelMedium!.copyWith(
     color: theme.colorScheme.onSecondaryContainer,
   );
   return (
@@ -97,7 +166,7 @@ materialAttachmentStageStyle(ThemeData theme) => (
   ),
 );
 
-({ShapeBorder cellShape, Color fill, Color selected, TextStyle? heading})
+({OutlinedBorder cellShape, Color fill, Color selected, TextStyle? heading})
 materialEmojiPickerStyle(ThemeData theme) => (
   cellShape: const RoundedRectangleBorder(
     borderRadius: BorderRadius.all(Radius.circular(10)),

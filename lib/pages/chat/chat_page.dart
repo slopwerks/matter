@@ -31,6 +31,7 @@ class ChatPage extends ConsumerStatefulWidget {
   final String? title;
   final String? emptyLabel;
   final String? spaceId;
+  final bool unreadOnly;
   final bool directMessagesOnly;
   final bool ungroupedRoomsOnly;
   final bool showFloatingActionButton;
@@ -45,6 +46,7 @@ class ChatPage extends ConsumerStatefulWidget {
     this.title,
     this.emptyLabel,
     this.spaceId,
+    this.unreadOnly = false,
     this.directMessagesOnly = false,
     this.ungroupedRoomsOnly = false,
     this.showFloatingActionButton = true,
@@ -126,8 +128,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _openSearch() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ChatSearchPage()));
+    ChatSearchPage.open(context);
   }
 
   void _openCreateChat() {
@@ -137,13 +138,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   // 只读入口:点击进入独立搜索页。
   Widget _buildSearchEntry() {
-    return NeuAction(
-      key: const ValueKey('open-chat-search'),
-      label: '搜索消息或聊天',
-      onTap: _openSearch,
-      child: ExcludeFocus(
-        child: ExcludeSemantics(
-          child: IgnorePointer(child: const AppSearchField(hint: '搜索消息或聊天')),
+    return Builder(
+      builder: (entry) => NeuAction(
+        key: const ValueKey('open-chat-search'),
+        label: '搜索消息或聊天',
+        onTap: () => ChatSearchPage.open(context, entry: entry),
+        child: ExcludeFocus(
+          child: ExcludeSemantics(
+            child: IgnorePointer(child: const AppSearchField(hint: '搜索消息或聊天')),
+          ),
         ),
       ),
     );
@@ -264,7 +267,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return roomsForDisplay.when(
       skipLoadingOnReload: keepPreviousRooms,
       skipLoadingOnRefresh: keepPreviousRooms,
-      data: (rooms) {
+      data: (source) {
+        final rooms = widget.unreadOnly
+            ? source.where((room) {
+                if (room.roomState != 'joined') return false;
+                final override = ref.watch(roomUnreadOverrideProvider(room.id));
+                return roomHasUnread(room, override);
+              }).toList()
+            : source;
         if (widget.autoSelectFirstRoom &&
             !roomsAsync.isLoading &&
             widget.onRoomSelected != null &&

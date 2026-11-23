@@ -78,53 +78,11 @@ extension _MaterialAppLayout on _MatterAppState {
           ),
           onTap: () => _onItemTapped(3),
         ),
-        railActions: (extended) {
-          final create = MaterialPress(
-            builder: (states) => extended
-                ? FilledButton.icon(
-                    statesController: states,
-                    onPressed: newChat,
-                    icon: const Icon(Icons.add),
-                    label: const Text(
-                      '新建会话',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  )
-                : IconButton.filled(
-                    statesController: states,
-                    tooltip: '新建会话',
-                    onPressed: newChat,
-                    icon: const Icon(Icons.add),
-                    style: IconButton.styleFrom(
-                      fixedSize: const Size.square(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
-          );
-          final join = IconButton.filledTonal(
-            tooltip: '加入房间',
-            onPressed: () => CreateChatPage.showJoinRoomDialog(context, ref),
-            icon: const Icon(Icons.meeting_room_outlined),
-          );
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
-            child: extended
-                ? Row(
-                    spacing: 6,
-                    children: [
-                      Expanded(child: create),
-                      join,
-                    ],
-                  )
-                : Column(spacing: 8, children: [create, join]),
-          );
-        },
+        railActions: (extended) => MaterialRailActions(
+          extended: extended,
+          onCreate: newChat,
+          onFindRoom: () => RoomDirectoryPage.open(context),
+        ),
         unreadCount: window.hasRail
             ? _railUnreadCount(ref.watch(inboxRoomsProvider).value ?? const [])
             : 0,
@@ -187,6 +145,10 @@ extension _MaterialAppLayout on _MatterAppState {
                     roomId: room.id,
                     roomName: room.name,
                     avatarUrl: room.avatarUrl,
+                    onTimelineAction: (action) {
+                      if (modalDetails) _setMaterialDetails(false);
+                      ChatDetailPage.openPanelAction(_selectedChatKey, action);
+                    },
                     onRoomLeft: _clearSelectedRoom,
                     onRoomDetailsChanged: (patch) =>
                         _desktopRoomDetailsHandler?.call(patch),
@@ -222,9 +184,7 @@ extension _MaterialAppLayout on _MatterAppState {
     for (final room in rooms) {
       if (room.roomState != 'joined') continue;
       final override = ref.watch(roomUnreadOverrideProvider(room.id));
-      final unread = override != null && override.appliesTo(room)
-          ? override.unread
-          : room.isMarkedUnread || room.unreadCount > 0;
+      final unread = roomHasUnread(room, override);
       if (unread) count += room.unreadCount > 0 ? room.unreadCount : 1;
     }
     return count;
@@ -245,41 +205,38 @@ extension _MaterialAppLayout on _MatterAppState {
           onSelected: (_) => _showAllChats(),
         ),
         ChoiceChip(
+          label: const Text('未读'),
+          selected: _desktopRoomSource == _DesktopRoomSource.unread,
+          onSelected: (_) => _showAllChats(unreadOnly: true),
+        ),
+        ChoiceChip(
           label: const Text('私聊'),
           selected: _desktopRoomSource == _DesktopRoomSource.directMessages,
           onSelected: (_) => _showDirectMessages(),
         ),
-        ChoiceChip(
-          label: const Text('未归属群组'),
-          selected: _desktopRoomSource == _DesktopRoomSource.ungroupedRooms,
-          onSelected: (_) => _showUngroupedRooms(),
-        ),
-        if (!expandedRail && spaces.isNotEmpty)
-          MenuAnchor(
-            menuChildren: [
+        MenuAnchor(
+          menuChildren: [
+            MenuItemButton(
+              onPressed: _showUngroupedRooms,
+              child: const Text('未归属群组'),
+            ),
+            if (!expandedRail)
               for (final space in spaces)
                 MenuItemButton(
                   onPressed: () => _showSpace(space),
                   child: Text(space.name),
                 ),
-            ],
-            builder: (_, menu, _) => ActionChip(
-              label: Text(
-                _desktopRoomSource == _DesktopRoomSource.space
-                    ? _selectedDesktopSpace?.name ?? '按空间筛选'
-                    : '按空间筛选',
-              ),
-              avatar: const Icon(Icons.arrow_drop_down),
-              onPressed: () => menu.isOpen ? menu.close() : menu.open(),
-            ),
-          )
-        else if (!expandedRail &&
-            _desktopRoomSource == _DesktopRoomSource.space)
-          ChoiceChip(
-            label: Text(_selectedDesktopSpace?.name ?? '空间'),
-            selected: true,
-            onSelected: (_) {},
+          ],
+          builder: (_, menu, _) => ActionChip(
+            label: Text(switch (_desktopRoomSource) {
+              _DesktopRoomSource.space => _selectedDesktopSpace?.name ?? '空间',
+              _DesktopRoomSource.ungroupedRooms => '未归属群组',
+              _ => '更多筛选',
+            }),
+            avatar: const Icon(Icons.arrow_drop_down),
+            onPressed: () => menu.isOpen ? menu.close() : menu.open(),
           ),
+        ),
       ],
     ),
   );

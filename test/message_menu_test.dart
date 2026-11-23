@@ -121,10 +121,9 @@ void main() {
       await tester.pumpAndSettle();
 
       final menu = find.byType(TimelineMessageMenu);
-      final surface = find.descendant(
-        of: menu,
-        matching: find.byType(Material),
-      );
+      final surface = find
+          .descendant(of: menu, matching: find.byType(Material))
+          .first;
       expect(
         find.descendant(of: menu, matching: find.byType(GlassPanel)),
         findsNothing,

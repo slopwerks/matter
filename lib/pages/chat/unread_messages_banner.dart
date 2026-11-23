@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
 import 'chat_notice_frame.dart';
+import '../../widgets/material_press.dart';
 
 const unreadMessagesBannerHeight = 48.0;
 
@@ -29,23 +31,20 @@ class UnreadMessagesBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final material = context.isMaterial;
-    final scheme = Theme.of(context).colorScheme;
-    final content = Row(
+    final style = materialUnreadBannerStyle(Theme.of(context));
+    Widget buildContent([WidgetStatesController? states]) => Row(
       children: [
         Expanded(
           child: TextButton.icon(
-            style: material
-                ? TextButton.styleFrom(
-                    foregroundColor: scheme.onSecondaryContainer,
-                  )
-                : null,
+            statesController: states,
+            style: material ? style.action : null,
             onPressed: loading || unavailable ? null : onPressed,
             icon: loading
                 ? SizedBox.square(
                     dimension: 16,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: material ? scheme.onSecondaryContainer : null,
+                      color: material ? style.foreground : null,
                     ),
                   )
                 : const Icon(Icons.vertical_align_top_rounded, size: 18),
@@ -68,7 +67,7 @@ class UnreadMessagesBanner extends StatelessWidget {
         ),
         IconButton(
           tooltip: '关闭未读提示',
-          color: material ? scheme.onSecondaryContainer : null,
+          color: material ? style.foreground : null,
           onPressed: onDismiss,
           icon: const Icon(Icons.close_rounded, size: 18),
         ),
@@ -76,14 +75,22 @@ class UnreadMessagesBanner extends StatelessWidget {
     );
     if (material) {
       return ChatNoticeFrame(
-        child: Material(
-          color: scheme.secondaryContainer,
-          shape: ChatNoticeFrame.shape,
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(height: unreadMessagesBannerHeight, child: content),
+        child: MaterialPress(
+          builder: (states) => Material(
+            color: style.fill,
+            shape: ChatNoticeFrame.shape,
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              height: unreadMessagesBannerHeight,
+              child: buildContent(states),
+            ),
+          ),
         ),
       );
     }
-    return GlassPanel(height: unreadMessagesBannerHeight, child: content);
+    return GlassPanel(
+      height: unreadMessagesBannerHeight,
+      child: buildContent(),
+    );
   }
 }

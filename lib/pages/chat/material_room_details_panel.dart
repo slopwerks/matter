@@ -9,6 +9,8 @@ import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_action.dart';
 import 'material_room_member_rows.dart';
 
+enum RoomPanelAction { manage, search, pins }
+
 /// Conversation information shared by the supporting pane and its modal view.
 class MaterialRoomDetailsPanel extends ConsumerWidget {
   const MaterialRoomDetailsPanel({
@@ -17,12 +19,14 @@ class MaterialRoomDetailsPanel extends ConsumerWidget {
     required this.roomName,
     this.avatarUrl,
     required this.onManage,
+    this.onTimelineAction,
   });
 
   final String roomId;
   final String roomName;
   final String? avatarUrl;
   final VoidCallback onManage;
+  final ValueChanged<RoomPanelAction>? onTimelineAction;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -54,7 +58,7 @@ class MaterialRoomDetailsPanel extends ConsumerWidget {
                       children: [
                         AppAvatar(
                           fallback: roomName,
-                          size: 80,
+                          size: 64,
                           radius: NeuRadius.content,
                           url: avatarUrl,
                         ),
@@ -80,6 +84,27 @@ class MaterialRoomDetailsPanel extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (onTimelineAction != null) ...[
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: NeuSpacing.sm,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () =>
+                            onTimelineAction!(RoomPanelAction.search),
+                        icon: const Icon(Icons.search),
+                        label: const Text('搜索'),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: () =>
+                            onTimelineAction!(RoomPanelAction.pins),
+                        icon: const Icon(Icons.push_pin_outlined),
+                        label: const Text('置顶消息'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: NeuSpacing.lg),
+                ],
                 MaterialDetailCard(
                   title: '会话信息',
                   child: Column(
@@ -115,43 +140,54 @@ class MaterialRoomDetailsPanel extends ConsumerWidget {
             24 + MediaQuery.paddingOf(context).bottom,
           ),
           sliver: members.when(
-            data: (loaded) => SliverList.separated(
-              itemCount: loaded.length + 1,
-              separatorBuilder: (_, index) => Divider(
-                height: 1,
-                indent: index == 0
-                    ? 0
-                    : materialListAvatarSize + materialListContentGap,
-              ),
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '成员 ${loaded.length}',
-                          style: theme.textTheme.titleSmall,
-                        ),
-                        if (loaded.isEmpty) ...[
-                          const SizedBox(height: 12),
-                          const Text('暂无成员'),
-                        ],
-                      ],
+            data: (loaded) => SliverToBoxAdapter(
+              child: ListTile(
+                leading: const Icon(Icons.group_outlined),
+                title: Text('成员 ${loaded.length}'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(title: const Text('成员')),
+                      body: Consumer(
+                        builder: (context, ref, _) => ref
+                            .watch(membersProvider)
+                            .when(
+                              data: (people) => people.isEmpty
+                                  ? const Center(child: Text('暂无成员'))
+                                  : ListView.builder(
+                                      itemCount: people.length,
+                                      itemBuilder: (context, index) {
+                                        final member = people[index];
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: NeuSpacing.lg,
+                                            vertical: NeuSpacing.sm,
+                                          ),
+                                          child: MaterialMemberIdentity(
+                                            name: member.name,
+                                            userId: member.id,
+                                            avatarUrl: member.avatarUrl,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                              loading: () => const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                              error: (_, _) => Center(
+                                child: TextButton(
+                                  onPressed: () =>
+                                      ref.invalidate(membersProvider),
+                                  child: const Text('重试'),
+                                ),
+                              ),
+                            ),
+                      ),
                     ),
-                  );
-                }
-                final member = loaded[index - 1];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: MaterialMemberIdentity(
-                    name: member.name,
-                    userId: member.id,
-                    avatarUrl: member.avatarUrl,
                   ),
-                );
-              },
+                ),
+              ),
             ),
             loading: () => const SliverToBoxAdapter(
               child: Padding(

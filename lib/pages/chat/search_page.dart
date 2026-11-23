@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -14,6 +15,7 @@ import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/material_root_header.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/neu_surface.dart';
@@ -48,6 +50,68 @@ class ChatSearchPage extends ConsumerStatefulWidget {
   final String? roomId;
 
   const ChatSearchPage({super.key, this.roomId});
+
+  static Future<String?> open(
+    BuildContext anchor, {
+    String? roomId,
+    BuildContext? entry,
+  }) {
+    final page = ChatSearchPage(roomId: roomId);
+    final navigator = Navigator.of(anchor);
+    if (!anchor.isMaterial || MaterialRootHeader.isCompact(anchor)) {
+      return navigator.push(MaterialPageRoute<String>(builder: (_) => page));
+    }
+    // Re-measure the originating pane when the window or keyboard changes.
+    return showDialog<String>(
+      context: anchor,
+      useRootNavigator: false,
+      useSafeArea: false,
+      builder: (context) => LayoutBuilder(
+        builder: (context, constraints) {
+          if (!anchor.mounted || MaterialRootHeader.isCompact(context)) {
+            return page;
+          }
+          final pane = anchor.findRenderObject() as RenderBox?;
+          final overlay =
+              navigator.overlay?.context.findRenderObject() as RenderBox?;
+          if (pane == null || overlay == null || !pane.hasSize) return page;
+          final origin = pane.localToGlobal(Offset.zero, ancestor: overlay);
+          final field = entry?.mounted == true
+              ? entry!.findRenderObject() as RenderBox?
+              : null;
+          final fieldOrigin = field?.localToGlobal(
+            Offset.zero,
+            ancestor: overlay,
+          );
+          final width = roomId == null
+              ? math.max(pane.size.width, 400.0)
+              : pane.size.width;
+          final size = constraints.biggest;
+          final panelWidth = math.min(width, size.width);
+          final left = (fieldOrigin?.dx ?? origin.dx).clamp(
+            0.0,
+            size.width - panelWidth,
+          );
+          final top = (fieldOrigin?.dy ?? origin.dy).clamp(0.0, size.height);
+          return Stack(
+            children: [
+              Positioned(
+                left: left,
+                top: top,
+                width: panelWidth,
+                height: math.min(pane.size.height, size.height - top),
+                child: Material(
+                  shape: Theme.of(context).cardTheme.shape,
+                  clipBehavior: Clip.antiAlias,
+                  child: page,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   @override
   ConsumerState<ChatSearchPage> createState() => _ChatSearchPageState();

@@ -467,7 +467,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(container.read(navigationIndexProvider), 3);
         expect(position.value, 3);
-        expect(find.text('Material 配色'), findsOneWidget);
+        expect(find.text('外观与显示'), findsOneWidget);
         final lens = find
             .descendant(of: _bar, matching: find.byType(CustomPaint))
             .first;

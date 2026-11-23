@@ -4179,11 +4179,19 @@ void main() {
 
       final latest = find.byType(LatestMessageControl);
       final ink = find.descendant(of: latest, matching: find.byType(Ink));
+      final surfaces = find.descendant(
+        of: find.byType(MaterialUnreadPill),
+        matching: find.byType(Material),
+      );
+      expect(tester.getSize(surfaces.first).height, 36);
+      expect(tester.getSize(surfaces.last).height, 36);
       await sendFromHistory('first');
       await tester.pump(const Duration(milliseconds: 60));
       expect(find.byType(MaterialUnreadPill), findsNothing);
+      expect(tester.getSize(ink).height, 36);
       final expanding = tester.getSize(ink).width;
       await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.getSize(ink).height, 36);
       final full = tester.getSize(ink).width;
       expect(full, greaterThan(expanding));
       await tester.pump(const Duration(milliseconds: 2800));

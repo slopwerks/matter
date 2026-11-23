@@ -3,20 +3,22 @@ import 'package:flutter/services.dart';
 
 import '../../../src/rust/api/matrix.dart';
 import '../../../theme/neu_colors.dart';
+import '../../../theme/material_theme.dart';
 import '../../../widgets/glass.dart';
+import '../../../widgets/material_press.dart';
 
-/// An icon-over-text action button used inside the floating message menu.
+/// The message action keeps each skin's own menu presentation.
 class _IconTextAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final Color? color;
+  final bool destructive;
 
   const _IconTextAction({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.color,
+    this.destructive = false,
   });
 
   @override
@@ -24,12 +26,25 @@ class _IconTextAction extends StatelessWidget {
     final colors = context.neu;
     final theme = Theme.of(context);
     final material = context.isMaterial;
-    final iconColor =
-        color ??
-        (material ? theme.colorScheme.onSurfaceVariant : colors.textSecondary);
+    if (material) {
+      return MaterialPress(
+        builder: (states) => TextButton.icon(
+          statesController: states,
+          style: materialMessageMenuActionStyle(
+            theme,
+            destructive: destructive,
+          ),
+          onPressed: onTap,
+          icon: Icon(icon, size: 22),
+          label: Text(label),
+        ),
+      );
+    }
+    final color = destructive ? colors.error : null;
+    final iconColor = color ?? colors.textSecondary;
     return InkWell(
       onTap: onTap,
-      borderRadius: material ? null : BorderRadius.circular(NeuRadius.tag),
+      borderRadius: BorderRadius.circular(NeuRadius.tag),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Column(
@@ -39,12 +54,10 @@ class _IconTextAction extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               label,
-              style: material
-                  ? theme.textTheme.labelMedium?.copyWith(color: color)
-                  : theme.textTheme.bodySmall?.copyWith(
-                      color: color ?? colors.text,
-                      fontWeight: FontWeight.w500,
-                    ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: color ?? colors.text,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -288,19 +301,31 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
             onTap: () => _select(widget.onPin!),
           ),
         if (!isEvent && widget.pinStateLoading)
-          SizedBox(
-            width: 56,
-            height: 48,
-            child: Center(
-              child: SizedBox.square(
-                dimension: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.6,
-                  color: context.isMaterial ? null : context.neu.textTertiary,
+          context.isMaterial
+              ? TextButton.icon(
+                  onPressed: null,
+                  style: materialMessageMenuActionStyle(Theme.of(context)),
+                  icon: const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 1.6),
+                  ),
+                  label: const Text('正在读取置顶状态'),
+                )
+              : SizedBox(
+                  width: 56,
+                  height: 48,
+                  child: Center(
+                    child: SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        color: context.isMaterial
+                            ? null
+                            : context.neu.textTertiary,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
         if (widget.isMe && isText)
           _IconTextAction(
             icon: Icons.edit_outlined,
@@ -311,17 +336,21 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
           _IconTextAction(
             icon: Icons.delete_outline_rounded,
             label: '撤回',
-            color: context.isMaterial
-                ? Theme.of(context).colorScheme.error
-                : context.neu.error,
+            destructive: true,
             onTap: () => _select(widget.onRecall),
           ),
-      ]),
+      ], vertical: true),
     );
   }
 
-  Widget _menuItems(List<Widget> children) => context.isMaterial
-      ? Wrap(children: children)
+  Widget _menuItems(List<Widget> children, {bool vertical = false}) =>
+      context.isMaterial
+      ? vertical
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              )
+            : Wrap(children: children)
       : SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(mainAxisSize: MainAxisSize.min, children: children),
@@ -348,7 +377,7 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
         constraints: BoxConstraints(
           maxWidth: (viewport.maxWidth - safe.horizontal - 2 * _gap).clamp(
             0.0,
-            480.0,
+            materialMessageMenuMaxWidth,
           ),
           maxHeight: (viewport.maxHeight - safe.vertical - 2 * _gap).clamp(
             0.0,
