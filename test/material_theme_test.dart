@@ -65,7 +65,10 @@ void main() {
     },
   );
 
-  for (final style in AppThemeStyle.values) {
+  for (final style in [
+    for (final family in ThemeFamily.values)
+      for (final mode in ThemeMode.values) (family: family, themeMode: mode),
+  ]) {
     test('restores persisted ${style.name}', () async {
       SharedPreferences.setMockInitialValues({'app_theme_style': style.name});
       final container = ProviderContainer();
@@ -83,7 +86,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await container
         .read(appThemeStyleProvider.notifier)
-        .setStyle(AppThemeStyle.materialSystem);
+        .update(family: ThemeFamily.material);
     expect(
       (await SharedPreferences.getInstance()).getString('app_theme_style'),
       'materialSystem',
@@ -91,7 +94,7 @@ void main() {
     expect(container.read(appThemeStyleProvider).themeMode, ThemeMode.system);
     await container
         .read(appThemeStyleProvider.notifier)
-        .setStyle(AppThemeStyle.neuDark);
+        .update(family: ThemeFamily.neu, mode: ThemeMode.dark);
     expect(container.read(appThemeStyleProvider).isMaterial, isFalse);
     expect(
       (await SharedPreferences.getInstance()).getString('app_theme_style'),

@@ -109,7 +109,10 @@ void main() {
       expect(settings.followSystem, isFalse);
       expect(settings.lightBackground, MaterialBackground.soft);
       expect(settings.darkBackground, MaterialBackground.pure);
-      expect(container.read(appThemeStyleProvider), AppThemeStyle.materialDark);
+      expect(container.read(appThemeStyleProvider), (
+        family: ThemeFamily.material,
+        themeMode: ThemeMode.dark,
+      ));
       final saved = jsonDecode(
         (await SharedPreferences.getInstance()).getString(
           'material_color_settings',
@@ -414,8 +417,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await _tapChip(tester, '紫色');
-    await _tapChip(tester, '色彩风格');
-    await tester.tap(find.text('生动'));
+    await _tapChip(tester, '生动');
     await tester.pumpAndSettle();
     expect(
       container.read(materialColorSettingsProvider).colorStyle,

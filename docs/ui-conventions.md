@@ -189,7 +189,7 @@ surface without an enclosing card.
 `_SettingItem.selects` separates the two meanings a row can have:
 
 - `chevron_right` — this row goes somewhere.
-- `unfold_more` — this row picks a value here (theme, and any future picker).
+- `unfold_more` — this row picks a value here (for example, the startup page on mobile).
 
 Drawing one arrow for both left the user unable to tell a page push from a
 picker until after the tap.
@@ -213,8 +213,9 @@ readers, including the selected-chat count when restoring hidden chats.
 The settings profile card uses `primaryContainer` / `onPrimaryContainer`,
 18 dp padding, a 52 dp avatar and an 18 dp title. Section headings use
 `onSurfaceVariant`; primary colour marks selected values and primary actions.
-The Material theme picker groups appearance families and uses light, dark and
-paired thumbnails for the Material options.
+The theme row summarizes the current family and brightness. Its detail page
+shows the two choices separately and applies them together. Wide Material
+layouts show the page beside the settings list.
 
 ## Dividers
 

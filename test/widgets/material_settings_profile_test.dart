@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:matter/pages/settings/material_theme_style_picker.dart';
+import 'package:matter/pages/settings/settings_choice_chips.dart';
 import 'package:matter/pages/settings/settings_profile_card.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/theme_provider.dart';
@@ -58,7 +58,7 @@ void main() {
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(320, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      AppThemeStyle? selected;
+      ThemeFamily? selected;
       await tester.pumpWidget(
         MaterialApp(
           theme: buildMaterialTheme(Brightness.light),
@@ -68,34 +68,18 @@ void main() {
             child: child!,
           ),
           home: Scaffold(
-            body: Builder(
-              builder: (context) => FilledButton(
-                onPressed: () => showMaterialThemeStylePicker(
-                  context,
-                  current: AppThemeStyle.materialLight,
-                  light: ColorScheme.fromSeed(
-                    seedColor: defaultMaterialSeedColor,
-                  ),
-                  dark: ColorScheme.fromSeed(
-                    seedColor: defaultMaterialSeedColor,
-                    brightness: Brightness.dark,
-                  ),
-                  onChanged: (style) => selected = style,
-                ),
-                child: const Text('选择主题'),
-              ),
+            body: SettingsChoiceChips(
+              options: ThemeFamily.values,
+              selected: ThemeFamily.material,
+              label: (family) => family.label,
+              onChanged: (family) => selected = family,
             ),
           ),
         ),
       );
-      await tester.tap(find.text('选择主题'));
+      await tester.tap(find.text('新拟物'));
       await tester.pumpAndSettle();
-      final choice = find.text('新拟物 · 跟随系统');
-      await tester.ensureVisible(choice);
-      await tester.pumpAndSettle();
-      await tester.tap(choice);
-      await tester.pumpAndSettle();
-      expect(selected, AppThemeStyle.neuSystem);
+      expect(selected, ThemeFamily.neu);
       expect(find.byType(BottomSheet), findsNothing);
       expect(tester.takeException(), isNull);
     },

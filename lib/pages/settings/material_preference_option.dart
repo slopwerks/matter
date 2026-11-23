@@ -11,6 +11,7 @@ class MaterialPreferenceOption<T> extends StatelessWidget {
     required this.selected,
     required this.title,
     this.subtitle,
+    this.secondary,
   });
 
   final Key tileKey;
@@ -18,6 +19,7 @@ class MaterialPreferenceOption<T> extends StatelessWidget {
   final bool selected;
   final Widget title;
   final Widget? subtitle;
+  final Widget? secondary;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,7 @@ class MaterialPreferenceOption<T> extends StatelessWidget {
           selectedTileColor: color,
           title: title,
           subtitle: subtitle,
+          secondary: secondary,
         );
       },
     );

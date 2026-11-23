@@ -4,6 +4,9 @@ extension _SettingsSections on _SettingsPageState {
   List<({String title, List<_SettingItem> items, _SettingsCategory category})>
   _sections(CurrentUser? currentUser, String? activeUserId) {
     final colors = context.neu;
+    final compactPicker =
+        context.isMaterial && MaterialRootHeader.isCompact(context);
+    final style = ref.watch(appThemeStyleProvider);
     return <
       ({String title, List<_SettingItem> items, _SettingsCategory category})
     >[
@@ -90,13 +93,29 @@ extension _SettingsSections on _SettingsPageState {
         title: '通用',
         items: [
           _SettingItem(
-            icon: Icons.dark_mode_rounded,
+            icon: Icons.brightness_6_outlined,
             category: _SettingsCategory.appearance,
             title: '主题',
-            subtitle: _themeStyleLabel(ref.watch(appThemeStyleProvider)),
-            // 弹出选择器,不跳页。
-            selects: true,
-            onTap: _showThemeStylePicker,
+            subtitle: '${style.family.label} · ${style.themeMode.label}',
+            keywords: [
+              '主题风格 明暗模式',
+              ...ThemeFamily.values.map((v) => v.label),
+              ...ThemeMode.values.map((v) => v.label),
+            ].join(' '),
+            onTap: () async {
+              final route = MaterialPageRoute<AppThemeStyle>(
+                builder: (_) => ThemeSettingsPage(initial: style),
+              );
+              final result = await MaterialListDetail.push(context, route);
+              if (result == null) return;
+              // Finish dismissing the picker before replacing the themed shell.
+              await route.completed;
+              if (mounted) {
+                await ref
+                    .read(appThemeStyleProvider.notifier)
+                    .update(family: result.family, mode: result.themeMode);
+              }
+            },
           ),
           if (context.isMaterial)
             _SettingItem(
@@ -113,7 +132,7 @@ extension _SettingsSections on _SettingsPageState {
             ),
           _SettingItem(
             icon: Icons.notifications_rounded,
-            category: _SettingsCategory.notifications,
+            category: _SettingsCategory.chat,
             title: '通知',
             subtitle: 'FCM 推送 · 自定义网关 · 房间免打扰',
             onTap: currentUser == null
@@ -130,23 +149,42 @@ extension _SettingsSections on _SettingsPageState {
             icon: Icons.home_outlined,
             title: '启动页面',
             subtitle: ref.watch(startupPageProvider).label,
-            onTap: () => MaterialListDetail.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => const StartupPageSettingsPage(),
-              ),
-            ),
+            selects: compactPicker,
+            onTap: compactPicker
+                ? () => _choosePreference(
+                    StartupPage.values,
+                    ref.read(startupPageProvider),
+                    (option) => option.label,
+                    (option) =>
+                        ref.read(startupPageProvider.notifier).setPage(option),
+                  )
+                : () => MaterialListDetail.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const StartupPageSettingsPage(),
+                    ),
+                  ),
           ),
           _SettingItem(
             icon: Icons.touch_app_rounded,
             title: '交互模式',
             subtitle: ref.watch(interactionModeProvider).label,
-            onTap: () => MaterialListDetail.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => const InteractionModeSettingsPage(),
-              ),
-            ),
+            selects: compactPicker,
+            onTap: compactPicker
+                ? () => _choosePreference(
+                    InteractionMode.values,
+                    ref.read(interactionModeProvider),
+                    (option) => option.label,
+                    (option) => ref
+                        .read(interactionModeProvider.notifier)
+                        .setMode(option),
+                  )
+                : () => MaterialListDetail.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const InteractionModeSettingsPage(),
+                    ),
+                  ),
           ),
           _SettingItem(
             icon: Icons.keyboard_rounded,
@@ -168,7 +206,7 @@ extension _SettingsSections on _SettingsPageState {
       ),
 
       (
-        category: _SettingsCategory.appearance,
+        category: _SettingsCategory.chat,
         title: context.isMaterial ? '聊天外观' : '性能設置',
         items: [
           _SettingItem(
@@ -299,6 +337,7 @@ extension _SettingsSections on _SettingsPageState {
             if (_credentialCompatibilityMode)
               _SettingItem(
                 icon: Icons.warning_amber_rounded,
+                category: _SettingsCategory.account,
                 iconColor: colors.warning,
                 title: '凭据兼容模式',
                 subtitle: '已启用 · Root 权限可读取登录凭据',

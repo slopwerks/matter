@@ -7,6 +7,8 @@ import '../../widgets/floating_app_bar.dart';
 import '../../widgets/grouped_rows.dart';
 import '../../widgets/material_press.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/material_root_header.dart';
+import 'settings_choice_chips.dart';
 import 'material_color_palette.dart';
 import 'material_scheme_preview.dart';
 
@@ -119,39 +121,57 @@ class MaterialColorSettingsPage extends ConsumerWidget {
                                 : '系统未提供配色，使用所选主题色',
                           ),
                         ),
-                        ListTile(
-                          leading: const Icon(Icons.tonality_rounded),
-                          title: const Text('色彩风格'),
-                          subtitle: systemStyle ? const Text('由系统配色决定') : null,
-                          enabled: !systemStyle,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            spacing: 4,
-                            children: [
-                              Text(
-                                systemStyle
-                                    ? '系统'
-                                    : _colorStyles
-                                          .firstWhere(
-                                            (style) =>
-                                                style.value ==
-                                                settings.colorStyle,
-                                            orElse: () => _colorStyles.first,
-                                          )
-                                          .label,
-                                style: theme.textTheme.bodyMedium,
+                        if (!systemStyle &&
+                            !MaterialRootHeader.isCompact(context))
+                          ListTile(
+                            leading: const Icon(Icons.tonality_rounded),
+                            title: const Text('色彩风格'),
+                            subtitle: SettingsChoiceChips(
+                              options: _colorStyles,
+                              selected: _colorStyles.firstWhere(
+                                (s) => s.value == settings.colorStyle,
+                                orElse: () => _colorStyles.first,
                               ),
-                              const Icon(Icons.unfold_more_rounded, size: 20),
-                            ],
-                          ),
-                          onTap: systemStyle
-                              ? null
-                              : () => _showColorStyles(
-                                  context,
-                                  settings,
-                                  notifier.setColorStyle,
+                              label: (s) => s.label,
+                              onChanged: (s) => notifier.setColorStyle(s.value),
+                            ),
+                          )
+                        else
+                          ListTile(
+                            leading: const Icon(Icons.tonality_rounded),
+                            title: const Text('色彩风格'),
+                            subtitle: systemStyle
+                                ? const Text('由系统配色决定')
+                                : null,
+                            enabled: !systemStyle,
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              spacing: 4,
+                              children: [
+                                Text(
+                                  systemStyle
+                                      ? '系统'
+                                      : _colorStyles
+                                            .firstWhere(
+                                              (style) =>
+                                                  style.value ==
+                                                  settings.colorStyle,
+                                              orElse: () => _colorStyles.first,
+                                            )
+                                            .label,
+                                  style: theme.textTheme.bodyMedium,
                                 ),
-                        ),
+                                const Icon(Icons.unfold_more_rounded, size: 20),
+                              ],
+                            ),
+                            onTap: systemStyle
+                                ? null
+                                : () => _showColorStyles(
+                                    context,
+                                    settings,
+                                    notifier.setColorStyle,
+                                  ),
+                          ),
                       ],
                     ),
                   ],

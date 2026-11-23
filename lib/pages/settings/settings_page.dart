@@ -12,7 +12,6 @@ import '../../features/push/push_providers.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
-import '../../providers/material_color_provider.dart';
 import '../../providers/interaction_mode_provider.dart';
 import '../../providers/startup_page_provider.dart';
 import '../../providers/session_credential_store.dart';
@@ -23,8 +22,6 @@ import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/material_root_header.dart';
 import '../../widgets/app_search_field.dart';
-import '../../widgets/floating_app_bar.dart';
-import '../../widgets/max_content_width.dart';
 import '../../widgets/material_list_detail.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/material_press.dart';
@@ -43,7 +40,7 @@ import 'timeline_event_settings_page.dart';
 import 'log_viewer_page.dart';
 import 'material_color_settings_page.dart';
 import 'notification_settings_page.dart';
-import 'material_theme_style_picker.dart';
+import 'theme_settings_page.dart';
 import 'settings_profile_card.dart';
 import 'profile_edit_page.dart';
 
@@ -308,9 +305,7 @@ class AccountSwitchController {
 }
 
 class SettingsPage extends ConsumerStatefulWidget {
-  const SettingsPage({super.key}) : _category = null;
-  const SettingsPage._detail(this._category);
-  final _SettingsCategory? _category;
+  const SettingsPage({super.key});
 
   @override
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
@@ -565,6 +560,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       },
     );
     final sections = _sections(currentUser, activeUserId);
+    if (context.isMaterial) {
+      final groups = <_SettingsCategory, List<_SettingItem>>{};
+      for (final section in sections) {
+        for (final item in section.items) {
+          (groups[item.category ?? section.category] ??= []).add(item);
+        }
+      }
+      if (currentAccountId != null) {
+        final busy =
+            _addingAccount ||
+            _removingAccountId != null ||
+            _switchingAccountId != null;
+        final accountItems = groups.putIfAbsent(
+          _SettingsCategory.account,
+          () => [],
+        );
+        for (final account in _accounts.where(
+          (account) => account.userId != currentAccountId,
+        )) {
+          accountItems.add(
+            _SettingItem(
+              icon: Icons.person_remove_outlined,
+              title: '移除 ${_formatUserId(account.userId)}',
+              subtitle: '',
+              onTap: busy ? null : () => _removeAccount(account.userId),
+            ),
+          );
+        }
+        accountItems.add(
+          _SettingItem(
+            icon: Icons.logout_rounded,
+            iconColor: colors.error,
+            title: '退出登录',
+            subtitle: '',
+            onTap: busy ? null : () => _removeAccount(currentAccountId),
+          ),
+        );
+      }
+      return _materialDirectory(profile, groups);
+    }
     final accountActions = <Widget>[
       if (currentAccountId != null) ...[
         const SizedBox(height: NeuSpacing.xl),
@@ -618,15 +653,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
       ],
     ];
-    if (context.isMaterial) {
-      final groups = <_SettingsCategory, List<_SettingItem>>{};
-      for (final section in sections) {
-        for (final item in section.items) {
-          (groups[item.category ?? section.category] ??= []).add(item);
-        }
-      }
-      return _materialDirectory(profile, groups, accountActions);
-    }
     final header = MaterialRootHeader(
       title: '设置',
       compact: MaterialRootHeader.isCompact(context),
@@ -712,50 +738,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return server.isNotEmpty ? '$local ($server)' : local;
   }
 
-  String _themeStyleLabel(AppThemeStyle style) => switch (style) {
-    AppThemeStyle.neuLight => '新拟物 · 浅色',
-    AppThemeStyle.neuDark => '新拟物 · 深色',
-    AppThemeStyle.neuSystem => '新拟物 · 跟随系统',
-    AppThemeStyle.materialLight => 'Material · 浅色',
-    AppThemeStyle.materialDark => 'Material · 深色',
-    AppThemeStyle.materialSystem => 'Material · 跟随系统',
-  };
-
-  Future<void> _showThemeStylePicker() async {
-    final current = ref.read(appThemeStyleProvider);
-    if (context.isMaterial) {
-      final schemes = ref.read(materialColorSchemesProvider);
-      await showMaterialThemeStylePicker(
-        context,
-        current: current,
-        light: schemes.light,
-        dark: schemes.dark,
-        onChanged: (style) =>
-            ref.read(appThemeStyleProvider.notifier).setStyle(style),
-      );
-      return;
-    }
-    await showNeuSheet<void>(
-      context: context,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final style in AppThemeStyle.values)
-            NeuSheetItem(
-              icon: style == current
-                  ? Icons.check_circle_rounded
-                  : Icons.circle_outlined,
-              label: _themeStyleLabel(style),
-              onTap: () {
-                ref.read(appThemeStyleProvider.notifier).setStyle(style);
-                Navigator.of(context).pop();
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildGroup({required String title, required List<Widget> items}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -833,6 +815,7 @@ class _SettingItem extends StatelessWidget {
   final String subtitle;
   final VoidCallback? onTap;
   final Widget? trailing;
+  final String keywords;
 
   /// 这一行是「在此处选择一个值」(弹出选择),而不是「进入下一层」。
   /// 两者的箭头不同:选择用上下双箭头,进入用右箭头 —— 否则用户在点之前
@@ -847,6 +830,7 @@ class _SettingItem extends StatelessWidget {
     this.iconColor,
     this.onTap,
     this.trailing,
+    this.keywords = '',
     this.selects = false,
     this.category,
   });

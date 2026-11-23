@@ -53,8 +53,8 @@ void main() {
 
   for (final width in [320.0, 600.0, 840.0, 1200.0, 1600.0]) {
     for (final style in [
-      AppThemeStyle.materialLight,
-      AppThemeStyle.materialDark,
+      (family: ThemeFamily.material, themeMode: ThemeMode.light),
+      (family: ThemeFamily.material, themeMode: ThemeMode.dark),
     ]) {
       testWidgets('$style navigates every main page at width $width', (
         tester,
@@ -145,37 +145,53 @@ void main() {
               .first;
           expect(
             tester.widget<Scaffold>(scaffold).extendBodyBehindAppBar,
-            isTrue,
+            destination.label != '设置',
           );
           expect(find.text(destination.label), findsWidgets);
           expect(tester.takeException(), isNull);
         }
-        await tester.ensureVisible(find.text('外观与显示'));
-        await tester.tap(find.text('外观与显示'));
+        expect(find.text('外观与显示'), findsOneWidget);
+        expect(find.widgetWithText(ListTile, '外观与显示'), findsNothing);
+        await tester.ensureVisible(find.text('Material 配色'));
         await tester.pumpAndSettle();
-        expect(find.text('消息头像吸附'), findsOneWidget);
         expect(find.text('消息气泡阴影'), findsNothing);
         await tester.tap(find.text('Material 配色'));
         await tester.pumpAndSettle();
         expect(find.byType(MaterialColorSettingsPage), findsOneWidget);
         await tester.tap(find.byType(BackButton));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('主题'));
-        await tester.pumpAndSettle();
-        expect(find.text('Material · 跟随系统'), findsOneWidget);
-        await tester.tap(find.text('新拟物 · 跟随系统'));
-        await tester.pumpAndSettle();
-        expect(container.read(appThemeStyleProvider), AppThemeStyle.neuSystem);
-        expect(find.byType(MaterialTabNavigationBar), findsNothing);
-        expect(find.text('Material 配色'), findsNothing);
-        await tester.tap(find.text('主题'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Material · 深色'));
-        await tester.pumpAndSettle();
+        Future<void> press(Finder target) async {
+          await Scrollable.ensureVisible(tester.element(target), alignment: .5);
+          await tester.pumpAndSettle();
+          await tester.tap(target);
+          await tester.pumpAndSettle();
+        }
+
+        expect(find.byType(ChoiceChip), findsNothing);
         expect(
-          container.read(appThemeStyleProvider),
-          AppThemeStyle.materialDark,
+          find.text('Material · ${style.themeMode.label}'),
+          findsOneWidget,
         );
+        await press(find.text('主题'));
+        await press(find.byKey(const ValueKey(ThemeFamily.neu)));
+        await press(find.text('应用主题'));
+        expect(container.read(appThemeStyleProvider), (
+          family: ThemeFamily.neu,
+          themeMode: style.themeMode,
+        ));
+        expect(find.byType(MaterialTabNavigationBar), findsNothing);
+        await press(find.text('主题'));
+        await press(find.byKey(const ValueKey(ThemeMode.system)));
+        await press(find.byKey(const ValueKey(ThemeFamily.material)));
+        await press(find.text('应用主题'));
+        expect(container.read(appThemeStyleProvider), (
+          family: ThemeFamily.material,
+          themeMode: ThemeMode.system,
+        ));
+        await press(find.text('主题'));
+        await press(find.byKey(const ValueKey(ThemeMode.dark)));
+        await press(find.text('应用主题'));
+        expect(container.read(appThemeStyleProvider).themeMode, ThemeMode.dark);
         expect(
           desktop
               ? find.byKey(const ValueKey('material-navigation-rail'))
