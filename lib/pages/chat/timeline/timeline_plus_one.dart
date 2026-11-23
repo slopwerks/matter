@@ -17,19 +17,21 @@ String? _repeatKey(ChatMessage message) {
 
 /// Ids of messages that offer the inline "+1" button.
 ///
-/// Only the newest message of [messages] qualifies, and only while its text
-/// already appeared earlier in the timeline: the point is to bump that copy
-/// back into view. As soon as anything newer arrives the button is gone.
+/// Only the newest message qualifies, whoever sent it, and only while it
+/// directly repeats the message before it: the button bumps a text that was
+/// just said, not any older copy further up the timeline.
 Set<String> plusOneEligibleIds(List<ChatMessage> messages) {
-  if (messages.isEmpty) return const {};
+  if (messages.length < 2) return const {};
   final newest = messages.last;
   final key = _repeatKey(newest);
   if (key == null) return const {};
-  var copies = 0;
-  for (final message in messages) {
-    if (_repeatKey(message) == key) copies++;
+  for (var index = messages.length - 2; index >= 0; index--) {
+    final previous = messages[index];
+    // The same event listed twice is one message, not a repeat.
+    if (previous.id == newest.id) continue;
+    return _repeatKey(previous) == key ? {newest.id} : const {};
   }
-  return copies >= 2 ? {newest.id} : const {};
+  return const {};
 }
 
 /// Small "+1" chip shown beside a repeated message: tapping it re-sends the
