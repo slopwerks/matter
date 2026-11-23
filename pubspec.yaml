@@ -93,6 +93,7 @@ dependencies:
   connectivity_plus: ^7.0.0
 # Keep the Apple native libraries on the same SPM-capable upstream revision.
   path: any
+  lpinyin: ^2.0.3
 dependency_overrides:
   media_kit_libs_ios_video:
     git:

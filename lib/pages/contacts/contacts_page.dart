@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lpinyin/lpinyin.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
@@ -253,6 +254,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
                                     c.name.toLowerCase().contains(
                                       _searchQuery,
                                     ) ||
+                                    c.id.toLowerCase().contains(_searchQuery) ||
                                     c.status.toLowerCase().contains(
                                       _searchQuery,
                                     ),
@@ -260,14 +262,36 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
                               .toList();
 
                     if (filtered.isEmpty) {
-                      return const SliverToBoxAdapter(
+                      return SliverToBoxAdapter(
                         child: Padding(
-                          padding: EdgeInsets.all(NeuSpacing.xl),
-                          child: _EmptyView(),
+                          padding: const EdgeInsets.all(NeuSpacing.xl),
+                          child: _EmptyView(
+                            onClear: _searchQuery.isEmpty
+                                ? null
+                                : () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                  },
+                          ),
                         ),
                       );
                     }
 
+                    final initials = {
+                      if (context.isMaterial)
+                        for (final contact in filtered)
+                          contact.id: _directoryInitial(contact),
+                    };
+                    final ordered = context.isMaterial
+                        ? (filtered.toList()..sort((a, b) {
+                            final group = initials[a.id]!.compareTo(
+                              initials[b.id]!,
+                            );
+                            return group == 0
+                                ? a.name.compareTo(b.name)
+                                : group;
+                          }))
+                        : filtered;
                     return SliverPadding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: NeuSpacing.lg,
@@ -282,13 +306,34 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
                               : 8 + 48 + 14,
                         ),
                         itemBuilder: (context, index) {
-                          final contact = filtered[index];
-                          return _ContactTile(
+                          final contact = ordered[index];
+                          final tile = _ContactTile(
                             key: ValueKey(contact.id),
                             contact: contact,
                             creatingDm: _creatingDms.contains(contact.id),
                             onMessage: (avatarUrl) =>
                                 _createDm(contact, avatarUrl),
+                          );
+                          if (!context.isMaterial) return tile;
+                          final letter = initials[contact.id]!;
+                          if (index != 0 &&
+                              letter == initials[ordered[index - 1].id]) {
+                            return tile;
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(NeuSpacing.md),
+                                child: Text(
+                                  letter,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium,
+                                ),
+                              ),
+                              tile,
+                            ],
                           );
                         },
                       ),
@@ -370,8 +415,18 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
 }
 
 /// 无联系人 / 搜索无结果的占位。
+String _directoryInitial(Contact contact) {
+  final name = contact.name.trim();
+  if (name.isEmpty) return '#';
+  final first =
+      PinyinHelper.getShortPinyin(name).characters.firstOrNull?.toUpperCase() ??
+      '#';
+  return RegExp(r'^\p{L}', unicode: true).hasMatch(first) ? first : '#';
+}
+
 class _EmptyView extends StatelessWidget {
-  const _EmptyView();
+  const _EmptyView({this.onClear});
+  final VoidCallback? onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -380,9 +435,15 @@ class _EmptyView extends StatelessWidget {
       children: [
         const NeuIconButton(icon: Icons.contacts_rounded, size: 72),
         const SizedBox(height: NeuSpacing.md),
-        Text('暂无联系人', style: Theme.of(context).textTheme.bodyLarge),
+        Text(
+          onClear == null ? '暂无联系人' : '没有匹配的联系人',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
         const SizedBox(height: NeuSpacing.xs),
-        Text('加入房间后，成员会显示在这里', style: Theme.of(context).textTheme.bodySmall),
+        if (onClear != null)
+          TextButton(onPressed: onClear, child: const Text('清除搜索'))
+        else
+          Text('加入房间后，成员会显示在这里', style: Theme.of(context).textTheme.bodySmall),
       ],
     );
   }
