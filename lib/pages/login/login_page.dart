@@ -84,6 +84,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   // Tab state: 0 = login, 1 = register, 2 = token login
   int _tabIndex = 0;
+  bool _choseLoginMethod = false;
 
   @override
   void initState() {
@@ -594,19 +595,72 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final hasWelcome =
+        context.isMaterial &&
+        !widget.addingAccount &&
+        !widget.resumeSession &&
+        widget.initialUserId == null &&
+        widget.initialHomeserver == null;
+    final welcome = hasWelcome && !_choseLoginMethod;
+    void choose(int mode) => setState(() {
+      _tabIndex = mode;
+      _choseLoginMethod = true;
+      _uiaaSession = null;
+      _clearError();
+    });
+    void backToWelcome() => setState(() => _choseLoginMethod = false);
     return PopScope(
-      canPop: !widget.addingAccount || (!_isLoading && !_hasCompletedRustLogin),
+      canPop:
+          (!hasWelcome || welcome) &&
+          (!widget.addingAccount || (!_isLoading && !_hasCompletedRustLogin)),
+      onPopInvokedWithResult: (popped, _) {
+        if (!popped && hasWelcome && !_isLoading && !_hasCompletedRustLogin) {
+          backToWelcome();
+        }
+      },
       child: Scaffold(
         extendBodyBehindAppBar: widget.addingAccount && !context.isMaterial,
         appBar: widget.addingAccount
             ? buildFloatingAppBar(title: const Text('添加账号'))
+            : hasWelcome && !welcome
+            ? buildFloatingAppBar(
+                title: Text(['登录', '创建账号', 'Token 登录'][_tabIndex]),
+                leading: IconButton(
+                  onPressed: _isLoading || _hasCompletedRustLogin
+                      ? null
+                      : backToWelcome,
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: '返回',
+                ),
+              )
             : null,
         backgroundColor: context.neu.base,
         body: LoginLayout(
           addingAccount: widget.addingAccount,
           resumeSession: widget.resumeSession,
-          modeSelector: _buildModeChips(),
-          form: _buildFormCard(),
+          modeSelector: hasWelcome
+              ? const SizedBox.shrink()
+              : _buildModeChips(),
+          form: welcome
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FilledButton(
+                      onPressed: () => choose(0),
+                      child: const Text('登录已有账号'),
+                    ),
+                    const SizedBox(height: NeuSpacing.sm),
+                    FilledButton.tonal(
+                      onPressed: () => choose(1),
+                      child: const Text('创建账号'),
+                    ),
+                    TextButton(
+                      onPressed: () => choose(2),
+                      child: const Text('其他登录方式 · Token'),
+                    ),
+                  ],
+                )
+              : _buildFormCard(),
         ),
       ),
     );
