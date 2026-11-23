@@ -69,9 +69,10 @@ class ComposerActionsBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final material = context.isMaterial;
     return ComposerLayout(
       desktop: expanded,
-      showMore: showMore,
+      showMore: showMore && !material,
       attachments: attachments,
       editor: editor,
       emojiButton: _toolButton(
@@ -80,19 +81,29 @@ class ComposerActionsBar extends StatelessWidget {
         onPressed: sendBusy ? null : onToggleEmoji,
       ),
       attachmentButton: Builder(
-        builder: (buttonContext) => Tooltip(
-          message: inlineImages ? '选择图片' : '附件',
-          // The outer long press opens tools instead of showing the tooltip.
-          triggerMode: TooltipTriggerMode.manual,
-          child: GestureDetector(
-            onLongPress: sendBusy ? null : () => onShowTools(buttonContext),
-            child: _toolButton(
-              icon: inlineImages ? Icons.image_outlined : Icons.add_rounded,
-              selected: attachmentSelected,
-              onPressed: sendBusy ? null : onToggleAttachment,
+        builder: (buttonContext) {
+          if (material && showMore) {
+            return _toolButton(
+              icon: Icons.add_rounded,
+              tooltip: '附件',
+              onPressed: sendBusy ? null : () => onShowTools(buttonContext),
+            );
+          }
+          final imageShortcut = !material && inlineImages;
+          return Tooltip(
+            message: imageShortcut ? '选择图片' : '附件',
+            // The outer long press opens tools instead of showing the tooltip.
+            triggerMode: TooltipTriggerMode.manual,
+            child: GestureDetector(
+              onLongPress: sendBusy ? null : () => onShowTools(buttonContext),
+              child: _toolButton(
+                icon: imageShortcut ? Icons.image_outlined : Icons.add_rounded,
+                selected: attachmentSelected,
+                onPressed: sendBusy ? null : onToggleAttachment,
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
       moreButton: Builder(
         builder: (buttonContext) => _toolButton(

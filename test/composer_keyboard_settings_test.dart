@@ -270,7 +270,14 @@ void main() {
             } else {
               expect(toolbar, findsNothing);
               expect(emptyRect.height, lessThan(96));
-              if (material) expect(emptyRect.width, lessThanOrEqualTo(720));
+              if (material) {
+                expect(emptyRect.width, lessThanOrEqualTo(720));
+                final surface = tester.getRect(
+                  find.byKey(const ValueKey('message-input-surface')),
+                );
+                final plus = tester.getCenter(find.byIcon(Icons.add_rounded));
+                expect(plus.dx - surface.left, surface.bottom - plus.dy);
+              }
             }
             await tester.enterText(
               field,
@@ -281,8 +288,10 @@ void main() {
             expect(expandedRect.height, greaterThan(emptyRect.height));
             expect(expandedRect.height, lessThanOrEqualTo(180));
             await tester.enterText(field, 'first\ndraft');
-            await tester.tap(find.byTooltip('更多'));
+            if (material) expect(find.byTooltip('更多'), findsNothing);
+            await tester.tap(find.byTooltip(material ? '附件' : '更多'));
             await tester.pumpAndSettle();
+            if (material) expect(find.text('发送图片'), findsOneWidget);
             expect(find.text('Markdown 编辑器'), findsOneWidget);
             await tester.tap(find.text('发送与换行按键'));
             await tester.pumpAndSettle();

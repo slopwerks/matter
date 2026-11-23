@@ -505,8 +505,10 @@ void main() {
           .setMockMethodCallHandler(selector, null);
       await dir.delete(recursive: true);
     });
-    await tester.pumpWidget(_input(container));
-    await tester.tap(find.byIcon(Icons.image_outlined));
+    await tester.pumpWidget(_input(container, material: true));
+    await tester.tap(find.byTooltip('附件'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('发送图片'));
     await finishUpload(tester);
     expect(requests, 1);
     expect(find.byTooltip('移除图片'), findsOneWidget);

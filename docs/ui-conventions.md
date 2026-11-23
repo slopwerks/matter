@@ -326,6 +326,8 @@ Material uses one floating `surfaceContainerHigh` capsule at every pane width:
 28 dp corners, a 56 dp default height and a 720 dp maximum surface width, with
 16 dp side and 12 dp bottom margins. Its editor has no nested filled field.
 Neu retains its compact input and the wide editor with a top divider.
+Material has one plus button for attachments and chat tools. On desktops and in keyboard/mouse
+mode it opens a menu with images first. On mobile touch it opens the picker.
 Composer control shapes live in `material_theme.dart`: Material uses circular
 icon controls and pill-shaped send buttons, while Neu retains its compact
 rectangular controls. Thumbnail corners follow each skin's preview shape.
@@ -339,6 +341,9 @@ secondary-click actions, which remain available in every mode.
 Pane widths control layout; changing interaction mode never forces a wide
 layout. The 600 dp expanded-editor threshold applies to Neu; Material keeps
 its compact capsule at all widths.
+Attachment and more controls sit before the editor; emoji sits after it, next
+to send. Material capsule controls share a 48 dp bottom row with centered icons,
+including the smaller keyboard/mouse targets.
 Tablets follow system rotation, while phones retain the portrait preference.
 
 Material interaction/startup choices use grouped radio rows with a

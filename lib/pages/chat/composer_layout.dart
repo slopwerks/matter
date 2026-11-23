@@ -151,10 +151,10 @@ class ComposerLayout extends StatelessWidget {
           Row(
             key: const ValueKey('desktop-composer-toolbar'),
             children: [
-              emojiButton,
-              attachmentButton,
               moreButton,
+              attachmentButton,
               const Spacer(),
+              emojiButton,
               sendButton,
             ],
           ),
@@ -169,24 +169,19 @@ class ComposerLayout extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            emojiButton,
+            if (showMore) _alignedTool(context, moreButton),
+            _alignedTool(context, attachmentButton),
             SizedBox(width: context.isMaterial ? 2 : 6),
             Expanded(child: editor),
             SizedBox(width: context.isMaterial ? 2 : 6),
             SizedBox(
-              width: showMore
-                  ? 140
-                  : context.isMaterial
-                  ? 92
-                  : 94,
-              height: showMore ? 48 : 44,
+              width: context.isMaterial ? 92 : 94,
+              height: context.isMaterial || showMore
+                  ? kMinInteractiveDimension
+                  : 44,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  attachmentButton,
-                  if (showMore) moreButton,
-                  sendButton,
-                ],
+                children: [emojiButton, sendButton],
               ),
             ),
           ],
@@ -194,4 +189,11 @@ class ComposerLayout extends StatelessWidget {
       ],
     );
   }
+
+  Widget _alignedTool(BuildContext context, Widget button) => context.isMaterial
+      ? SizedBox.square(
+          dimension: kMinInteractiveDimension,
+          child: Center(child: button),
+        )
+      : button;
 }

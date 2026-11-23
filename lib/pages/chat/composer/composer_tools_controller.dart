@@ -190,11 +190,23 @@ class ComposerToolsController {
           : null,
       context: hostContext,
       position: RelativeRect.fromRect(
-        buttonBox.localToGlobal(Offset.zero) & buttonBox.size,
+        buttonBox.localToGlobal(Offset.zero, ancestor: overlay) &
+            buttonBox.size,
         Offset.zero & overlay.size,
       ),
       items: [
         if (isDesktop() || keyboardMouse()) ...[
+          if (hostContext.isMaterial)
+            const PopupMenuItem<String>(
+              value: 'image',
+              child: Row(
+                children: [
+                  Icon(Icons.image_outlined, size: 22),
+                  SizedBox(width: 12),
+                  Text('发送图片'),
+                ],
+              ),
+            ),
           const PopupMenuItem<String>(
             value: 'file',
             child: Row(
@@ -257,6 +269,7 @@ class ComposerToolsController {
         ),
       ],
     );
+    if (isMounted() && action == 'image') await pickImages();
     if (isMounted() && action == 'file') {
       final files = await openFiles();
       if (isMounted() && files.isNotEmpty) {
