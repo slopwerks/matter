@@ -52,7 +52,7 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
   Timer? _debounce;
   int _revision = 0;
   List<rust.DirectoryRoom> _rooms = [];
-  final _membership = <String, String>{};
+  final _membership = <String, ({String previous, String state})>{};
   final _working = <String>{};
   String? _next;
   String? _error;
@@ -129,6 +129,14 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
       }
       if (!_current || revision != _revision) return;
       setState(() {
+        for (final room in result.rooms) {
+          final pending = _membership[room.id];
+          // Keep immediate feedback only while sync still reports the old
+          // state. A confirmed change (including an invitation) supersedes it.
+          if (pending != null && room.state != pending.previous) {
+            _membership.remove(room.id);
+          }
+        }
         final byId = {
           if (since != null)
             for (final room in _rooms) room.id: room,
@@ -198,7 +206,10 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
         knock: knock,
       );
       if (!mounted || !_current) return;
-      _membership[room.id] = knock ? 'knocked' : 'joined';
+      _membership[room.id] = (
+        previous: room.state,
+        state: knock ? 'knocked' : 'joined',
+      );
       ref.invalidate(allChatRoomsProvider);
       ref.invalidate(allUngroupedRoomsProvider);
       ref.invalidate(spacesProvider);
@@ -226,7 +237,7 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
 
   Widget _action(rust.DirectoryRoom room) {
     if (widget.spaceAddress && !room.isSpace) return const Text('未识别为空间');
-    final state = _membership[room.id] ?? room.state;
+    final state = _membership[room.id]?.state ?? room.state;
     final busy = _working.contains(room.id);
     final knock =
         room.joinRule == 'knock' || room.joinRule == 'knock_restricted';

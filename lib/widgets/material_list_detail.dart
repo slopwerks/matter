@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'material_adaptive_shell.dart';
 import 'conversation_routes.dart';
+import 'chat_route_scope.dart';
 import 'max_content_width.dart';
 import 'pane_transitions.dart';
 
@@ -41,6 +42,7 @@ class MaterialListDetail extends StatefulWidget {
 
 class _MaterialListDetailState extends State<MaterialListDetail> {
   final _navigator = GlobalKey<NavigatorState>();
+  final _chatObserver = ChatRouteObserver();
   late final _observer = _DetailObserver(_routesChanged);
   bool _hasDetail = false;
 
@@ -133,26 +135,34 @@ class _MaterialListDetailState extends State<MaterialListDetail> {
                                       },
                                     ),
                             ),
-                            child: Navigator(
-                              key: _navigator,
-                              observers: [_observer],
-                              onGenerateRoute: (_) => MaterialPageRoute<void>(
-                                builder: (context) =>
-                                    !MaterialAdaptiveShell.windowOf(context)!
-                                        .hasSplit
-                                    ? const SizedBox.expand()
-                                    : Scaffold(
-                                        body: Center(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(widget.emptyIcon, size: 48),
-                                              const SizedBox(height: 16),
-                                              Text(widget.emptyLabel),
-                                            ],
+                            child: ChatRouteScope(
+                              observer: _chatObserver,
+                              active: widget.active,
+                              ancestors: ChatRouteScope.routesOf(context),
+                              child: Navigator(
+                                key: _navigator,
+                                observers: [_observer, _chatObserver],
+                                onGenerateRoute: (_) => MaterialPageRoute<void>(
+                                  builder: (context) =>
+                                      !MaterialAdaptiveShell.windowOf(context)!
+                                          .hasSplit
+                                      ? const SizedBox.expand()
+                                      : Scaffold(
+                                          body: Center(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  widget.emptyIcon,
+                                                  size: 48,
+                                                ),
+                                                const SizedBox(height: 16),
+                                                Text(widget.emptyLabel),
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                      ),
+                                ),
                               ),
                             ),
                           ),

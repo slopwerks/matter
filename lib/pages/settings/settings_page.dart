@@ -466,8 +466,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final homeserver = ref.read(currentUserProvider)?.homeserver;
     setState(() => _addingAccount = true);
     try {
-      final added = await MaterialListDetail.push<bool>(
-        context,
+      // Activating the new account replaces the tab tree before its first
+      // sync completes. Keep the login route alive above that tree.
+      final added = await Navigator.of(context, rootNavigator: true).push<bool>(
         MaterialPageRoute(
           builder: (_) =>
               LoginPage(initialHomeserver: homeserver, addingAccount: true),

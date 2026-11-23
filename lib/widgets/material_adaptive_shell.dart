@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/tokens.dart';
 import 'mobile_tab_view.dart';
 import 'conversation_routes.dart';
+import 'chat_route_scope.dart';
 import 'pane_transitions.dart';
 import 'compact_capsule_transition.dart';
 import 'material_tab_navigation_bar.dart';
@@ -658,6 +659,7 @@ class MaterialConversationLayout extends StatefulWidget {
 
 class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
     with _RememberWidth<MaterialConversationLayout> {
+  final _chatObserver = ChatRouteObserver();
   late final _observer = ConversationRouteObserver((open) {
     if (mounted && open != widget.routesOpen) {
       widget.onRoutesChanged(open);
@@ -764,14 +766,19 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
                                               PaneFadeTransitions.theme,
                                         )
                                       : Theme.of(context),
-                                  child: Navigator(
-                                    key: widget.navigator,
-                                    observers: [_observer],
-                                    onGenerateRoute: (_) =>
-                                        MaterialPageRoute<void>(
-                                          builder: (_) =>
-                                              const SizedBox.shrink(),
-                                        ),
+                                  child: ChatRouteScope(
+                                    observer: _chatObserver,
+                                    active: widget.active,
+                                    ancestors: ChatRouteScope.routesOf(context),
+                                    child: Navigator(
+                                      key: widget.navigator,
+                                      observers: [_observer, _chatObserver],
+                                      onGenerateRoute: (_) =>
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                const SizedBox.shrink(),
+                                          ),
+                                    ),
                                   ),
                                 ),
                               ),

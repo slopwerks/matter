@@ -95,10 +95,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.text(userId),
+        find.text('成员 1'),
         150,
         scrollable: find.byType(Scrollable).first,
       );
+      await tester.tap(find.text('成员 1'));
+      await tester.pumpAndSettle();
+      expect(find.text(userId), findsOneWidget);
       expect(find.byType(MaterialMemberIdentity), findsOneWidget);
       expect(find.byType(DecoratedSliver), findsNothing);
       expect(tester.widget<Text>(find.text(userId)).maxLines, isNull);

@@ -25,6 +25,8 @@ import 'package:matter/src/rust/api/matrix/unread.dart' as unread;
 import 'package:matter/src/rust/api/matrix/history.dart' as history;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/widgets/neu_surface.dart';
+import 'package:matter/widgets/material_adaptive_shell.dart';
+import 'package:matter/widgets/material_list_detail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:media_kit/media_kit.dart' as media;
 import 'package:matter/features/audio/audio_playback_session.dart';
@@ -444,6 +446,190 @@ void main() {
     rustApi.roomSubscribeBarrier = null;
     rustApi.roomUnsubscribeBarrier = null;
     SharedPreferences.setMockInitialValues({});
+  });
+
+  Future<ProviderContainer> nestedChat(
+    WidgetTester tester, {
+    ValueNotifier<int>? tab,
+  }) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer(
+      overrides: [
+        ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+        roomMembersProvider.overrideWith((ref, id) async => []),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = '@alice:example.org';
+    final position = ValueNotifier(0.0);
+    final selected = tab ?? ValueNotifier(0);
+    addTearDown(position.dispose);
+    if (tab == null) addTearDown(selected.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: neuTestTheme(material: true),
+          navigatorObservers: [chatRouteObserver],
+          home: ValueListenableBuilder<int>(
+            valueListenable: selected,
+            builder: (_, index, _) => MaterialAdaptiveShell(
+              window: MaterialWindowClass.large,
+              index: index,
+              onNavigate: (i) => selected.value = i,
+              position: position,
+              profile: const SizedBox(),
+              railAccount: const SizedBox(),
+              railActions: (_) => const SizedBox(),
+              railSpaces: const SizedBox(),
+              unreadCount: 0,
+              chatOpen: false,
+              pages: [
+                MaterialListDetail(
+                  active: index == 0,
+                  emptyLabel: 'empty',
+                  emptyIcon: Icons.chat,
+                  list: Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () => MaterialListDetail.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => const ChatDetailPage(
+                            roomId: '!room:example.org',
+                            roomName: 'Room',
+                          ),
+                        ),
+                      ),
+                      child: const Text('open'),
+                    ),
+                  ),
+                ),
+                const Scaffold(body: Text('other tab')),
+                const SizedBox(),
+                const SizedBox(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(container.read(currentRoomIdProvider), '!room:example.org');
+    expect(
+      container.read(roomViewOwnerProvider('!room:example.org')),
+      '@alice:example.org',
+    );
+    return container;
+  }
+
+  for (final root in [false, true]) {
+    testWidgets(
+      'nested chat relinquishes read ownership when covered (root: $root)',
+      (tester) async {
+        final container = await nestedChat(tester);
+        final nav = Navigator.of(
+          tester.element(find.byType(ChatDetailPage)),
+          rootNavigator: root,
+        );
+        unawaited(
+          nav.push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('cover')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          container.read(roomViewOwnerProvider('!room:example.org')),
+          isNull,
+          reason: 'A chat hidden by another nested route must not auto-read incoming messages',
+        );
+        expect(container.read(currentRoomIdProvider), isNull);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          container.read(roomViewOwnerProvider('!room:example.org')),
+          isNull,
+        );
+        nav.pop();
+        await tester.pumpAndSettle();
+        expect(
+          container.read(roomViewOwnerProvider('!room:example.org')),
+          '@alice:example.org',
+        );
+      },
+    );
+  }
+
+  testWidgets(
+    'root popup suspends nested chat reads and preserves subscriptions',
+    (tester) async {
+      final container = await nestedChat(tester);
+      final subscriptions = rustApi.roomSubscriptionAccounts.length;
+      final context = tester.element(find.byType(ChatDetailPage));
+      unawaited(
+        showDialog<void>(
+          context: context,
+          builder: (_) => const AlertDialog(content: Text('cover')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        container.read(roomViewOwnerProvider('!room:example.org')),
+        isNull,
+      );
+      expect(container.read(currentRoomIdProvider), '!room:example.org');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(roomViewOwnerProvider('!room:example.org')),
+        isNull,
+      );
+      Navigator.of(context, rootNavigator: true).pop();
+      await tester.pumpAndSettle();
+      expect(
+        container.read(roomViewOwnerProvider('!room:example.org')),
+        '@alice:example.org',
+      );
+      expect(rustApi.roomSubscriptionAccounts.length, subscriptions);
+    },
+  );
+
+  testWidgets('nested chat relinquishes read ownership on tab switch', (
+    tester,
+  ) async {
+    final tab = ValueNotifier(0);
+    addTearDown(tab.dispose);
+    final container = await nestedChat(tester, tab: tab);
+    tab.value = 1;
+    await tester.pumpAndSettle();
+    expect(
+      container.read(roomViewOwnerProvider('!room:example.org')),
+      isNull,
+      reason: 'A retained chat in an inactive tab must not auto-read incoming messages',
+    );
+    expect(container.read(currentRoomIdProvider), isNull);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(container.read(roomViewOwnerProvider('!room:example.org')), isNull);
+    tab.value = 0;
+    await tester.pumpAndSettle();
+    expect(
+      container.read(roomViewOwnerProvider('!room:example.org')),
+      '@alice:example.org',
+    );
   });
 
   for (final crossRoom in [false, true]) {

@@ -3,8 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-
-import '../../widgets/material_list_detail.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +30,8 @@ import '../../src/rust/api/matrix/unread.dart' as unread;
 import '../../theme/neu_colors.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/chat_route_scope.dart';
+import '../../widgets/material_list_detail.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_surface.dart';
@@ -62,61 +63,7 @@ import 'unread_navigation.dart';
 import 'material_unread_pill.dart';
 import 'action_failure_message.dart';
 
-final chatRouteObserver = _ChatRouteObserver();
-
-class _ChatRouteObserver extends RouteObserver<ModalRoute<dynamic>> {
-  final _coveringRoutes = <ModalRoute<dynamic>, Route<dynamic>>{};
-
-  bool isCoveredByPopup(ModalRoute<dynamic>? route) =>
-      route != null && _coveringRoutes[route] is PopupRoute<dynamic>;
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute case final ModalRoute<dynamic> previousModalRoute) {
-      _coveringRoutes[previousModalRoute] = route;
-    }
-    super.didPush(route, previousRoute);
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _forgetRoute(route);
-    super.didPop(route, previousRoute);
-  }
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _forgetRoute(route);
-    super.didRemove(route, previousRoute);
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    if (oldRoute != null) {
-      final coveringRoute = _coveringRoutes.remove(oldRoute);
-      if (newRoute case final ModalRoute<dynamic> newModalRoute) {
-        if (coveringRoute != null) {
-          _coveringRoutes[newModalRoute] = coveringRoute;
-        }
-      }
-      for (final entry in _coveringRoutes.entries.toList()) {
-        if (identical(entry.value, oldRoute)) {
-          if (newRoute == null) {
-            _coveringRoutes.remove(entry.key);
-          } else {
-            _coveringRoutes[entry.key] = newRoute;
-          }
-        }
-      }
-    }
-    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-  }
-
-  void _forgetRoute(Route<dynamic> route) {
-    _coveringRoutes.remove(route);
-    _coveringRoutes.removeWhere((_, covering) => identical(covering, route));
-  }
-}
+export '../../widgets/chat_route_scope.dart' show chatRouteObserver;
 
 class ChatDetailPage extends ConsumerStatefulWidget {
   final String roomId;
@@ -133,6 +80,12 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   static void openPanelAction(GlobalKey chatKey, RoomPanelAction action) {
     final state = chatKey.currentState;
     if (state is _ChatDetailPageState) state._openPanelAction(action);
+  }
+
+  /// The shell owns system back for a retained single-pane chat.
+  static void handleSystemBack(GlobalKey chatKey) {
+    final state = chatKey.currentState;
+    if (state is _ChatDetailPageState) state._handleSystemBack();
   }
 
   final bool detailsPanelOpen;
@@ -219,6 +172,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   String? _typingSubscriptionId;
   String? _roomSubscriptionId;
   ModalRoute<dynamic>? _route;
+  List<({ChatRouteObserver observer, ModalRoute<dynamic> route})>
+  _routeBindings = [];
+  bool get _routesCurrent =>
+      _routeBindings.every((entry) => entry.route.isCurrent);
+  bool _tabActive = true;
+  bool get _paneVisible => widget.paneVisible && _tabActive;
   final List<ChatMessage> _olderMessages = [];
   final List<MessageGroup> _groupedMessages = [];
   final Map<String, ChatMessage> _messageIndex = {};
@@ -477,7 +436,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (widget.paneVisible != oldWidget.paneVisible) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (widget.paneVisible) {
+        if (_paneVisible) {
           _activateRoom();
         } else {
           _deactivateRoom();
@@ -553,11 +512,30 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final scope = ChatRouteScope.of(context);
+    final active = scope?.active ?? true;
+    if (active != _tabActive) {
+      _tabActive = active;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_paneVisible) {
+          _activateRoom();
+        } else {
+          _deactivateRoom();
+        }
+      });
+    }
     final route = ModalRoute.of(context);
-    if (route == _route) return;
-    if (_route != null) chatRouteObserver.unsubscribe(this);
+    final bindings = ChatRouteScope.routesOf(context);
+    if (route == _route && listEquals(bindings, _routeBindings)) return;
+    for (final entry in _routeBindings) {
+      entry.observer.unsubscribe(this);
+    }
     _route = route;
-    if (route != null) chatRouteObserver.subscribe(this, route);
+    _routeBindings = bindings;
+    for (final entry in _routeBindings) {
+      entry.observer.subscribe(this, entry.route);
+    }
   }
 
   @override
@@ -575,12 +553,30 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   @override
   void didPushNext() {
-    if (chatRouteObserver.isCoveredByPopup(_route)) {
+    if (_routeBindings.any(
+          (entry) => entry.observer.isCoveredByPopup(entry.route),
+        ) &&
+        _routeBindings.every(
+          (entry) =>
+              entry.route.isCurrent ||
+              entry.observer.isCoveredByPopup(entry.route),
+        )) {
       _suspendRoomView();
     } else {
       // A full page replaces this chat, so tear down its room subscriptions.
       _deactivateRoom();
     }
+  }
+
+  void _handleSystemBack() {
+    if (!_paneVisible) return;
+    if (_inputPanelMode != InputPanelMode.none ||
+        MediaQuery.viewInsetsOf(context).bottom > 0) {
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      _setInputPanelMode(InputPanelMode.none);
+      return;
+    }
+    widget.onBack?.call();
   }
 
   @override
@@ -651,7 +647,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _activateRoom({bool resetAutoReadSuppression = false}) {
-    if (!widget.paneVisible) return;
+    if (!_paneVisible || !_routesCurrent) return;
     // Never activate unless the app itself is in the foreground: a route
     // callback (e.g. a cover popped while inactive/paused) must not make the
     // room "being viewed" again in the background. A null lifecycle state
@@ -1212,7 +1208,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   void dispose() {
     _cancelUnreadScan();
     WidgetsBinding.instance.removeObserver(this);
-    chatRouteObserver.unsubscribe(this);
+    for (final entry in _routeBindings) {
+      entry.observer.unsubscribe(this);
+    }
     final currentRoomIdNotifier = _currentRoomIdNotifier;
     final roomId = widget.roomId;
     final roomViewOwnerState = _roomViewOwnerStateForDispose;
@@ -3114,12 +3112,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       settings: visualSettings,
       child: PopScope(
         canPop:
-            !widget.paneVisible ||
+            !_paneVisible ||
             (!widget.embedded &&
                 _inputPanelMode == InputPanelMode.none &&
                 !keyboardVisible),
         onPopInvokedWithResult: (didPop, _) {
-          if (didPop || !widget.paneVisible) return;
+          if (didPop || !_paneVisible) return;
+          // The Material shell dispatches back once, after modal details.
+          if (context.isMaterial && widget.onBack != null) return;
           SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
           _setInputPanelMode(InputPanelMode.none);
         },

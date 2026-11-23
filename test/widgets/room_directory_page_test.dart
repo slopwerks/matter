@@ -14,7 +14,7 @@ class _DirectoryApi implements RustLibApi {
   final previews = <String>[];
   final writes = <String>[];
   late final Completer<void> write;
-  static const room = DirectoryRoom(
+  DirectoryRoom room = const DirectoryRoom(
     id: '!test:example.org',
     name: '开发讨论',
     alias: '#dev:example.org',
@@ -30,7 +30,7 @@ class _DirectoryApi implements RustLibApi {
     String? since,
   }) async {
     searches.add(query);
-    return const DirectoryRoomPage(rooms: [room]);
+    return DirectoryRoomPage(rooms: [room]);
   }
 
   @override
@@ -97,6 +97,31 @@ void main() {
       api.write.complete();
       await tester.pumpAndSettle();
       expect(find.text('已申请'), findsOneWidget);
+      // A query before sync catches up must retain the successful request.
+      await tester.enterText(find.byType(TextField), '#dev:example.org');
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(find.text('已申请'), findsOneWidget);
+      api.room = DirectoryRoom(
+        id: api.room.id,
+        name: api.room.name,
+        alias: api.room.alias,
+        isSpace: false,
+        state: 'invited',
+        joinRule: 'knock',
+        via: api.room.via,
+      );
+      await tester.enterText(find.byType(TextField), '开发');
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(find.text('接受邀请'), findsOneWidget);
+      await tester.tap(find.text('接受邀请'));
+      await tester.pumpAndSettle();
+      expect(
+        api.writes.last,
+        '@me:example.org !test:example.org example.org false',
+      );
+      expect(find.text('打开会话'), findsOneWidget);
     },
   );
 }

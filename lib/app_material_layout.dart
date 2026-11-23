@@ -48,7 +48,7 @@ extension _MaterialAppLayout on _MatterAppState {
         if (modalDetails) {
           _setMaterialDetails(false);
         } else if (singleChat) {
-          _clearSelectedRoom();
+          ChatDetailPage.handleSystemBack(_selectedChatKey);
         }
       },
       child: MaterialAdaptiveShell(

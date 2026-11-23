@@ -166,6 +166,11 @@ void main() {
     ) async {
       await tester.binding.setSurfaceSize(const Size(320, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
+      // Keep MediaQuery's breakpoint consistent with the layout constraints.
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 700);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
       final container = ProviderContainer(
         overrides: [
           allChatRoomsProvider.overrideWith((ref) async => []),

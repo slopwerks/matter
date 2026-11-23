@@ -31,7 +31,7 @@ void main() {
 
   for (final brightness in Brightness.values) {
     for (final example in [
-      (page: const ContactsPage(), marker: '搜索联系人'),
+      (page: const ContactsPage(), marker: '暂无联系人'),
       (page: const SpacePage(), marker: '还没有加入空间'),
       (page: const CreateChatPage(), marker: '输入 @用户 ID 发起私聊'),
       (
@@ -84,9 +84,11 @@ void main() {
           final scaffold = find
               .ancestor(of: header, matching: find.byType(Scaffold))
               .first;
+          final rootPage =
+              example.page is ContactsPage || example.page is SpacePage;
           expect(
             tester.widget<Scaffold>(scaffold).extendBodyBehindAppBar,
-            isTrue,
+            !rootPage,
           );
           final theme = Theme.of(tester.element(header));
           final headerColor =
@@ -112,13 +114,19 @@ void main() {
             );
           }
           expect(tester.takeException(), isNull);
-          // Keep the standard back action reachable above the scrolling content.
-          final back = example.page is ChatSearchPage
-              ? find.byTooltip('返回')
-              : example.page is MessageReaderPage
-              ? find.byTooltip('关闭')
-              : find.byType(BackButton);
-          await tester.tap(back);
+          if (rootPage) {
+            // Root tabs have no back button; pop this test's wrapper route.
+            expect(find.byType(BackButton), findsNothing);
+            navigator.currentState!.pop();
+          } else {
+            // Subpages keep their back action above the scrolling content.
+            final back = example.page is ChatSearchPage
+                ? find.byTooltip('返回')
+                : example.page is MessageReaderPage
+                ? find.byTooltip('关闭')
+                : find.byType(BackButton);
+            await tester.tap(back);
+          }
           await tester.pumpAndSettle();
           expect(header, findsNothing);
           await tester.pumpWidget(const SizedBox());

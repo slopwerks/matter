@@ -152,6 +152,58 @@ void main() {
     rustApi.markRoomAsReadCalls = 0;
   });
 
+  testWidgets('compact back closes picker before leaving chat', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const room = rust.ChatRoom(
+      id: '!room:example.org',
+      name: 'Room',
+      lastMessage: '',
+      lastMessageTime: '0',
+      lastEventId: '',
+      unreadCount: 0,
+      isMarkedUnread: false,
+      roomType: 'dm',
+      isEncrypted: false,
+      isMuted: false,
+      roomState: 'joined',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => [room]),
+        spacesProvider.overrideWith((ref) async => []),
+        roomMembersProvider.overrideWith((ref, id) async => []),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: neuTestTheme(material: true),
+          navigatorObservers: [chatRouteObserver],
+          home: const MatterApp(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    container.read(desktopRoomNavigationProvider).open!(room);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.sentiment_satisfied_alt_rounded));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.keyboard_rounded), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      find.byType(ChatDetailPage),
+      findsOneWidget,
+      reason: 'First back must close the picker and retain the chat',
+    );
+    expect(find.byIcon(Icons.keyboard_rounded), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(ChatDetailPage), findsNothing);
+  });
   testWidgets(
     'M3 keeps chat, list, focus and draft across all five window classes',
     (tester) async {
@@ -194,7 +246,8 @@ void main() {
       ]) {
         await tester.binding.setSurfaceSize(Size(width, 800));
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 200));
+        // Measure the final pane after the 320 ms rail-width animation.
+        await tester.pump(const Duration(milliseconds: 400));
         final window = MaterialWindowClass.fromWidth(width);
         final detail = find.byType(ChatDetailPage);
         expect(tester.state(detail), same(chatState));
