@@ -32,6 +32,17 @@ const _contact = rust.Contact(
 const _space = rust.Space(id: '!space:example.org', name: '设计空间');
 
 class _Api implements RustLibApi {
+  final edits = <(String?, String?)>[];
+  @override
+  Future<void> crateApiMatrixUpdateSpaceDetails({
+    required String accountUserId,
+    required String spaceId,
+    String? name,
+    String? topic,
+  }) async {
+    edits.add((name, topic));
+  }
+
   Completer<String>? dm;
   final requests = <({String account, String user})>[];
 
@@ -113,6 +124,7 @@ void main() {
       'app_theme_style': 'materialLight',
     });
     api.requests.clear();
+    api.edits.clear();
     api.dm = null;
   });
 
@@ -241,20 +253,30 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('名称'));
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
-      final fields = find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.byType(TextField),
-      );
-      expect(fields, findsNWidgets(2));
-      await tester.enterText(fields.first, '尚未保存的名称');
+      expect(find.text('修改空间名称'), findsOneWidget);
+      final field = find.widgetWithText(TextField, '空间名称');
+      expect(field, findsOneWidget);
+      await tester.enterText(field, '尚未保存的名称');
       await _resize(tester, 1600);
-      expect(
-        tester.widget<TextField>(fields.first).controller!.text,
-        '尚未保存的名称',
-      );
+      expect(tester.widget<TextField>(field).controller!.text, '尚未保存的名称');
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
+      expect(api.edits, isEmpty);
+      await tester.tap(find.text('话题'));
+      await tester.pumpAndSettle();
+      expect(find.text('修改空间话题'), findsOneWidget);
+      await tester.enterText(find.widgetWithText(TextField, '空间话题'), '');
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(api.edits, [(null, '')]);
+      await tester.tap(find.byTooltip('空间操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑空间'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, '空间名称'), '新名称');
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(api.edits.last, ('新名称', null));
       expect(find.text('共享与管理'), findsOneWidget);
       expect(find.text('复制空间链接'), findsOneWidget);
       expect(tester.takeException(), isNull);

@@ -230,7 +230,7 @@ pub(super) async fn get_space_children(
 pub(super) async fn update_space_details(
     account_user_id: String,
     space_id: String,
-    name: String,
+    name: Option<String>,
     topic: Option<String>,
 ) -> Result<(), String> {
     let generation = SYNC_GENERATION.load(Ordering::SeqCst);
@@ -253,30 +253,24 @@ pub(super) async fn update_space_details(
         ));
     }
 
-    let trimmed_name = name.trim().to_string();
-    if trimmed_name.is_empty() {
+    // None leaves a field untouched; an empty topic clears it.
+    let name = name.map(|value| value.trim().to_owned());
+    if name.as_deref() == Some("") {
         return Err(api_err("spaces", "空间名称不能为空。".to_string()));
     }
-
-    // Bounded like the other P0 writes: two sequential state writes hold the
-    // client lease.
     run_bounded(async move {
-        room.set_name(trimmed_name)
-            .await
-            .map_err(|e| api_err("spaces", format!("更新空间名称失败: {e}")))?;
-        notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
-
-        let normalized_topic = topic.unwrap_or_default().trim().to_string();
-        // Write unconditionally: comparing against room.topic() would use
-        // the SDK snapshot, which may still predate a just-completed write
-        // and silently drop a quick A -> B -> A change (same decision as
-        // `update_room_details`). The write is an idempotent state event.
-        room.set_room_topic(&normalized_topic).await.map_err(|e| {
-            // The name write above already landed: say so instead of
-            // reporting a plain whole-action failure.
-            api_err("spaces", format!("空间名称已更新，但主题更新失败: {e}"))
-        })?;
-        notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
+        let updating_name = name.is_some();
+        if let Some(name) = name {
+            room.set_name(name).await.map_err(|e| api_err("spaces", format!("更新空间名称失败: {e}")))?;
+            notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
+        }
+        if let Some(topic) = topic {
+            room.set_room_topic(topic.trim()).await.map_err(|e| {
+                let message = if updating_name { "空间名称已更新，但主题更新失败" } else { "更新空间话题失败" };
+                api_err("spaces", format!("{message}: {e}"))
+            })?;
+            notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
+        }
 
         app_log(
             "info",

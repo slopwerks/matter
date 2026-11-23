@@ -32,7 +32,7 @@ class _FakeRustApi implements RustLibApi {
   Future<void> crateApiMatrixUpdateSpaceDetails({
     required String accountUserId,
     required String spaceId,
-    required String name,
+    String? name,
     String? topic,
   }) async {
     throw StateError('空间名称已更新，但主题更新失败');

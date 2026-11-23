@@ -95,7 +95,8 @@ class _SpaceAbout extends StatelessWidget {
   });
   final SpaceDetails details;
   final AsyncValue<List<ChatRoom>> rooms;
-  final VoidCallback? onEdit, onInvite;
+  final ValueChanged<_SpaceField>? onEdit;
+  final VoidCallback? onInvite;
   final VoidCallback onManage, onCopy, onLeave;
 
   @override
@@ -112,14 +113,15 @@ class _SpaceAbout extends StatelessWidget {
                 title: const Text('名称'),
                 subtitle: Text(details.name),
                 trailing: const Icon(Icons.edit_outlined),
-                onTap: onEdit,
+                onTap: onEdit == null ? null : () => onEdit!(_SpaceField.name),
               ),
               ListTile(
                 title: const Text('话题'),
                 subtitle: Text(
                   details.topic?.isNotEmpty == true ? details.topic! : '未设置',
                 ),
-                onTap: onEdit,
+                trailing: const Icon(Icons.edit_outlined),
+                onTap: onEdit == null ? null : () => onEdit!(_SpaceField.topic),
               ),
               ListTile(
                 title: const Text('房间'),

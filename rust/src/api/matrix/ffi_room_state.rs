@@ -86,7 +86,7 @@ macro_rules! declare_room_state_api {
         pub async fn update_space_details(
             account_user_id: String,
             space_id: String,
-            name: String,
+            name: Option<String>,
             topic: Option<String>,
         ) -> Result<(), String> {
             spaces::update_space_details(account_user_id, space_id, name, topic).await

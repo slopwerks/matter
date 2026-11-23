@@ -32,6 +32,7 @@ import 'room_directory_page.dart';
 
 part 'material_space_detail.dart';
 part 'material_space_info.dart';
+part 'material_space_editor.dart';
 
 /// Guard wording shown inside the space dialogs while a previous space
 /// write is still in flight. Kept as a constant so the dialogs can render
@@ -676,8 +677,45 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
   void _showEditSpaceDialog(
     BuildContext context,
     WidgetRef ref,
-    SpaceDetails details,
-  ) {
+    SpaceDetails details, {
+    _SpaceField field = _SpaceField.name,
+  }) {
+    if (context.isMaterial) {
+      showDialog<void>(
+        context: context,
+        useSafeArea: false,
+        builder: (_) => _SpaceFieldEditor(
+          field: field,
+          initialValue: field == _SpaceField.name
+              ? details.name
+              : details.topic ?? '',
+          save: (value) async {
+            if (!_accountActive()) throw '账号已切换';
+            if (_spaceActionInProgress) throw _spaceBusyTip;
+            _spaceActionInProgress = true;
+            try {
+              await updateSpaceDetails(
+                accountUserId: _openedUserId ?? '',
+                spaceId: details.id,
+                name: field == _SpaceField.name ? value : null,
+                topic: field == _SpaceField.topic ? value : null,
+              );
+              if (_accountActive()) {
+                ref.invalidate(spaceDetailsProvider(details.id));
+                ref.invalidate(spacesProvider);
+                ref.invalidate(allChatRoomsProvider);
+                if (context.mounted) neuToast(context, '${field.label}已更新');
+              }
+            } catch (error) {
+              throw _actionFailureMessage(error);
+            } finally {
+              _spaceActionInProgress = false;
+            }
+          },
+        ),
+      );
+      return;
+    }
     final nameController = TextEditingController(text: details.name);
     final topicController = TextEditingController(text: details.topic ?? '');
     String? editError;
@@ -759,7 +797,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                           accountUserId: _openedUserId ?? '',
                           spaceId: details.id,
                           name: name,
-                          topic: topic.isEmpty ? null : topic,
+                          topic: topic,
                         );
                         // The account may have switched while the request was in
                         // flight: the page shows the switched placeholder — skip

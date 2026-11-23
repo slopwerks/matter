@@ -144,7 +144,12 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
                       details: details,
                       rooms: children,
                       onEdit: detailsLoaded
-                          ? () => _showEditSpaceDialog(context, ref, details)
+                          ? (field) => _showEditSpaceDialog(
+                              context,
+                              ref,
+                              details,
+                              field: field,
+                            )
                           : null,
                       onManage: manage,
                       onInvite: invite,

@@ -925,7 +925,7 @@ Future<List<ChatRoom>> getSpaceChildren({
 Future<void> updateSpaceDetails({
   required String accountUserId,
   required String spaceId,
-  required String name,
+  String? name,
   String? topic,
 }) => RustLib.instance.api.crateApiMatrixUpdateSpaceDetails(
   accountUserId: accountUserId,
