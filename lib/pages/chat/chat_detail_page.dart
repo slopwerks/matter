@@ -905,8 +905,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (_markingEntryRead ||
         entry == null ||
         account == null ||
-        ref.read(activeUserIdProvider) != account)
+        ref.read(activeUserIdProvider) != account) {
       return;
+    }
     setState(() => _markingEntryRead = true);
     final revision = ref.read(roomAutoReadSuppressionRevisionProvider(room));
     bool current() =>
@@ -931,17 +932,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       ref.invalidate(searchRoomsProvider);
       setState(_clearUnreadNavigation);
     } catch (error) {
-      if (current())
+      if (mounted && current()) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(actionFailureMessage(error))));
+      }
     } finally {
       if (mounted) setState(() => _markingEntryRead = false);
     }
   }
 
   void _scheduleUnreadPosition() {
-    if (_entryUnread == null || !context.isMaterial || _unreadPositionScheduled)
+    if (_entryUnread == null ||
+        !context.isMaterial ||
+        _unreadPositionScheduled) {
       return;
+    }
     _unreadPositionScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _unreadPositionScheduled = false;
@@ -965,11 +970,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       } else if (id != null && _messageIndex.containsKey(id)) {
         final target = _timelineEntryIndexForMessage(id);
         final built = _builtMessageEntryIndices();
-        if (target != null && built.isNotEmpty && target < built.first)
+        if (target != null && built.isNotEmpty && target < built.first) {
           direction = AxisDirection.down;
+        }
       }
-      if (direction != _unreadDirection)
+      if (direction != _unreadDirection) {
         setState(() => _unreadDirection = direction);
+      }
     });
   }
 

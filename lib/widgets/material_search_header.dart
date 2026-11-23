@@ -38,7 +38,6 @@ class MaterialSearchHeader extends StatelessWidget {
     return MaterialHeaderTransition(
       enabled: compact,
       collapsed: collapsed,
-      child: search,
       onEnd: onEnd,
       builder: (_, expansion, field) => MaterialRootHeader(
         title: title,
@@ -69,6 +68,7 @@ class MaterialSearchHeader extends StatelessWidget {
           ...actions,
         ],
       ),
+      child: search,
     );
   }
 }

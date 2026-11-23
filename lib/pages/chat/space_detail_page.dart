@@ -91,8 +91,9 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
       await Clipboard.setData(ClipboardData(text: link));
       if (mounted && _accountActive()) neuToast(context, '已复制空间链接');
     } catch (error) {
-      if (mounted && _accountActive())
+      if (mounted && _accountActive()) {
         neuToast(context, _actionFailureMessage(error));
+      }
     }
   }
 
@@ -138,8 +139,9 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
       );
       if (mounted && _accountActive()) neuToast(context, '邀请已发送');
     } catch (error) {
-      if (mounted && _accountActive())
+      if (mounted && _accountActive()) {
         neuToast(context, _actionFailureMessage(error));
+      }
     } finally {
       if (mounted) setState(() => _inviting = false);
     }

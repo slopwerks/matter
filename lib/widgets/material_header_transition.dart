@@ -54,14 +54,16 @@ class HeaderScrollListener extends StatelessWidget {
   Widget build(BuildContext context) =>
       NotificationListener<ScrollMetricsNotification>(
         onNotification: (n) {
-          if (n.depth == 0 && n.metrics.axis == Axis.vertical)
+          if (n.depth == 0 && n.metrics.axis == Axis.vertical) {
             onScroll(n.metrics);
+          }
           return false;
         },
         child: NotificationListener<ScrollUpdateNotification>(
           onNotification: (n) {
-            if (n.depth == 0 && n.metrics.axis == Axis.vertical)
+            if (n.depth == 0 && n.metrics.axis == Axis.vertical) {
               onScroll(n.metrics);
+            }
             return false;
           },
           child: child,
