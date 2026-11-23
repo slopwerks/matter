@@ -251,6 +251,17 @@ void main() {
       expect(find.byType(MaterialTabNavigationBar), findsNothing);
       await tester.tap(find.text('关于'));
       await tester.pumpAndSettle();
+      final scroll = find.descendant(
+        of: find.byType(SpaceDetailPage),
+        matching: find.byType(CustomScrollView),
+      );
+      await tester.drag(scroll, const Offset(0, -450));
+      await tester.pumpAndSettle();
+      expect(find.byType(BackButton).hitTestable(), findsOneWidget);
+      expect(find.text('成员').hitTestable(), findsOneWidget);
+      expect(find.byTooltip('空间操作').hitTestable(), findsOneWidget);
+      await tester.drag(scroll, const Offset(0, 650));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('名称'));
       await tester.pumpAndSettle();
       expect(find.text('修改空间名称'), findsOneWidget);

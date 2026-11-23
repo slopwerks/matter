@@ -9,7 +9,7 @@ import '../../src/rust/api/matrix.dart';
 import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/material_press.dart';
-import '../../widgets/material_root_header.dart';
+import '../../widgets/material_search_header.dart';
 import '../../widgets/app_search_field.dart';
 import 'room_directory_page.dart';
 import '../../widgets/material_list_detail.dart';
@@ -52,10 +52,17 @@ class _MaterialSpaceContentState extends State<MaterialSpaceContent> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: MaterialRootHeader(
+      floatingActionButton: widget.onAdd == null
+          ? null
+          : FloatingActionButton(
+              tooltip: '添加空间',
+              onPressed: widget.onAdd,
+              child: const Icon(Icons.add),
+            ),
+      body: MaterialSearchDirectory(
         title: widget.title,
-        compact: MaterialRootHeader.isCompact(context),
+        hint: '搜索已加入的空间',
+        query: _search.text,
         actions: [
           IconButton(
             tooltip: '探索公开房间',
@@ -63,7 +70,8 @@ class _MaterialSpaceContentState extends State<MaterialSpaceContent> {
             onPressed: () => RoomDirectoryPage.open(context),
           ),
         ],
-        search: AppSearchField(
+        searchBuilder: (focus) => AppSearchField(
+          focusNode: focus,
           controller: _search,
           hint: '搜索已加入的空间',
           onChanged: (value) =>
@@ -79,107 +87,103 @@ class _MaterialSpaceContentState extends State<MaterialSpaceContent> {
                   },
                 ),
         ),
-      ),
-      floatingActionButton: widget.onAdd == null
-          ? null
-          : FloatingActionButton(
-              tooltip: '添加空间',
-              onPressed: widget.onAdd,
-              child: const Icon(Icons.add),
-            ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final gutter = math.max(16.0, (constraints.maxWidth - 960) / 2);
-          return CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  gutter,
-                  // Scaffold exposes the full floating header inset in padding.
-                  MediaQuery.paddingOf(context).top + context.tokens.spacing.lg,
-                  gutter,
-                  96 + MediaQuery.paddingOf(context).bottom,
-                ),
-                sliver: SliverMainAxisGroup(
-                  slivers: [
-                    widget.spaces.when(
-                      data: (spaces) {
-                        final items = spaces
-                            .where(
-                              (space) =>
-                                  space.name.toLowerCase().contains(_query) ||
-                                  space.id.toLowerCase().contains(_query),
-                            )
-                            .toList();
-                        if (items.isEmpty && _query.isNotEmpty) {
-                          return const SliverToBoxAdapter(
-                            child: Text('没有匹配的空间'),
-                          );
-                        }
-                        return items.isEmpty
-                            ? SliverToBoxAdapter(
-                                child: _EmptySpaces(
-                                  onCreate: widget.onCreate,
-                                  onJoin: widget.onJoin,
-                                ),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final gutter = math.max(16.0, (constraints.maxWidth - 960) / 2);
+            return CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    context.tokens.spacing.lg,
+                    gutter,
+                    96 + MediaQuery.paddingOf(context).bottom,
+                  ),
+                  sliver: SliverMainAxisGroup(
+                    slivers: [
+                      widget.spaces.when(
+                        data: (spaces) {
+                          final items = spaces
+                              .where(
+                                (space) =>
+                                    space.name.toLowerCase().contains(_query) ||
+                                    space.id.toLowerCase().contains(_query),
                               )
-                            : SliverList.builder(
-                                itemCount: items.length,
-                                itemBuilder: (context, index) => _SpaceRow(
-                                  key: ValueKey(items[index].id),
-                                  space: items[index],
-                                ),
-                              );
-                      },
-                      loading: () => const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(child: CircularProgressIndicator()),
+                              .toList();
+                          if (items.isEmpty && _query.isNotEmpty) {
+                            return const SliverToBoxAdapter(
+                              child: Text('没有匹配的空间'),
+                            );
+                          }
+                          return items.isEmpty
+                              ? SliverToBoxAdapter(
+                                  child: _EmptySpaces(
+                                    onCreate: widget.onCreate,
+                                    onJoin: widget.onJoin,
+                                  ),
+                                )
+                              : SliverList.builder(
+                                  itemCount: items.length,
+                                  itemBuilder: (context, index) => _SpaceRow(
+                                    key: ValueKey(items[index].id),
+                                    space: items[index],
+                                  ),
+                                );
+                        },
+                        loading: () => const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
                         ),
-                      ),
-                      error: (error, _) => SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Text(
-                            '加载空间失败: $error',
-                            style: theme.textTheme.bodyMedium,
+                        error: (error, _) => SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: Text(
+                              '加载空间失败: $error',
+                              style: theme.textTheme.bodyMedium,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    if (_query.isEmpty)
-                      widget.rooms.when(
-                        data: (items) => items.isEmpty
-                            ? const SliverToBoxAdapter(child: SizedBox.shrink())
-                            : SliverMainAxisGroup(
-                                slivers: [
-                                  const SliverToBoxAdapter(
-                                    child: _OtherRoomsHeader(),
-                                  ),
-                                  SliverList.separated(
-                                    itemCount: items.length,
-                                    separatorBuilder: (_, _) =>
-                                        const ChatListDivider(),
-                                    itemBuilder: (context, index) =>
-                                        ChatListItem(
-                                          key: ValueKey(items[index].id),
-                                          room: items[index],
-                                          showRoomTypeIcon: true,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                        loading: () =>
-                            const SliverToBoxAdapter(child: SizedBox.shrink()),
-                        error: (_, _) =>
-                            const SliverToBoxAdapter(child: SizedBox.shrink()),
-                      ),
-                  ],
+                      if (_query.isEmpty)
+                        widget.rooms.when(
+                          data: (items) => items.isEmpty
+                              ? const SliverToBoxAdapter(
+                                  child: SizedBox.shrink(),
+                                )
+                              : SliverMainAxisGroup(
+                                  slivers: [
+                                    const SliverToBoxAdapter(
+                                      child: _OtherRoomsHeader(),
+                                    ),
+                                    SliverList.separated(
+                                      itemCount: items.length,
+                                      separatorBuilder: (_, _) =>
+                                          const ChatListDivider(),
+                                      itemBuilder: (context, index) =>
+                                          ChatListItem(
+                                            key: ValueKey(items[index].id),
+                                            room: items[index],
+                                            showRoomTypeIcon: true,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                          loading: () => const SliverToBoxAdapter(
+                            child: SizedBox.shrink(),
+                          ),
+                          error: (_, _) => const SliverToBoxAdapter(
+                            child: SizedBox.shrink(),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

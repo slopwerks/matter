@@ -27,136 +27,174 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
         child: DefaultTabController(
           length: 3,
           initialIndex: _materialSpaceTab,
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              Material(
-                color: hero.fill,
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(materialSurfaceRadius),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: MaterialHeaderDecoration(
-                        color: materialRootHeaderStyle(
-                          Theme.of(context),
-                          compact: true,
-                        ).decoration,
+          child: CustomScrollView(
+            slivers: [
+              SliverResizingHeader(
+                minExtentPrototype: const SizedBox(height: kToolbarHeight),
+                maxExtentPrototype: SizedBox(height: wide ? 192 : 128),
+                child: LayoutBuilder(
+                  builder: (context, bounds) {
+                    final compact = bounds.maxHeight < (wide ? 144 : 108);
+                    return Material(
+                      color: hero.fill,
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(materialSurfaceRadius),
                       ),
-                    ),
-                    Container(
-                      constraints: BoxConstraints(minHeight: wide ? 192 : 128),
-                      padding: EdgeInsets.all(
-                        wide ? NeuSpacing.xl : NeuSpacing.md,
-                      ),
-                      alignment: AlignmentDirectional.centerStart,
-                      child: Row(
+                      clipBehavior: Clip.antiAlias,
+                      child: Stack(
                         children: [
-                          if (Navigator.canPop(context) &&
-                              !(MaterialAdaptiveShell.windowOf(context)
-                                      ?.hasSplit ??
-                                  false))
-                            BackButton(color: hero.foreground),
-                          AppAvatar(
-                            fallback: details.name,
-                            size: wide ? 72 : 56,
-                            materialRadius: wide ? 24 : 16,
-                            url: details.avatarUrl,
-                            fallbackColors: (
-                              fill: Theme.of(context).colorScheme.primary,
-                              foreground: Theme.of(context)
-                                  .colorScheme
-                                  .onPrimary,
+                          Positioned.fill(
+                            child: MaterialHeaderDecoration(
+                              color: materialRootHeaderStyle(
+                                Theme.of(context),
+                                compact: true,
+                              ).decoration,
                             ),
                           ),
-                          const SizedBox(width: NeuSpacing.lg),
-                          Expanded(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                          Container(
+                            padding: EdgeInsets.all(
+                              compact
+                                  ? NeuSpacing.xs
+                                  : wide
+                                  ? NeuSpacing.xl
+                                  : NeuSpacing.md,
+                            ),
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Row(
                               children: [
-                                Text(
-                                  details.name,
-                                  style: wide
-                                      ? Theme.of(context)
-                                            .textTheme
-                                            .headlineLarge
-                                            ?.copyWith(color: hero.foreground)
-                                      : hero.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if ((details.topic ?? '').isNotEmpty)
-                                  Text(
-                                    details.topic!,
-                                    style: hero.subtitle,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                if (Navigator.canPop(context) &&
+                                    !(MaterialAdaptiveShell.windowOf(context)
+                                            ?.hasSplit ??
+                                        false))
+                                  BackButton(color: hero.foreground),
+                                AppAvatar(
+                                  fallback: details.name,
+                                  size: compact
+                                      ? 36
+                                      : wide
+                                      ? 72
+                                      : 56,
+                                  materialRadius: wide ? 24 : 16,
+                                  url: details.avatarUrl,
+                                  fallbackColors: (
+                                    fill: Theme.of(context).colorScheme.primary,
+                                    foreground: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimary,
                                   ),
+                                ),
+                                const SizedBox(width: NeuSpacing.lg),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        details.name,
+                                        style: compact
+                                            ? Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    color: hero.foreground,
+                                                  )
+                                            : wide
+                                            ? Theme.of(context)
+                                                  .textTheme
+                                                  .headlineLarge
+                                                  ?.copyWith(
+                                                    color: hero.foreground,
+                                                  )
+                                            : hero.title,
+                                        maxLines: compact ? 1 : 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (!compact &&
+                                          (details.topic ?? '').isNotEmpty)
+                                        Text(
+                                          details.topic!,
+                                          style: hero.subtitle,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: manage,
+                                  color: hero.foreground,
+                                  icon: const Icon(Icons.more_horiz),
+                                  tooltip: '空间操作',
+                                ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            onPressed: manage,
-                            color: hero.foreground,
-                            icon: const Icon(Icons.more_horiz),
-                            tooltip: '空间操作',
-                          ),
                         ],
                       ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
-              TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                indicatorSize: TabBarIndicatorSize.tab,
-                padding: const EdgeInsets.symmetric(horizontal: NeuSpacing.lg),
-                onTap: _selectMaterialSpaceTab,
-                tabs: const [
-                  Tab(text: '房间'),
-                  Tab(text: '成员'),
-                  Tab(text: '关于'),
-                ],
+              PinnedHeaderSliver(
+                child: Material(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: TabBar(
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: NeuSpacing.lg,
+                    ),
+                    onTap: _selectMaterialSpaceTab,
+                    tabs: const [
+                      Tab(text: '房间'),
+                      Tab(text: '成员'),
+                      Tab(text: '关于'),
+                    ],
+                  ),
+                ),
               ),
-              MaxContentWidth(
-                maxWidth: 1100,
-                child: Padding(
-                  padding: EdgeInsets.all(wide ? NeuSpacing.xl : NeuSpacing.lg),
-                  child: switch (_materialSpaceTab) {
-                    0 => children.when(
-                      data: (rooms) => _materialRooms(context, rooms, manage),
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (error, _) => Text('加载房间失败: $error'),
+              SliverToBoxAdapter(
+                child: MaxContentWidth(
+                  maxWidth: 1100,
+                  child: Padding(
+                    padding: EdgeInsets.all(
+                      wide ? NeuSpacing.xl : NeuSpacing.lg,
                     ),
-                    1 => members.when(
-                      data: (people) =>
-                          _SpaceMembers(people: people, onInvite: invite),
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (error, _) => Text('加载成员失败: $error'),
-                    ),
-                    _ => _SpaceAbout(
-                      details: details,
-                      rooms: children,
-                      onEdit: detailsLoaded
-                          ? (field) => _showEditSpaceDialog(
-                              context,
-                              ref,
-                              details,
-                              field: field,
-                            )
-                          : null,
-                      onManage: manage,
-                      onInvite: invite,
-                      onCopy: _copySpaceLink,
-                      onLeave: () => _confirmLeaveSpace(context, ref, details),
-                    ),
-                  },
+                    child: switch (_materialSpaceTab) {
+                      0 => children.when(
+                        data: (rooms) => _materialRooms(context, rooms, manage),
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (error, _) => Text('加载房间失败: $error'),
+                      ),
+                      1 => members.when(
+                        data: (people) =>
+                            _SpaceMembers(people: people, onInvite: invite),
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (error, _) => Text('加载成员失败: $error'),
+                      ),
+                      _ => _SpaceAbout(
+                        details: details,
+                        rooms: children,
+                        onEdit: detailsLoaded
+                            ? (field) => _showEditSpaceDialog(
+                                context,
+                                ref,
+                                details,
+                                field: field,
+                              )
+                            : null,
+                        onManage: manage,
+                        onInvite: invite,
+                        onCopy: _copySpaceLink,
+                        onLeave: () =>
+                            _confirmLeaveSpace(context, ref, details),
+                      ),
+                    },
+                  ),
                 ),
               ),
             ],
