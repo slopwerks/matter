@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -135,6 +135,7 @@ void main() {
       expect(tester.getRect(surface).left, greaterThanOrEqualTo(8));
       expect(tester.getRect(surface).right, lessThanOrEqualTo(312));
       expect(find.text('全屏阅读'), findsOneWidget);
+      expect(find.text('+1').hitTestable(), findsOneWidget);
       expect(find.text('撤回').hitTestable(), findsOneWidget);
       expect(find.byTooltip('选择表情').hitTestable(), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -159,6 +160,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('回复'), findsOneWidget);
+        expect(find.text('+1'), findsOneWidget);
         expect(find.text('转发'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();

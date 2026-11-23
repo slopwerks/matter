@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'material_adaptive_shell.dart';
 import 'conversation_routes.dart';

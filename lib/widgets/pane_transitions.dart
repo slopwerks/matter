@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Secondary routes in split panes fade in place, keeping the list anchored.
 class PaneFadeTransitions extends PageTransitionsBuilder {

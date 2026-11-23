@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 
 import 'package:flutter/rendering.dart';
@@ -58,6 +58,7 @@ import 'room_state_edit_tracker.dart';
 import 'search_page.dart';
 import 'send_flight.dart';
 import 'timeline/timeline_clustering.dart' show clusterTimelineMessages;
+import 'timeline/timeline_plus_one.dart' show plusOneEligibleIds;
 import 'unread_messages_banner.dart';
 import 'unread_navigation.dart';
 import 'material_unread_pill.dart';
@@ -185,6 +186,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   final Map<Key, int> _timelineEntryIndexByKey = {};
   final Map<String, GlobalKey> _dateSeparatorKeys = {};
   List<ChatMessage> _displayedMessages = [];
+
+  /// Last copy of each repeated text message; those rows show the inline +1.
+  Set<String> _plusOneIds = const {};
   List<DateBoundary> _floatingDateBoundariesCache = const [];
   List<GlobalKey> _floatingDateSeparatorKeysCache = const [];
   bool _hasTimelineGroups = false;
@@ -2664,6 +2668,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       eventSettings,
     );
     _displayedMessages = displayedMessages;
+    _plusOneIds = plusOneEligibleIds(displayedMessages);
     _messageIndex
       ..clear()
       ..addEntries(
@@ -2790,6 +2795,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     Map<String, Contact> membersById,
     Map<String, ChatMessage> messageIndex,
     double stickyBottomInset,
+    Set<String> plusOneIds,
   ) {
     switch (entry.type) {
       case _TimelineEntryType.group:
@@ -2805,6 +2811,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           insertionAnimationIds: _insertionAnimationIds,
           lateralInsertionAnimationIds: _lateralInsertionAnimationIds,
           localImagePreviews: _localImagePreviews,
+          plusOneIds: plusOneIds,
           membersById: membersById,
           showAvatar: _needsStickyAvatar(group),
           compact: widget.isDm,
@@ -3345,6 +3352,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                                   membersById,
                                                   messageIndex,
                                                   8 + animatedBottomPadding,
+                                                  _plusOneIds,
                                                 ),
                                             childCount: pivotIndex,
                                             findChildIndexCallback: (key) {
@@ -3368,6 +3376,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                                 membersById,
                                                 messageIndex,
                                                 8 + animatedBottomPadding,
+                                                _plusOneIds,
                                               ),
                                           childCount:
                                               timelineEntries.length -

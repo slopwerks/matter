@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A moving window keeps many pins legible without growing the header.
 class PinnedMessageIndicator extends StatelessWidget {

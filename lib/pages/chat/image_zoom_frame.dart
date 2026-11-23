@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Image gestures adapted from the original viewer in commit 98469ca.
 class ZoomableImageFrame extends StatefulWidget {

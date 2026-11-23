@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../../src/rust/api/matrix.dart';
@@ -78,6 +78,9 @@ class TimelineMessageMenu extends StatefulWidget {
   final VoidCallback onClose;
   final VoidCallback onCopy;
   final VoidCallback onReply;
+
+  /// Repeats the message content as a new event; null when not repeatable.
+  final VoidCallback? onPlusOne;
   final VoidCallback onForward;
   final VoidCallback onEdit;
   final VoidCallback onRecall;
@@ -96,6 +99,7 @@ class TimelineMessageMenu extends StatefulWidget {
     required this.onClose,
     required this.onCopy,
     required this.onReply,
+    this.onPlusOne,
     required this.onForward,
     required this.onEdit,
     required this.onRecall,
@@ -286,6 +290,12 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
           label: '回复',
           onTap: () => _select(widget.onReply),
         ),
+        if (widget.onPlusOne != null)
+          _IconTextAction(
+            icon: Icons.plus_one_rounded,
+            label: '+1',
+            onTap: () => _select(widget.onPlusOne!),
+          ),
         if (!isEvent)
           _IconTextAction(
             icon: Icons.forward_rounded,

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// List, timeline and supporting-panel actions share the conversation pane.
 class ConversationRoutes extends InheritedWidget {

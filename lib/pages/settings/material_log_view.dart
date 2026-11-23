@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../theme/material_theme.dart';
 import '../../widgets/max_content_width.dart';

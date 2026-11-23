@@ -1,8 +1,7 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:material_ui/material_ui.dart' as material_ui;
 import 'package:pro_image_editor/pro_image_editor.dart';
 
 import '../../theme/neu_colors.dart';
@@ -83,15 +82,13 @@ class _ChatImageEditorPageState extends State<ChatImageEditorPage> {
         context.isMaterial && Theme.of(context).brightness == Brightness.light
         ? Brightness.dark
         : Brightness.light;
-    // pro_image_editor 14 renders with the decoupled `material_ui` package,
-    // whose ThemeData is not interchangeable with the SDK one.
     final editorTheme = context.isMaterial
         ? buildMaterialImageEditorTheme(Theme.of(context))
-        : material_ui.ThemeData(
+        : ThemeData(
             useMaterial3: true,
             brightness: Theme.of(context).brightness,
             scaffoldBackgroundColor: colors.base,
-            colorScheme: material_ui.ColorScheme.fromSeed(
+            colorScheme: ColorScheme.fromSeed(
               seedColor: colors.accent,
               brightness: Theme.of(context).brightness,
               primary: colors.accent,

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../features/matrix_html/matrix_code_block.dart';
 import '../../providers/code_block_settings_provider.dart';

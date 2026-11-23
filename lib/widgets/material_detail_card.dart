@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A detail section keeps its heading and rows on one semantic surface.
 class MaterialDetailCard extends StatelessWidget {

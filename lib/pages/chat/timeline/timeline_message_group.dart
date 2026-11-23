@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
@@ -31,6 +31,9 @@ class MessageGroupWidget extends ConsumerWidget {
   /// message's local id. Lets the bubble paint the picked file before the
   /// upload has produced a `mxc://` source.
   final Map<String, Uint8List> localImagePreviews;
+
+  /// Messages that repeat the last copy of a text and offer the inline +1.
+  final Set<String> plusOneIds;
   final Map<String, Contact> membersById;
   final String? senderAvatarUrl;
   final bool compact;
@@ -55,6 +58,7 @@ class MessageGroupWidget extends ConsumerWidget {
     this.insertionAnimationIds = const {},
     this.lateralInsertionAnimationIds = const {},
     this.localImagePreviews = const {},
+    this.plusOneIds = const {},
     this.membersById = const {},
     this.showAvatar = true,
     this.senderAvatarUrl,
@@ -282,6 +286,7 @@ class MessageGroupWidget extends ConsumerWidget {
     insertionAnimationIds: insertionAnimationIds,
     lateralInsertionAnimationIds: lateralInsertionAnimationIds,
     localImagePreviews: localImagePreviews,
+    plusOneIds: plusOneIds,
     actions: TimelineMessageActions(
       roomId: roomId,
       membersById: membersById,
