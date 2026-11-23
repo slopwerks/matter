@@ -1,6 +1,21 @@
 //! Stable FFI declarations expanded into the matrix namespace.
 macro_rules! declare_room_operations_api {
     () => {
+        #[frb]
+        pub async fn search_room_directory(account_user_id: String, query: String, since: Option<String>) -> Result<DirectoryRoomPage, String> {
+            room_directory::search(account_user_id, query, since).await
+        }
+
+        #[frb]
+        pub async fn preview_room_address(account_user_id: String, address: String) -> Result<DirectoryRoom, String> {
+            room_directory::preview(account_user_id, address).await
+        }
+
+        #[frb]
+        pub async fn enter_directory_room(account_user_id: String, room_id: String, via: Vec<String>, knock: bool) -> Result<(), String> {
+            room_directory::enter(account_user_id, room_id, via, knock).await
+        }
+
         /// Create a new direct chat room with a user.
         #[frb]
         pub async fn create_dm(account_user_id: String, user_id: String) -> Result<String, String> {

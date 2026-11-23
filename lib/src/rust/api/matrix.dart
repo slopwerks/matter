@@ -11,7 +11,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SyncNotification`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Initialize persisted logging before startup session discovery begins.
 void initializeLogStore({required String dataDir}) =>
@@ -635,6 +635,36 @@ Future<void> sendSticker({
   height: height,
 );
 
+Future<DirectoryRoomPage> searchRoomDirectory({
+  required String accountUserId,
+  required String query,
+  String? since,
+}) => RustLib.instance.api.crateApiMatrixSearchRoomDirectory(
+  accountUserId: accountUserId,
+  query: query,
+  since: since,
+);
+
+Future<DirectoryRoom> previewRoomAddress({
+  required String accountUserId,
+  required String address,
+}) => RustLib.instance.api.crateApiMatrixPreviewRoomAddress(
+  accountUserId: accountUserId,
+  address: address,
+);
+
+Future<void> enterDirectoryRoom({
+  required String accountUserId,
+  required String roomId,
+  required List<String> via,
+  required bool knock,
+}) => RustLib.instance.api.crateApiMatrixEnterDirectoryRoom(
+  accountUserId: accountUserId,
+  roomId: roomId,
+  via: via,
+  knock: knock,
+);
+
 /// Create a new direct chat room with a user.
 Future<String> createDm({
   required String accountUserId,
@@ -873,6 +903,14 @@ Future<List<Space>> getSpaces() =>
 
 Future<SpaceDetails> getSpaceDetails({required String spaceId}) =>
     RustLib.instance.api.crateApiMatrixGetSpaceDetails(spaceId: spaceId);
+
+Future<String> spaceShareLink({
+  required String accountUserId,
+  required String spaceId,
+}) => RustLib.instance.api.crateApiMatrixSpaceShareLink(
+  accountUserId: accountUserId,
+  spaceId: spaceId,
+);
 
 Future<List<ChatRoom>> getSpaceChildren({
   required String spaceId,
@@ -1544,12 +1582,14 @@ enum ConnectionStatus {
 }
 
 class Contact {
+  final MemberRole? roomRole;
   final String id;
   final String name;
   final String? avatarUrl;
   final String status;
 
   const Contact({
+    this.roomRole,
     required this.id,
     required this.name,
     this.avatarUrl,
@@ -1558,13 +1598,18 @@ class Contact {
 
   @override
   int get hashCode =>
-      id.hashCode ^ name.hashCode ^ avatarUrl.hashCode ^ status.hashCode;
+      roomRole.hashCode ^
+      id.hashCode ^
+      name.hashCode ^
+      avatarUrl.hashCode ^
+      status.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is Contact &&
           runtimeType == other.runtimeType &&
+          roomRole == other.roomRole &&
           id == other.id &&
           name == other.name &&
           avatarUrl == other.avatarUrl &&
@@ -1608,6 +1653,75 @@ class DeviceVerificationStatus {
           incoming == other.incoming &&
           emojis == other.emojis &&
           message == other.message;
+}
+
+class DirectoryRoom {
+  final String id;
+  final String? name;
+  final String? alias;
+  final String? topic;
+  final String? avatarUrl;
+  final bool isSpace;
+  final String state;
+  final String? joinRule;
+  final List<String> via;
+
+  const DirectoryRoom({
+    required this.id,
+    this.name,
+    this.alias,
+    this.topic,
+    this.avatarUrl,
+    required this.isSpace,
+    required this.state,
+    this.joinRule,
+    required this.via,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      alias.hashCode ^
+      topic.hashCode ^
+      avatarUrl.hashCode ^
+      isSpace.hashCode ^
+      state.hashCode ^
+      joinRule.hashCode ^
+      via.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DirectoryRoom &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          alias == other.alias &&
+          topic == other.topic &&
+          avatarUrl == other.avatarUrl &&
+          isSpace == other.isSpace &&
+          state == other.state &&
+          joinRule == other.joinRule &&
+          via == other.via;
+}
+
+class DirectoryRoomPage {
+  final List<DirectoryRoom> rooms;
+  final String? next;
+
+  const DirectoryRoomPage({required this.rooms, this.next});
+
+  @override
+  int get hashCode => rooms.hashCode ^ next.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DirectoryRoomPage &&
+          runtimeType == other.runtimeType &&
+          rooms == other.rooms &&
+          next == other.next;
 }
 
 class EncryptionRecoveryInfo {
@@ -1770,6 +1884,8 @@ class LogFileContent {
           name == other.name &&
           content == other.content;
 }
+
+enum MemberRole { creator, administrator, moderator, member }
 
 /// A single member's read receipt on a message.
 class MessageReader {
@@ -2208,12 +2324,14 @@ class Space {
 }
 
 class SpaceDetails {
+  final bool? canInvite;
   final String id;
   final String name;
   final String? avatarUrl;
   final String? topic;
 
   const SpaceDetails({
+    this.canInvite,
     required this.id,
     required this.name,
     this.avatarUrl,
@@ -2222,13 +2340,18 @@ class SpaceDetails {
 
   @override
   int get hashCode =>
-      id.hashCode ^ name.hashCode ^ avatarUrl.hashCode ^ topic.hashCode;
+      canInvite.hashCode ^
+      id.hashCode ^
+      name.hashCode ^
+      avatarUrl.hashCode ^
+      topic.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SpaceDetails &&
           runtimeType == other.runtimeType &&
+          canInvite == other.canInvite &&
           id == other.id &&
           name == other.name &&
           avatarUrl == other.avatarUrl &&

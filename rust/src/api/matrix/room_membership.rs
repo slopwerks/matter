@@ -223,7 +223,10 @@ pub(super) async fn invite_user_to_room(
         .await
         .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
     ensure_account_matches(&client, &account_user_id)?;
-    let room = joined_non_space_room(&client, &room_id)?;
+    let room = get_room_by_id(&client, &room_id)?;
+    if room.state() != matrix_sdk::RoomState::Joined {
+        return Err(api_err("rooms", "只有已加入的房间或空间才能邀请成员".to_owned()));
+    }
     let user_id = matrix_sdk::ruma::UserId::parse(user_id.trim())
         .map_err(|error| api_err("rooms", format!("无效的用户 ID: {error}")))?;
     run_bounded(async move {

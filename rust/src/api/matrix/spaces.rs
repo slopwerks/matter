@@ -104,12 +104,28 @@ pub(super) async fn get_space_details(space_id: String) -> Result<SpaceDetails, 
         .map(|topic| topic.trim().to_string())
         .filter(|topic| !topic.is_empty());
 
+    let can_invite = room.power_levels().await.ok().and_then(|levels| {
+        client.user_id().map(|user| levels.user_can_invite(user))
+    });
     Ok(SpaceDetails {
+        can_invite,
         id: chat_room.id,
         name: chat_room.name,
         avatar_url: chat_room.avatar_url,
         topic,
     })
+}
+
+pub(super) async fn space_share_link(account_user_id: String, space_id: String) -> Result<String, String> {
+    let client = get_client().await.ok_or_else(|| api_err("spaces", "No client created.".to_string()))?;
+    ensure_account_matches(&client, &account_user_id)?;
+    let room = get_room_by_id(&client, &space_id)?;
+    if !room.is_space() || room.state() != matrix_sdk::RoomState::Joined {
+        return Err(api_err("spaces", "只能分享已加入的空间".to_string()));
+    }
+    run_bounded(async move {
+        room.matrix_to_permalink().await.map(|uri| uri.to_string()).map_err(|e| api_err("spaces", format!("生成空间链接失败: {e}")))
+    }).await
 }
 
 /// Extract the child room ID from an `m.space.child` state event. Events

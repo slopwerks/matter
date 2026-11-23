@@ -299,6 +299,7 @@ mod spaces;
 mod stickers;
 #[cfg(test)]
 use spaces::space_child_room_id;
+mod room_directory;
 mod room_membership;
 use room_membership::ensure_account_matches;
 use room_membership::is_dm_by_members;
