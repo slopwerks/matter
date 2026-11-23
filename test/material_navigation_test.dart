@@ -150,6 +150,9 @@ void main() {
           expect(find.text(destination.label), findsWidgets);
           expect(tester.takeException(), isNull);
         }
+        await tester.ensureVisible(find.text('外观与显示'));
+        await tester.tap(find.text('外观与显示'));
+        await tester.pumpAndSettle();
         expect(find.text('消息头像吸附'), findsOneWidget);
         expect(find.text('消息气泡阴影'), findsNothing);
         await tester.tap(find.text('Material 配色'));
