@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import '../../widgets/material_list_detail.dart';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -125,6 +128,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final bool isDm;
   final String? initialMessageId;
   final bool embedded;
+  final bool paneVisible;
   final VoidCallback? onBack;
   static void openPanelAction(GlobalKey chatKey, RoomPanelAction action) {
     final state = chatKey.currentState;
@@ -155,6 +159,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.isDm = false,
     this.initialMessageId,
     this.embedded = false,
+    this.paneVisible = true,
     this.onBack,
     this.detailsPanelOpen = false,
     this.onToggleDetailsPanel,
@@ -469,6 +474,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   @override
   void didUpdateWidget(covariant ChatDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.paneVisible != oldWidget.paneVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (widget.paneVisible) {
+          _activateRoom();
+        } else {
+          _deactivateRoom();
+        }
+      });
+    }
     if (oldWidget.roomName != widget.roomName) {
       _roomName = widget.roomName;
     }
@@ -636,6 +651,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _activateRoom({bool resetAutoReadSuppression = false}) {
+    if (!widget.paneVisible) return;
     // Never activate unless the app itself is in the foreground: a route
     // callback (e.g. a cover popped while inactive/paused) must not make the
     // room "being viewed" again in the background. A null lifecycle state
@@ -1818,7 +1834,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final rooms =
         ref.read(allChatRoomsProvider).asData?.value ?? const <ChatRoom>[];
     final room = rooms.where((room) => room.id == track.roomId).firstOrNull;
-    await Navigator.of(context, rootNavigator: true).push(
+    await MaterialListDetail.push(
+      context,
       MaterialPageRoute<void>(
         builder: (_) => ChatDetailPage(
           roomId: track.roomId!,
@@ -1843,7 +1860,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   Future<void> _openPinnedMessages() async {
-    final messageId = await Navigator.of(context).push<String>(
+    final messageId = await MaterialListDetail.push<String>(
+      context,
       MaterialPageRoute(
         builder: (_) => PinnedMessagesPage(roomId: widget.roomId),
       ),
@@ -1975,7 +1993,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _forwardNoticeTimer?.cancel();
     setState(() => _forwardNoticeRoom = null);
     if (room.id == widget.roomId) return;
-    Navigator.of(context).push(
+    MaterialListDetail.push(
+      context,
       MaterialPageRoute<void>(
         builder: (_) => ChatDetailPage(
           roomId: room.id,
@@ -3095,11 +3114,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       settings: visualSettings,
       child: PopScope(
         canPop:
-            !widget.embedded &&
-            _inputPanelMode == InputPanelMode.none &&
-            !keyboardVisible,
+            !widget.paneVisible ||
+            (!widget.embedded &&
+                _inputPanelMode == InputPanelMode.none &&
+                !keyboardVisible),
         onPopInvokedWithResult: (didPop, _) {
-          if (didPop) return;
+          if (didPop || !widget.paneVisible) return;
           SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
           _setInputPanelMode(InputPanelMode.none);
         },
@@ -3937,7 +3957,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final roomId = widget.roomId;
     void openManagement() {
       if (!mounted || !context.mounted || widget.roomId != roomId) return;
-      Navigator.of(context).push(
+      MaterialListDetail.push(
+        context,
         MaterialPageRoute(
           builder: (_) => RoomManagementPage(
             roomId: roomId,

@@ -479,8 +479,8 @@ ThemeData buildMaterialTheme(
       textColor: scheme.onSurface,
       titleTextStyle: listTitle,
       subtitleTextStyle: text.bodyMedium?.copyWith(fontSize: 14),
-      // The group owns its outline; ink inside a run reaches the row edges.
-      shape: const RoundedRectangleBorder(),
+      shape: buttonShape,
+      selectedTileColor: scheme.secondaryContainer,
     ),
 
     // ── 控件 ──────────────────────────────────────────────────────────
@@ -537,9 +537,7 @@ ThemeData buildMaterialTheme(
         color: scheme.onSecondaryContainer,
       ),
       side: BorderSide(color: scheme.outlineVariant),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(8)),
-      ),
+      shape: buttonShape,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       showCheckmark: false,
     ),

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../widgets/material_list_detail.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
@@ -136,7 +139,8 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
     );
   }
 
-  void _openRoomManagement(BuildContext context) => Navigator.of(context).push(
+  void _openRoomManagement(BuildContext context) => MaterialListDetail.push(
+    context,
     MaterialPageRoute(
       builder: (_) => RoomManagementPage(
         roomId: roomId,

@@ -143,7 +143,10 @@ class _StorageDetailPageState extends ConsumerState<StorageDetailPage> {
         : file.owners.length > 1
         ? '${file.owners.length} 个聊天共用'
         : null;
-    final tile = ListTile(
+    return ListTile(
+      tileColor: context.isMaterial && _selected.contains(file.path)
+          ? AppComponentTheme.of(context).selectedRowFill
+          : null,
       leading: Semantics(
         button: canPreviewStorageFile(file),
         label: canPreviewStorageFile(file)
@@ -170,13 +173,6 @@ class _StorageDetailPageState extends ConsumerState<StorageDetailPage> {
             : (value) => _toggle(file, value == true),
       ),
       onTap: () => _details(file, snapshot),
-    );
-    if (!context.isMaterial) return tile;
-    return Material(
-      color: _selected.contains(file.path)
-          ? AppComponentTheme.of(context).selectedRowFill
-          : Colors.transparent,
-      child: tile,
     );
   }
 

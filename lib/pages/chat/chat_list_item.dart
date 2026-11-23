@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../widgets/material_list_detail.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'action_failure_message.dart';
@@ -149,7 +152,8 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
                 false)) {
           return;
         }
-        Navigator.of(context).push(
+        MaterialListDetail.push(
+          context,
           MaterialPageRoute(
             builder: (_) => room.roomType == 'space'
                 ? SpaceDetailPage(

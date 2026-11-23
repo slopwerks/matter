@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../providers/hidden_rooms_provider.dart';
-import '../../theme/app_component_theme.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
@@ -131,7 +130,7 @@ class _HiddenRoomsPageState extends ConsumerState<HiddenRoomsPage> {
                 return NeuAction(
                   label: room.name,
                   selected: material ? selected : null,
-                  radius: material ? 0 : NeuRadius.button,
+                  radius: material ? materialSurfaceRadius : NeuRadius.button,
                   onTap: _selectionMode
                       ? () => _toggleSelection(room.id)
                       : () => Navigator.of(context).push(
@@ -148,43 +147,38 @@ class _HiddenRoomsPageState extends ConsumerState<HiddenRoomsPage> {
                         ),
                   onLongPress: () => _toggleSelection(room.id),
                   child: material
-                      ? Ink(
-                          color: selected
-                              ? AppComponentTheme.of(context).selectedRowFill
-                              : Colors.transparent,
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 4,
-                            ),
-                            horizontalTitleGap: 12,
-                            selected: selected,
-                            leading: AppAvatar(
-                              fallback: room.name,
-                              size: materialListAvatarSize,
-                              url: room.avatarUrl,
-                            ),
-                            title: Text(
-                              room.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            titleTextStyle: materialListTitleStyle(
-                              Theme.of(context),
-                            ),
-                            subtitle: const Text('已隐藏'),
-                            trailing: _selectionMode
-                                ? Checkbox(
-                                    value: selected,
-                                    onChanged: (_) => _toggleSelection(room.id),
-                                  )
-                                : OutlinedButton(
-                                    onPressed: () => ref
-                                        .read(hiddenRoomsProvider.notifier)
-                                        .unhideRooms([room.id]),
-                                    child: const Text('恢复'),
-                                  ),
+                      ? ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
                           ),
+                          horizontalTitleGap: 12,
+                          selected: selected,
+                          leading: AppAvatar(
+                            fallback: room.name,
+                            size: materialListAvatarSize,
+                            url: room.avatarUrl,
+                          ),
+                          title: Text(
+                            room.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          titleTextStyle: materialListTitleStyle(
+                            Theme.of(context),
+                          ),
+                          subtitle: const Text('已隐藏'),
+                          trailing: _selectionMode
+                              ? Checkbox(
+                                  value: selected,
+                                  onChanged: (_) => _toggleSelection(room.id),
+                                )
+                              : OutlinedButton(
+                                  onPressed: () => ref
+                                      .read(hiddenRoomsProvider.notifier)
+                                      .unhideRooms([room.id]),
+                                  child: const Text('恢复'),
+                                ),
                         )
                       : Padding(
                           padding: const EdgeInsets.symmetric(

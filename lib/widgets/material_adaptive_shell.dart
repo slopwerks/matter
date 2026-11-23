@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/tokens.dart';
 import 'mobile_tab_view.dart';
+import 'conversation_routes.dart';
 import 'compact_capsule_transition.dart';
 import 'material_tab_navigation_bar.dart';
 
@@ -619,6 +620,10 @@ class MaterialConversationLayout extends StatefulWidget {
     required this.list,
     required this.detail,
     required this.roomId,
+    required this.navigator,
+    required this.routesOpen,
+    required this.active,
+    required this.onRoutesChanged,
     this.supporting,
     required this.onCloseSupporting,
   });
@@ -627,6 +632,10 @@ class MaterialConversationLayout extends StatefulWidget {
   final Widget list;
   final Widget detail;
   final String? roomId;
+  final GlobalKey<NavigatorState> navigator;
+  final bool routesOpen;
+  final bool active;
+  final ValueChanged<bool> onRoutesChanged;
   final Widget? supporting;
   final VoidCallback onCloseSupporting;
 
@@ -637,6 +646,13 @@ class MaterialConversationLayout extends StatefulWidget {
 
 class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
     with _RememberWidth<MaterialConversationLayout> {
+  late final _observer = ConversationRouteObserver((open) {
+    if (mounted && open != widget.routesOpen) {
+      widget.onRoutesChanged(open);
+      MaterialDetailVisibility(open).dispatch(context);
+    }
+  });
+
   @override
   String get _widthKey => 'material_conversation_list_width';
 
@@ -644,134 +660,171 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
   Widget build(BuildContext context) {
     final window = widget.window;
     final supporting = widget.supporting;
-    final selected = widget.roomId != null;
+    final selected = widget.roomId != null || widget.routesOpen;
     final persistent = window == MaterialWindowClass.extraLarge;
     final modal = supporting != null && !persistent;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final supportingWidth = persistent && supporting != null ? 361.0 : 0.0;
-        final maxWidth = (constraints.maxWidth - supportingWidth - 361).clamp(
-          260.0,
-          480.0,
-        );
-        final listWidth = window.hasSplit
-            ? (_preferredWidth ?? 320.0).clamp(260.0, maxWidth)
-            : constraints.maxWidth;
-        final detailStart = window.hasSplit ? listWidth + 1 : 0.0;
-        return Stack(
-          children: [
-            PositionedDirectional(
-              key: const ValueKey('material-conversation-list'),
-              start: 0,
-              top: 0,
-              bottom: 0,
-              width: listWidth,
-              child: Offstage(
-                offstage: selected && !window.hasSplit,
-                child: ExcludeFocus(excluding: modal, child: widget.list),
-              ),
-            ),
-            PositionedDirectional(
-              key: const ValueKey('material-conversation-detail'),
-              start: detailStart,
-              end: supportingWidth,
-              top: 0,
-              bottom: 0,
-              child: Offstage(
-                offstage: !window.hasSplit && !selected,
-                child: ExcludeFocus(
-                  excluding: modal,
-                  child: LayoutBuilder(
-                    builder: (context, pane) => MediaQuery(
-                      data: MediaQuery.of(context)
-                          .copyWith(size: Size(pane.maxWidth, pane.maxHeight)),
-                      child: PrimaryCapsuleEditor(child: widget.detail),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (window.hasSplit)
+    return ConversationRoutes(
+      navigator: widget.navigator,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final supportingWidth = persistent && supporting != null
+              ? 361.0
+              : 0.0;
+          final maxWidth = (constraints.maxWidth - supportingWidth - 361).clamp(
+            260.0,
+            480.0,
+          );
+          final listWidth = window.hasSplit
+              ? (_preferredWidth ?? 320.0).clamp(260.0, maxWidth)
+              : constraints.maxWidth;
+          final detailStart = window.hasSplit ? listWidth + 1 : 0.0;
+          return Stack(
+            children: [
               PositionedDirectional(
-                start: listWidth - 3.5,
+                key: const ValueKey('material-conversation-list'),
+                start: 0,
                 top: 0,
                 bottom: 0,
-                width: 8,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.resizeColumn,
-                  child: GestureDetector(
-                    key: const ValueKey('conversation-list-divider'),
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragUpdate: (event) {
-                      final delta =
-                          Directionality.of(context) == TextDirection.rtl
-                          ? -event.delta.dx
-                          : event.delta.dx;
-                      setState(
-                        () => _preferredWidth =
-                            ((_preferredWidth ?? listWidth).clamp(
-                                      260.0,
-                                      maxWidth,
-                                    ) +
-                                    delta)
-                                .clamp(260.0, maxWidth),
-                      );
-                    },
-                    onHorizontalDragEnd: (_) => _saveWidth(),
-                    onDoubleTap: () {
-                      setState(() => _preferredWidth = 320);
-                      _saveWidth();
-                    },
-                    child: const VerticalDivider(width: 1, thickness: 1),
-                  ),
+                width: listWidth,
+                child: Offstage(
+                  offstage: selected && !window.hasSplit,
+                  child: ExcludeFocus(excluding: modal, child: widget.list),
                 ),
               ),
-            if (supporting != null && !persistent)
-              Positioned.fill(
-                child: ModalBarrier(
-                  color: Colors.black.withValues(alpha: .32),
-                  onDismiss: widget.onCloseSupporting,
-                  semanticsLabel: '关闭房间详情',
-                ),
-              ),
-            if (supporting != null)
               PositionedDirectional(
-                end: 0,
-                top: window.hasSplit ? 0 : constraints.maxHeight * .12,
+                key: const ValueKey('material-conversation-detail'),
+                start: detailStart,
+                end: supportingWidth,
+                top: 0,
                 bottom: 0,
-                width: window.hasSplit ? 360 : constraints.maxWidth,
-                child: CallbackShortcuts(
-                  bindings: {
-                    if (!persistent)
-                      const SingleActivator(LogicalKeyboardKey.escape):
-                          widget.onCloseSupporting,
-                  },
-                  child: FocusScope(
-                    autofocus: !persistent,
-                    child: Material(
-                      elevation: persistent ? 0 : 3,
-                      clipBehavior: Clip.antiAlias,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(window.hasSplit ? 0 : 28),
-                      ),
-                      child: Column(
-                        children: [
-                          Align(
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: CloseButton(
-                              onPressed: widget.onCloseSupporting,
+                child: Offstage(
+                  offstage: !window.hasSplit && !selected,
+                  child: ExcludeFocus(
+                    excluding: modal,
+                    child: LayoutBuilder(
+                      builder: (context, pane) => MediaQuery(
+                        data: MediaQuery.of(
+                          context,
+                        ).copyWith(size: Size(pane.maxWidth, pane.maxHeight)),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Offstage(
+                              offstage: widget.routesOpen,
+                              child: PrimaryCapsuleEditor(child: widget.detail),
                             ),
-                          ),
-                          Expanded(child: supporting),
-                        ],
+                            Offstage(
+                              offstage: !widget.routesOpen,
+                              child: PopScope<Object?>(
+                                canPop: !widget.active || !widget.routesOpen,
+                                onPopInvokedWithResult: (didPop, result) {
+                                  if (!didPop &&
+                                      widget.active &&
+                                      widget.routesOpen) {
+                                    widget.navigator.currentState?.maybePop(
+                                      result,
+                                    );
+                                  }
+                                },
+                                child: Navigator(
+                                  key: widget.navigator,
+                                  observers: [_observer],
+                                  onGenerateRoute: (_) =>
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => const SizedBox.shrink(),
+                                      ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-          ],
-        );
-      },
+              if (window.hasSplit)
+                PositionedDirectional(
+                  start: listWidth - 3.5,
+                  top: 0,
+                  bottom: 0,
+                  width: 8,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.resizeColumn,
+                    child: GestureDetector(
+                      key: const ValueKey('conversation-list-divider'),
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragUpdate: (event) {
+                        final delta =
+                            Directionality.of(context) == TextDirection.rtl
+                            ? -event.delta.dx
+                            : event.delta.dx;
+                        setState(
+                          () => _preferredWidth =
+                              ((_preferredWidth ?? listWidth).clamp(
+                                        260.0,
+                                        maxWidth,
+                                      ) +
+                                      delta)
+                                  .clamp(260.0, maxWidth),
+                        );
+                      },
+                      onHorizontalDragEnd: (_) => _saveWidth(),
+                      onDoubleTap: () {
+                        setState(() => _preferredWidth = 320);
+                        _saveWidth();
+                      },
+                      child: const VerticalDivider(width: 1, thickness: 1),
+                    ),
+                  ),
+                ),
+              if (supporting != null && !persistent)
+                Positioned.fill(
+                  child: ModalBarrier(
+                    color: Colors.black.withValues(alpha: .32),
+                    onDismiss: widget.onCloseSupporting,
+                    semanticsLabel: '关闭房间详情',
+                  ),
+                ),
+              if (supporting != null)
+                PositionedDirectional(
+                  end: 0,
+                  top: window.hasSplit ? 0 : constraints.maxHeight * .12,
+                  bottom: 0,
+                  width: window.hasSplit ? 360 : constraints.maxWidth,
+                  child: CallbackShortcuts(
+                    bindings: {
+                      if (!persistent)
+                        const SingleActivator(LogicalKeyboardKey.escape):
+                            widget.onCloseSupporting,
+                    },
+                    child: FocusScope(
+                      autofocus: !persistent,
+                      child: Material(
+                        elevation: persistent ? 0 : 3,
+                        clipBehavior: Clip.antiAlias,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(window.hasSplit ? 0 : 28),
+                        ),
+                        child: Column(
+                          children: [
+                            Align(
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: CloseButton(
+                                onPressed: widget.onCloseSupporting,
+                              ),
+                            ),
+                            Expanded(child: supporting),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

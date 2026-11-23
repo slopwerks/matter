@@ -60,6 +60,8 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   final Set<String> _handledVerificationFlows = {};
   rust.ChatRoom? _selectedRoom;
   GlobalKey _selectedChatKey = GlobalKey();
+  var _conversationNavigator = GlobalKey<NavigatorState>();
+  bool _conversationRoutesOpen = false;
   String? _selectedMessageId;
   bool _waitingForSelectedRoomSync = false;
   late final DesktopRoomNavigation _desktopRoomNavigation;
@@ -76,6 +78,9 @@ class _MatterAppState extends ConsumerState<MatterApp> {
 
   void _setMaterialDetails(bool visible) =>
       setState(() => _materialDetailsVisible = visible);
+
+  void _setConversationRoutesOpen(bool open) =>
+      setState(() => _conversationRoutesOpen = open);
 
   /// The selected ChatDetailPage's room-details handler, registered via its
   /// `onRegisterRoomDetailsHandler` prop. Desktop details-panel edits are
@@ -319,6 +324,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   }
 
   void _selectRoom(rust.ChatRoom room, {String? messageId}) {
+    _conversationNavigator.currentState?.popUntil((route) => route.isFirst);
     _navigationRevision++;
     if (room.roomType == 'space') {
       _showSpace(
@@ -558,6 +564,10 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   void _syncDesktopSelectionAfterAccountChange(String? activeUserId) {
     final previousUserId = _lastActiveUserId;
     _lastActiveUserId = activeUserId;
+    if (previousUserId != activeUserId) {
+      _conversationNavigator = GlobalKey<NavigatorState>();
+      _conversationRoutesOpen = false;
+    }
     if (_startupAccount != activeUserId) {
       _startupAccount = activeUserId;
       final revision = ++_navigationRevision;
@@ -797,6 +807,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
 
   Widget _buildSelectedChat({
     required bool embedded,
+    bool paneVisible = true,
     bool canShowRoomDetails = false,
     bool showRoomDetails = false,
     VoidCallback? onToggleDetailsPanel,
@@ -817,6 +828,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
           ? (room.unreadCount > 0 ? '${room.unreadCount} 条未读消息' : '已标记未读')
           : '在线',
       embedded: embedded,
+      paneVisible: paneVisible,
       onBack: embedded ? null : _clearSelectedRoom,
       detailsPanelOpen: showRoomDetails,
       onToggleDetailsPanel: canShowRoomDetails

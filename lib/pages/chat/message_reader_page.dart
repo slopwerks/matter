@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/material_list_detail.dart';
+
 import '../../features/matrix_html/matrix_html_renderer.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
@@ -15,7 +17,8 @@ void openMessageReader(
   required Map<String, String> mentionDisplayNames,
   required ValueChanged<String> onMentionTap,
 }) {
-  Navigator.of(context, rootNavigator: true).push(
+  MaterialListDetail.push(
+    context,
     MaterialPageRoute<void>(
       fullscreenDialog: true,
       builder: (_) => MessageReaderPage(

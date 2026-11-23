@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'material_adaptive_shell.dart';
+import 'conversation_routes.dart';
 import 'max_content_width.dart';
 
 /// Secondary destinations retain one list and one route stack across resizing.
@@ -20,7 +21,10 @@ class MaterialListDetail extends StatefulWidget {
 
   static Future<T?> push<T>(BuildContext context, Route<T> route) {
     final host = context.findAncestorStateOfType<_MaterialListDetailState>();
-    if (host == null) return Navigator.of(context).push(route);
+    if (host == null) {
+      final navigator = ConversationRoutes.of(context) ?? Navigator.of(context);
+      return navigator.push(route);
+    }
     if (Navigator.of(context) == host._navigator.currentState) {
       return host._navigator.currentState!.push(route);
     }

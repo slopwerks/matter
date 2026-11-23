@@ -8,18 +8,34 @@ extension _MaterialAppLayout on _MatterAppState {
     final room = _selectedRoom;
     final detailsVisible =
         room != null &&
+        !_conversationRoutesOpen &&
         (_materialDetailsVisible ?? window == MaterialWindowClass.extraLarge);
     final modalDetails =
         detailsVisible &&
         window != MaterialWindowClass.extraLarge &&
         navigationIndex == 0;
-    final singleChat = room != null && !window.hasSplit && navigationIndex == 0;
+    final singleChat =
+        room != null &&
+        !_conversationRoutesOpen &&
+        !window.hasSplit &&
+        navigationIndex == 0;
     final me = ref.watch(currentUserProvider);
     final spaces = window.hasRail
         ? ref.watch(spacesProvider).value ?? const <rust.Space>[]
         : const <rust.Space>[];
-    void newChat() => Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const CreateChatPage()));
+    void openChatTool(Widget page) {
+      final navigator = _conversationNavigator;
+      _onItemTapped(0);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || ref.read(navigationIndexProvider) != 0) return;
+        navigator.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => page),
+          (route) => route.isFirst,
+        );
+      });
+    }
+
+    void newChat() => openChatTool(const CreateChatPage());
     final avatar = AppAvatar(
       fallback: me?.displayName ?? '',
       size: 36,
@@ -81,7 +97,7 @@ extension _MaterialAppLayout on _MatterAppState {
         railActions: (extended) => MaterialRailActions(
           extended: extended,
           onCreate: newChat,
-          onFindRoom: () => RoomDirectoryPage.open(context),
+          onFindRoom: () => openChatTool(const RoomDirectoryPage()),
         ),
         unreadCount: window.hasRail
             ? _railUnreadCount(ref.watch(inboxRoomsProvider).value ?? const [])
@@ -121,6 +137,10 @@ extension _MaterialAppLayout on _MatterAppState {
         ),
         pages: [
           MaterialConversationLayout(
+            navigator: _conversationNavigator,
+            routesOpen: _conversationRoutesOpen,
+            active: navigationIndex == 0,
+            onRoutesChanged: _setConversationRoutesOpen,
             window: window,
             list: _buildDesktopRoomList(
               filters: Builder(
@@ -135,6 +155,8 @@ extension _MaterialAppLayout on _MatterAppState {
                 ? const _DesktopEmptyChat()
                 : _buildSelectedChat(
                     embedded: window.hasSplit,
+                    paneVisible:
+                        !_conversationRoutesOpen && navigationIndex == 0,
                     canShowRoomDetails: true,
                     showRoomDetails: detailsVisible,
                     onToggleDetailsPanel: () =>

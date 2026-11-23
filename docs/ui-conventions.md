@@ -119,9 +119,9 @@ items categorise; a chat list is a stream even though it is also made of rows.
 ### Categorised rows
 
 `GroupedRows` owns one filled `Material` with the theme's card outline around
-the category. Hairlines paint on top of that same fill. The individual
-`ListTile` shapes are square so their pressed ink reaches the row edges; only
-the group's outside boundary clips it. Material cards and grouped settings use
+the category. Hairlines paint on top of that same fill. Individual rows use a
+stadium for hover, focus, press and selection, as do filter chips.
+Material cards and grouped settings use
 28 dp circular corners from `material_theme.dart`, independent of the
 new-skeuomorphic radius scale. Action buttons use a full pill; Material FABs use
 56 × 56 dp icon-only controls with 16 dp circular corners.
@@ -264,6 +264,9 @@ keys and Offstage rather than replacing routes. The chat receives a MediaQuery
 for its actual pane. Selection, list position, focus and drafts survive resizing;
 account switches intentionally replace the page tree. Single-pane chats disable
 page swipes so message gestures cannot accidentally change the destination.
+Conversation tools such as room discovery, pinned messages and room management
+open in the chat detail pane. Back first closes the current tool. Selecting a
+room from the conversation list returns the pane to its timeline.
 Neu keeps the existing 960 dp desktop breakpoint and draggable split widths.
 The M3 shell reuses the existing lens dock and its motion rather than replacing
 it with native bottom-navigation transitions.

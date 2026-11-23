@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../widgets/material_list_detail.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
@@ -28,7 +31,8 @@ class RoomDirectoryPage extends ConsumerStatefulWidget {
     BuildContext context, {
     bool focusAddress = false,
     bool spaceAddress = false,
-  }) => Navigator.of(context).push(
+  }) => MaterialListDetail.push(
+    context,
     MaterialPageRoute<void>(
       builder: (_) => RoomDirectoryPage(
         focusAddress: focusAddress,
@@ -147,7 +151,8 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
   void _openRoom(rust.DirectoryRoom room) {
     final name = room.name ?? room.alias ?? room.id;
     if (room.isSpace) {
-      Navigator.of(context).push(
+      MaterialListDetail.push(
+        context,
         MaterialPageRoute<void>(
           builder: (_) => SpaceDetailPage(
             space: rust.Space(
@@ -169,7 +174,8 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
         (ref.read(desktopRoomNavigationProvider).open?.call(cached) ?? false)) {
       return;
     }
-    Navigator.of(context).push(
+    MaterialListDetail.push(
+      context,
       MaterialPageRoute<void>(
         builder: (_) => ChatDetailPage(
           roomId: room.id,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
 import 'package:matter/pages/chat/create_chat_page.dart';
+import 'package:matter/pages/chat/room_directory_page.dart';
 import 'package:matter/pages/settings/material_color_settings_page.dart';
 import 'package:matter/providers/material_color_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
@@ -149,6 +150,41 @@ void main() {
           );
           expect(find.text(destination.label), findsWidgets);
           expect(tester.takeException(), isNull);
+          if (width >= 840 && destination.label == '空间') {
+            await tester.tap(find.byTooltip('探索公开房间'));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(
+              tester.getTopLeft(find.byType(RoomDirectoryPage)).dx,
+              greaterThan(tester.getCenter(find.byTooltip('探索公开房间')).dx),
+            );
+            await tester.binding.handlePopRoute();
+            await tester.pumpAndSettle();
+            expect(find.byType(RoomDirectoryPage), findsNothing);
+          }
+        }
+        if (width >= 840) {
+          // Global rail actions also work when another tab is active.
+          await tester.tap(find.byTooltip('查找房间'));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pump();
+          final directory = find.byType(RoomDirectoryPage);
+          final list = find.byKey(const ValueKey('material-conversation-list'));
+          expect(
+            tester.getTopLeft(directory).dx,
+            greaterThanOrEqualTo(tester.getTopRight(list).dx),
+          );
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(directory, findsNothing);
+          await tester.tap(
+            find.descendant(
+              of: find.byKey(const ValueKey('material-navigation-rail')),
+              matching: find.text('设置'),
+            ),
+          );
+          await tester.pumpAndSettle();
         }
         expect(find.text('外观与显示'), findsOneWidget);
         expect(find.widgetWithText(ListTile, '外观与显示'), findsNothing);

@@ -465,7 +465,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final homeserver = ref.read(currentUserProvider)?.homeserver;
     setState(() => _addingAccount = true);
     try {
-      final added = await Navigator.of(context).push<bool>(
+      final added = await MaterialListDetail.push<bool>(
+        context,
         MaterialPageRoute(
           builder: (_) =>
               LoginPage(initialHomeserver: homeserver, addingAccount: true),

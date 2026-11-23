@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../widgets/material_list_detail.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
@@ -145,7 +148,8 @@ class MaterialRoomDetailsPanel extends ConsumerWidget {
                 leading: const Icon(Icons.group_outlined),
                 title: Text('成员 ${loaded.length}'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
+                onTap: () => MaterialListDetail.push(
+                  context,
                   MaterialPageRoute<void>(
                     builder: (_) => Scaffold(
                       appBar: AppBar(title: const Text('成员')),

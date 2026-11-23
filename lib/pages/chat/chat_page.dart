@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../widgets/material_list_detail.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
@@ -114,7 +117,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final rooms =
         ref.read(allChatRoomsProvider).asData?.value ?? const <ChatRoom>[];
     final room = rooms.where((room) => room.id == track!.roomId).firstOrNull;
-    await Navigator.of(context, rootNavigator: true).push(
+    await MaterialListDetail.push(
+      context,
       MaterialPageRoute<void>(
         builder: (_) => ChatDetailPage(
           roomId: track!.roomId!,
@@ -132,8 +136,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _openCreateChat() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const CreateChatPage()));
+    MaterialListDetail.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateChatPage()),
+    );
   }
 
   // 只读入口:点击进入独立搜索页。
@@ -183,7 +189,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             IconButton(
               icon: const Icon(Icons.visibility_off_outlined),
               tooltip: '隐藏的聊天',
-              onPressed: () => Navigator.of(context).push(
+              onPressed: () => MaterialListDetail.push(
+                context,
                 MaterialPageRoute(builder: (_) => const HiddenRoomsPage()),
               ),
             ),
@@ -207,7 +214,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               NeuIconButton(
                 icon: Icons.visibility_off_outlined,
                 tooltip: '隐藏的聊天',
-                onPressed: () => Navigator.of(context).push(
+                onPressed: () => MaterialListDetail.push(
+                  context,
                   MaterialPageRoute(builder: (_) => const HiddenRoomsPage()),
                 ),
               ),

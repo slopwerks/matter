@@ -37,6 +37,8 @@ void main() {
         theme.colorScheme.onSurface,
       );
       expect(theme.splashFactory, isNot(NoSplash.splashFactory));
+      expect(theme.listTileTheme.shape, isA<StadiumBorder>());
+      expect(theme.chipTheme.shape, isA<StadiumBorder>());
       final luminances = [
         colors.accent.computeLuminance(),
         colors.onAccent.computeLuminance(),
