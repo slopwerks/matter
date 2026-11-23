@@ -19,6 +19,8 @@ class AppAvatar extends ConsumerStatefulWidget {
   final String? url;
   final String fallback;
   final double radius;
+  final double? materialRadius;
+  final ({Color fill, Color foreground})? fallbackColors;
 
   const AppAvatar({
     super.key,
@@ -26,6 +28,8 @@ class AppAvatar extends ConsumerStatefulWidget {
     this.url,
     required this.fallback,
     this.radius = NeuRadius.content,
+    this.materialRadius,
+    this.fallbackColors,
   });
 
   @override
@@ -82,10 +86,13 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     }
   }
 
+  double get _radius => context.isMaterial
+      ? widget.materialRadius ?? widget.size / 2
+      : widget.radius;
+
   @override
   Widget build(BuildContext context) {
     final url = _resolvedUrl;
-    final radius = context.isMaterial ? widget.size / 2 : widget.radius;
 
     if (url == null || url.isEmpty) {
       return _buildFallback(context);
@@ -102,7 +109,7 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
       height: widget.size,
       decoration: BoxDecoration(
         color: context.neu.surfaceStrong,
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(_radius),
       ),
       clipBehavior: Clip.antiAlias,
       child: _AuthenticatedImage(
@@ -125,20 +132,22 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
       width: widget.size,
       height: widget.size,
       decoration: BoxDecoration(
-        color: context.isMaterial
-            ? Theme.of(context).colorScheme.secondaryContainer
-            : context.neu.surfaceStrong,
-        borderRadius: BorderRadius.circular(
-          context.isMaterial ? widget.size / 2 : widget.radius,
-        ),
+        color:
+            widget.fallbackColors?.fill ??
+            (context.isMaterial
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : context.neu.surfaceStrong),
+        borderRadius: BorderRadius.circular(_radius),
       ),
       child: Center(
         child: Text(
           _initials,
           style: TextStyle(
-            color: context.isMaterial
-                ? Theme.of(context).colorScheme.onSecondaryContainer
-                : context.neu.accent,
+            color:
+                widget.fallbackColors?.foreground ??
+                (context.isMaterial
+                    ? Theme.of(context).colorScheme.onSecondaryContainer
+                    : context.neu.accent),
             fontSize: widget.size * 0.38,
             fontWeight: FontWeight.w700,
           ),

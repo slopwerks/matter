@@ -11,197 +11,266 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
     AsyncValue<List<Contact>> members,
   ) {
     final hero = materialProfileCardStyle(Theme.of(context), detail: true);
+    final wide = MediaQuery.sizeOf(context).width >= 600;
+    void manage() => _showSpaceMenu(
+      context,
+      ref,
+      details,
+      detailsLoaded,
+      allChildren.asData?.value,
+    );
+    final invite = details.canInvite == true && !_inviting
+        ? _inviteSpaceMember
+        : null;
     return Scaffold(
-      appBar: buildFloatingAppBar(
-        title: const Text('空间详情'),
-        actions: [
-          IconButton(
-            tooltip: '添加房间',
-            icon: const Icon(Icons.playlist_add),
-            onPressed: () => _showAddRoomDialog(context, ref),
-          ),
-          IconButton(
-            tooltip: '更多',
-            icon: const Icon(Icons.more_horiz_rounded),
-            onPressed: () => _showSpaceMenu(
-              context,
-              ref,
-              details,
-              detailsLoaded,
-              allChildren.asData?.value,
-            ),
-          ),
-        ],
-      ),
-      body: MaxContentWidth(
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            20,
-            16,
-            MediaQuery.paddingOf(context).bottom + 32,
-          ),
-          children: [
-            Card(
-              color: hero.fill,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        AppAvatar(
-                          fallback: details.name,
-                          size: 56,
-                          url: details.avatarUrl,
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(child: Text(details.name, style: hero.title)),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    SelectableText(details.id, style: hero.subtitle),
-                    if ((details.topic ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(details.topic!, style: hero.subtitle),
-                    ],
-                  ],
+      body: SafeArea(
+        child: DefaultTabController(
+          length: 3,
+          initialIndex: _materialSpaceTab,
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              Material(
+                color: hero.fill,
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(materialSurfaceRadius),
                 ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SegmentedButton<int>(
-              showSelectedIcon: false,
-              expandedInsets: EdgeInsets.zero,
-              segments: const [
-                ButtonSegment(value: 0, label: Text('房间')),
-                ButtonSegment(value: 1, label: Text('成员')),
-                ButtonSegment(value: 2, label: Text('关于')),
-              ],
-              selected: {_materialSpaceTab},
-              onSelectionChanged: (selection) =>
-                  _selectMaterialSpaceTab(selection.single),
-            ),
-            const SizedBox(height: 20),
-            switch (_materialSpaceTab) {
-              0 => children.when(
-                data: (rooms) => _materialRooms(context, rooms),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => Text('加载房间失败: $error'),
-              ),
-              1 => members.when(
-                data: (people) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
                   children: [
-                    Text('成员', style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 12),
-                    people.isEmpty
-                        ? const Text('暂无成员信息')
-                        : Column(
-                            children: [
-                              for (final (index, person)
-                                  in people.take(8).indexed) ...[
-                                if (index > 0)
-                                  const Divider(
-                                    height: 1,
-                                    indent:
-                                        materialListAvatarSize +
-                                        materialListContentGap,
-                                  ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  child: MaterialMemberIdentity(
-                                    name: person.name,
-                                    userId: person.id,
-                                    avatarUrl: person.avatarUrl,
-                                  ),
-                                ),
-                              ],
-                              if (people.length > 8)
-                                Text('还有 ${people.length - 8} 位成员'),
-                            ],
+                    Positioned.fill(
+                      child: MaterialHeaderDecoration(
+                        color: materialRootHeaderStyle(
+                          Theme.of(context),
+                          compact: true,
+                        ).decoration,
+                      ),
+                    ),
+                    Container(
+                      constraints: BoxConstraints(minHeight: wide ? 192 : 128),
+                      padding: EdgeInsets.all(
+                        wide ? NeuSpacing.xl : NeuSpacing.md,
+                      ),
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Row(
+                        children: [
+                          if (Navigator.canPop(context) &&
+                              !(MaterialAdaptiveShell.windowOf(context)
+                                      ?.hasSplit ??
+                                  false))
+                            BackButton(color: hero.foreground),
+                          AppAvatar(
+                            fallback: details.name,
+                            size: wide ? 72 : 56,
+                            materialRadius: wide ? 24 : 16,
+                            url: details.avatarUrl,
+                            fallbackColors: (
+                              fill: Theme.of(context).colorScheme.primary,
+                              foreground: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimary,
+                            ),
                           ),
+                          const SizedBox(width: NeuSpacing.lg),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  details.name,
+                                  style: wide
+                                      ? Theme.of(context)
+                                            .textTheme
+                                            .headlineLarge
+                                            ?.copyWith(color: hero.foreground)
+                                      : hero.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if ((details.topic ?? '').isNotEmpty)
+                                  Text(
+                                    details.topic!,
+                                    style: hero.subtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: manage,
+                            color: hero.foreground,
+                            icon: const Icon(Icons.more_horiz),
+                            tooltip: '空间操作',
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => Text('加载成员失败: $error'),
               ),
-              _ => MaterialDetailCard(
-                title: '空间管理',
-                child: Column(
-                  children: [
-                    _ActionSettingRow(
-                      icon: Icons.edit_rounded,
-                      label: '编辑空间',
-                      value: '修改名称与说明',
-                      onTap: () => _showEditSpaceDialog(context, ref, details),
+              TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                indicatorSize: TabBarIndicatorSize.tab,
+                padding: const EdgeInsets.symmetric(horizontal: NeuSpacing.lg),
+                onTap: _selectMaterialSpaceTab,
+                tabs: const [
+                  Tab(text: '房间'),
+                  Tab(text: '成员'),
+                  Tab(text: '关于'),
+                ],
+              ),
+              MaxContentWidth(
+                maxWidth: 1100,
+                child: Padding(
+                  padding: EdgeInsets.all(wide ? NeuSpacing.xl : NeuSpacing.lg),
+                  child: switch (_materialSpaceTab) {
+                    0 => children.when(
+                      data: (rooms) => _materialRooms(context, rooms, manage),
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (error, _) => Text('加载房间失败: $error'),
                     ),
-                    const Divider(),
-                    _ActionSettingRow(
-                      icon: Icons.exit_to_app_rounded,
-                      label: '退出空间',
-                      value: '离开当前空间',
-                      danger: true,
-                      onTap: () => _confirmLeaveSpace(context, ref, details),
+                    1 => members.when(
+                      data: (people) =>
+                          _SpaceMembers(people: people, onInvite: invite),
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (error, _) => Text('加载成员失败: $error'),
                     ),
-                  ],
+                    _ => _SpaceAbout(
+                      details: details,
+                      rooms: children,
+                      onEdit: detailsLoaded
+                          ? () => _showEditSpaceDialog(context, ref, details)
+                          : null,
+                      onManage: manage,
+                      onInvite: invite,
+                      onCopy: _copySpaceLink,
+                      onLeave: () => _confirmLeaveSpace(context, ref, details),
+                    ),
+                  },
                 ),
               ),
-            },
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _materialRooms(BuildContext context, List<ChatRoom> rooms) {
-    if (rooms.isEmpty) {
-      return MaterialDetailCard(
-        title: '房间列表',
-        description: '这个空间下暂时没有可见房间',
-        child: Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: NeuButton(
-            onPressed: () => _showAddRoomDialog(context, ref),
-            icon: const Icon(Icons.add),
-            child: const Text('添加房间'),
-          ),
-        ),
-      );
-    }
+  Widget _materialRooms(
+    BuildContext context,
+    List<ChatRoom> children,
+    VoidCallback manage,
+  ) {
+    final rooms = children.where((room) => room.roomType != 'space').toList();
+    final subspaces = children
+        .where((room) => room.roomType == 'space')
+        .toList();
+    final unread = [
+      for (final room in rooms)
+        if (roomHasUnread(room, ref.watch(roomUnreadOverrideProvider(room.id))))
+          room,
+    ];
+    final count = unread.fold(
+      0,
+      (n, room) => n + (room.unreadCount > 0 ? room.unreadCount : 1),
+    );
+    final text = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          '房间列表 · ${rooms.length}',
-          style: Theme.of(context).textTheme.titleSmall,
+        Wrap(
+          spacing: NeuSpacing.sm,
+          runSpacing: NeuSpacing.xs,
+          children: [
+            FilledButton.icon(
+              onPressed: manage,
+              icon: const Icon(Icons.settings_outlined),
+              label: const Text('管理空间'),
+            ),
+            OutlinedButton(
+              onPressed: unread.isEmpty
+                  ? null
+                  : () => _openSpaceChild(context, unread.first, true),
+              child: Text('未读 $count'),
+            ),
+            OutlinedButton(
+              onPressed: unread.isEmpty || _markingSpaceRead
+                  ? null
+                  : () => _markSpaceRead(unread),
+              child: const Text('全部已读'),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 640 ? 2 : 1;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            return Wrap(
-              spacing: 12,
-              children: [
-                for (final room in rooms)
-                  SizedBox(
-                    width: width,
-                    child: _SpaceChildTile(
-                      room: room,
-                      onRemove: room.roomType == 'space'
-                          ? null
-                          : () => _confirmRemoveRoom(context, ref, room),
-                    ),
-                  ),
-              ],
-            );
-          },
+        const SizedBox(height: NeuSpacing.xl),
+        if (subspaces.isNotEmpty) ...[
+          Text('子空间 ${subspaces.length}', style: text.titleMedium),
+          const SizedBox(height: NeuSpacing.sm),
+          _spaceRoomGrid(subspaces),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: Text('房间 ${rooms.length}', style: text.titleMedium),
+            ),
+            TextButton.icon(
+              onPressed: _creatingRoom ? null : _createSpaceRoom,
+              icon: const Icon(Icons.add),
+              label: const Text('新建房间'),
+            ),
+          ],
+        ),
+        const SizedBox(height: NeuSpacing.sm),
+        if (rooms.isEmpty)
+          const Text('这个空间下暂时没有可见房间')
+        else
+          _spaceRoomGrid(rooms),
+        const SizedBox(height: NeuSpacing.md),
+        Card.outlined(
+          child: ListTile(
+            leading: Icon(
+              Icons.public,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            title: const Text('发现更多讨论'),
+            subtitle: const Text('按房间名或地址查找公开房间。'),
+            trailing: FilledButton.tonal(
+              onPressed: () => RoomDirectoryPage.open(context),
+              child: const Text('探索'),
+            ),
+            onTap: () => RoomDirectoryPage.open(context),
+          ),
         ),
       ],
     );
   }
+
+  Widget _spaceRoomGrid(List<ChatRoom> rooms) => LayoutBuilder(
+    builder: (context, constraints) {
+      const gap = NeuSpacing.md;
+      final columns = ((constraints.maxWidth + gap) / (235 + gap))
+          .floor()
+          .clamp(1, rooms.length);
+      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap,
+        children: [
+          for (final room in rooms)
+            SizedBox(
+              width: width,
+              child: _SpaceChildTile(
+                room: room,
+                onRemove: room.roomType == 'space'
+                    ? null
+                    : () => _confirmRemoveRoom(context, ref, room),
+              ),
+            ),
+        ],
+      );
+    },
+  );
 }

@@ -40,16 +40,28 @@ class _RustApi implements RustLibApi {
   }
 
   @override
-  Future<String> crateApiMatrixJoinRoom({
+  Future<rust.DirectoryRoom> crateApiMatrixPreviewRoomAddress({
     required String accountUserId,
-    required String identifier,
+    required String address,
+  }) async => rust.DirectoryRoom(
+    id: '!joined:example.org',
+    name: '社区空间',
+    alias: address,
+    isSpace: true,
+    state: 'left',
+    joinRule: 'public',
+    via: const [],
+  );
+
+  @override
+  Future<void> crateApiMatrixEnterDirectoryRoom({
+    required String accountUserId,
+    required String roomId,
+    required List<String> via,
+    required bool knock,
   }) async {
-    joins.add((account: accountUserId, identifier: identifier));
-    spaces = [
-      ...spaces,
-      const rust.Space(id: '!joined:example.org', name: '社区空间'),
-    ];
-    return '!joined:example.org';
+    joins.add((account: accountUserId, identifier: roomId));
+    spaces = [...spaces, rust.Space(id: roomId, name: '社区空间')];
   }
 
   @override
@@ -82,6 +94,8 @@ Future<void> _pumpPage(
   GlobalKey? boundaryKey,
   TargetPlatform? platform,
   List<rust.ChatRoom> rooms = const [],
+  Map<String, List<rust.ChatRoom>> children = const {},
+  Map<String, String> topics = const {},
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 700));
   tester.view.devicePixelRatio = 1;
@@ -98,10 +112,11 @@ Future<void> _pumpPage(
       spaceDetailsProvider.overrideWith(
         (ref, id) async => rust.SpaceDetails(
           id: id,
+          topic: topics[id],
           name: api.spaces.firstWhere((space) => space.id == id).name,
         ),
       ),
-      spaceChildrenProvider.overrideWith((ref, id) async => []),
+      spaceChildrenProvider.overrideWith((ref, id) async => children[id] ?? []),
       allSpaceChildrenProvider.overrideWith((ref, id) async => []),
       roomMembersProvider.overrideWith((ref, id) async => []),
     ],
@@ -151,7 +166,7 @@ void main() {
   for (final dark in [false, true]) {
     for (final width in [320.0, 1000.0]) {
       testWidgets(
-        'Material directory adapts cards and separates rooms at $width, dark=$dark',
+        'Material directory shows compact summaries and separates rooms at $width, dark=$dark',
         (tester) async {
           api.spaces = [
             for (var i = 0; i < 4; i++)
@@ -163,6 +178,10 @@ void main() {
             width: width,
             dark: dark,
             rooms: [_room],
+            children: {
+              api.spaces.first.id: [_room],
+            },
+            topics: {api.spaces.first.id: '产品设计与评审'},
           );
           final first = tester.getRect(
             find.byKey(const ValueKey('!space0:example.org')),
@@ -172,16 +191,18 @@ void main() {
           );
           expect(first.left, closeTo(width == 320 ? 16 : 20, .1));
           expect(first.top, greaterThanOrEqualTo(kToolbarHeight));
-          if (width == 320) {
-            expect(second.top, greaterThan(first.bottom));
-            expect(second.left, first.left);
-          } else {
-            expect(second.top, first.top);
-            expect(second.left, greaterThan(first.right));
-          }
+          expect(first.height, inInclusiveRange(60, 72));
+          expect(second.top, first.bottom);
+          expect(second.left, first.left);
+          expect(find.text('1 个房间 · 产品设计与评审'), findsOneWidget);
+          expect(find.text('0 个房间 · 暂无话题'), findsNWidgets(3));
+          expect(find.bySemanticsLabel(RegExp('3 条未读')), findsOneWidget);
+          expect(find.bySemanticsLabel(RegExp('0 条未读')), findsNothing);
           expect(find.text('用于组织房间和成员，不直接作为聊天入口'), findsNothing);
           expect(find.text('查看房间、成员和空间设置'), findsNothing);
           expect(find.text('其他房间'), findsOneWidget);
+          await tester.ensureVisible(find.text('其他房间'));
+          await tester.pumpAndSettle();
           expect(find.text('最近的讨论'), findsOneWidget);
           expect(
             find.byKey(ValueKey('room-unread-badge:${_room.id}')),
@@ -309,9 +330,9 @@ void main() {
     ];
     await _pumpPage(tester, api, textScale: 2);
     final name = tester.widget<Text>(find.text(api.spaces.single.name));
-    expect(name.maxLines, 2);
+    expect(name.maxLines, 1);
     expect(name.overflow, TextOverflow.ellipsis);
-    expect(find.byType(Card), findsOneWidget);
+    expect(find.byType(Card), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -325,7 +346,15 @@ void main() {
       expect(find.byTooltip('添加空间'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, '创建空间'));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).first, '研发小组');
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        '研发小组',
+      );
       await tester.enterText(find.byType(TextField).last, '研发讨论');
       await tester.tap(find.text('创建'));
       await tester.pumpAndSettle();
@@ -345,12 +374,17 @@ void main() {
       await tester.tap(find.text('加入空间'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '#community:example.org');
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(api.joins, isEmpty);
       await tester.tap(find.text('加入'));
       await tester.pumpAndSettle();
       expect(api.joins.single, (
         account: '@me:example.org',
-        identifier: '#community:example.org',
+        identifier: '!joined:example.org',
       ));
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('!joined:example.org')), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -363,19 +397,24 @@ void main() {
     await tester.tap(find.widgetWithText(OutlinedButton, '加入空间'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '!community:example.org');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(api.joins, isEmpty);
     await tester.tap(find.text('加入'));
     await tester.pumpAndSettle();
     expect(api.joins.single, (
       account: '@me:example.org',
-      identifier: '!community:example.org',
+      identifier: '!joined:example.org',
     ));
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('!joined:example.org')), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets(
-    'a space card opens its details and room information is reachable',
+    'a space row opens its details and room information is reachable',
     (tester) async {
       api.spaces = [const rust.Space(id: '!space:example.org', name: '工作空间')];
       await _pumpPage(tester, api, rooms: [_room]);

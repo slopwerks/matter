@@ -12,6 +12,22 @@ import 'package:matter/widgets/app_avatar.dart';
 import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
+  final linkedRooms = <(String, String)>[];
+  @override
+  Future<String> crateApiMatrixCreateGroupRoom({
+    required String accountUserId,
+    required String name,
+    String? topic,
+  }) async => '!new:example.org';
+  @override
+  Future<void> crateApiMatrixAddRoomToSpace({
+    required String accountUserId,
+    required String spaceId,
+    required String roomId,
+  }) async {
+    linkedRooms.add((spaceId, roomId));
+  }
+
   @override
   Future<void> crateApiMatrixUpdateSpaceDetails({
     required String accountUserId,
@@ -33,8 +49,9 @@ void main() {
   var detailsName = '旧名称';
   var detailsCalls = 0;
 
+  final api = _FakeRustApi();
   setUpAll(() {
-    RustLib.initMock(api: _FakeRustApi());
+    RustLib.initMock(api: api);
   });
 
   tearDownAll(RustLib.dispose);
@@ -126,6 +143,7 @@ void main() {
             (ref, id) async => const [
               rust.Contact(
                 id: '@long-member-id:example.org',
+                roomRole: rust.MemberRole.administrator,
                 name: '项目成员名称',
                 status: 'online',
               ),
@@ -161,7 +179,18 @@ void main() {
         ),
         findsOneWidget,
       );
-      await tester.tap(find.byTooltip('从空间移除'));
+      await tester.tap(find.text('新建房间'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, '房间名称'), '讨论');
+      await tester.pump();
+      await tester.tap(find.text('创建'));
+      await tester.pumpAndSettle();
+      expect(api.linkedRooms, [(spaceId, '!new:example.org')]);
+      expect(find.text('未读 3'), findsOneWidget);
+      expect(find.text('空间详情'), findsNothing);
+      await tester.tap(find.byTooltip('房间操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('从空间移除'));
       await tester.pumpAndSettle();
       expect(find.text('移出空间'), findsOneWidget);
       await tester.tap(find.text('取消'));
@@ -169,6 +198,7 @@ void main() {
       await tester.tap(find.text('成员'));
       await tester.pumpAndSettle();
       expect(find.text('@long-member-id:example.org'), findsOneWidget);
+      expect(find.text('管理员'), findsOneWidget);
       expect(
         tester
             .widget<AppAvatar>(

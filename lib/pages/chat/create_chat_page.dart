@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'action_failure_message.dart';
 import 'material_create_chat_form.dart';
+import 'room_directory_page.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
@@ -18,152 +19,6 @@ import '../../widgets/sheets.dart';
 
 class CreateChatPage extends ConsumerStatefulWidget {
   const CreateChatPage({super.key});
-
-  static void showJoinRoomDialog(BuildContext context, WidgetRef ref) {
-    // Account snapshot captured when the dialog OPENS: a switch while the
-    // dialog is up must not redirect the write to the new account.
-    final dialogAccountUserId = ref.read(activeUserIdProvider) ?? '';
-    var roomIdentifier = '';
-    var joining = false;
-    String? joinError;
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => _NeuDialog(
-          title: '加入房间',
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (ctx.isMaterial)
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: '房间 ID 或别名',
-                    hintText: '!room_id:matrix.akass.cn',
-                    helperText: '也可以使用 #房间别名:服务器',
-                  ),
-                  onChanged: (value) => roomIdentifier = value,
-                )
-              else
-                NeuTextField(
-                  hint: '!room_id:matrix.akass.cn',
-                  onChanged: (value) => roomIdentifier = value,
-                ),
-              if (joinError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    joinError!,
-                    style: Theme.of(ctx).textTheme.bodyMedium
-                        ?.copyWith(color: ctx.neu.error),
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            NeuButton(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              onPressed: joining ? null : () => Navigator.of(ctx).pop(),
-              child: const Center(child: Text('取消')),
-            ),
-            NeuButton(
-              accent: true,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              onPressed: joining
-                  ? null
-                  : () async {
-                      // Entry guard (not only the disabled button): the
-                      // rebuild lags a frame, so a second tap on the old
-                      // widget could otherwise issue a duplicate join.
-                      if (joining) return;
-                      final value = roomIdentifier.trim();
-                      if (value.isEmpty) {
-                        // Feedback instead of a silent no-op (same
-                        // discipline as the create-group dialog).
-                        setDialogState(() => joinError = '请输入房间 ID 或别名');
-                        return;
-                      }
-                      setDialogState(() {
-                        joining = true;
-                        joinError = null;
-                      });
-                      try {
-                        await rust.joinRoom(
-                          // Account snapshot captured when the dialog
-                          // OPENED (see above), not read at tap time.
-                          accountUserId: dialogAccountUserId,
-                          identifier: value,
-                        );
-                        // The account may have switched while the request
-                        // was in flight: skip ALL local feedback (same
-                        // discipline as the other pages) and close the
-                        // dialog — it would otherwise stay stuck in its
-                        // in-flight state. `mounted` first: `ref.read`
-                        // throws after unmount.
-                        if (!context.mounted) return;
-                        if (ref.read(activeUserIdProvider) !=
-                            dialogAccountUserId) {
-                          if (ctx.mounted &&
-                              ModalRoute.of(ctx)?.isCurrent == true) {
-                            Navigator.of(ctx).pop();
-                          }
-                          return;
-                        }
-                        ref.invalidate(allChatRoomsProvider);
-                        ref.invalidate(allUngroupedRoomsProvider);
-                        ref.invalidate(spacesProvider);
-                        ref.invalidate(searchRoomsProvider);
-                        if (!context.mounted) return;
-                        // `isCurrent` guard: the dialog may already be in
-                        // its exit animation — popping then would pop the
-                        // page below it.
-                        if (ctx.mounted &&
-                            ModalRoute.of(ctx)?.isCurrent == true) {
-                          Navigator.of(ctx).pop();
-                        }
-                        // The dialog may have been dismissed while the
-                        // request was in flight: still report success.
-                        neuToast(context, '已加入房间');
-                      } catch (e) {
-                        if (!context.mounted) return;
-                        // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
-                        if (ref.read(activeUserIdProvider) !=
-                            dialogAccountUserId) {
-                          if (ctx.mounted &&
-                              ModalRoute.of(ctx)?.isCurrent == true) {
-                            Navigator.of(ctx).pop();
-                          }
-                          return;
-                        }
-                        if (ctx.mounted) {
-                          setDialogState(() {
-                            joining = false;
-                            // Render the failure inside the dialog: a
-                            // page-level snackbar would sit beneath the
-                            // modal barrier while the dialog stays open
-                            // for retry.
-                            joinError = actionFailureMessage(e);
-                          });
-                        } else {
-                          neuToast(context, actionFailureMessage(e));
-                        }
-                      }
-                    },
-              child: joining
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        color: context.neu.onAccent,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Center(child: Text('加入')),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   @override
   ConsumerState<CreateChatPage> createState() => _CreateChatPageState();
@@ -364,7 +219,7 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                       },
                       onCreateGroup: _showCreateGroupDialog,
                       onJoinRoom: () =>
-                          CreateChatPage.showJoinRoomDialog(context, ref),
+                          RoomDirectoryPage.open(context, focusAddress: true),
                     )
                   else ...[
                     NeuTextField(
@@ -410,10 +265,10 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                     _ActionCard(
                       icon: Icons.meeting_room_rounded,
                       iconColor: colors.warning,
-                      title: '加入房间',
-                      subtitle: '通过房间 ID 加入已有房间',
+                      title: '通过地址加入',
+                      subtitle: '输入房间 ID、别名或粘贴 Matrix 链接',
                       onTap: () =>
-                          CreateChatPage.showJoinRoomDialog(context, ref),
+                          RoomDirectoryPage.open(context, focusAddress: true),
                     ),
                   ],
                 ],

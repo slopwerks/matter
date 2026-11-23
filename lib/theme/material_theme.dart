@@ -164,7 +164,10 @@ materialRootHeaderStyle(ThemeData theme, {required bool compact}) => (
       ? theme.textTheme.headlineLarge?.copyWith(
           color: theme.colorScheme.onPrimaryContainer,
         )
-      : theme.appBarTheme.titleTextStyle,
+      : theme.textTheme.headlineMedium?.copyWith(
+          fontSize: 28,
+          fontWeight: FontWeight.w700,
+        ),
   shape: compact
       ? const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(40)),
@@ -172,7 +175,7 @@ materialRootHeaderStyle(ThemeData theme, {required bool compact}) => (
       : null,
 );
 
-({Color fill, Color foreground}) materialSpaceCardStyle(
+({Color fill, Color foreground}) materialSpaceAvatarStyle(
   ThemeData theme,
   int index,
 ) => switch (index % 4) {

@@ -10,7 +10,6 @@ import '../../providers/chat_visual_settings_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/cascade_title.dart';
-import '../../widgets/material_root_header.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_field.dart';
@@ -19,6 +18,7 @@ import '../../widgets/neu_decoration.dart';
 import '../../widgets/sheets.dart';
 import 'chat_list_item.dart';
 import 'material_space_content.dart';
+import 'room_directory_page.dart';
 import 'space_detail_page.dart';
 
 class SpacePage extends ConsumerWidget {
@@ -39,173 +39,155 @@ class SpacePage extends ConsumerWidget {
     final connectionLabel = ref.watch(connectionLabelProvider);
     final titleText = connectionLabel.isNotEmpty ? connectionLabel : '空间';
 
+    if (context.isMaterial) {
+      return MaterialSpaceContent(
+        title: titleText,
+        spaces: spacesAsync,
+        rooms: ungroupedAsync,
+        onCreate: () => _showCreateSpaceDialog(context),
+        onJoin: () => RoomDirectoryPage.open(context, spaceAddress: true),
+        onAdd: showFloatingActionButton
+            ? () => showSpaceActions(context)
+            : null,
+      );
+    }
     return Scaffold(
       backgroundColor: context.neu.base,
-      extendBodyBehindAppBar: context.isMaterial,
-      appBar: context.isMaterial
-          ? MaterialRootHeader(
-              title: titleText,
-              compact: MaterialRootHeader.isCompact(context),
-            )
-          : null,
-      floatingActionButton: context.isMaterial && showFloatingActionButton
-          ? FloatingActionButton(
-              tooltip: '添加空间',
-              onPressed: () => showSpaceActions(context),
-              child: const Icon(Icons.add),
-            )
-          : null,
-      body: context.isMaterial
-          ? MaterialSpaceContent(
-              spaces: spacesAsync,
-              rooms: ungroupedAsync,
-              onCreate: () => _showCreateSpaceDialog(context),
-              onJoin: () => _showJoinSpaceDialog(context),
-            )
-          : Stack(
-              children: [
-                CustomScrollView(
-                  slivers: [
-                    // 标题栏移到上方浮层,这里只预留其高度。
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height:
-                            MediaQuery.viewPaddingOf(context).top +
-                            kToolbarHeight +
-                            NeuSpacing.md,
-                      ),
-                    ),
-                    spacesAsync.when(
-                      data: (spaces) {
-                        return _SliverSectionCard(
-                          title: '空间',
-                          subtitle: spaces.isEmpty
-                              ? '暂无已加入空间'
-                              : '用于组织房间和成员，不直接作为聊天入口',
-                          sliver: spaces.isEmpty
-                              ? const SliverToBoxAdapter(
-                                  child: _HintText('当前账号还没有可浏览的空间。'),
-                                )
-                              : SliverList.builder(
-                                  itemCount: spaces.length,
-                                  itemBuilder: (context, index) =>
-                                      _SpaceRoomTile(
-                                        space: spaces[index],
-                                        key: ValueKey(spaces[index].id),
-                                      ),
-                                ),
-                        );
-                      },
-                      loading: () => SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(NeuSpacing.xl),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: context.neu.accent,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                        ),
-                      ),
-                      error: (err, _) => SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(NeuSpacing.lg),
-                          child: Text(
-                            '加载空间失败: $err',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: NeuSpacing.md),
-                    ),
-                    ungroupedAsync.when(
-                      data: (rooms) {
-                        return _SliverSectionCard(
-                          title: '未归属群组',
-                          subtitle: '这些房间当前不属于任何已加入空间',
-                          sliver: rooms.isEmpty
-                              ? const SliverToBoxAdapter(
-                                  child: _HintText('暂无普通房间'),
-                                )
-                              : SliverList.separated(
-                                  itemCount: rooms.length,
-                                  separatorBuilder: (_, _) =>
-                                      const ChatListDivider(dense: true),
-                                  itemBuilder: (context, index) => ChatListItem(
-                                    key: ValueKey(rooms[index].id),
-                                    room: rooms[index],
-                                    dense: true,
-                                    showRoomTypeIcon: true,
-                                  ),
-                                ),
-                        );
-                      },
-                      loading: () =>
-                          const SliverToBoxAdapter(child: SizedBox.shrink()),
-                      error: (_, _) =>
-                          const SliverToBoxAdapter(child: SizedBox.shrink()),
-                    ),
-                    SliverPadding(
-                      padding: EdgeInsets.only(
-                        bottom: context.isMaterial
-                            ? NeuSpacing.floatingDockClearance +
-                                  MediaQuery.paddingOf(context).bottom
-                            : 96,
-                      ),
-                    ),
-                  ],
+      body: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
+              // 标题栏移到上方浮层,这里只预留其高度。
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height:
+                      MediaQuery.viewPaddingOf(context).top +
+                      kToolbarHeight +
+                      NeuSpacing.md,
                 ),
-                // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
-                if (!context.isMaterial)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height:
-                        MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
-                    child: const TopFadeBlur(useShader: true),
-                  ),
-                if (!context.isMaterial)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: SafeArea(
-                      bottom: false,
-                      child: SizedBox(
-                        height: kToolbarHeight,
-                        child: Align(
-                          alignment: Alignment.bottomLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.only(
-                              left: 16,
-                              bottom: 12,
-                            ),
-                            child: CascadeTitle(
-                              text: titleText,
-                              style: Theme.of(context).textTheme.headlineSmall!,
+              ),
+              spacesAsync.when(
+                data: (spaces) {
+                  return _SliverSectionCard(
+                    title: '空间',
+                    subtitle: spaces.isEmpty
+                        ? '暂无已加入空间'
+                        : '用于组织房间和成员，不直接作为聊天入口',
+                    sliver: spaces.isEmpty
+                        ? const SliverToBoxAdapter(
+                            child: _HintText('当前账号还没有可浏览的空间。'),
+                          )
+                        : SliverList.builder(
+                            itemCount: spaces.length,
+                            itemBuilder: (context, index) => _SpaceRoomTile(
+                              space: spaces[index],
+                              key: ValueKey(spaces[index].id),
                             ),
                           ),
-                        ),
+                  );
+                },
+                loading: () => SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(NeuSpacing.xl),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: context.neu.accent,
+                        strokeWidth: 2,
                       ),
                     ),
                   ),
-                if (!context.isMaterial)
-                  Positioned(
-                    right: 16,
-                    bottom: 96,
-                    child: NeuIconButton(
-                      icon: Icons.add_rounded,
-                      size: 56,
-                      accent: true,
-                      tooltip: '新建空间',
-                      onPressed: () => showSpaceActions(context),
+                ),
+                error: (err, _) => SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(NeuSpacing.lg),
+                    child: Text(
+                      '加载空间失败: $err',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
-              ],
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: NeuSpacing.md)),
+              ungroupedAsync.when(
+                data: (rooms) {
+                  return _SliverSectionCard(
+                    title: '未归属群组',
+                    subtitle: '这些房间当前不属于任何已加入空间',
+                    sliver: rooms.isEmpty
+                        ? const SliverToBoxAdapter(child: _HintText('暂无普通房间'))
+                        : SliverList.separated(
+                            itemCount: rooms.length,
+                            separatorBuilder: (_, _) =>
+                                const ChatListDivider(dense: true),
+                            itemBuilder: (context, index) => ChatListItem(
+                              key: ValueKey(rooms[index].id),
+                              room: rooms[index],
+                              dense: true,
+                              showRoomTypeIcon: true,
+                            ),
+                          ),
+                  );
+                },
+                loading: () =>
+                    const SliverToBoxAdapter(child: SizedBox.shrink()),
+                error: (_, _) =>
+                    const SliverToBoxAdapter(child: SizedBox.shrink()),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.only(
+                  bottom: context.isMaterial
+                      ? NeuSpacing.floatingDockClearance +
+                            MediaQuery.paddingOf(context).bottom
+                      : 96,
+                ),
+              ),
+            ],
+          ),
+          // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
+          if (!context.isMaterial)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
+              child: const TopFadeBlur(useShader: true),
             ),
+          if (!context.isMaterial)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: SizedBox(
+                  height: kToolbarHeight,
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 16, bottom: 12),
+                      child: CascadeTitle(
+                        text: titleText,
+                        style: Theme.of(context).textTheme.headlineSmall!,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (!context.isMaterial)
+            Positioned(
+              right: 16,
+              bottom: 96,
+              child: NeuIconButton(
+                icon: Icons.add_rounded,
+                size: 56,
+                accent: true,
+                tooltip: '新建空间',
+                onPressed: () => showSpaceActions(context),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -245,7 +227,11 @@ class SpacePage extends ConsumerWidget {
               label: '加入空间',
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _showJoinSpaceDialog(pageContext);
+                if (pageContext.isMaterial) {
+                  RoomDirectoryPage.open(pageContext, spaceAddress: true);
+                } else {
+                  _showJoinSpaceDialog(pageContext);
+                }
               },
             ),
             const SizedBox(height: 8),

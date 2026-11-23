@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import '../../widgets/material_identity_id.dart';
 
 import '../../src/rust/api/matrix.dart';
 import '../../theme/material_theme.dart';
@@ -8,7 +9,6 @@ import '../../widgets/floating_app_bar.dart';
 import '../../widgets/material_detail_card.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/neu_surface.dart';
-import '../../widgets/sheets.dart';
 
 /// Material's full profile uses the same guarded conversation action as its row.
 class ContactProfilePage extends StatefulWidget {
@@ -38,11 +38,6 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
-  }
-
-  Future<void> _copyId() async {
-    await Clipboard.setData(ClipboardData(text: widget.contact.id));
-    if (mounted) neuToast(context, '已复制 Matrix ID');
   }
 
   @override
@@ -78,32 +73,16 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       textAlign: TextAlign.center,
                       style: hero.title,
                     ),
-                    TextButton.icon(
-                      onPressed: _copyId,
-                      icon: const Icon(Icons.copy_outlined, size: 16),
-                      label: Text(contact.id, textAlign: TextAlign.center),
-                    ),
+                    MaterialIdentityId(contact.id),
                     if (contact.status.isNotEmpty &&
                         contact.status != contact.id)
                       Text(contact.status, style: hero.subtitle),
                     const SizedBox(height: 20),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        NeuButton(
-                          accent: true,
-                          onPressed: _sending ? null : _sendMessage,
-                          icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                          child: Text(_sending ? '正在打开…' : '发消息'),
-                        ),
-                        NeuButton(
-                          onPressed: _copyId,
-                          icon: const Icon(Icons.copy_outlined, size: 18),
-                          child: const Text('复制 ID'),
-                        ),
-                      ],
+                    NeuButton(
+                      accent: true,
+                      onPressed: _sending ? null : _sendMessage,
+                      icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                      child: Text(_sending ? '正在打开…' : '发消息'),
                     ),
                   ],
                 ),
@@ -127,11 +106,6 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                     leading: const Icon(Icons.alternate_email),
                     title: const Text('Matrix ID'),
                     subtitle: SelectableText(contact.id),
-                    trailing: IconButton(
-                      tooltip: '复制 Matrix ID',
-                      onPressed: _copyId,
-                      icon: const Icon(Icons.copy_outlined),
-                    ),
                   ),
                 ],
               ),

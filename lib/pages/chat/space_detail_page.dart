@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/push/push_runtime.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/hidden_rooms_provider.dart';
@@ -15,6 +17,9 @@ import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/material_detail_card.dart';
+import '../../widgets/material_root_header.dart';
+import '../../widgets/material_adaptive_shell.dart';
+import '../../widgets/material_identity_id.dart';
 import '../../widgets/material_press.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_field.dart';
@@ -23,8 +28,10 @@ import '../../widgets/sheets.dart';
 import 'action_failure_message.dart';
 import 'chat_detail_page.dart';
 import 'material_room_member_rows.dart';
+import 'room_directory_page.dart';
 
 part 'material_space_detail.dart';
+part 'material_space_info.dart';
 
 /// Guard wording shown inside the space dialogs while a previous space
 /// write is still in flight. Kept as a constant so the dialogs can render
@@ -51,9 +58,167 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
   String? _openedUserId;
   bool _accountSwitched = false;
   int _materialSpaceTab = 0;
+  bool _markingSpaceRead = false;
+  bool _creatingRoom = false;
+  bool _inviting = false;
 
   void _selectMaterialSpaceTab(int tab) =>
       setState(() => _materialSpaceTab = tab);
+
+  Future<void> _copySpaceLink() async {
+    final account = _openedUserId;
+    if (account == null || !_accountActive()) return;
+    try {
+      final link = await spaceShareLink(
+        accountUserId: account,
+        spaceId: widget.space.id,
+      );
+      if (!_accountActive()) return;
+      await Clipboard.setData(ClipboardData(text: link));
+      if (mounted && _accountActive()) neuToast(context, '已复制空间链接');
+    } catch (error) {
+      if (mounted && _accountActive())
+        neuToast(context, _actionFailureMessage(error));
+    }
+  }
+
+  Future<void> _inviteSpaceMember() async {
+    final account = _openedUserId;
+    if (account == null || !_accountActive() || _inviting) return;
+    setState(() => _inviting = true);
+    try {
+      var draft = '';
+      final user = await showDialog<String>(
+        context: context,
+        builder: (dialog) => StatefulBuilder(
+          builder: (dialog, update) => AlertDialog(
+            title: const Text('邀请成员'),
+            content: TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Matrix 用户 ID',
+                hintText: '@用户:服务器',
+              ),
+              onChanged: (value) => update(() => draft = value.trim()),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialog),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: draft.isEmpty
+                    ? null
+                    : () => Navigator.pop(dialog, draft),
+                child: const Text('发送邀请'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (user == null || !_accountActive()) return;
+      await inviteUserToRoom(
+        accountUserId: account,
+        roomId: widget.space.id,
+        userId: user,
+      );
+      if (mounted && _accountActive()) neuToast(context, '邀请已发送');
+    } catch (error) {
+      if (mounted && _accountActive())
+        neuToast(context, _actionFailureMessage(error));
+    } finally {
+      if (mounted) setState(() => _inviting = false);
+    }
+  }
+
+  Future<void> _createSpaceRoom() async {
+    final account = _openedUserId;
+    if (_creatingRoom || account == null || !_accountActive()) return;
+    var draft = '';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialog) => StatefulBuilder(
+        builder: (dialog, update) => AlertDialog(
+          title: const Text('新建房间'),
+          content: TextField(
+            autofocus: true,
+            decoration: const InputDecoration(labelText: '房间名称'),
+            onChanged: (v) => update(() => draft = v.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: draft.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialog, draft),
+              child: const Text('创建'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (name == null || !_accountActive() || _creatingRoom) return;
+    final spaceId = widget.space.id;
+    setState(() => _creatingRoom = true);
+    String? roomId;
+    try {
+      roomId = await createGroupRoom(accountUserId: account, name: name);
+      await addRoomToSpace(
+        accountUserId: account,
+        spaceId: spaceId,
+        roomId: roomId,
+      );
+      if (mounted && _accountActive()) neuToast(context, '房间已创建并加入空间');
+    } catch (error) {
+      if (mounted && _accountActive()) {
+        neuToast(
+          context,
+          '${roomId == null ? '' : '房间已创建。'}${_actionFailureMessage(error)}',
+        );
+      }
+    } finally {
+      if (_accountActive()) {
+        ref.invalidate(allChatRoomsProvider);
+        ref.invalidate(allSpaceChildrenProvider(spaceId));
+        ref.invalidate(allUngroupedRoomsProvider);
+      }
+      if (mounted) setState(() => _creatingRoom = false);
+    }
+  }
+
+  Future<void> _markSpaceRead(List<ChatRoom> rooms) async {
+    final account = _openedUserId;
+    if (account == null || _markingSpaceRead || !_accountActive()) return;
+    setState(() => _markingSpaceRead = true);
+    try {
+      for (final room in rooms) {
+        if (!_accountActive()) return;
+        final cleared = await markRoomAsReadWithPushCleanup(
+          accountUserId: account,
+          roomId: room.id,
+          explicit: true,
+        );
+        if (!_accountActive()) return;
+        if (!cleared) throw StateError('未能清除「${room.name}」的未读标记');
+        setRoomAutoReadSuppressed(ref, room.id, suppressed: false);
+        setRoomUnreadOverride(ref, room, unread: false);
+      }
+    } catch (error) {
+      if (mounted && _accountActive()) {
+        neuToast(context, _actionFailureMessage(error));
+      }
+    } finally {
+      if (_accountActive()) {
+        ref.invalidate(allSpaceChildrenProvider);
+        ref.invalidate(allChatRoomsProvider);
+        ref.invalidate(allUngroupedRoomsProvider);
+      }
+      if (mounted) setState(() => _markingSpaceRead = false);
+    }
+  }
 
   /// Room currently being added to this space (double-tap guard: the sheet
   /// is a separate route, so its rows cannot be disabled by a page-level
@@ -453,6 +618,15 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
         builder: (sheetContext) => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (context.isMaterial)
+              NeuSheetItem(
+                icon: Icons.playlist_add,
+                label: '添加已有房间',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showAddRoomDialog(context, ref);
+                },
+              ),
             if (detailsLoaded)
               NeuSheetItem(
                 icon: Icons.edit_outlined,
@@ -1155,14 +1329,38 @@ class _SpaceChildTile extends ConsumerWidget {
       clearStaleRoomUnreadOverride(ref, context, room.id, unreadOverride);
     }
     final material = context.isMaterial;
+    // Reuse a known member list without fetching every room's full roster.
+    final members = roomMembersProvider(room.id);
+    final knownCount = material && ref.watch(members.exists)
+        ? ref.watch(members.select((value) => value.value?.length))
+        : null;
+    final preview = room.lastMessage.isEmpty ? room.id : room.lastMessage;
     final content = Row(
       children: [
-        AppAvatar(
-          fallback: room.name,
-          size: material ? materialListAvatarSize : 42,
-          radius: NeuRadius.content,
-          url: room.avatarUrl,
-        ),
+        if (material && room.avatarUrl == null)
+          Container(
+            width: materialDenseListAvatarSize,
+            height: materialDenseListAvatarSize,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(NeuRadius.button),
+            ),
+            child: Icon(
+              room.roomType == 'space'
+                  ? Icons.workspaces_outline
+                  : Icons.chat_bubble_outline,
+              size: 22,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          )
+        else
+          AppAvatar(
+            fallback: room.name,
+            size: material ? materialListAvatarSize : 42,
+            radius: NeuRadius.content,
+            materialRadius: NeuRadius.button,
+            url: room.avatarUrl,
+          ),
         SizedBox(width: material ? materialListContentGap : NeuSpacing.md),
         Expanded(
           child: Column(
@@ -1181,7 +1379,9 @@ class _SpaceChildTile extends ConsumerWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                room.lastMessage.isEmpty ? room.id : room.lastMessage,
+                knownCount != null && knownCount > 0
+                    ? '$knownCount 位成员'
+                    : preview,
                 style: Theme.of(context).textTheme.bodySmall,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1208,7 +1408,16 @@ class _SpaceChildTile extends ConsumerWidget {
               ),
             ),
         ],
-        if (onRemove != null)
+        if (onRemove != null && material)
+          PopupMenuButton<String>(
+            tooltip: '房间操作',
+            icon: const Icon(Icons.more_horiz),
+            onSelected: (_) => onRemove!(),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'remove', child: Text('从空间移除')),
+            ],
+          )
+        else if (onRemove != null)
           IconButton(
             onPressed: onRemove,
             icon: Icon(
@@ -1221,43 +1430,25 @@ class _SpaceChildTile extends ConsumerWidget {
           Icon(Icons.chevron_right_rounded, color: context.neu.textTertiary),
       ],
     );
-    void openRoom() {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => room.roomType == 'space'
-              ? SpaceDetailPage(
-                  space: Space(
-                    id: room.id,
-                    name: room.name,
-                    avatarUrl: room.avatarUrl,
-                  ),
-                )
-              : ChatDetailPage(
-                  roomId: room.id,
-                  roomName: room.name,
-                  avatarUrl: room.avatarUrl,
-                  nameEventId: room.nameEventId,
-                  avatarEventId: room.avatarEventId,
-                  isDm: room.roomType == 'dm',
-                  subtitle: hasUnread
-                      ? (room.unreadCount > 0
-                            ? '${room.unreadCount} 条未读消息'
-                            : '已标记未读')
-                      : '在线',
-                ),
-        ),
-      );
-    }
 
     if (material) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: MaterialPress(
           builder: (states) => Card(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             child: InkWell(
               statesController: states,
-              onTap: openRoom,
-              child: Padding(padding: const EdgeInsets.all(16), child: content),
+              onTap: () => _openSpaceChild(context, room, hasUnread),
+              child: Container(
+                alignment: AlignmentDirectional.centerStart,
+                constraints: const BoxConstraints(minHeight: 96),
+                padding: const EdgeInsets.all(NeuSpacing.lg),
+                child: content,
+              ),
             ),
           ),
         ),
@@ -1267,7 +1458,7 @@ class _SpaceChildTile extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: NeuSpacing.sm),
       child: NeuAction(
         radius: NeuRadius.content,
-        onTap: openRoom,
+        onTap: () => _openSpaceChild(context, room, hasUnread),
         child: NeuSurface(
           color: context.neu.card,
           radius: NeuRadius.content,
@@ -1277,6 +1468,34 @@ class _SpaceChildTile extends ConsumerWidget {
       ),
     );
   }
+}
+
+void _openSpaceChild(BuildContext context, ChatRoom room, bool hasUnread) {
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => room.roomType == 'space'
+          ? SpaceDetailPage(
+              space: Space(
+                id: room.id,
+                name: room.name,
+                avatarUrl: room.avatarUrl,
+              ),
+            )
+          : ChatDetailPage(
+              roomId: room.id,
+              roomName: room.name,
+              avatarUrl: room.avatarUrl,
+              nameEventId: room.nameEventId,
+              avatarEventId: room.avatarEventId,
+              isDm: room.roomType == 'dm',
+              subtitle: hasUnread
+                  ? (room.unreadCount > 0
+                        ? '${room.unreadCount} 条未读消息'
+                        : '已标记未读')
+                  : '在线',
+            ),
+    ),
+  );
 }
 
 class _ActionSettingRow extends StatelessWidget {

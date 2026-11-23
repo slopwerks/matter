@@ -609,6 +609,11 @@ class RoomUnreadOverride {
       room.lastEventId == baselineLastEventId;
 }
 
+bool roomHasUnread(rust.ChatRoom room, RoomUnreadOverride? local) =>
+    local != null && local.appliesTo(room)
+        ? local.unread
+        : room.isMarkedUnread || room.unreadCount > 0;
+
 /// Optimistic unread state tied to the exact server snapshot it supersedes.
 ///
 /// Any newer snapshot, including one containing a newly arrived message,
@@ -3037,6 +3042,7 @@ final syncStreamProvider =
                 memberKnockInvalidateTimers.remove(roomId);
                 if (disposed || !ref.mounted) return;
                 ref.invalidate(roomMembersProvider(roomId));
+                ref.invalidate(spaceDetailsProvider(roomId));
                 ref.invalidate(roomKnockRequestsProvider(roomId));
               },
             );

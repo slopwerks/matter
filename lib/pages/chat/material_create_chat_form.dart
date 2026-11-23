@@ -101,13 +101,13 @@ class MaterialCreateChatForm extends StatelessWidget {
               ),
               const Divider(height: 1),
               NeuAction(
-                label: '加入房间',
+                label: '通过地址加入',
                 radius: 0,
                 onTap: onJoinRoom,
                 child: const ListTile(
                   leading: Icon(Icons.meeting_room_outlined),
-                  title: Text('加入房间'),
-                  subtitle: Text('通过房间 ID 或别名加入'),
+                  title: Text('通过地址加入'),
+                  subtitle: Text('输入房间 ID、别名或粘贴 Matrix 链接'),
                   trailing: Icon(Icons.chevron_right_rounded),
                 ),
               ),

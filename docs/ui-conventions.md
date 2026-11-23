@@ -53,8 +53,8 @@ titles a page, so the page-title token is 24/w600
 - Self-drawn title rows (`CascadeTitle` in the chat, space and hidden-rooms
   pages) use `headlineSmall` too.
 - Material root pages use `MaterialRootHeader`: compact headers use
-  `headlineLarge` at 34/w700 with a 42 dp line height; pane headers and
-  subpage app bars use the ordinary 24/w600 title.
+  `headlineLarge` at 34/w700 with a 42 dp line height. Wide list panes use
+  an 84 dp toolbar and a 28/w700 title. Subpage app bars use 24/w600.
 - Chinese line heights are tightened to 1.35–1.5. M3's 1.5 leaves list rows
   loose.
 - Numeric slots use `FontFeature.tabularFigures()`, so counters, durations and
@@ -158,7 +158,10 @@ Space member previews use the same identity rows, including Matrix IDs.
 Conversation detail panes and their modal view use those same bare member rows,
 without truncating names or Matrix IDs.
 Ignored-user sheets wrap the full ID and place the unignore action below it.
-Space room directories retain the prototype's card grid; the card owns its
+The Material space index uses compact two-line rows with a 44 dp rounded-square
+avatar. The first line pairs the name with an optional unread badge. The second
+shows the visible direct room count and space topic.
+Inside a space, the room directory retains the prototype's card grid. Each card owns its
 ink and press feedback, with a 44 dp avatar and the shared list title style.
 
 Material conversation titles use 16 dp type with a medium weight, rising to
@@ -177,8 +180,8 @@ checking the group's divider inset too.
 
 Neutral categories sit on `surfaceContainerLow`; selected rows use
 `secondaryContainer`. The compact root header and profile card use
-`primaryContainer` with `onPrimaryContainer`. Space cards cycle through primary,
-secondary, tertiary and high-surface container roles. Streams stay on the page
+`primaryContainer` with `onPrimaryContainer`. Space avatar fallbacks use primary,
+secondary, tertiary and high-surface container roles keyed by space ID. Streams stay on the page
 surface without an enclosing card.
 
 ## Row semantics
