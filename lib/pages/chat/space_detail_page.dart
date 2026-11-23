@@ -11,6 +11,7 @@ import '../../providers/hidden_rooms_provider.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../theme/neu_colors.dart';
 import '../../theme/material_theme.dart';
+import '../../theme/tokens.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/floating_app_bar.dart';
@@ -18,6 +19,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/material_detail_card.dart';
 import '../../widgets/material_root_header.dart';
+import '../../widgets/material_header_transition.dart';
 import '../../widgets/material_adaptive_shell.dart';
 import '../../widgets/material_identity_id.dart';
 import '../../widgets/material_press.dart';
@@ -59,6 +61,17 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
   String? _openedUserId;
   bool _accountSwitched = false;
   int _materialSpaceTab = 0;
+  bool _headerCollapsed = false;
+
+  void _syncHeader(ScrollMetrics metrics, double extent) {
+    final next = MaterialHeaderTransition.shouldCollapse(
+      metrics,
+      _headerCollapsed,
+      extent,
+    );
+    if (next != _headerCollapsed) setState(() => _headerCollapsed = next);
+  }
+
   bool _markingSpaceRead = false;
   bool _creatingRoom = false;
   bool _inviting = false;

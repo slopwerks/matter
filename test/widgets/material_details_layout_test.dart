@@ -21,6 +21,8 @@ import 'package:matter/providers/startup_page_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/theme/material_theme.dart';
+import 'package:matter/widgets/app_avatar.dart';
+import 'package:matter/widgets/material_header_transition.dart';
 import 'package:matter/widgets/material_tab_navigation_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -242,26 +244,94 @@ void main() {
       );
       await tester.pumpAndSettle();
       final detail = tester.state(find.byType(SpaceDetailPage));
+      final tabs = tester.getRect(find.byType(TabBar));
+      await tester.tap(find.text('成员'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final fade = find
+          .ancestor(
+            of: find.text('Alice'),
+            matching: find.byType(FadeTransition),
+          )
+          .first;
+      expect(
+        tester.widget<FadeTransition>(fade).opacity.value,
+        inExclusiveRange(0, 1),
+      );
+      expect(tester.getRect(find.byType(TabBar)), tabs);
+      await tester.tap(find.text('关于'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(find.text('成员'));
       await tester.pumpAndSettle();
       expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('共享与管理'), findsNothing);
       await _resize(tester, 400);
       expect(tester.state(find.byType(SpaceDetailPage)), same(detail));
       expect(find.text('Alice'), findsOneWidget);
       expect(find.byType(MaterialTabNavigationBar), findsNothing);
       await tester.tap(find.text('关于'));
       await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(400, 420);
+      await tester.binding.setSurfaceSize(const Size(400, 420));
+      await tester.pumpAndSettle();
       final scroll = find.descendant(
         of: find.byType(SpaceDetailPage),
         matching: find.byType(CustomScrollView),
       );
-      await tester.drag(scroll, const Offset(0, -450));
+      final position = tester
+          .state<ScrollableState>(
+            find
+                .descendant(of: scroll, matching: find.byType(Scrollable))
+                .first,
+          )
+          .position;
+      final header = find.descendant(
+        of: find.byType(SpaceDetailPage),
+        matching: find.byType(MaterialHeaderTransition),
+      );
+      final avatar = find.descendant(
+        of: header,
+        matching: find.byType(AppAvatar),
+      );
+      final topic = find.descendant(
+        of: header,
+        matching: find.text('一起打磨产品与界面'),
+      );
+      final expandedTop = tester.getTopLeft(find.byType(TabBar)).dy;
+      final expandedAvatar = tester.getSize(avatar).height;
+      expect(position.maxScrollExtent, greaterThan(100));
+      for (final offset in [100.0, 0.0]) {
+        position.jumpTo(offset);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 120));
+        expect(
+          tester.getTopLeft(find.byType(TabBar)).dy,
+          lessThan(expandedTop),
+        );
+        expect(
+          tester.getSize(avatar).height,
+          inExclusiveRange(36, expandedAvatar),
+        );
+        final fade = find
+            .ancestor(of: topic, matching: find.byType(Opacity))
+            .first;
+        expect(tester.widget<Opacity>(fade).opacity, inExclusiveRange(0, 1));
+      }
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
       await tester.pumpAndSettle();
+      position.jumpTo(100);
+      await tester.pump();
+      expect(tester.getSize(header).height, kToolbarHeight);
+      tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
       expect(find.byType(BackButton).hitTestable(), findsOneWidget);
       expect(find.text('成员').hitTestable(), findsOneWidget);
       expect(find.byTooltip('空间操作').hitTestable(), findsOneWidget);
       await tester.drag(scroll, const Offset(0, 650));
       await tester.pumpAndSettle();
+      await _resize(tester, 400);
       await tester.tap(find.text('名称'));
       await tester.pumpAndSettle();
       expect(find.text('修改空间名称'), findsOneWidget);

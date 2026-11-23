@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/tokens.dart';
+import 'material_header_transition.dart';
 import 'material_root_header.dart';
 
 /// The search field and toolbar action share one reversible transition.
@@ -25,20 +25,19 @@ class MaterialSearchHeader extends StatelessWidget {
   final Key? iconKey;
   final List<Widget> actions;
 
-  static bool shouldCollapse(ScrollMetrics metrics, bool collapsed) => collapsed
-      ? metrics.extentBefore > 0
-      : metrics.extentBefore >= MaterialRootHeader.searchExtent &&
-            metrics.maxScrollExtent > MaterialRootHeader.searchExtent;
+  static bool shouldCollapse(ScrollMetrics metrics, bool collapsed) =>
+      MaterialHeaderTransition.shouldCollapse(
+        metrics,
+        collapsed,
+        MaterialRootHeader.searchExtent,
+      );
 
   @override
   Widget build(BuildContext context) {
     final compact = MaterialRootHeader.isCompact(context);
-    return TweenAnimationBuilder<double>(
-      tween: Tween(end: compact && collapsed ? 0 : 1),
-      duration: compact && !MediaQuery.disableAnimationsOf(context)
-          ? context.tokens.motion.layoutDuration
-          : Duration.zero,
-      curve: Curves.easeInOutCubic,
+    return MaterialHeaderTransition(
+      enabled: compact,
+      collapsed: collapsed,
       child: search,
       onEnd: onEnd,
       builder: (_, expansion, field) => MaterialRootHeader(
@@ -116,10 +115,7 @@ class _MaterialSearchDirectoryState extends State<MaterialSearchDirectory> {
   bool _focusAfterExpand = false;
 
   void _sync(ScrollMetrics metrics) {
-    if (metrics.axis != Axis.vertical ||
-        _focusAfterExpand ||
-        _focus.hasFocus ||
-        widget.query.isNotEmpty) {
+    if (_focusAfterExpand || _focus.hasFocus || widget.query.isNotEmpty) {
       return;
     }
     final next =
@@ -156,19 +152,7 @@ class _MaterialSearchDirectoryState extends State<MaterialSearchDirectory> {
         },
       ),
       Expanded(
-        child: NotificationListener<ScrollMetricsNotification>(
-          onNotification: (n) {
-            if (n.depth == 0) _sync(n.metrics);
-            return false;
-          },
-          child: NotificationListener<ScrollUpdateNotification>(
-            onNotification: (n) {
-              if (n.depth == 0) _sync(n.metrics);
-              return false;
-            },
-            child: widget.body,
-          ),
-        ),
+        child: HeaderScrollListener(onScroll: _sync, child: widget.body),
       ),
     ],
   );
