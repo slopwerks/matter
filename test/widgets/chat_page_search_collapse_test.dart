@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_page.dart';
+import 'package:matter/pages/chat/search_page.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/widgets/mobile_tab_view.dart';
 import 'package:matter/widgets/glass.dart';
@@ -157,58 +158,102 @@ void main() {
     );
   }
 
-  testWidgets(
-    'Material keeps search visible and the new chat FAB below its tonal header',
-    (tester) async {
-      final container = ProviderContainer(
-        overrides: [
-          inboxRoomsProvider.overrideWith(
-            (ref) => AsyncData([
-              for (var i = 0; i < 20; i++)
-                room('!room$i:example.org', 'Room $i'),
-            ]),
+  for (final compact in [true, false]) {
+    testWidgets(
+      'Material chat header adapts search on scroll (compact: $compact)',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(compact ? 390 : 840, 740);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final container = ProviderContainer(
+          overrides: [
+            inboxRoomsProvider.overrideWith(
+              (ref) => AsyncData([
+                for (var i = 0; i < 20; i++)
+                  room('!room$i:example.org', 'Room $i'),
+              ]),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: neuTestTheme(material: true),
+              home: const ChatPage(),
+            ),
           ),
-        ],
-      );
-      addTearDown(container.dispose);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            theme: neuTestTheme(material: true),
-            home: const ChatPage(),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final appBar = find.byType(AppBar);
-      final fab = find.byType(FloatingActionButton);
-      expect(fab, findsOneWidget);
-      expect(
-        find.descendant(of: fab, matching: find.byTooltip('新聊天')),
-        findsOneWidget,
-      );
-      final fabSize = tester.getSize(fab);
-      expect(fabSize.width, fabSize.height);
-      expect(
-        find.descendant(of: fab, matching: find.byType(Text)),
-        findsNothing,
-      );
-      expect(
-        tester.getTopLeft(fab).dy,
-        greaterThan(tester.getBottomLeft(appBar).dy),
-      );
-      expect(find.byTooltip('搜索'), findsNothing);
-      expect(find.byType(TopFadeBlur), findsNothing);
-      final scheme = Theme.of(tester.element(appBar)).colorScheme;
-      expect(tester.widget<AppBar>(appBar).backgroundColor, scheme.surface);
-      await tester.drag(find.byType(ListView), const Offset(0, -400));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('open-chat-search')).hitTestable(),
-        findsOneWidget,
-      );
-      expect(find.byKey(const ValueKey('header-search-entry')), findsNothing);
-    },
-  );
+        );
+        await tester.pumpAndSettle();
+        final appBar = find.byType(AppBar);
+        final fab = find.byType(FloatingActionButton);
+        expect(fab, findsOneWidget);
+        expect(
+          find.descendant(of: fab, matching: find.byTooltip('新聊天')),
+          findsOneWidget,
+        );
+        final fabSize = tester.getSize(fab);
+        expect(fabSize.width, fabSize.height);
+        expect(
+          find.descendant(of: fab, matching: find.byType(Text)),
+          findsNothing,
+        );
+        expect(
+          tester.getTopLeft(fab).dy,
+          greaterThan(tester.getBottomLeft(appBar).dy),
+        );
+        expect(find.byTooltip('搜索'), findsNothing);
+        expect(find.byType(TopFadeBlur), findsNothing);
+        final scheme = Theme.of(tester.element(appBar)).colorScheme;
+        expect(
+          tester.widget<AppBar>(appBar).backgroundColor,
+          compact ? scheme.primaryContainer : scheme.surface,
+        );
+        final expandedHeight = tester.getSize(appBar).height;
+        Future<void> expectTransitionFrame() async {
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 120));
+          for (final key in ['open-chat-search', 'header-search-entry']) {
+            final fade = find
+                .ancestor(
+                  of: find.byKey(ValueKey(key)),
+                  matching: find.byType(Opacity),
+                )
+                .first;
+            expect(
+              tester.widget<Opacity>(fade).opacity,
+              inExclusiveRange(0, 1),
+            );
+          }
+          expect(tester.getSize(appBar).height, lessThan(expandedHeight));
+        }
+
+        await tester.drag(find.byType(ListView), const Offset(0, -400));
+        if (compact) await expectTransitionFrame();
+        await tester.pumpAndSettle();
+        if (compact) {
+          final icon = find.byKey(const ValueKey('header-search-entry'));
+          expect(tester.getSize(appBar).height, lessThan(expandedHeight));
+          expect(find.byKey(const ValueKey('open-chat-search')), findsNothing);
+          await tester.tap(icon);
+          await tester.pumpAndSettle();
+          expect(find.byType(ChatSearchPage), findsOneWidget);
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(icon.hitTestable(), findsOneWidget);
+          await tester.drag(find.byType(ListView), const Offset(0, 800));
+          await expectTransitionFrame();
+          await tester.pumpAndSettle();
+        }
+        expect(tester.getSize(appBar).height, expandedHeight);
+        expect(
+          find.byKey(const ValueKey('open-chat-search')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('header-search-entry')), findsNothing);
+      },
+    );
+  }
 }

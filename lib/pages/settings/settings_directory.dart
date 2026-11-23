@@ -62,37 +62,39 @@ extension _MaterialSettingsDirectory on _SettingsPageState {
         sections.add(_buildGroup(title: category.label, items: matches));
       }
     }
-    final header = MaterialRootHeader(
-      title: '设置',
-      compact: MaterialRootHeader.isCompact(context),
-      search: AppSearchField(
-        hint: '搜索设置或开关',
-        onChanged: (value) => _setSettingsQuery(value),
-      ),
-    );
     return Scaffold(
-      appBar: header,
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          NeuSpacing.lg,
-          NeuSpacing.lg,
-          NeuSpacing.lg,
-          NeuSpacing.floatingDockClearance +
-              MediaQuery.paddingOf(context).bottom,
+      body: MaterialSearchDirectory(
+        title: '设置',
+        hint: '搜索设置或开关',
+        query: _query,
+        searchBuilder: (focus) => AppSearchField(
+          focusNode: focus,
+          hint: '搜索设置或开关',
+          onChanged: (value) => _setSettingsQuery(value),
         ),
-        children: [
-          if (query.isEmpty) ...[
-            profile,
-            const SizedBox(height: NeuSpacing.lg),
-          ],
-          if (sections.isEmpty)
-            const Center(child: Text('没有匹配的设置项'))
-          else
-            for (final section in sections) ...[
-              section,
-              const SizedBox(height: NeuSpacing.xl),
+
+        body: ListView(
+          padding: EdgeInsets.fromLTRB(
+            NeuSpacing.lg,
+            NeuSpacing.lg,
+            NeuSpacing.lg,
+            NeuSpacing.floatingDockClearance +
+                MediaQuery.paddingOf(context).bottom,
+          ),
+          children: [
+            if (query.isEmpty) ...[
+              profile,
+              const SizedBox(height: NeuSpacing.lg),
             ],
-        ],
+            if (sections.isEmpty)
+              const Center(child: Text('没有匹配的设置项'))
+            else
+              for (final section in sections) ...[
+                section,
+                const SizedBox(height: NeuSpacing.xl),
+              ],
+          ],
+        ),
       ),
     );
   }

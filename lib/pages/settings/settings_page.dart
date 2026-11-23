@@ -21,6 +21,7 @@ import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/material_root_header.dart';
+import '../../widgets/material_search_header.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/material_list_detail.dart';
 import '../../widgets/glass.dart';

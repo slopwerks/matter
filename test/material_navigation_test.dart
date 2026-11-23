@@ -148,7 +148,7 @@ void main() {
               .first;
           expect(
             tester.widget<Scaffold>(scaffold).extendBodyBehindAppBar,
-            destination.label != '设置',
+            isFalse,
           );
           if (desktop && width < 1200) {
             await tester.pumpAndSettle();

@@ -17,20 +17,23 @@ class MaterialRootHeader extends StatelessWidget
     required this.title,
     required this.compact,
     this.search,
+    this.searchExpansion = 1,
     this.actions = const [],
   });
 
   final String title;
   final bool compact;
   final Widget? search;
+  final double searchExpansion;
   final List<Widget> actions;
 
   double get _toolbarHeight => compact ? 76 : 84;
-  static const _searchHeight = 74.0;
+  static const searchExtent = 74.0;
 
   @override
-  Size get preferredSize =>
-      Size.fromHeight(_toolbarHeight + (search == null ? 0 : _searchHeight));
+  Size get preferredSize => Size.fromHeight(
+    _toolbarHeight + (search == null ? 0 : searchExtent * searchExpansion),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -55,18 +58,31 @@ class MaterialRootHeader extends StatelessWidget
         bottom: search == null
             ? null
             : PreferredSize(
-                preferredSize: const Size.fromHeight(_searchHeight),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-                  child: Theme(
-                    data: theme.copyWith(
-                      searchBarTheme: theme.searchBarTheme.copyWith(
-                        backgroundColor: WidgetStatePropertyAll(
-                          style.searchFill,
+                preferredSize: Size.fromHeight(searchExtent * searchExpansion),
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    heightFactor: searchExpansion,
+                    child: Opacity(
+                      opacity: searchExpansion,
+                      child: Transform.scale(
+                        scale: .8 + .2 * searchExpansion,
+                        alignment: AlignmentDirectional.topEnd,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+                          child: Theme(
+                            data: theme.copyWith(
+                              searchBarTheme: theme.searchBarTheme.copyWith(
+                                backgroundColor: WidgetStatePropertyAll(
+                                  style.searchFill,
+                                ),
+                              ),
+                            ),
+                            child: search!,
+                          ),
                         ),
                       ),
                     ),
-                    child: search!,
                   ),
                 ),
               ),

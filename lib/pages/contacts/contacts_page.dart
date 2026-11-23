@@ -11,7 +11,7 @@ import '../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
-import '../../widgets/material_root_header.dart';
+import '../../widgets/material_search_header.dart';
 import '../../widgets/material_list_detail.dart';
 import 'contact_profile_page.dart';
 import '../../widgets/glass.dart';
@@ -179,237 +179,229 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
   @override
   Widget build(BuildContext context) {
     final contactsAsync = ref.watch(contactsProvider);
-    final search = AppSearchField(
+    Widget search(FocusNode focus) => AppSearchField(
       key: const ValueKey('contacts-search-entry'),
       controller: _searchController,
-      focusNode: _searchFocusNode,
+      focusNode: focus,
       hint: '搜索联系人',
       onChanged: (value) {
         setState(() => _searchQuery = value.toLowerCase());
       },
     );
-    final header = MaterialRootHeader(
-      title: '通讯录',
-      compact: MaterialRootHeader.isCompact(context),
-      search: search,
-    );
-
-    return Scaffold(
-      backgroundColor: context.neu.base,
-      extendBodyBehindAppBar: context.isMaterial,
-      appBar: context.isMaterial ? header : null,
-      body: Stack(
-        children: [
-          NotificationListener<ScrollMetricsNotification>(
-            onNotification: (notification) {
-              if (notification.depth == 0) _syncSearchCollapse();
-              return false;
-            },
-            child: CustomScrollView(
-              controller: _scrollController,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              slivers: [
-                // 标题栏移到上方浮层,这里只预留其高度。
+    final body = Stack(
+      children: [
+        NotificationListener<ScrollMetricsNotification>(
+          onNotification: (notification) {
+            if (notification.depth == 0) _syncSearchCollapse();
+            return false;
+          },
+          child: CustomScrollView(
+            controller: _scrollController,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: [
+              // 标题栏移到上方浮层,这里只预留其高度。
+              if (!context.isMaterial)
                 SliverToBoxAdapter(
                   child: SizedBox(
                     height:
-                        MediaQuery.viewPaddingOf(context).top +
-                        (context.isMaterial
-                            ? header.preferredSize.height
-                            : kToolbarHeight),
+                        MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
                   ),
                 ),
-                if (!context.isMaterial)
-                  SliverToBoxAdapter(
-                    child: ValueListenableBuilder<double>(
-                      valueListenable: _searchCollapse,
-                      builder: (context, collapse, child) => Opacity(
-                        opacity: 1 - collapse,
-                        child: IgnorePointer(
-                          ignoring: collapse == 1,
-                          child: ExcludeFocus(
-                            excluding: collapse == 1,
-                            child: child!,
-                          ),
+              if (!context.isMaterial)
+                SliverToBoxAdapter(
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _searchCollapse,
+                    builder: (context, collapse, child) => Opacity(
+                      opacity: 1 - collapse,
+                      child: IgnorePointer(
+                        ignoring: collapse == 1,
+                        child: ExcludeFocus(
+                          excluding: collapse == 1,
+                          child: child!,
                         ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          NeuSpacing.lg,
-                          NeuSpacing.xs,
-                          NeuSpacing.lg,
-                          NeuSpacing.sm,
-                        ),
-                        child: search,
                       ),
                     ),
-                  ),
-                contactsAsync.when(
-                  data: (contacts) {
-                    final filtered = _searchQuery.isEmpty
-                        ? contacts
-                        : contacts
-                              .where(
-                                (c) =>
-                                    c.name.toLowerCase().contains(
-                                      _searchQuery,
-                                    ) ||
-                                    c.id.toLowerCase().contains(_searchQuery) ||
-                                    c.status.toLowerCase().contains(
-                                      _searchQuery,
-                                    ),
-                              )
-                              .toList();
-
-                    if (filtered.isEmpty) {
-                      return SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(NeuSpacing.xl),
-                          child: _EmptyView(
-                            onClear: _searchQuery.isEmpty
-                                ? null
-                                : () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                          ),
-                        ),
-                      );
-                    }
-
-                    final initials = {
-                      if (context.isMaterial)
-                        for (final contact in filtered)
-                          contact.id: _directoryInitial(contact),
-                    };
-                    final ordered = context.isMaterial
-                        ? (filtered.toList()..sort((a, b) {
-                            final group = initials[a.id]!.compareTo(
-                              initials[b.id]!,
-                            );
-                            return group == 0
-                                ? a.name.compareTo(b.name)
-                                : group;
-                          }))
-                        : filtered;
-                    return SliverPadding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: NeuSpacing.lg,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        NeuSpacing.lg,
+                        NeuSpacing.xs,
+                        NeuSpacing.lg,
+                        NeuSpacing.sm,
                       ),
-                      sliver: SliverList.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (context, index) => ChatListDivider(
-                          indent: context.isMaterial
-                              ? 12 +
-                                    materialListAvatarSize +
-                                    materialListContentGap
-                              : 8 + 48 + 14,
+                      child: search(_searchFocusNode),
+                    ),
+                  ),
+                ),
+              contactsAsync.when(
+                data: (contacts) {
+                  final filtered = _searchQuery.isEmpty
+                      ? contacts
+                      : contacts
+                            .where(
+                              (c) =>
+                                  c.name.toLowerCase().contains(_searchQuery) ||
+                                  c.id.toLowerCase().contains(_searchQuery) ||
+                                  c.status.toLowerCase().contains(_searchQuery),
+                            )
+                            .toList();
+
+                  if (filtered.isEmpty) {
+                    return SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(NeuSpacing.xl),
+                        child: _EmptyView(
+                          onClear: contacts.isEmpty || _searchQuery.isEmpty
+                              ? null
+                              : () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
                         ),
-                        itemBuilder: (context, index) {
-                          final contact = ordered[index];
-                          final tile = _ContactTile(
-                            key: ValueKey(contact.id),
-                            contact: contact,
-                            creatingDm: _creatingDms.contains(contact.id),
-                            onMessage: (avatarUrl) =>
-                                _createDm(contact, avatarUrl),
-                          );
-                          if (!context.isMaterial) return tile;
-                          final letter = initials[contact.id]!;
-                          if (index != 0 &&
-                              letter == initials[ordered[index - 1].id]) {
-                            return tile;
-                          }
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(NeuSpacing.md),
-                                child: Text(
-                                  letter,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelMedium,
-                                ),
-                              ),
-                              tile,
-                            ],
-                          );
-                        },
                       ),
                     );
-                  },
-                  loading: () => SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(NeuSpacing.xl),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: context.neu.accent,
-                          strokeWidth: 2,
-                        ),
-                      ),
+                  }
+
+                  final initials = {
+                    if (context.isMaterial)
+                      for (final contact in filtered)
+                        contact.id: _directoryInitial(contact),
+                  };
+                  final ordered = context.isMaterial
+                      ? (filtered.toList()..sort((a, b) {
+                          final group = initials[a.id]!.compareTo(
+                            initials[b.id]!,
+                          );
+                          return group == 0 ? a.name.compareTo(b.name) : group;
+                        }))
+                      : filtered;
+                  return SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: NeuSpacing.lg,
                     ),
-                  ),
-                  error: (err, _) => SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(NeuSpacing.xl),
-                      child: Center(
-                        child: SelectableText(
-                          '加载失败: $err',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
+                    sliver: SliverList.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (context, index) => ChatListDivider(
+                        indent: context.isMaterial
+                            ? 12 +
+                                  materialListAvatarSize +
+                                  materialListContentGap
+                            : 8 + 48 + 14,
                       ),
+                      itemBuilder: (context, index) {
+                        final contact = ordered[index];
+                        final tile = _ContactTile(
+                          key: ValueKey(contact.id),
+                          contact: contact,
+                          creatingDm: _creatingDms.contains(contact.id),
+                          onMessage: (avatarUrl) =>
+                              _createDm(contact, avatarUrl),
+                        );
+                        if (!context.isMaterial) return tile;
+                        final letter = initials[contact.id]!;
+                        if (index != 0 &&
+                            letter == initials[ordered[index - 1].id]) {
+                          return tile;
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(NeuSpacing.md),
+                              child: Text(
+                                letter,
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                            ),
+                            tile,
+                          ],
+                        );
+                      },
                     ),
-                  ),
-                ),
-                SliverPadding(
-                  padding: EdgeInsets.only(
-                    bottom: context.isMaterial
-                        ? NeuSpacing.floatingDockClearance +
-                              MediaQuery.paddingOf(context).bottom
-                        : NeuSpacing.navClearance,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
-          if (!context.isMaterial)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
-              child: const TopFadeBlur(useShader: true),
-            ),
-          if (!context.isMaterial)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: SizedBox(
-                  height: kToolbarHeight,
+                  );
+                },
+                loading: () => SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '通讯录',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                        _buildHeaderSearchEntry(),
-                      ],
+                    padding: const EdgeInsets.all(NeuSpacing.xl),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: context.neu.accent,
+                        strokeWidth: 2,
+                      ),
+                    ),
+                  ),
+                ),
+                error: (err, _) => SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(NeuSpacing.xl),
+                    child: Center(
+                      child: SelectableText(
+                        '加载失败: $err',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ),
                   ),
                 ),
               ),
+              SliverPadding(
+                padding: EdgeInsets.only(
+                  bottom: context.isMaterial
+                      ? NeuSpacing.floatingDockClearance +
+                            MediaQuery.paddingOf(context).bottom
+                      : NeuSpacing.navClearance,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
+        if (!context.isMaterial)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
+            child: const TopFadeBlur(useShader: true),
+          ),
+        if (!context.isMaterial)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(
+                height: kToolbarHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '通讯录',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      _buildHeaderSearchEntry(),
+                    ],
+                  ),
+                ),
+              ),
             ),
-        ],
-      ),
+          ),
+      ],
+    );
+    return Scaffold(
+      backgroundColor: context.neu.base,
+      body: context.isMaterial
+          ? MaterialSearchDirectory(
+              title: '通讯录',
+              hint: '搜索联系人',
+              query: _searchController.text,
+              iconKey: const ValueKey('contacts-header-search-entry'),
+              searchBuilder: search,
+              body: body,
+            )
+          : body,
     );
   }
 }

@@ -57,11 +57,24 @@ void main() {
         overrides: [contactsProvider.overrideWith((ref) async => contacts)],
       );
       addTearDown(container.dispose);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(400, 700);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       await _pumpPage(tester, container, true);
       final state = tester.state(find.byType(ContactsPage));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -320));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(_headerKey));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+        isTrue,
+      );
       await tester.enterText(find.byType(TextField), 'AlIcE');
       await tester.pump();
       final focus = tester.widget<TextField>(find.byType(TextField)).focusNode!;
+      tester.view.physicalSize = const Size(1000, 700);
       await tester.binding.setSurfaceSize(const Size(1000, 700));
       await tester.pump();
       expect(tester.state(find.byType(ContactsPage)), same(state));

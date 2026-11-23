@@ -202,7 +202,11 @@ fill, shape and type come from `searchBarTheme`. Chat search remains a read-only
 entry that opens the search route, while contacts filter in place. Material
 keeps search in the fixed root header, using `surface` inside the compact tonal
 header and `surfaceContainerHigh` inside plain pane headers. Neu preserves
-its scrolling search and replacement header button.
+its scrolling search and replacement header button. On compact Material chat,
+space, contact and settings lists the search row folds into a toolbar icon
+while browsing and returns at the top. Editable filters stay visible while
+focused or showing a query. Space details keep the space name, actions and
+room, member and about tabs pinned as the introduction scrolls away.
 
 On mobile, new chat and add space are icon-only FABs owned by the app's outer
 Scaffold, so both clear the floating dock and snack bars. Standalone chat and
