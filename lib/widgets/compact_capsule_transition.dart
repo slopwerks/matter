@@ -27,6 +27,11 @@ class CompactCapsuleTransition extends StatefulWidget {
     required bool composer,
     required Widget child,
   }) {
+    if (composer &&
+        context.dependOnInheritedWidgetOfExactType<PrimaryCapsuleEditor>() ==
+            null) {
+      return child;
+    }
     final motion = context
         .dependOnInheritedWidgetOfExactType<_CapsuleScope>()
         ?.motion;
@@ -40,6 +45,15 @@ class CompactCapsuleTransition extends StatefulWidget {
 
   @override
   State<CompactCapsuleTransition> createState() => _CapsuleMotion();
+}
+
+/// Only the shell's primary chat editor participates in the dock transition.
+/// Chats opened through other destinations can stay mounted alongside it.
+class PrimaryCapsuleEditor extends InheritedWidget {
+  const PrimaryCapsuleEditor({super.key, required super.child});
+
+  @override
+  bool updateShouldNotify(PrimaryCapsuleEditor oldWidget) => false;
 }
 
 class _CapsuleMotion extends State<CompactCapsuleTransition>

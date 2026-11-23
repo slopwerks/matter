@@ -685,7 +685,7 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
                     builder: (context, pane) => MediaQuery(
                       data: MediaQuery.of(context)
                           .copyWith(size: Size(pane.maxWidth, pane.maxHeight)),
-                      child: widget.detail,
+                      child: PrimaryCapsuleEditor(child: widget.detail),
                     ),
                   ),
                 ),

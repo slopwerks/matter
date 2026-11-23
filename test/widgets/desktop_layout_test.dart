@@ -354,6 +354,51 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('opening a space room preserves both Material composers', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final main = _room(id: '!main:test', name: 'Main chat', roomType: 'dm');
+    final child = _room(
+      id: '!child:test',
+      name: 'Space chat',
+      roomType: 'group',
+    );
+    const space = rust.Space(id: '!space:test', name: 'Test space');
+    final container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => [main, child]),
+        spacesProvider.overrideWith((ref) async => [space]),
+        spaceDetailsProvider.overrideWith(
+          (ref, id) async => rust.SpaceDetails(id: id, name: space.name),
+        ),
+        allSpaceChildrenProvider.overrideWith((ref, id) async => [child]),
+        roomMembersProvider.overrideWith((ref, id) async => []),
+      ],
+    );
+    addTearDown(container.dispose);
+    await _pumpApp(tester, container, material: true);
+    final input = find.descendant(
+      of: find.byType(MessageInput),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(input, 'main draft');
+    container.read(navigationIndexProvider.notifier).value = 1;
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey(space.id)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Space chat'));
+    await tester.pumpAndSettle();
+    await tester.enterText(input, 'space draft');
+    expect(tester.widget<TextField>(input).controller!.text, 'space draft');
+    container.read(navigationIndexProvider.notifier).value = 0;
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(input).controller!.text, 'main draft');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('opens a nested space instead of its chat detail', (
     tester,
   ) async {
