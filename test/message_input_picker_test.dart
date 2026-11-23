@@ -66,13 +66,12 @@ void main() {
     );
     await tester.pump();
 
-    final surface = tester.widget<GlassPanel>(
-      find.byKey(const ValueKey('message-input-surface')),
-    );
-    expect(surface.radius, NeuRadius.nav);
-    expect(surface.blur, 18);
+    final surfaceFinder = find.byKey(const ValueKey('message-input-surface'));
     final material = tester.element(find.byType(MessageInput)).isMaterial;
     if (!material) {
+      final surface = tester.widget<GlassPanel>(surfaceFinder);
+      expect(surface.radius, NeuRadius.nav);
+      expect(surface.blur, 18);
       expect(
         surface.padding,
         const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -100,18 +99,13 @@ void main() {
       // Material needs no shadow clearance: most of the row is for composing.
       expect(
         tester.getSize(find.byType(TextField).first).width,
-        greaterThan(tester.getSize(find.byType(MessageInput)).width - 160),
+        greaterThan(tester.getSize(surfaceFinder).width - 160),
       );
       expect(backdropFilters, findsNothing);
-      final backgrounds = tester.widgetList<ColoredBox>(
-        find.descendant(
-          of: find.byType(MessageInput),
-          matching: find.byType(ColoredBox),
-        ),
-      );
-      final colors = tester.element(find.byType(MessageInput)).neu;
-      expect(backgrounds.any((box) => box.color == colors.glassFill), isTrue);
-      expect(colors.glassFill.a, closeTo(.88, .01));
+      final surface = tester.widget<Material>(surfaceFinder);
+      final theme = Theme.of(tester.element(surfaceFinder));
+      expect(surface.color, theme.colorScheme.surfaceContainerHigh);
+      expect(surface.borderRadius, BorderRadius.circular(28));
       expect(tester.getBottomLeft(find.byType(MessageInput)).dy, 800);
     } else {
       // GlassPanel 一层 + BottomFadeBlur 的渐进模糊条带。

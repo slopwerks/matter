@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
+import 'package:matter/widgets/material_tab_navigation_bar.dart';
 import 'package:matter/pages/chat/chat_list_item.dart';
 import 'package:matter/pages/chat/material_space_content.dart';
 import 'package:matter/pages/chat/space_detail_page.dart';
@@ -13,8 +14,6 @@ import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/providers/navigation_provider.dart';
 import 'package:matter/providers/startup_page_provider.dart';
-import 'package:matter/theme/neu_colors.dart';
-import 'package:matter/widgets/material_tab_navigation_bar.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,16 +40,28 @@ class _RustApi implements RustLibApi {
   }
 
   @override
-  Future<String> crateApiMatrixJoinRoom({
+  Future<rust.DirectoryRoom> crateApiMatrixPreviewRoomAddress({
     required String accountUserId,
-    required String identifier,
+    required String address,
+  }) async => rust.DirectoryRoom(
+    id: '!joined:example.org',
+    name: '社区空间',
+    alias: address,
+    isSpace: true,
+    state: 'left',
+    joinRule: 'public',
+    via: const [],
+  );
+
+  @override
+  Future<void> crateApiMatrixEnterDirectoryRoom({
+    required String accountUserId,
+    required String roomId,
+    required List<String> via,
+    required bool knock,
   }) async {
-    joins.add((account: accountUserId, identifier: identifier));
-    spaces = [
-      ...spaces,
-      const rust.Space(id: '!joined:example.org', name: '社区空间'),
-    ];
-    return '!joined:example.org';
+    joins.add((account: accountUserId, identifier: roomId));
+    spaces = [...spaces, rust.Space(id: roomId, name: '社区空间')];
   }
 
   @override
@@ -83,6 +94,8 @@ Future<void> _pumpPage(
   GlobalKey? boundaryKey,
   TargetPlatform? platform,
   List<rust.ChatRoom> rooms = const [],
+  Map<String, List<rust.ChatRoom>> children = const {},
+  Map<String, String> topics = const {},
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 700));
   tester.view.devicePixelRatio = 1;
@@ -99,10 +112,11 @@ Future<void> _pumpPage(
       spaceDetailsProvider.overrideWith(
         (ref, id) async => rust.SpaceDetails(
           id: id,
+          topic: topics[id],
           name: api.spaces.firstWhere((space) => space.id == id).name,
         ),
       ),
-      spaceChildrenProvider.overrideWith((ref, id) async => []),
+      spaceChildrenProvider.overrideWith((ref, id) async => children[id] ?? []),
       allSpaceChildrenProvider.overrideWith((ref, id) async => []),
       roomMembersProvider.overrideWith((ref, id) async => []),
     ],
@@ -152,7 +166,7 @@ void main() {
   for (final dark in [false, true]) {
     for (final width in [320.0, 1000.0]) {
       testWidgets(
-        'Material directory adapts cards and separates rooms at $width, dark=$dark',
+        'Material directory shows compact summaries and separates rooms at $width, dark=$dark',
         (tester) async {
           api.spaces = [
             for (var i = 0; i < 4; i++)
@@ -164,6 +178,10 @@ void main() {
             width: width,
             dark: dark,
             rooms: [_room],
+            children: {
+              api.spaces.first.id: [_room],
+            },
+            topics: {api.spaces.first.id: '产品设计与评审'},
           );
           final first = tester.getRect(
             find.byKey(const ValueKey('!space0:example.org')),
@@ -173,16 +191,18 @@ void main() {
           );
           expect(first.left, closeTo(width == 320 ? 16 : 20, .1));
           expect(first.top, greaterThanOrEqualTo(kToolbarHeight));
-          if (width == 320) {
-            expect(second.top, greaterThan(first.bottom));
-            expect(second.left, first.left);
-          } else {
-            expect(second.top, first.top);
-            expect(second.left, greaterThan(first.right));
-          }
+          expect(first.height, inInclusiveRange(60, 72));
+          expect(second.top, first.bottom);
+          expect(second.left, first.left);
+          expect(find.text('1 个房间 · 产品设计与评审'), findsOneWidget);
+          expect(find.text('0 个房间 · 暂无话题'), findsNWidgets(3));
+          expect(find.bySemanticsLabel(RegExp('3 条未读')), findsOneWidget);
+          expect(find.bySemanticsLabel(RegExp('0 条未读')), findsNothing);
           expect(find.text('用于组织房间和成员，不直接作为聊天入口'), findsNothing);
           expect(find.text('查看房间、成员和空间设置'), findsNothing);
           expect(find.text('其他房间'), findsOneWidget);
+          await tester.ensureVisible(find.text('其他房间'));
+          await tester.pumpAndSettle();
           expect(find.text('最近的讨论'), findsOneWidget);
           expect(
             find.byKey(ValueKey('room-unread-badge:${_room.id}')),
@@ -253,21 +273,9 @@ void main() {
           pixels.getUint8(offset + 1),
           pixels.getUint8(offset + 2),
         );
-        final colors = Theme.of(tester.element(find.byType(AppBar)))
-            .extension<NeuColors>()!;
-        // The toolbar is a fade, not a flat fill: it is near-opaque behind the
-        // title and releases to zero at its bottom edge so rows do not get cut
-        // off by a hard line. The pixel here is in that tail, so it is no
-        // longer the full glassFill; what must hold is that the toolbar still
-        // tints the page rather than showing the raw backdrop.
-        final opaque = Color.alphaBlend(colors.glassFill, colors.base);
-        final bare = colors.base;
-        double distance(Color a, Color b) => (a.r - b.r).abs();
-        expect(
-          distance(actual, bare),
-          lessThan(distance(opaque, bare)),
-          reason: 'header should tint the page, fading towards its bottom',
-        );
+        final scheme = Theme.of(tester.element(find.byType(AppBar)))
+            .colorScheme;
+        expect(actual, width < 600 ? scheme.primaryContainer : scheme.surface);
 
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
@@ -296,18 +304,13 @@ void main() {
         fullApp: layout.fullApp,
       );
       final fab = find.byType(FloatingActionButton);
-      // The dock draws its own destinations, and Scaffold measures it as the
-      // bottom navigation. The FAB sits above whatever the Scaffold reserved,
-      // so ask the Scaffold for that rather than reading the bar's own top:
-      // the bar is inset from that edge by the dock's safe-area padding.
-      final navigation = find.byType(MaterialTabNavigationBar);
-      // On a phone the dock floats, inset from the Scaffold's reserved edge by
-      // its own safe-area padding, so the FAB clears the bar's top by the
-      // floating margin plus that inset. A narrow desktop layout has no dock,
-      // and the FAB clears the window edge instead.
+      final navigation = find.byWidgetPredicate(
+        (widget) =>
+            widget is NavigationBar || widget is MaterialTabNavigationBar,
+      );
       final hasDock = navigation.evaluate().isNotEmpty;
       final expected = hasDock
-          ? tester.getTopLeft(navigation).dy - kFloatingActionButtonMargin - 8
+          ? tester.getTopLeft(navigation).dy - kFloatingActionButtonMargin
           : 700 - layout.bottom - 16;
       expect(tester.getBottomLeft(fab).dy, closeTo(expected, .1));
       await tester.tap(fab);
@@ -327,9 +330,9 @@ void main() {
     ];
     await _pumpPage(tester, api, textScale: 2);
     final name = tester.widget<Text>(find.text(api.spaces.single.name));
-    expect(name.maxLines, 2);
+    expect(name.maxLines, 1);
     expect(name.overflow, TextOverflow.ellipsis);
-    expect(find.byType(Card), findsOneWidget);
+    expect(find.byType(Card), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -343,7 +346,15 @@ void main() {
       expect(find.byTooltip('添加空间'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, '创建空间'));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).first, '研发小组');
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            )
+            .first,
+        '研发小组',
+      );
       await tester.enterText(find.byType(TextField).last, '研发讨论');
       await tester.tap(find.text('创建'));
       await tester.pumpAndSettle();
@@ -363,12 +374,17 @@ void main() {
       await tester.tap(find.text('加入空间'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '#community:example.org');
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(api.joins, isEmpty);
       await tester.tap(find.text('加入'));
       await tester.pumpAndSettle();
       expect(api.joins.single, (
         account: '@me:example.org',
-        identifier: '#community:example.org',
+        identifier: '!joined:example.org',
       ));
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('!joined:example.org')), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -381,19 +397,24 @@ void main() {
     await tester.tap(find.widgetWithText(OutlinedButton, '加入空间'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '!community:example.org');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(api.joins, isEmpty);
     await tester.tap(find.text('加入'));
     await tester.pumpAndSettle();
     expect(api.joins.single, (
       account: '@me:example.org',
-      identifier: '!community:example.org',
+      identifier: '!joined:example.org',
     ));
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('!joined:example.org')), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets(
-    'a space card opens its details and room information is reachable',
+    'a space row opens its details and room information is reachable',
     (tester) async {
       api.spaces = [const rust.Space(id: '!space:example.org', name: '工作空间')];
       await _pumpPage(tester, api, rooms: [_room]);

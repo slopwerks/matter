@@ -69,6 +69,11 @@ macro_rules! declare_room_state_api {
         }
 
         #[frb]
+        pub async fn space_share_link(account_user_id: String, space_id: String) -> Result<String, String> {
+            spaces::space_share_link(account_user_id, space_id).await
+        }
+
+        #[frb]
         pub async fn get_space_children(
             space_id: String,
             ignored_user_ids: Option<Vec<String>>,
@@ -81,7 +86,7 @@ macro_rules! declare_room_state_api {
         pub async fn update_space_details(
             account_user_id: String,
             space_id: String,
-            name: String,
+            name: Option<String>,
             topic: Option<String>,
         ) -> Result<(), String> {
             spaces::update_space_details(account_user_id, space_id, name, topic).await

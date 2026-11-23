@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import 'app_update_service.dart';
 import 'update_exception.dart';
 
@@ -21,48 +22,55 @@ Future<void> showAvailableUpdateDialog(
       final textTheme = Theme.of(dialogContext).textTheme;
       return AlertDialog(
         title: const Text('发现新版本'),
-        content: SizedBox(
-          width: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'v${update.version}',
-                style: textTheme.titleLarge?.copyWith(color: neu.accent),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${current.displayName} → v${update.version} · '
-                'Android arm64 · ${formatByteSize(update.assetSize)}',
-                style: textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              Text('本次更新', style: textTheme.titleSmall),
-              const SizedBox(height: 6),
-              Text(
-                notesSummary,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.bodyMedium?.copyWith(height: 1.4),
-              ),
-              const SizedBox(height: 4),
-              TextButton.icon(
-                onPressed: () =>
-                    _openReleasePage(dialogContext, update.releasePage),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(0, 36),
+        scrollable: dialogContext.isMaterial,
+        content: dialogContext.isMaterial
+            ? _MaterialUpdateSummary(
+                current: current,
+                update: update,
+                notesSummary: notesSummary,
+              )
+            : SizedBox(
+                width: 360,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'v${update.version}',
+                      style: textTheme.titleLarge?.copyWith(color: neu.accent),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${current.displayName} → v${update.version} · '
+                      'Android arm64 · ${formatByteSize(update.assetSize)}',
+                      style: textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    Text('本次更新', style: textTheme.titleSmall),
+                    const SizedBox(height: 6),
+                    Text(
+                      notesSummary,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyMedium?.copyWith(height: 1.4),
+                    ),
+                    const SizedBox(height: 4),
+                    TextButton.icon(
+                      onPressed: () =>
+                          _openReleasePage(dialogContext, update.releasePage),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 36),
+                      ),
+                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                      label: const Text(
+                        '查看完整发布说明',
+                        style: TextStyle(decoration: TextDecoration.underline),
+                      ),
+                    ),
+                  ],
                 ),
-                icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                label: const Text(
-                  '查看完整发布说明',
-                  style: TextStyle(decoration: TextDecoration.underline),
-                ),
               ),
-            ],
-          ),
-        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -83,6 +91,86 @@ Future<void> showAvailableUpdateDialog(
     barrierDismissible: false,
     builder: (_) => _DownloadUpdateDialog(service: service, update: update),
   );
+}
+
+class _MaterialUpdateSummary extends StatelessWidget {
+  const _MaterialUpdateSummary({
+    required this.current,
+    required this.update,
+    required this.notesSummary,
+  });
+
+  final InstalledAppVersion current;
+  final ReleaseUpdate update;
+  final String notesSummary;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final versionStyle = materialProfileCardStyle(theme, detail: true);
+    return SizedBox(
+      width: 360,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            color: versionStyle.fill,
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.system_update_rounded,
+                    color: versionStyle.foreground,
+                  ),
+                  const SizedBox(height: 12),
+                  Text('v${update.version}', style: versionStyle.title),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${current.displayName} → v${update.version}',
+                    style: versionStyle.subtitle,
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      Text('Android arm64', style: versionStyle.subtitle),
+                      Text(
+                        formatByteSize(update.assetSize),
+                        style: versionStyle.subtitle,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('本次更新', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Text(
+            notesSummary,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              onPressed: () => _openReleasePage(context, update.releasePage),
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('查看完整发布说明'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 String summarizeReleaseNotes(String notes) {

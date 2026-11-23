@@ -1,10 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_component_theme.dart';
-import 'glass.dart';
 
-/// A toolbar over the page's fading surface. Reserve its height in the scroll
-/// content and extend the Scaffold body behind it.
+/// Shared M3 top app bar; its opaque surface and controls come from the theme.
 AppBar buildFloatingAppBar({
   required Widget title,
   Widget? leading,
@@ -36,13 +34,9 @@ AppBar buildFloatingAppBar({
   toolbarHeight: toolbarHeight,
   titleSpacing: titleSpacing,
   automaticallyImplyLeading: automaticallyImplyLeading,
-  backgroundColor: Colors.transparent,
   surfaceTintColor: Colors.transparent,
   elevation: 0,
   scrolledUnderElevation: 0,
-  flexibleSpace: const IgnorePointer(
-    child: SizedBox.expand(child: TopFadeBlur(useShader: true)),
-  ),
 );
 
 /// A neutral filled control sits above the fading header. Keep this local to

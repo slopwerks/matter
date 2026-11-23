@@ -17,9 +17,7 @@ class ChatSearchBar extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: const ValueKey('open-chat-search'),
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const ChatSearchPage())),
+          onTap: () => ChatSearchPage.open(context),
           child: SizedBox(
             height: 44,
             child: Row(

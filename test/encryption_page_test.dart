@@ -9,7 +9,6 @@ import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/mutable_state.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
-import 'package:matter/widgets/sheets.dart';
 
 import 'helpers/neu_test_theme.dart';
 
@@ -113,11 +112,22 @@ class _FakeRustApi implements RustLibApi {
   }
 }
 
-Widget _app({String? accountUserId}) => ProviderScope(
+Widget _app({
+  String? accountUserId,
+  bool material = const bool.fromEnvironment('MATTER_TEST_MATERIAL'),
+  TextScaler textScaler = TextScaler.noScaling,
+}) => ProviderScope(
   overrides: [
     activeUserIdProvider.overrideWith(() => MutableState(accountUserId)),
   ],
-  child: MaterialApp(theme: neuTestTheme(), home: const EncryptionPage()),
+  child: MaterialApp(
+    theme: neuTestTheme(material: material),
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
+    home: const EncryptionPage(),
+  ),
 );
 
 void main() {
@@ -444,6 +454,40 @@ void main() {
     expect(find.text('客厅平板'), findsOneWidget);
   });
 
+  testWidgets('Material 设备详情在窄屏大字号下完整展示并可关闭', (tester) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const deviceId = 'A-LONG-DEVICE-ID-FOR-THE-OTHER-DEVICE';
+    rustApi.accountDevices = const [
+      rust.AccountDevice(
+        deviceId: deviceId,
+        displayName: '另一台有较长名称的设备',
+        lastSeenIp: '2001:db8:1234:5678:abcd:ef01:2345:6789',
+        isCurrent: false,
+      ),
+    ];
+    await tester.pumpWidget(
+      _app(material: true, textScaler: const TextScaler.linear(1.6)),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('另一台有较长名称的设备'));
+    await tester.tap(find.text('另一台有较长名称的设备'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('设备信息'), findsOneWidget);
+    expect(find.text('设备操作'), findsOneWidget);
+    expect(find.widgetWithText(SelectableText, deviceId), findsOneWidget);
+    expect(find.text('无活动记录'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.text('设备操作'), findsNothing);
+    expect(rustApi.renames, isEmpty);
+    expect(rustApi.verificationStarts, isEmpty);
+  });
+
   testWidgets('其他设备可重命名并刷新列表', (tester) async {
     rustApi.accountDevices = const [
       rust.AccountDevice(
@@ -494,8 +538,12 @@ void main() {
       await tester.tap(find.text('平板'));
       await tester.pumpAndSettle();
 
-      final verifyItem = find.widgetWithText(NeuSheetItem, '验证');
+      final verifyItem = find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('验证'),
+      );
       expect(verifyItem, findsOneWidget);
+      await tester.ensureVisible(verifyItem);
       await tester.tap(verifyItem);
       await tester.pumpAndSettle();
 

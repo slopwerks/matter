@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -9,15 +10,19 @@ import '../../providers/navigation_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/max_content_width.dart';
+import '../../widgets/material_root_header.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/app_search_field.dart';
 import '../../widgets/neu_surface.dart';
 import 'chat_detail_page.dart';
 import 'chat_list_item.dart';
 import 'chat_timestamp.dart';
+import 'material_message_preview.dart';
 
 import 'search_results_refresh.dart';
 
@@ -45,6 +50,68 @@ class ChatSearchPage extends ConsumerStatefulWidget {
   final String? roomId;
 
   const ChatSearchPage({super.key, this.roomId});
+
+  static Future<String?> open(
+    BuildContext anchor, {
+    String? roomId,
+    BuildContext? entry,
+  }) {
+    final page = ChatSearchPage(roomId: roomId);
+    final navigator = Navigator.of(anchor);
+    if (!anchor.isMaterial || MaterialRootHeader.isCompact(anchor)) {
+      return navigator.push(MaterialPageRoute<String>(builder: (_) => page));
+    }
+    // Re-measure the originating pane when the window or keyboard changes.
+    return showDialog<String>(
+      context: anchor,
+      useRootNavigator: false,
+      useSafeArea: false,
+      builder: (context) => LayoutBuilder(
+        builder: (context, constraints) {
+          if (!anchor.mounted || MaterialRootHeader.isCompact(context)) {
+            return page;
+          }
+          final pane = anchor.findRenderObject() as RenderBox?;
+          final overlay =
+              navigator.overlay?.context.findRenderObject() as RenderBox?;
+          if (pane == null || overlay == null || !pane.hasSize) return page;
+          final origin = pane.localToGlobal(Offset.zero, ancestor: overlay);
+          final field = entry?.mounted == true
+              ? entry!.findRenderObject() as RenderBox?
+              : null;
+          final fieldOrigin = field?.localToGlobal(
+            Offset.zero,
+            ancestor: overlay,
+          );
+          final width = roomId == null
+              ? math.max(pane.size.width, 400.0)
+              : pane.size.width;
+          final size = constraints.biggest;
+          final panelWidth = math.min(width, size.width);
+          final left = (fieldOrigin?.dx ?? origin.dx).clamp(
+            0.0,
+            size.width - panelWidth,
+          );
+          final top = (fieldOrigin?.dy ?? origin.dy).clamp(0.0, size.height);
+          return Stack(
+            children: [
+              Positioned(
+                left: left,
+                top: top,
+                width: panelWidth,
+                height: math.min(pane.size.height, size.height - top),
+                child: Material(
+                  shape: Theme.of(context).cardTheme.shape,
+                  clipBehavior: Clip.antiAlias,
+                  child: page,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   @override
   ConsumerState<ChatSearchPage> createState() => _ChatSearchPageState();
@@ -252,13 +319,15 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage>
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
               toolbarHeight: searchFieldRowHeight,
-              title: searchField,
+              title: MaxContentWidth(child: searchField),
               bottom: tabBar,
             )
           : null,
       body: Stack(
         children: [
-          Positioned.fill(child: body),
+          Positioned.fill(
+            child: context.isMaterial ? MaxContentWidth(child: body) : body,
+          ),
           // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
           if (!context.isMaterial)
             Positioned(
@@ -655,8 +724,19 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
       _searchAccount = account;
       _resetSearch();
     }
-    if (!widget.active || widget.query.isEmpty) {
+    if (!widget.active) {
       return const SizedBox.shrink();
+    }
+    if (widget.query.isEmpty) {
+      return context.isMaterial
+          ? _SearchStatus(
+              icon: Icons.search_rounded,
+              text: '查找一条消息',
+              description: widget.roomId == null
+                  ? '输入关键词，查找已加入聊天中的历史消息。'
+                  : '输入关键词，查找此聊天中的历史消息。',
+            )
+          : const SizedBox.shrink();
     }
     final request = _request;
     final search = ref.watch(messageSearchProvider(request));
@@ -710,6 +790,7 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
       return const _SearchStatus(
         icon: Icons.search_off_rounded,
         text: '没有找到匹配的消息',
+        description: '试试其他关键词。',
       );
     }
 
@@ -751,8 +832,26 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
           NeuSpacing.xl,
         ),
         itemCount:
-            results.length + (showPageAction || historyIncomplete ? 1 : 0),
+            results.length +
+            (context.isMaterial ? 1 : 0) +
+            (showPageAction || historyIncomplete ? 1 : 0),
         itemBuilder: (context, index) {
+          if (context.isMaterial) {
+            if (index == 0) {
+              final roomCount = results
+                  .map((result) => result.roomId)
+                  .toSet()
+                  .length;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Text(
+                  '已找到 ${results.length} 个结果${widget.roomId == null ? ' · $roomCount 个会话' : ''}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              );
+            }
+            index--;
+          }
           if (index == results.length) {
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -795,6 +894,9 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
             result: results[index],
             terms: page?.terms ?? _terms,
             roomScoped: widget.roomId != null,
+            showRoomHeader:
+                index == 0 ||
+                results[index - 1].roomId != results[index].roomId,
           );
         },
       ),
@@ -806,16 +908,55 @@ class _MessageSearchTile extends ConsumerWidget {
   final rust.MessageSearchResult result;
   final List<String> terms;
   final bool roomScoped;
+  final bool showRoomHeader;
 
   const _MessageSearchTile({
     required this.result,
     required this.terms,
     required this.roomScoped,
+    required this.showRoomHeader,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.neu;
+    if (context.isMaterial) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!roomScoped && showRoomHeader)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Row(
+                children: [
+                  AppAvatar(
+                    fallback: result.roomName,
+                    size: 28,
+                    radius: NeuRadius.content,
+                    url: result.roomAvatarUrl,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      result.roomName,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          MaterialMessagePreview(
+            key: ValueKey('message-search-result-${result.eventId}'),
+            senderName: result.senderName,
+            timestamp: result.timestamp,
+            edited: result.isEdited,
+            body: _HighlightedMessageText(text: result.body, terms: terms),
+            onTap: () => _openResult(context, ref),
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+        ],
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: NeuSpacing.md),
       child: NeuAction(
@@ -1027,7 +1168,9 @@ class _HighlightedMessageText extends StatelessWidget {
       spans.add(
         TextSpan(
           text: text.substring(range.start, range.end),
-          style: TextStyle(color: colors.accent, fontWeight: FontWeight.w700),
+          style: context.isMaterial
+              ? materialSearchHighlightStyle(Theme.of(context))
+              : TextStyle(color: colors.accent, fontWeight: FontWeight.w700),
         ),
       );
       offset = range.end;
@@ -1059,7 +1202,16 @@ class _RoomSearchResults extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.neu;
-    if (!active || query.trim().isEmpty) return const SizedBox.shrink();
+    if (!active) return const SizedBox.shrink();
+    if (query.trim().isEmpty) {
+      return context.isMaterial
+          ? const _SearchStatus(
+              icon: Icons.forum_outlined,
+              text: '查找一段聊天',
+              description: '输入聊天名称或房间 ID。',
+            )
+          : const SizedBox.shrink();
+    }
     return ref
         .watch(chatRoomsProvider)
         .when(
@@ -1079,6 +1231,7 @@ class _RoomSearchResults extends ConsumerWidget {
               return const _SearchStatus(
                 icon: Icons.search_off_rounded,
                 text: '没有找到匹配的聊天',
+                description: '试试更短的名称或房间 ID。',
               );
             }
             return ListView.separated(
@@ -1090,9 +1243,25 @@ class _RoomSearchResults extends ConsumerWidget {
                 NeuSpacing.lg,
                 NeuSpacing.xl,
               ),
-              itemCount: results.length,
-              separatorBuilder: (_, _) => const ChatListDivider(),
-              itemBuilder: (_, index) => ChatListItem(room: results[index]),
+              itemCount: results.length + (context.isMaterial ? 1 : 0),
+              separatorBuilder: (_, index) => context.isMaterial && index == 0
+                  ? const SizedBox.shrink()
+                  : const ChatListDivider(),
+              itemBuilder: (context, index) {
+                if (context.isMaterial) {
+                  if (index == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: Text(
+                        '${results.length} 个聊天',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    );
+                  }
+                  index--;
+                }
+                return ChatListItem(room: results[index]);
+              },
             );
           },
         );
@@ -1103,8 +1272,14 @@ class _SearchStatus extends StatelessWidget {
   final IconData icon;
   final String text;
   final Widget? action;
+  final String? description;
 
-  const _SearchStatus({required this.icon, required this.text, this.action});
+  const _SearchStatus({
+    required this.icon,
+    required this.text,
+    this.action,
+    this.description,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1114,13 +1289,26 @@ class _SearchStatus extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            NeuIconButton(icon: icon, size: 84, onPressed: null),
+            if (context.isMaterial)
+              Icon(icon, size: 48)
+            else
+              NeuIconButton(icon: icon, size: 84, onPressed: null),
             const SizedBox(height: NeuSpacing.lg),
             Text(
               text,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: context.isMaterial
+                  ? Theme.of(context).textTheme.titleMedium
+                  : Theme.of(context).textTheme.bodyMedium,
             ),
+            if (context.isMaterial && description != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                description!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (action != null) ...[
               const SizedBox(height: NeuSpacing.sm),
               action!,

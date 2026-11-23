@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
@@ -17,6 +19,7 @@ import 'package:matter/providers/navigation_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/theme/material_theme.dart';
+import 'package:matter/widgets/material_adaptive_shell.dart';
 import 'package:matter/widgets/material_tab_navigation_bar.dart';
 import 'package:matter/widgets/mobile_tab_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -163,6 +166,11 @@ void main() {
     ) async {
       await tester.binding.setSurfaceSize(const Size(320, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
+      // Keep MediaQuery's breakpoint consistent with the layout constraints.
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 700);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
       final container = ProviderContainer(
         overrides: [
           allChatRoomsProvider.overrideWith((ref) async => []),
@@ -295,6 +303,8 @@ void main() {
   testWidgets('returning home during a fetch keeps the existing list', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     var response = Completer<List<rust.ChatRoom>>()
       ..complete(List.generate(30, _room));
     final container = ProviderContainer(
@@ -464,7 +474,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(container.read(navigationIndexProvider), 3);
         expect(position.value, 3);
-        expect(find.text('Material 配色'), findsOneWidget);
+        expect(find.text('外观与显示'), findsOneWidget);
         final lens = find
             .descendant(of: _bar, matching: find.byType(CustomPaint))
             .first;
@@ -553,11 +563,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 64));
     expect(find.text('连接中…'), findsOneWidget);
-    expect(find.text('Matter'), findsOneWidget);
-    final opacity = find.ancestor(
-      of: find.text('Matter'),
-      matching: find.byType(Opacity),
+    final title = find.descendant(
+      of: find.byType(ChatPage),
+      matching: find.text('聊天'),
     );
+    expect(title, findsOneWidget);
+    final opacity = find.ancestor(of: title, matching: find.byType(Opacity));
     expect(opacity, findsWidgets);
     expect(
       tester.widget<Opacity>(opacity.first).opacity,
@@ -567,13 +578,246 @@ void main() {
     expect(find.text('连接中…'), findsNothing);
   });
 
+  testWidgets(
+    'conversation list keeps its width across the large window breakpoint',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1199, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pumpApp(tester);
+      final list = find.byKey(const ValueKey('material-conversation-list'));
+      expect(tester.getSize(list).width, 320);
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(list).width, 320);
+      await tester.drag(
+        find.byKey(const ValueKey('conversation-list-divider')),
+        const Offset(100, 0),
+      );
+      await tester.pumpAndSettle();
+      final preferred = tester.getSize(list).width;
+      expect(preferred, greaterThan(320));
+      await tester.binding.setSurfaceSize(const Size(840, 800));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(list).width, lessThan(preferred));
+      await tester.binding.setSurfaceSize(const Size(1199, 800));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(list).width, preferred);
+      await tester.pumpWidget(const SizedBox());
+      await _pumpApp(tester);
+      expect(tester.getSize(list).width, preferred);
+    },
+  );
+
+  testWidgets('desktop rail remembers a drag across resizing and reopening', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpApp(tester);
+    final rail = find.byKey(const ValueKey('material-navigation-rail'));
+    final divider = find.byKey(const ValueKey('material-rail-divider'));
+    await tester.drag(divider, const Offset(-50, 0));
+    await tester.pumpAndSettle();
+    final width = tester.getSize(rail).width;
+    expect(width, greaterThan(160));
+    await tester.binding.setSurfaceSize(const Size(840, 800));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rail).width, lessThan(width));
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rail).width, width);
+    await tester.pumpWidget(const SizedBox());
+    await _pumpApp(tester);
+    expect(tester.getSize(rail).width, width);
+    await tester.tap(divider);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(divider);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rail).width, 256);
+  });
+
+  testWidgets(
+    'wide rail toggle can reverse mid-transition and respects reduced motion',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pumpApp(tester);
+      final rail = find.byKey(const ValueKey('material-navigation-rail'));
+      final pane = find.byKey(const ValueKey('material-shell-content'));
+      await tester.tap(find.byTooltip('收起侧栏'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      final width = tester.getSize(rail).width;
+      expect(width, inExclusiveRange(80, 256));
+      expect(tester.getTopLeft(pane).dx, width);
+      await tester.tap(find.byTooltip('展开侧栏'));
+      await tester.pump();
+      expect(tester.getSize(rail).width, closeTo(width, 1));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(rail).width, 256);
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('收起侧栏'));
+      await tester.pump();
+      expect(tester.getSize(rail).width, 80);
+      await tester.tap(find.byTooltip('空间'));
+      await tester.pump();
+      expect(
+        tester.widget<MobileTabView>(find.byType(MobileTabView)).position.value,
+        1,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('dragging wide content stays on the selected destination', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(600, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = await _pumpApp(tester);
+    for (final width in [600.0, 1200.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 700));
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(Offset(width - 30, 350));
+      await gesture.moveBy(Offset(-width * .65, 0));
+      await tester.pump();
+      expect(
+        tester.widget<MobileTabView>(find.byType(MobileTabView)).position.value,
+        0,
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(container.read(navigationIndexProvider), 0);
+    }
+  });
+
+  testWidgets(
+    'collapsed rail keeps a full target and names keyboard destinations',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(840, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final container = await _pumpApp(tester);
+      final rail = find.byKey(const ValueKey('material-navigation-rail'));
+      await tester.drag(
+        find.byKey(const ValueKey('material-rail-divider')),
+        const Offset(-100, 0),
+      );
+      await tester.pumpAndSettle();
+      final chat = find.byTooltip('聊天');
+      expect(tester.getSize(rail).width, 64);
+      expect(tester.getSize(chat), const Size.square(kMinInteractiveDimension));
+      expect(tester.getCenter(chat).dx, tester.getCenter(rail).dx);
+      Focus.of(
+        tester.element(
+          find.descendant(of: chat, matching: find.byIcon(Icons.chat_bubble)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(find.text('空间'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(container.read(navigationIndexProvider), 1);
+    },
+  );
+
+  testWidgets('expanded rail hover matches the selected space capsule', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpApp(tester);
+    final rail = find.byKey(const ValueKey('material-navigation-rail'));
+    final space = find.ancestor(
+      of: find.descendant(
+        of: rail,
+        matching: find.byIcon(Icons.workspaces_outline),
+      ),
+      matching: find.byType(InkWell),
+    );
+    final point = tester.getCenter(space);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: point);
+    await mouse.down(point);
+    await mouse.up();
+    await tester.pumpAndSettle();
+    final selected = find.ancestor(
+      of: find.descendant(of: rail, matching: find.byIcon(Icons.workspaces)),
+      matching: find.byType(InkWell),
+    );
+    final indicator = find.byKey(const ValueKey('rail-indicator'));
+    expect(tester.getRect(selected), tester.getRect(indicator));
+    expect(tester.getSize(selected), const Size(232, 56));
+    expect(
+      tester.widget<InkWell>(selected).customBorder,
+      const StadiumBorder(),
+    );
+    expect(tester.widget<InkWell>(selected).hoverColor, Colors.transparent);
+    await mouse.removePointer();
+  });
+
+  testWidgets(
+    'split room changes fade the latest detail at its final position',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final navigator = GlobalKey<NavigatorState>();
+      final room = ValueNotifier('A');
+      addTearDown(room.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildMaterialTheme(Brightness.light),
+          home: ValueListenableBuilder<String>(
+            valueListenable: room,
+            builder: (_, id, _) => MaterialConversationLayout(
+              window: MaterialWindowClass.large,
+              list: const Text('rooms'),
+              detail: Text(id),
+              roomId: id,
+              navigator: navigator,
+              routesOpen: false,
+              active: true,
+              onRoutesChanged: (_) {},
+              onCloseSupporting: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final origin = tester.getTopLeft(find.text('A'));
+      for (final id in ['B', 'C']) {
+        room.value = id;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 40));
+        final detail = find.text(id);
+        final fade = find
+            .ancestor(of: detail, matching: find.byType(Opacity))
+            .first;
+        expect(tester.widget<Opacity>(fade).opacity, inExclusiveRange(0, 1));
+        expect(tester.getTopLeft(detail), origin);
+      }
+      expect(find.text('B', skipOffstage: false), findsNothing);
+      await tester.pumpAndSettle();
+    },
+  );
+
   testWidgets('desktop destination changes have a visible transition', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpApp(tester);
-    final navigation = find.byType(NavigationRail);
+    final navigation = find.byKey(const ValueKey('material-navigation-rail'));
+    expect(tester.getSize(navigation).width, 256);
+    final indicator = find.byKey(const ValueKey('rail-indicator'));
+    final startY = tester.getCenter(indicator).dy;
+    final restingHeight = tester.getSize(indicator).height;
     await tester.tap(
       find.descendant(
         of: navigation,
@@ -582,16 +826,23 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 64));
+    final movingY = tester.getCenter(indicator).dy;
+    expect(movingY, greaterThan(startY));
+    expect(tester.getSize(indicator).height, greaterThan(restingHeight));
+    final pane = find.byKey(const ValueKey('material-shell-content'));
+    expect(
+      tester.getTopLeft(find.byType(ContactsPage)).dx,
+      tester.getTopLeft(pane).dx,
+    );
     final fades = find.ancestor(
       of: find.byType(ContactsPage),
-      matching: find.byType(FadeTransition),
+      matching: find.byType(Opacity),
     );
     expect(fades, findsWidgets);
-    expect(
-      tester.widget<FadeTransition>(fades.first).opacity.value,
-      inExclusiveRange(0, 1),
-    );
+    expect(tester.widget<Opacity>(fades.first).opacity, inExclusiveRange(0, 1));
     await tester.pumpAndSettle();
-    expect(tester.widget<FadeTransition>(fades.first).opacity.value, 1);
+    expect(tester.getCenter(indicator).dy, greaterThan(movingY));
+    expect(tester.getSize(indicator).height, restingHeight);
+    expect(tester.widget<Opacity>(fades.first).opacity, 1);
   });
 }

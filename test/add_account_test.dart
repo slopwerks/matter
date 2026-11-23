@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:matter/app.dart';
+import 'package:matter/providers/chat_provider.dart';
+import 'package:matter/providers/navigation_provider.dart';
 
 import 'package:matter/pages/chat/message_input.dart' show messageDraftProvider;
 import 'package:matter/pages/login/login_page.dart';
@@ -28,6 +31,7 @@ class _FakeRustApi implements RustLibApi {
   bool duplicateAccount = false;
   bool failNextBobAccessToken = false;
   Completer<void>? loginBarrier;
+  Completer<void>? syncBarrier;
   void Function()? onLogout;
   Completer<void> syncStarted = Completer<void>();
   int createCalls = 0;
@@ -166,7 +170,9 @@ class _FakeRustApi implements RustLibApi {
       rust.ConnectionStatus.connected;
 
   @override
-  Future<void> crateApiMatrixSyncOnce() async {}
+  Future<void> crateApiMatrixSyncOnce() async {
+    await syncBarrier?.future;
+  }
 
   @override
   Future<void> crateApiMatrixStartSync() async {
@@ -218,6 +224,7 @@ void main() {
     api.duplicateAccount = false;
     api.failNextBobAccessToken = false;
     api.loginBarrier = null;
+    api.syncBarrier = null;
     api.onLogout = null;
     api.syncStarted = Completer<void>();
     api.createCalls = 0;
@@ -235,7 +242,14 @@ void main() {
       displayName: 'Alice',
       searchIndexKey: _aliceIndexKey,
     );
-    container = ProviderContainer();
+    container = ProviderContainer(
+      overrides: [
+        allChatRoomsProvider.overrideWith((ref) async => []),
+        spacesProvider.overrideWith((ref) async => []),
+        contactsProvider.overrideWith((ref) async => []),
+        syncStreamProvider.overrideWith((ref) => null),
+      ],
+    );
     container.read(activeUserIdProvider.notifier).value = _alice;
     container.read(currentUserProvider.notifier).value = const CurrentUser(
       id: _alice,
@@ -251,28 +265,57 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  Future<void> openAddAccount(WidgetTester tester) async {
+  Future<void> openAddAccount(
+    WidgetTester tester, {
+    bool material = false,
+  }) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp(theme: neuTestTheme(), home: const SettingsPage()),
+        child: MaterialApp(
+          theme: neuTestTheme(material: material),
+          home: material ? const MatterApp() : const SettingsPage(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
+    if (material) {
+      container.read(navigationIndexProvider.notifier).value = 3;
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('添加账号'),
+        350,
+        scrollable: find
+            .descendant(
+              of: find.byType(SettingsPage),
+              matching: find.byType(Scrollable),
+            )
+            .last,
+      );
+    }
     await tester.tap(find.text('添加账号'));
     await tester.pumpAndSettle();
     expect(find.byType(LoginPage), findsOneWidget);
     await tester.enterText(
-      find.byType(TextField).first,
+      find
+          .descendant(
+            of: find.byType(LoginPage),
+            matching: find.byType(TextField),
+          )
+          .first,
       'https://other.example.org',
     );
   }
 
   Future<void> enterPassword(WidgetTester tester) async {
-    await tester.enterText(find.byType(TextField).at(1), 'bob');
-    await tester.enterText(find.byType(TextField).last, 'password');
+    final fields = find.descendant(
+      of: find.byType(LoginPage),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(fields.at(1), 'bob');
+    await tester.enterText(fields.last, 'password');
   }
 
   Future<void> submit(WidgetTester tester) async {
@@ -295,6 +338,33 @@ void main() {
     expect(container.read(activeUserIdProvider), _alice);
     expect(container.read(sessionReadyProvider), isTrue);
   });
+
+  testWidgets(
+    'Material account login survives page reset during initial sync',
+    (tester) async {
+      await openAddAccount(tester, material: true);
+      await enterPassword(tester);
+      api.syncBarrier = Completer<void>();
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      // The surviving login page animates its spinner while sync is pending.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(container.read(activeUserIdProvider), _bob);
+      expect(container.read(sessionReadyProvider), isFalse);
+      expect(find.byType(LoginPage), findsOneWidget);
+      api.syncBarrier!.complete();
+      await tester.pumpAndSettle();
+      expect(container.read(sessionReadyProvider), isTrue);
+      expect(api.syncAccounts, [_bob]);
+      expect(api.logoutAccounts, isEmpty);
+      expect(api.cancelCalls, 0);
+      expect(find.byType(LoginPage), findsNothing);
+      expect((await loadAllSessions()).map((session) => session.userId), [
+        _alice,
+        _bob,
+      ]);
+    },
+  );
 
   for (final method in ['password', 'token', 'register']) {
     testWidgets(

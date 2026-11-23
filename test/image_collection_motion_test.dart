@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/image_message_collection.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
+import 'package:matter/theme/neu_colors.dart';
 
 import 'helpers/neu_test_theme.dart';
 
@@ -105,10 +106,13 @@ void main() {
         expect(intermediateHeight, lessThan(expandedHeight));
       }
       final button = find.byKey(const ValueKey('image-stack-toggle:0'));
+      final material = tester.element(button).isMaterial;
       expect(
         find.descendant(
           of: button,
-          matching: find.byIcon(CupertinoIcons.chevron_down),
+          matching: find.byIcon(
+            material ? Icons.expand_more_rounded : CupertinoIcons.chevron_down,
+          ),
         ),
         findsOneWidget,
       );

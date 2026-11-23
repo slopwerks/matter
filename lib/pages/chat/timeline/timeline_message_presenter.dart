@@ -304,6 +304,7 @@ class TimelineMessagePresenter {
                 geoUri: message.geoUri!,
                 isMe: isMe,
                 metadata: metadata,
+                borderRadius: messageBorderRadius,
               )
             : message.msgType == MessageType.file &&
                   (message.mediaSourceJson != null || message.imageUrl != null)
@@ -320,6 +321,7 @@ class TimelineMessagePresenter {
                 imageUrl: message.imageUrl,
                 isMe: isMe,
                 metadata: metadata,
+                borderRadius: messageBorderRadius,
               )
             : TimelineTextBubble(
                 message: message,

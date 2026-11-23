@@ -147,6 +147,11 @@ void main() {
           await tester.enterText(inlineField(), '$draft again');
           await tester.pump();
           final ordinary = '$draft again';
+          final controller = tester
+              .widget<TextField>(inlineField())
+              .controller!;
+          const selection = TextSelection.collapsed(offset: 3);
+          controller.selection = selection;
 
           // Reply cancel does not change text; edit cancel restores that draft.
           container.read(replyingToProvider(_key).notifier).value = _message(
@@ -155,6 +160,15 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(find.text('quoted text'), findsOneWidget);
+          final fieldRect = tester.getRect(inlineField());
+          container.read(replyingToProvider(_key).notifier).value = _message(
+            r'$other',
+            'second quote',
+          );
+          await tester.pump();
+          expect(find.text('second quote'), findsOneWidget);
+          expect(tester.getRect(inlineField()), fieldRect);
+          expect(controller.selection, selection);
           await tester.tap(find.byIcon(Icons.close_rounded));
           await tester.pump();
           expect(container.read(replyingToProvider(_key)), isNull);
@@ -171,6 +185,7 @@ void main() {
           expect(container.read(editingDraftProvider(_key)), isNull);
           expect(text(), ordinary);
           expect(container.read(messageDraftProvider(_key)), ordinary);
+          expect(controller.selection, selection);
 
           Future<void> openEditor() async {
             await tester.longPress(find.byIcon(Icons.add_rounded));

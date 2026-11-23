@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/neu_field.dart';
+import 'material_forward_message_picker.dart';
 
 typedef ForwardMessageSender = Future<void> Function({
   required String sourceRoomId,
@@ -56,7 +58,7 @@ Future<rust.ChatRoom?> showForwardMessageSheet({
   return showModalBottomSheet<rust.ChatRoom>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Colors.transparent,
+    backgroundColor: context.isMaterial ? null : Colors.transparent,
     builder: (_) => ForwardMessageSheet(
       sourceRoomId: sourceRoomId,
       message: message,
@@ -78,15 +80,20 @@ class ForwardSuccessNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final style = context.isMaterial
+        ? materialForwardNoticeStyle(Theme.of(context))
+        : null;
+    final linkColor = style?.action ?? colors.accent;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Material(
           key: const ValueKey('forward-success-notice-surface'),
-          color: colors.surfaceStrong,
+          color: style?.fill ?? colors.surfaceStrong,
           elevation: 8,
           shadowColor: Colors.black54,
-          borderRadius: BorderRadius.circular(NeuRadius.button),
+          borderRadius:
+              style?.radius ?? BorderRadius.circular(NeuRadius.button),
           clipBehavior: Clip.antiAlias,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
@@ -97,7 +104,7 @@ class ForwardSuccessNotice extends StatelessWidget {
                 Text(
                   '成功转发到',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: colors.text),
+                  style: style?.text ?? TextStyle(color: colors.text),
                 ),
                 Semantics(
                   link: true,
@@ -108,10 +115,10 @@ class ForwardSuccessNotice extends StatelessWidget {
                     child: Text(
                       roomName,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.accent,
+                      style: (style?.text ?? const TextStyle()).copyWith(
+                        color: linkColor,
                         decoration: TextDecoration.underline,
-                        decorationColor: colors.accent,
+                        decorationColor: linkColor,
                       ),
                     ),
                   ),
@@ -211,6 +218,21 @@ class _ForwardMessageSheetState extends ConsumerState<ForwardMessageSheet> {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
     final rooms = ref.watch(chatRoomsProvider);
+    if (context.isMaterial) {
+      return MaterialForwardMessagePicker(
+        message: widget.message,
+        sourceRoomId: widget.sourceRoomId,
+        rooms: rooms.whenData((allRooms) => forwardableRooms(allRooms, _query)),
+        controller: _searchController,
+        query: _query,
+        sendingRoomId: _sendingRoomId,
+        onQueryChanged: (value) => setState(() => _query = value),
+        onForward: _forwardTo,
+        onClose: _sendingRoomId == null
+            ? () => Navigator.of(context).pop()
+            : null,
+      );
+    }
     return FractionallySizedBox(
       heightFactor: 0.72,
       child: Material(

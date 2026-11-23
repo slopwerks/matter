@@ -12,7 +12,6 @@ import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/theme/material_theme.dart';
-import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/widgets/glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -32,7 +31,7 @@ void main() {
 
   for (final brightness in Brightness.values) {
     for (final example in [
-      (page: const ContactsPage(), marker: '搜索联系人'),
+      (page: const ContactsPage(), marker: '暂无联系人'),
       (page: const SpacePage(), marker: '还没有加入空间'),
       (page: const CreateChatPage(), marker: '输入 @用户 ID 发起私聊'),
       (
@@ -45,7 +44,7 @@ void main() {
       (page: const ChatSearchPage(roomId: '!room:example.org'), marker: null),
     ]) {
       testWidgets(
-        '${example.page.runtimeType}${example.page is ChatSearchPage ? ' ${(example.page as ChatSearchPage).roomId ?? 'global'}' : ''} floats above content in $brightness',
+        '${example.page.runtimeType}${example.page is ChatSearchPage ? ' ${(example.page as ChatSearchPage).roomId ?? 'global'}' : ''} keeps its header above content in $brightness',
         (tester) async {
           tester.view.devicePixelRatio = 1;
           addTearDown(tester.view.resetDevicePixelRatio);
@@ -85,41 +84,25 @@ void main() {
           final scaffold = find
               .ancestor(of: header, matching: find.byType(Scaffold))
               .first;
+          final rootPage =
+              example.page is ContactsPage || example.page is SpacePage;
           expect(
             tester.widget<Scaffold>(scaffold).extendBodyBehindAppBar,
-            isTrue,
+            !rootPage,
           );
-          expect(appBar.backgroundColor, Colors.transparent);
+          final theme = Theme.of(tester.element(header));
+          final headerColor =
+              appBar.backgroundColor ?? theme.appBarTheme.backgroundColor;
+          expect(headerColor?.a, 1);
           final fade = find.descendant(
             of: header,
             matching: find.byType(TopFadeBlur),
           );
-          expect(fade, findsOneWidget);
-          final background = tester.widget<DecoratedBox>(
-            find.descendant(
-              of: fade,
-              matching: find.byWidgetPredicate(
-                (widget) =>
-                    widget is DecoratedBox &&
-                    widget.decoration is BoxDecoration &&
-                    (widget.decoration as BoxDecoration).gradient
-                        is LinearGradient,
-              ),
-            ),
+          expect(fade, findsNothing);
+          final material = tester.widget<Material>(
+            find.descendant(of: header, matching: find.byType(Material)).first,
           );
-          final gradient =
-              (background.decoration as BoxDecoration).gradient!
-                  as LinearGradient;
-          expect(gradient.begin, Alignment.topCenter);
-          expect(gradient.end, Alignment.bottomCenter);
-          expect(
-            gradient.colors.first.withValues(alpha: 1),
-            Theme.of(tester.element(header)).extension<NeuColors>()!.base,
-          );
-          expect(gradient.colors.first.a, greaterThan(0));
-          expect(gradient.colors.first.a, lessThan(1));
-          expect(gradient.colors.last.a, 0);
-          expect(tester.getSize(fade), tester.getSize(header));
+          expect(material.color, headerColor);
           expect(
             tester.getRect(header).height,
             appBar.preferredSize.height + 24,
@@ -131,13 +114,19 @@ void main() {
             );
           }
           expect(tester.takeException(), isNull);
-          // Keep the standard back action reachable above the fading background.
-          final back = example.page is ChatSearchPage
-              ? find.byTooltip('返回')
-              : example.page is MessageReaderPage
-              ? find.byTooltip('关闭')
-              : find.byType(BackButton);
-          await tester.tap(back);
+          if (rootPage) {
+            // Root tabs have no back button; pop this test's wrapper route.
+            expect(find.byType(BackButton), findsNothing);
+            navigator.currentState!.pop();
+          } else {
+            // Subpages keep their back action above the scrolling content.
+            final back = example.page is ChatSearchPage
+                ? find.byTooltip('返回')
+                : example.page is MessageReaderPage
+                ? find.byTooltip('关闭')
+                : find.byType(BackButton);
+            await tester.tap(back);
+          }
           await tester.pumpAndSettle();
           expect(header, findsNothing);
           await tester.pumpWidget(const SizedBox());

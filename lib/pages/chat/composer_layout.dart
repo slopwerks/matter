@@ -3,22 +3,57 @@ import 'package:material_ui/material_ui.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/compact_capsule_transition.dart';
 
-/// A full-width editor surface on desktop/tablet, with no nested card or blur.
+/// M3 uses one floating capsule at every width; Neu retains its wide editor.
 class ComposerSurface extends StatelessWidget {
   const ComposerSurface({
     super.key,
     required this.expanded,
     required this.compact,
     required this.child,
+    this.attachments,
   });
 
   final bool expanded;
   final bool compact;
   final Widget child;
+  final Widget? attachments;
 
   @override
   Widget build(BuildContext context) {
+    if (context.isMaterial) {
+      return Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 752),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ?attachments,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: CompactCapsuleTransition.surface(
+                  context,
+                  composer: true,
+                  child: Material(
+                    key: const ValueKey('message-input-surface'),
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    borderRadius: materialComposerRadius,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: child,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (expanded) {
       return Material(
         key: const ValueKey('message-input-surface'),
@@ -116,10 +151,10 @@ class ComposerLayout extends StatelessWidget {
           Row(
             key: const ValueKey('desktop-composer-toolbar'),
             children: [
-              emojiButton,
-              attachmentButton,
               moreButton,
+              attachmentButton,
               const Spacer(),
+              emojiButton,
               sendButton,
             ],
           ),
@@ -134,24 +169,19 @@ class ComposerLayout extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            emojiButton,
+            if (showMore) _alignedTool(context, moreButton),
+            _alignedTool(context, attachmentButton),
             SizedBox(width: context.isMaterial ? 2 : 6),
             Expanded(child: editor),
             SizedBox(width: context.isMaterial ? 2 : 6),
             SizedBox(
-              width: showMore
-                  ? 140
-                  : context.isMaterial
-                  ? 92
-                  : 94,
-              height: showMore ? 48 : 44,
+              width: context.isMaterial ? 92 : 94,
+              height: context.isMaterial || showMore
+                  ? kMinInteractiveDimension
+                  : 44,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  attachmentButton,
-                  if (showMore) moreButton,
-                  sendButton,
-                ],
+                children: [emojiButton, sendButton],
               ),
             ),
           ],
@@ -159,4 +189,11 @@ class ComposerLayout extends StatelessWidget {
       ],
     );
   }
+
+  Widget _alignedTool(BuildContext context, Widget button) => context.isMaterial
+      ? SizedBox.square(
+          dimension: kMinInteractiveDimension,
+          child: Center(child: button),
+        )
+      : button;
 }

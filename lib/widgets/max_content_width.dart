@@ -7,21 +7,30 @@ import 'package:material_ui/material_ui.dart';
 class MaxContentWidth extends StatelessWidget {
   final Widget child;
   final double maxWidth;
+  final bool usePaneSize;
 
-  const MaxContentWidth({super.key, required this.child, this.maxWidth = 720});
+  const MaxContentWidth({
+    super.key,
+    required this.child,
+    this.maxWidth = 720,
+    this.usePaneSize = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth <= maxWidth) return child;
-        return Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: child,
-          ),
-        );
-      },
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: usePaneSize
+            ? LayoutBuilder(
+                builder: (context, constraints) => MediaQuery(
+                  data: MediaQuery.of(context)
+                      .copyWith(size: constraints.biggest),
+                  child: child,
+                ),
+              )
+            : child,
+      ),
     );
   }
 }

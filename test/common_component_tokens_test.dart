@@ -54,7 +54,7 @@ void main() {
               ),
             ),
           );
-          expect(components.rowRadius, material ? 28 : 18);
+          expect(components.rowRadius, material ? 36 : 18);
           expect(components.rowHorizontalPadding, material ? 12 : 8);
           expect(components.avatarSize, material ? 44 : 46);
           expect(components.denseAvatarSize, material ? 40 : 44);
@@ -105,7 +105,7 @@ void main() {
           neu,
           t,
         ).extension<AppComponentTheme>()!;
-        expect(resolved.rowRadius, 28 + (18 - 28) * t);
+        expect(resolved.rowRadius, 36 + (18 - 36) * t);
         expect(resolved.avatarSize, 44 + 2 * t);
         expect(
           resolved.conversationLayout,

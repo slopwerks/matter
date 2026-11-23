@@ -127,6 +127,18 @@ pub(super) fn install_live_update_event_handlers(client: &Client, identity: Clie
         },
     );
 
+    let power_identity = identity.clone();
+    client.add_event_handler(
+        move |_event: SyncStateEvent<matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent>, room: Room| {
+            let identity = power_identity.clone();
+            async move {
+                if room.is_space() {
+                    notify_sync_event_for_client(&identity, SyncEvent::RoomMembersChanged { room_id: room.room_id().to_string() }).await;
+                }
+            }
+        },
+    );
+
     let member_identity = identity.clone();
     client.add_event_handler(
         move |_event: SyncStateEvent<RoomMemberEventContent>, room: Room| {

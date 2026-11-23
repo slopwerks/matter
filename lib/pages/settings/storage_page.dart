@@ -96,9 +96,11 @@ class _StoragePageState extends ConsumerState<StoragePage> {
       child: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
-          MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+          context.isMaterial
+              ? 20
+              : MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
           16,
-          24,
+          24 + (context.isMaterial ? MediaQuery.paddingOf(context).bottom : 0),
         ),
         children: [
           LayoutBuilder(
@@ -119,6 +121,11 @@ class _StoragePageState extends ConsumerState<StoragePage> {
                     ],
                   ),
           ),
+          if (context.isMaterial)
+            const StorageSettingsSection(
+              title: '清理范围',
+              child: Text('仅处理可清理的缓存，数据库、会话密钥、草稿和已保存文件会保留。'),
+            ),
           if (snapshot.warnings.isNotEmpty) ...[
             const SizedBox(height: 16),
             GroupedRows(
@@ -153,9 +160,9 @@ class _StoragePageState extends ConsumerState<StoragePage> {
                 _open(StorageDetailPage(title: name, room: key)),
             onOpenAll: () => _open(const StorageChatsPage()),
           ),
-          StorageSection(
+          StorageSettingsSection(
             title: '其他存储',
-            child: GroupedRows(
+            child: StorageSettingsRows(
               children: [
                 ListTile(
                   leading: const Icon(Icons.folder_shared_outlined),
@@ -190,9 +197,9 @@ class _StoragePageState extends ConsumerState<StoragePage> {
               ],
             ),
           ),
-          StorageSection(
+          StorageSettingsSection(
             title: '设置',
-            child: GroupedRows(
+            child: StorageSettingsRows(
               children: [
                 ListTile(
                   leading: const Icon(Icons.tune),
@@ -222,7 +229,7 @@ class _StoragePageState extends ConsumerState<StoragePage> {
     final value = snapshot.hasValue ? snapshot.requireValue : null;
     return Scaffold(
       backgroundColor: context.neu.base,
-      extendBodyBehindAppBar: true,
+      extendBodyBehindAppBar: !context.isMaterial,
       appBar: buildFloatingAppBar(
         title: const Text('存储与数据'),
         actions: [
@@ -259,7 +266,7 @@ class _StoragePageState extends ConsumerState<StoragePage> {
         ],
       ),
       body: MaxContentWidth(
-        maxWidth: 960,
+        maxWidth: context.isMaterial ? 720 : 960,
         child: snapshot.when(
           skipLoadingOnReload: true,
           data: _body,
@@ -280,7 +287,9 @@ class _StoragePageState extends ConsumerState<StoragePage> {
               child: Center(
                 heightFactor: 1,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 960),
+                  constraints: BoxConstraints(
+                    maxWidth: context.isMaterial ? 720 : 960,
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     child: SizedBox(

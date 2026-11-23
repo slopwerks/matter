@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'action_failure_message.dart';
+import 'material_create_chat_form.dart';
+import 'room_directory_page.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
@@ -159,10 +161,16 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              NeuTextField(
-                hint: '群组名称',
-                onChanged: (value) => groupName = value,
-              ),
+              if (ctx.isMaterial)
+                TextField(
+                  decoration: const InputDecoration(labelText: '群组名称'),
+                  onChanged: (value) => groupName = value,
+                )
+              else
+                NeuTextField(
+                  hint: '群组名称',
+                  onChanged: (value) => groupName = value,
+                ),
               if (groupNameError != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -174,142 +182,6 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                 ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  void _showJoinRoomDialog() {
-    // Account snapshot captured when the dialog OPENS: a switch while the
-    // dialog is up must not redirect the write to the new account.
-    final dialogAccountUserId = ref.read(activeUserIdProvider) ?? '';
-    var roomIdentifier = '';
-    var joining = false;
-    String? joinError;
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => _NeuDialog(
-          title: '加入房间',
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              NeuTextField(
-                hint: '!room_id:matrix.akass.cn',
-                onChanged: (value) => roomIdentifier = value,
-              ),
-              if (joinError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    joinError!,
-                    style: Theme.of(ctx).textTheme.bodyMedium
-                        ?.copyWith(color: ctx.neu.error),
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            NeuButton(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              onPressed: joining ? null : () => Navigator.of(ctx).pop(),
-              child: const Center(child: Text('取消')),
-            ),
-            NeuButton(
-              accent: true,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              onPressed: joining
-                  ? null
-                  : () async {
-                      // Entry guard (not only the disabled button): the
-                      // rebuild lags a frame, so a second tap on the old
-                      // widget could otherwise issue a duplicate join.
-                      if (joining) return;
-                      final value = roomIdentifier.trim();
-                      if (value.isEmpty) {
-                        // Feedback instead of a silent no-op (same
-                        // discipline as the create-group dialog).
-                        setDialogState(() => joinError = '请输入房间 ID 或别名');
-                        return;
-                      }
-                      setDialogState(() {
-                        joining = true;
-                        joinError = null;
-                      });
-                      try {
-                        await rust.joinRoom(
-                          // Account snapshot captured when the dialog
-                          // OPENED (see above), not read at tap time.
-                          accountUserId: dialogAccountUserId,
-                          identifier: value,
-                        );
-                        // The account may have switched while the request
-                        // was in flight: skip ALL local feedback (same
-                        // discipline as the other pages) and close the
-                        // dialog — it would otherwise stay stuck in its
-                        // in-flight state. `mounted` first: `ref.read`
-                        // throws after unmount.
-                        if (!mounted) return;
-                        if (ref.read(activeUserIdProvider) !=
-                            dialogAccountUserId) {
-                          if (ctx.mounted &&
-                              ModalRoute.of(ctx)?.isCurrent == true) {
-                            Navigator.of(ctx).pop();
-                          }
-                          return;
-                        }
-                        ref.invalidate(allChatRoomsProvider);
-                        ref.invalidate(allUngroupedRoomsProvider);
-                        ref.invalidate(spacesProvider);
-                        ref.invalidate(searchRoomsProvider);
-                        if (!mounted) return;
-                        // `isCurrent` guard: the dialog may already be in
-                        // its exit animation — popping then would pop the
-                        // page below it.
-                        if (ctx.mounted &&
-                            ModalRoute.of(ctx)?.isCurrent == true) {
-                          Navigator.of(ctx).pop();
-                        }
-                        // The dialog may have been dismissed while the
-                        // request was in flight: still report success.
-                        neuToast(context, '已加入房间');
-                      } catch (e) {
-                        if (!mounted) return;
-                        // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
-                        if (ref.read(activeUserIdProvider) !=
-                            dialogAccountUserId) {
-                          if (ctx.mounted &&
-                              ModalRoute.of(ctx)?.isCurrent == true) {
-                            Navigator.of(ctx).pop();
-                          }
-                          return;
-                        }
-                        if (ctx.mounted) {
-                          setDialogState(() {
-                            joining = false;
-                            // Render the failure inside the dialog: a
-                            // page-level snackbar would sit beneath the
-                            // modal barrier while the dialog stays open
-                            // for retry.
-                            joinError = _actionFailureMessage(e);
-                          });
-                        } else {
-                          neuToast(context, _actionFailureMessage(e));
-                        }
-                      }
-                    },
-              child: joining
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        color: context.neu.onAccent,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Center(child: Text('加入')),
-            ),
-          ],
         ),
       ),
     );
@@ -337,53 +209,68 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                   NeuSpacing.xl,
                 ),
                 children: [
-                  NeuTextField(
-                    controller: _searchController,
-                    hint: '输入 @用户 ID 发起私聊',
-                    leading: const Icon(Icons.search_rounded),
-                    textInputAction: TextInputAction.go,
-                    onSubmitted: (value) {
-                      final trimmed = value.trim();
-                      if (trimmed.isNotEmpty) _createDm(trimmed);
-                    },
-                  ),
-                  const SizedBox(height: NeuSpacing.md),
-                  NeuButton(
-                    accent: true,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    onPressed: _isCreating
-                        ? null
-                        : () {
-                            final trimmed = _searchController.text.trim();
-                            if (trimmed.isNotEmpty) _createDm(trimmed);
-                          },
-                    child: _isCreating
-                        ? SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              color: colors.onAccent,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text('发起私聊'),
-                  ),
-                  const SizedBox(height: NeuSpacing.xl),
-                  _ActionCard(
-                    icon: Icons.group_add_rounded,
-                    iconColor: colors.accent,
-                    title: '创建群组',
-                    subtitle: '创建一个新的群聊房间',
-                    onTap: _showCreateGroupDialog,
-                  ),
-                  const SizedBox(height: NeuSpacing.md),
-                  _ActionCard(
-                    icon: Icons.meeting_room_rounded,
-                    iconColor: colors.warning,
-                    title: '加入房间',
-                    subtitle: '通过房间 ID 加入已有房间',
-                    onTap: _showJoinRoomDialog,
-                  ),
+                  if (context.isMaterial)
+                    MaterialCreateChatForm(
+                      controller: _searchController,
+                      isCreating: _isCreating,
+                      onCreateDm: (value) {
+                        final trimmed = value.trim();
+                        if (trimmed.isNotEmpty) _createDm(trimmed);
+                      },
+                      onCreateGroup: _showCreateGroupDialog,
+                      onJoinRoom: () =>
+                          RoomDirectoryPage.open(context, focusAddress: true),
+                    )
+                  else ...[
+                    NeuTextField(
+                      controller: _searchController,
+                      hint: '输入 @用户 ID 发起私聊',
+                      leading: const Icon(Icons.search_rounded),
+                      textInputAction: TextInputAction.go,
+                      onSubmitted: (value) {
+                        final trimmed = value.trim();
+                        if (trimmed.isNotEmpty) _createDm(trimmed);
+                      },
+                    ),
+                    const SizedBox(height: NeuSpacing.md),
+                    NeuButton(
+                      accent: true,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      onPressed: _isCreating
+                          ? null
+                          : () {
+                              final trimmed = _searchController.text.trim();
+                              if (trimmed.isNotEmpty) _createDm(trimmed);
+                            },
+                      child: _isCreating
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: colors.onAccent,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text('发起私聊'),
+                    ),
+                    const SizedBox(height: NeuSpacing.xl),
+                    _ActionCard(
+                      icon: Icons.group_add_rounded,
+                      iconColor: colors.accent,
+                      title: '创建群组',
+                      subtitle: '创建一个新的群聊房间',
+                      onTap: _showCreateGroupDialog,
+                    ),
+                    const SizedBox(height: NeuSpacing.md),
+                    _ActionCard(
+                      icon: Icons.meeting_room_rounded,
+                      iconColor: colors.warning,
+                      title: '通过地址加入',
+                      subtitle: '输入房间 ID、别名或粘贴 Matrix 链接',
+                      onTap: () =>
+                          RoomDirectoryPage.open(context, focusAddress: true),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -512,6 +399,23 @@ class _NeuDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isMaterial) {
+      return AlertDialog(
+        title: Text(title),
+        content: content,
+        scrollable: true,
+        actions: [
+          Row(
+            children: [
+              for (var index = 0; index < actions.length; index++) ...[
+                if (index > 0) const SizedBox(width: 12),
+                Expanded(child: actions[index]),
+              ],
+            ],
+          ),
+        ],
+      );
+    }
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,

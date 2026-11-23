@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../features/markdown/markdown_format_toolbar.dart';
 import '../../../providers/chat_visual_settings_provider.dart';
 import '../../../theme/neu_colors.dart';
+import '../../../theme/material_theme.dart';
 import '../../../widgets/neu_decoration.dart';
 
 /// Inline editor presentation. The host owns focus, keyboard handling, drafts
@@ -67,26 +68,26 @@ class ComposerTextField extends StatelessWidget {
           hintText: '消息',
           hintStyle: Theme.of(context).textTheme.bodyLarge
               ?.copyWith(color: colors.textTertiary),
-          filled: expanded ? false : null,
+          filled: expanded || context.isMaterial ? false : null,
           contentPadding: EdgeInsets.symmetric(
             horizontal: expanded ? 8 : 14,
             vertical: expanded ? 6 : 11,
           ),
           border: context.isMaterial && !expanded
               ? const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,
           enabledBorder: context.isMaterial && !expanded
               ? const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,
           focusedBorder: context.isMaterial && !expanded
               ? const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,

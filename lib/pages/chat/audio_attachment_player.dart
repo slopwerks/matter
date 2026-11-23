@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/audio/audio_playback_provider.dart';
 import '../../features/audio/audio_player_panel.dart';
 import '../../features/audio/audio_waveform.dart';
+import '../../theme/neu_colors.dart';
 
 /// A view onto the app-owned audio session. Removing a bubble no longer stops
 /// playback; the mini player, queue and system notification keep controlling it.
@@ -47,6 +48,14 @@ class AudioAttachmentPlayer extends ConsumerWidget {
         final position = active
             ? session.position.inMilliseconds.clamp(0, duration)
             : 0;
+        void play() => session.toggleAttachment(
+          filename,
+          url,
+          mediaSourceJson,
+          roomId: roomId,
+          messageId: messageId,
+          durationMs: durationMs,
+        );
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -54,18 +63,13 @@ class AudioAttachmentPlayer extends ConsumerWidget {
               children: [
                 if (active)
                   AudioPlayButton(session: session, color: foreground)
+                else if (context.isMaterial)
+                  AudioPlayButton(session: session, onPlay: play)
                 else
                   IconButton(
                     tooltip: '播放音频',
                     color: foreground,
-                    onPressed: () => session.toggleAttachment(
-                      filename,
-                      url,
-                      mediaSourceJson,
-                      roomId: roomId,
-                      messageId: messageId,
-                      durationMs: durationMs,
-                    ),
+                    onPressed: play,
                     icon: const Icon(Icons.play_arrow_rounded),
                   ),
                 Expanded(

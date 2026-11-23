@@ -64,6 +64,52 @@ void main() {
     api.states.clear();
   });
 
+  testWidgets(
+    'pinned notice retains its margins and maximum width as the pane resizes',
+    (tester) async {
+      const room = '!notices:example.org';
+      const user = '@me:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          pinnedMessagesProvider((roomId: room, userId: user))
+              .overrideWith((_) async => [_message('pin', 'Pinned')]),
+          ignoredUserIdsProvider.overrideWith((_) async => <String>{}),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value = user;
+      await tester.binding.setSurfaceSize(const Size(1000, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      for (final width in [828.0, 390.0, 600.0]) {
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: neuTestTheme(material: true),
+              home: Scaffold(
+                body: SizedBox(
+                  width: width,
+                  child: PinnedMessagesStack(roomId: room, onMessageTap: _noop),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        Finder surface(Type type) => find
+            .descendant(of: find.byType(type), matching: find.byType(Material))
+            .first;
+        final pins = surface(PinnedMessagesStack);
+        final a = tester.getRect(pins);
+        expect(a.width, (width - 32).clamp(0, 720));
+        const shape = RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        );
+        expect(tester.widget<Material>(pins).shape, shape);
+      }
+    },
+  );
+
   testWidgets('pinned messages stack, jump, and unpin in the chat header', (
     tester,
   ) async {

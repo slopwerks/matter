@@ -3,8 +3,17 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../providers/chat_visual_settings_provider.dart';
+import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../theme/tokens.dart';
+
+Color outgoingBubbleForeground(BuildContext context) => context.isMaterial
+    ? Theme.of(context).colorScheme.onPrimaryContainer
+    : context.neu.onAccent;
+
+Color messageBubbleFill(BuildContext context, {required bool isMe}) => isMe
+    ? context.tokens.surfaces.bubbleOutgoing
+    : context.tokens.surfaces.bubbleIncoming;
 
 /// Joined corners follow cluster position, not render-block position. Media
 /// collections and send-flight targets consume the same geometry as text.
@@ -16,7 +25,7 @@ BorderRadius timelineBubbleBorderRadius(
 }) {
   final radii = context.tokens.radii;
   final outer = Radius.circular(radii.bubble);
-  const joined = Radius.circular(6);
+  final joined = Radius.circular(context.isMaterial ? 4 : 6);
   final tail = Radius.circular(radii.tag);
   if (isMe) {
     return BorderRadius.only(
@@ -107,6 +116,62 @@ List<BoxShadow> enabledNeuBubbleShadows(
       )
     : const [];
 
+ShapeDecoration attachmentBubbleDecoration(
+  BuildContext context, {
+  required bool isMe,
+  BorderRadius? borderRadius,
+}) {
+  final radius = context.isMaterial
+      ? borderRadius ??
+            timelineBubbleBorderRadius(
+              context,
+              isMe: isMe,
+              isFirst: true,
+              isLast: true,
+            )
+      : BorderRadius.circular(NeuRadius.content);
+  return ShapeDecoration(
+    shape: neuBubbleShape(context, radius),
+    color: messageBubbleFill(context, isMe: isMe),
+    shadows: enabledNeuBubbleShadows(context, context.neu),
+  );
+}
+
+/// The leading badge for downloadable files and shared locations.
+class AttachmentBubbleIcon extends StatelessWidget {
+  const AttachmentBubbleIcon({
+    super.key,
+    required this.icon,
+    required this.isMe,
+    this.location = false,
+  });
+
+  final IconData icon;
+  final bool isMe;
+  final bool location;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!context.isMaterial) {
+      return Icon(
+        icon,
+        size: 30,
+        color: isMe ? outgoingBubbleForeground(context) : context.neu.accent,
+      );
+    }
+    final style = materialTimelineAttachmentIconStyle(
+      Theme.of(context),
+      location: location,
+    );
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(color: style.fill, borderRadius: style.radius),
+      child: Icon(icon, size: 20, color: style.foreground),
+    );
+  }
+}
+
 /// Text bubble surface only: content, metadata, gestures, menu anchors and
 /// send-flight targets stay outside this widget at their existing boundaries.
 class TimelineBubbleFrame extends StatelessWidget {
@@ -125,8 +190,9 @@ class TimelineBubbleFrame extends StatelessWidget {
   final Widget child;
   final Key? bubbleKey;
 
-  static double maxWidth(BuildContext context) =>
-      math.min(MediaQuery.sizeOf(context).width * .68, 520);
+  static double maxWidth(BuildContext context) => context.isMaterial
+      ? math.min(MediaQuery.sizeOf(context).width, 720) * .75
+      : math.min(MediaQuery.sizeOf(context).width * .68, 520);
 
   @override
   Widget build(BuildContext context) => Container(

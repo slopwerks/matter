@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/interaction_mode_provider.dart';
 import '../../theme/neu_colors.dart';
-import '../../theme/material_theme.dart';
+import 'material_preference_option.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/grouped_rows.dart';
 import '../../widgets/max_content_width.dart';
@@ -19,7 +19,7 @@ class InteractionModeSettingsPage extends ConsumerWidget {
       extendBodyBehindAppBar: true,
       appBar: buildFloatingAppBar(title: const Text('交互模式')),
       body: MaxContentWidth(
-        maxWidth: 600,
+        maxWidth: context.isMaterial ? 720 : 600,
         child: ListView(
           padding: EdgeInsets.fromLTRB(
             16,
@@ -39,14 +39,10 @@ class InteractionModeSettingsPage extends ConsumerWidget {
                 child: GroupedRows(
                   children: [
                     for (final mode in InteractionMode.values)
-                      RadioListTile<InteractionMode>(
-                        key: ValueKey('interaction-mode-${mode.name}'),
+                      MaterialPreferenceOption<InteractionMode>(
+                        tileKey: ValueKey('interaction-mode-${mode.name}'),
                         value: mode,
                         selected: selected == mode,
-                        selectedTileColor: materialChoiceFill(
-                          Theme.of(context),
-                          selected: selected == mode,
-                        ),
                         title: Text(mode.label),
                         subtitle: Text(switch (mode) {
                           InteractionMode.auto => '桌面系统使用键鼠，Android / iOS 使用触屏',

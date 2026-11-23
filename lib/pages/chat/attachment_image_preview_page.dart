@@ -4,6 +4,11 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
+import '../../widgets/floating_app_bar.dart';
+import '../../widgets/material_press.dart';
+import '../../widgets/max_content_width.dart';
+import '../../widgets/neu_surface.dart';
 import 'attachment_caption_composer.dart';
 import 'attachment_media_draft.dart';
 import 'attachment_media_gallery.dart';
@@ -120,43 +125,90 @@ class _AttachmentImagePreviewPageState
     }
   }
 
+  Widget _toolButton({
+    Key? key,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    required Widget icon,
+    Color? color,
+    bool? selected,
+  }) {
+    if (!context.isMaterial) {
+      return IconButton(
+        key: key,
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: icon,
+        color: color,
+      );
+    }
+    return MaterialPress(
+      builder: (states) => IconButton.filledTonal(
+        key: key,
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: icon,
+        isSelected: selected,
+        statesController: states,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.draft,
     builder: (context, _) {
       final colors = context.neu;
+      final material = context.isMaterial;
       final order = widget.draft.order(_current);
       final busy = _editing || widget.draft.isSending;
+      final selection = _toolButton(
+        key: const ValueKey('attachment-preview-selection'),
+        tooltip: order == 0 ? '选中图片' : '取消选择',
+        onPressed: busy ? null : () => widget.draft.toggle(_current),
+        icon: AttachmentSelectionBadge(selected: order > 0, order: order),
+      );
       return PopScope(
         canPop: !widget.draft.isSending,
         child: Scaffold(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: colors.base,
-            foregroundColor: colors.text,
-            surfaceTintColor: Colors.transparent,
-            elevation: 0,
-            leading: IconButton(
-              tooltip: '返回选图',
-              onPressed: busy ? null : () => Navigator.of(context).pop(),
-              icon: const Icon(CupertinoIcons.chevron_back, size: 22),
-            ),
-            title: Text('${_index + 1} / ${widget.images.length}'),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: IconButton(
-                  key: const ValueKey('attachment-preview-selection'),
-                  tooltip: order == 0 ? '选中图片' : '取消选择',
-                  onPressed: busy ? null : () => widget.draft.toggle(_current),
-                  icon: AttachmentSelectionBadge(
-                    selected: order > 0,
-                    order: order,
+          appBar: context.isMaterial
+              ? buildFloatingAppBar(
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('发送前预览'),
+                      Text(
+                        '${_index + 1} / ${widget.images.length}',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                    ],
                   ),
+                  leading: NeuIconButton(
+                    tooltip: '返回选图',
+                    icon: Icons.arrow_back_rounded,
+                    onPressed: busy ? null : () => Navigator.of(context).pop(),
+                  ),
+                  actions: [selection],
+                )
+              : AppBar(
+                  backgroundColor: colors.base,
+                  foregroundColor: colors.text,
+                  surfaceTintColor: Colors.transparent,
+                  elevation: 0,
+                  leading: IconButton(
+                    tooltip: '返回选图',
+                    onPressed: busy ? null : () => Navigator.of(context).pop(),
+                    icon: const Icon(CupertinoIcons.chevron_back, size: 22),
+                  ),
+                  title: Text('${_index + 1} / ${widget.images.length}'),
+                  actions: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: selection,
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
           body: Column(
             children: [
               Expanded(
@@ -216,8 +268,10 @@ class _AttachmentImagePreviewPageState
                                 snapshot.data!,
                                 fit: BoxFit.contain,
                                 cacheWidth: 2048,
-                                errorBuilder: (_, _, _) => const Icon(
-                                  CupertinoIcons.photo,
+                                errorBuilder: (_, _, _) => Icon(
+                                  material
+                                      ? Icons.broken_image_outlined
+                                      : CupertinoIcons.photo,
                                   color: Colors.white,
                                 ),
                               ),
@@ -229,74 +283,103 @@ class _AttachmentImagePreviewPageState
                   },
                 ),
               ),
-              ColoredBox(
-                color: colors.base,
+              Material(
+                color: context.isMaterial
+                    ? materialMediaChromeStyle(Theme.of(context)).base
+                    : colors.base,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (MediaQuery.viewInsetsOf(context).bottom == 0)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          IconButton(
-                            tooltip: '裁剪',
-                            onPressed: busy
-                                ? null
-                                : () => _edit(ChatImageEditorTool.crop),
-                            icon: const Icon(CupertinoIcons.crop, size: 24),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: context.isMaterial ? 8 : 0,
+                        ),
+                        child: MaxContentWidth(
+                          maxWidth: context.isMaterial ? 560 : double.infinity,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _toolButton(
+                                tooltip: '裁剪',
+                                onPressed: busy
+                                    ? null
+                                    : () => _edit(ChatImageEditorTool.crop),
+                                icon: Icon(
+                                  material
+                                      ? Icons.crop_rounded
+                                      : CupertinoIcons.crop,
+                                  size: 24,
+                                ),
+                              ),
+                              _toolButton(
+                                tooltip: '笔刷',
+                                onPressed: busy
+                                    ? null
+                                    : () => _edit(ChatImageEditorTool.paint),
+                                icon: Icon(
+                                  material
+                                      ? Icons.brush_outlined
+                                      : CupertinoIcons.paintbrush,
+                                  size: 24,
+                                ),
+                              ),
+                              _toolButton(
+                                tooltip: _current.mimeType == null
+                                    ? '正在识别图片格式'
+                                    : !_current.canCompress
+                                    ? 'GIF / WebP 保留原文件发送'
+                                    : _current.compress
+                                    ? '自动压缩'
+                                    : '发送原图',
+                                onPressed: busy || !_current.canCompress
+                                    ? null
+                                    : () => widget.draft.toggleCompression(
+                                        _current,
+                                      ),
+                                selected: !_current.compress,
+                                icon: Icon(
+                                  _current.compress
+                                      ? Icons.sd_outlined
+                                      : Icons.raw_on_outlined,
+                                  size: 28,
+                                ),
+                              ),
+                              _toolButton(
+                                key: const ValueKey(
+                                  'attachment-spoiler-toggle',
+                                ),
+                                tooltip: _current.spoiler ? '取消隐藏图片' : '隐藏图片',
+                                onPressed: busy
+                                    ? null
+                                    : () =>
+                                          widget.draft.toggleSpoiler(_current),
+                                color: _current.spoiler ? colors.accent : null,
+                                selected: _current.spoiler,
+                                icon: Icon(
+                                  material
+                                      ? (_current.spoiler
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined)
+                                      : (_current.spoiler
+                                            ? CupertinoIcons.eye_slash
+                                            : CupertinoIcons.eye),
+                                  size: 24,
+                                ),
+                              ),
+                              _toolButton(
+                                tooltip: '更多调整',
+                                onPressed: busy ? null : () => _edit(null),
+                                icon: Icon(
+                                  material
+                                      ? Icons.tune_rounded
+                                      : CupertinoIcons.slider_horizontal_3,
+                                  size: 24,
+                                ),
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            tooltip: '笔刷',
-                            onPressed: busy
-                                ? null
-                                : () => _edit(ChatImageEditorTool.paint),
-                            icon: const Icon(
-                              CupertinoIcons.paintbrush,
-                              size: 24,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: _current.mimeType == null
-                                ? '正在识别图片格式'
-                                : !_current.canCompress
-                                ? 'GIF / WebP 保留原文件发送'
-                                : _current.compress
-                                ? '自动压缩'
-                                : '发送原图',
-                            onPressed: busy || !_current.canCompress
-                                ? null
-                                : () =>
-                                      widget.draft.toggleCompression(_current),
-                            icon: Icon(
-                              _current.compress
-                                  ? Icons.sd_outlined
-                                  : Icons.raw_on_outlined,
-                              size: 28,
-                            ),
-                          ),
-                          IconButton(
-                            key: const ValueKey('attachment-spoiler-toggle'),
-                            tooltip: _current.spoiler ? '取消隐藏图片' : '隐藏图片',
-                            onPressed: busy
-                                ? null
-                                : () => widget.draft.toggleSpoiler(_current),
-                            color: _current.spoiler ? colors.accent : null,
-                            icon: Icon(
-                              _current.spoiler
-                                  ? CupertinoIcons.eye_slash
-                                  : CupertinoIcons.eye,
-                              size: 24,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: '更多调整',
-                            onPressed: busy ? null : () => _edit(null),
-                            icon: const Icon(
-                              CupertinoIcons.slider_horizontal_3,
-                              size: 24,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     AttachmentCaptionComposer(
                       draft: widget.draft,

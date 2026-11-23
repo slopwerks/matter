@@ -121,6 +121,14 @@ class _TimelineSwipeReplyState extends State<TimelineSwipeReply>
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onReply != null;
+    final scheme = Theme.of(context).colorScheme;
+    final material = context.isMaterial;
+    final fill = material
+        ? scheme.secondaryContainer
+        : context.neu.accent.withValues(alpha: .14);
+    final foreground = material
+        ? scheme.onSecondaryContainer
+        : context.neu.accent;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       dragStartBehavior: DragStartBehavior.down,
@@ -159,12 +167,12 @@ class _TimelineSwipeReplyState extends State<TimelineSwipeReply>
                           width: 34,
                           height: 34,
                           decoration: BoxDecoration(
-                            color: context.neu.accent.withValues(alpha: .14),
+                            color: fill,
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
                             Icons.reply_rounded,
-                            color: context.neu.accent,
+                            color: foreground,
                             size: 20,
                           ),
                         ),

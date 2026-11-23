@@ -1,6 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
+import 'chat_notice_frame.dart';
+import '../../widgets/material_press.dart';
 
 const unreadMessagesBannerHeight = 48.0;
 
@@ -25,17 +29,23 @@ class UnreadMessagesBanner extends StatelessWidget {
   final VoidCallback onDismiss;
 
   @override
-  Widget build(BuildContext context) => GlassPanel(
-    height: unreadMessagesBannerHeight,
-    child: Row(
+  Widget build(BuildContext context) {
+    final material = context.isMaterial;
+    final style = materialUnreadBannerStyle(Theme.of(context));
+    Widget buildContent([WidgetStatesController? states]) => Row(
       children: [
         Expanded(
           child: TextButton.icon(
+            statesController: states,
+            style: material ? style.action : null,
             onPressed: loading || unavailable ? null : onPressed,
             icon: loading
-                ? const SizedBox.square(
+                ? SizedBox.square(
                     dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: material ? style.foreground : null,
+                    ),
                   )
                 : const Icon(Icons.vertical_align_top_rounded, size: 18),
             label: Text(
@@ -57,10 +67,30 @@ class UnreadMessagesBanner extends StatelessWidget {
         ),
         IconButton(
           tooltip: '关闭未读提示',
+          color: material ? style.foreground : null,
           onPressed: onDismiss,
           icon: const Icon(Icons.close_rounded, size: 18),
         ),
       ],
-    ),
-  );
+    );
+    if (material) {
+      return ChatNoticeFrame(
+        child: MaterialPress(
+          builder: (states) => Material(
+            color: style.fill,
+            shape: ChatNoticeFrame.shape,
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              height: unreadMessagesBannerHeight,
+              child: buildContent(states),
+            ),
+          ),
+        ),
+      );
+    }
+    return GlassPanel(
+      height: unreadMessagesBannerHeight,
+      child: buildContent(),
+    );
+  }
 }

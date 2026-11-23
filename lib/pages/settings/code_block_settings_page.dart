@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/matrix_html/matrix_code_block.dart';
 import '../../providers/code_block_settings_provider.dart';
+import '../../providers/material_color_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/grouped_rows.dart';
 import '../../widgets/max_content_width.dart';
+import 'material_code_block_settings_view.dart';
 
 const _sampleCode = '''// Matter 代码块展示样例
 class MatterClient {
@@ -43,6 +45,21 @@ class _CodeBlockSettingsPageState extends ConsumerState<CodeBlockSettingsPage> {
       _ => systemIsDark,
     };
 
+    final schemes = ref.watch(materialColorSchemesProvider);
+    final previewScheme = isPreviewDark ? schemes.dark : schemes.light;
+    if (context.isMaterial) {
+      return MaterialCodeBlockSettingsView(
+        settings: settings,
+        previewMode: _previewMode,
+        previewScheme: previewScheme,
+        sampleCode: _sampleCode,
+        onPreviewModeChanged: (value) => setState(() => _previewMode = value),
+        onOpacityChanged: notifier.setOpacity,
+        onLineNumbersChanged: notifier.setShowLineNumbers,
+        onDarkThemeChanged: notifier.setDarkTheme,
+        onLightThemeChanged: notifier.setLightTheme,
+      );
+    }
     final previewBubbleColor = isPreviewDark
         ? const Color(0xFF5577C2) // 暗色模式下的发送气泡强调色
         : const Color(0xFFD6E3FF); // 浅色模式下的浅色底

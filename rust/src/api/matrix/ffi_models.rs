@@ -4,6 +4,27 @@ macro_rules! declare_models_api {
         // ── FRB data types ───────────────────────────────────────────────────
         #[frb]
         #[derive(Clone, Debug)]
+        pub struct DirectoryRoom {
+            pub id: String,
+            pub name: Option<String>,
+            pub alias: Option<String>,
+            pub topic: Option<String>,
+            pub avatar_url: Option<String>,
+            pub is_space: bool,
+            pub state: String,
+            pub join_rule: Option<String>,
+            pub via: Vec<String>,
+        }
+
+        #[frb]
+        #[derive(Clone, Debug)]
+        pub struct DirectoryRoomPage {
+            pub rooms: Vec<DirectoryRoom>,
+            pub next: Option<String>,
+        }
+
+        #[frb]
+        #[derive(Clone, Debug)]
         pub enum ConnectionStatus {
             Connected,
             Connecting,
@@ -75,6 +96,7 @@ macro_rules! declare_models_api {
         #[frb]
         #[derive(Clone, Debug)]
         pub struct SpaceDetails {
+            pub can_invite: Option<bool>,
             pub id: String,
             pub name: String,
             pub avatar_url: Option<String>,
@@ -113,7 +135,12 @@ macro_rules! declare_models_api {
 
         #[frb]
         #[derive(Clone, Debug)]
+        pub enum MemberRole { Creator, Administrator, Moderator, Member }
+
+        #[frb]
+        #[derive(Clone, Debug)]
         pub struct Contact {
+            pub room_role: Option<MemberRole>,
             pub id: String,
             pub name: String,
             pub avatar_url: Option<String>,

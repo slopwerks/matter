@@ -34,6 +34,7 @@ pub(super) async fn get_contacts() -> Result<Vec<Contact>, String> {
                 let contact = contacts_by_id
                     .entry(user_id.clone())
                     .or_insert_with(|| Contact {
+                        room_role: None,
                         id: user_id.clone(),
                         name: if name == user_id {
                             user_id.clone()
@@ -101,7 +102,15 @@ pub(super) async fn get_room_members(room_id: String) -> Result<Vec<Contact>, St
             let name = member.name().to_string();
             let user_id = member.user_id().to_string();
             let avatar = member.avatar_url().map(|u| u.to_string());
+            use matrix_sdk::room::RoomMemberRole;
+            let role = match member.suggested_role_for_power_level() {
+                RoomMemberRole::Creator => MemberRole::Creator,
+                RoomMemberRole::Administrator => MemberRole::Administrator,
+                RoomMemberRole::Moderator => MemberRole::Moderator,
+                RoomMemberRole::User => MemberRole::Member,
+            };
             contacts.push(Contact {
+                room_role: Some(role),
                 id: user_id.clone(),
                 name: if name == user_id {
                     user_id.clone()

@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/scheduler.dart';
 
 typedef _TabFrame = ({double offset, double opacity});
 
@@ -12,12 +13,16 @@ class MobileTabView extends StatefulWidget {
     required this.children,
     required this.position,
     required this.onChanged,
+    this.swipeEnabled = true,
+    this.stationary = false,
   });
 
   final int index;
   final List<Widget> children;
   final ValueNotifier<double> position;
   final ValueChanged<int> onChanged;
+  final bool swipeEnabled;
+  final bool stationary;
 
   @override
   State<MobileTabView> createState() => _MobileTabViewState();
@@ -52,6 +57,19 @@ class _MobileTabViewState extends State<MobileTabView>
   @override
   void didUpdateWidget(MobileTabView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.swipeEnabled &&
+        _dragOrigin != null &&
+        widget.index == _target) {
+      _dragOrigin = null;
+      final frames = _frames;
+      _animate(frames, {
+        for (final index in frames.keys)
+          index: (
+            offset: (index - _target).sign.toDouble(),
+            opacity: index == _target ? 1 : 0,
+          ),
+      });
+    }
     if (widget.index == _target) return;
     final frames = _visibleFrames;
     final direction = (widget.index - _target).sign.toDouble();
@@ -89,6 +107,15 @@ class _MobileTabViewState extends State<MobileTabView>
   };
 
   void _publishPosition() {
+    // The indicator lives in a sibling subtree. An interrupted or instant
+    // transition can update its controller during didUpdateWidget.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _publishPosition();
+      });
+      return;
+    }
     widget.position.value =
         _positionFrom + (_positionTo - _positionFrom) * _controller.value;
   }
@@ -100,6 +127,10 @@ class _MobileTabViewState extends State<MobileTabView>
     _visited.addAll(begin.keys);
     _positionFrom = widget.position.value;
     _positionTo = _target.toDouble();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 1;
+      return;
+    }
     _controller.value = 0;
     _controller.animateTo(1, curve: Curves.easeOutCubic);
   }
@@ -192,14 +223,16 @@ class _MobileTabViewState extends State<MobileTabView>
       builder: (context, constraints) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         dragStartBehavior: DragStartBehavior.down,
-        onHorizontalDragStart: _startDrag,
-        onHorizontalDragUpdate: (details) =>
-            _updateDrag(details, constraints.maxWidth, direction),
-        onHorizontalDragEnd: (details) =>
-            _endDrag(details.primaryVelocity!, direction),
-        onHorizontalDragCancel: () {
-          if (_dragOrigin != null) _endDrag(0, direction);
-        },
+        onHorizontalDragStart: widget.swipeEnabled ? _startDrag : null,
+        onHorizontalDragUpdate: widget.swipeEnabled
+            ? (details) => _updateDrag(details, constraints.maxWidth, direction)
+            : null,
+        onHorizontalDragEnd: widget.swipeEnabled
+            ? (details) => _endDrag(details.primaryVelocity!, direction)
+            : null,
+        onHorizontalDragCancel: widget.swipeEnabled
+            ? () => _endDrag(0, direction)
+            : null,
         child: ClipRect(
           child: AnimatedBuilder(
             animation: _controller,
@@ -227,7 +260,10 @@ class _MobileTabViewState extends State<MobileTabView>
                               ignoring: index != _target,
                               child: FractionalTranslation(
                                 translation: Offset(
-                                  (frames[index]?.offset ?? 0) * direction,
+                                  widget.stationary
+                                      ? 0
+                                      : (frames[index]?.offset ?? 0) *
+                                            direction,
                                   0,
                                 ),
                                 child: Opacity(

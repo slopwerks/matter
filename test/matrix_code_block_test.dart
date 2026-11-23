@@ -5,6 +5,8 @@ import 'package:matter/features/matrix_html/matrix_code_block.dart';
 import 'package:matter/features/matrix_html/matrix_html_node.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 
+import 'helpers/neu_test_theme.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -16,7 +18,7 @@ void main() {
     Brightness brightness = Brightness.dark,
   }) {
     return MaterialApp(
-      theme: ThemeData(brightness: brightness, fontFamily: 'Roboto'),
+      theme: neuTestTheme(dark: brightness == Brightness.dark),
       home: Scaffold(
         body: Center(
           child: MatrixCodeBlock(

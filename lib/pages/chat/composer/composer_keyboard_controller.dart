@@ -138,8 +138,9 @@ class ComposerKeyboardController {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!isMounted() || !scroll.hasClients) return;
       final position = scroll.position;
-      final top = index * 52.0;
-      final bottom = top + 52;
+      final extent = composerAutocompleteItemExtent(context());
+      final top = index * extent;
+      final bottom = top + extent;
       final target = top < position.pixels
           ? top
           : bottom > position.pixels + position.viewportDimension

@@ -40,46 +40,63 @@ class TimelineMessageActions {
         : memberName;
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => Dialog(
-        key: ValueKey('mention-profile:$userId'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: GlassPanel(
-          radius: NeuRadius.nav,
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppAvatar(
-                fallback: displayName,
-                size: 64,
-                radius: 20,
-                url: member?.avatarUrl,
-              ),
-              const SizedBox(height: 14),
-              Text(
-                displayName,
-                textAlign: TextAlign.center,
-                style: Theme.of(dialogContext).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 5),
-              SelectableText(
-                userId,
-                textAlign: TextAlign.center,
-                style: Theme.of(dialogContext).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('关闭'),
-                ),
-              ),
-            ],
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        final material = dialogContext.isMaterial;
+        final profile = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppAvatar(
+              fallback: displayName,
+              size: 64,
+              radius: 20,
+              url: member?.avatarUrl,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              displayName,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge,
+            ),
+            const SizedBox(height: 5),
+            SelectableText(
+              userId,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        );
+        final close = TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('关闭'),
+        );
+        final key = ValueKey('mention-profile:$userId');
+        if (material) {
+          return AlertDialog(
+            key: key,
+            scrollable: true,
+            content: profile,
+            actions: [close],
+          );
+        }
+        return Dialog(
+          key: key,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: GlassPanel(
+            radius: NeuRadius.nav,
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                profile,
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: close),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -124,14 +141,21 @@ class TimelineMessageActions {
               children: [
                 Text('选择表情', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Icon(
-                    Icons.close_rounded,
-                    color: colors.textTertiary,
-                    size: 22,
+                if (context.isMaterial)
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  )
+                else
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: colors.textTertiary,
+                      size: 22,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -216,6 +240,7 @@ class TimelineMessageActions {
           ref.read(replyingToProvider(roomAccountKey).notifier).value = null;
           ref.read(editingMessageProvider(roomAccountKey).notifier).value =
               message;
+          onReplyRequested?.call();
         },
         onRecall: () async {
           try {

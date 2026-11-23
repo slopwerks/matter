@@ -166,7 +166,16 @@ void main() {
       final container = _container();
       container.read(activeUserIdProvider.notifier).value = _alice;
       await _pump(tester, container);
-      expect(find.byKey(const ValueKey('desktop-all-chats')), findsOneWidget);
+      expect(find.byType(ChatPage), findsOneWidget);
+      expect(
+        tester.widget<ChatPage>(find.byType(ChatPage)).directMessagesOnly,
+        isFalse,
+      );
+      expect(
+        tester.widget<ChatPage>(find.byType(ChatPage)).unreadOnly,
+        isFalse,
+      );
+      expect(tester.widget<ChatPage>(find.byType(ChatPage)).spaceId, isNull);
       final direct = find.byTooltip('私聊');
       await tester.tap(
         direct.evaluate().isNotEmpty
@@ -256,9 +265,7 @@ void main() {
       expect(find.text('未读群聊'), findsOneWidget);
       expect(container.read(currentRoomIdProvider), isNull);
       expect(
-        tester
-            .widget<ChatPage>(find.byKey(const ValueKey('desktop-all-chats')))
-            .autoSelectFirstRoom,
+        tester.widget<ChatPage>(find.byType(ChatPage)).autoSelectFirstRoom,
         isFalse,
       );
       await tester.pumpWidget(const SizedBox.shrink());
@@ -282,7 +289,13 @@ void main() {
     container.read(activeUserIdProvider.notifier).value = _alice;
     await _pump(tester, container);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('desktop-all-chats')), findsOneWidget);
+    expect(find.byType(ChatPage), findsOneWidget);
+    expect(tester.widget<ChatPage>(find.byType(ChatPage)).spaceId, isNull);
+    expect(
+      tester.widget<ChatPage>(find.byType(ChatPage)).directMessagesOnly,
+      isFalse,
+    );
+    expect(tester.widget<ChatPage>(find.byType(ChatPage)).unreadOnly, isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
     container.dispose();
   });

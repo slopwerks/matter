@@ -63,7 +63,33 @@ void main() {
         );
         expect(chosen.selected, isTrue);
         expect(chosen.selectedTileColor, theme.colorScheme.secondaryContainer);
-        await tester.tap(find.byKey(const ValueKey('interaction-mode-touch')));
+        final touch = find.byKey(const ValueKey('interaction-mode-touch'));
+        await tester.tap(touch);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(
+          tester
+              .widget<RadioListTile<InteractionMode>>(touch)
+              .selectedTileColor!
+              .a,
+          inExclusiveRange(0, 1),
+        );
+        await tester.tap(find.byKey(const ValueKey('interaction-mode-auto')));
+        await tester.pump();
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(disableAnimations: true);
+        addTearDown(
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+        await tester.pump();
+        await tester.tap(touch);
+        await tester.pump();
+        expect(
+          tester
+              .widget<RadioListTile<InteractionMode>>(touch)
+              .selectedTileColor,
+          theme.colorScheme.secondaryContainer,
+        );
         await tester.pumpAndSettle();
         expect(container.read(interactionModeProvider), InteractionMode.touch);
         expect(

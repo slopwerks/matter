@@ -28,7 +28,7 @@ class SettingsProfileCard extends StatelessWidget {
         child: Card(
           color: style.fill,
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             child: Row(
               children: [
                 AppAvatar(

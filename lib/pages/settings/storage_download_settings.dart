@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/storage/storage_download_policy.dart';
 import '../../features/storage/storage_models.dart';
 import '../../features/storage/storage_settings.dart';
-import '../../widgets/grouped_rows.dart';
+import '../../theme/neu_colors.dart';
+import 'storage_section.dart';
 
 class StorageDownloadSettings extends ConsumerStatefulWidget {
   const StorageDownloadSettings({
@@ -32,6 +33,25 @@ class _StorageDownloadSettingsState
         : widget.settings.copyWith(mobileDownloads: rules),
   );
 
+  Widget _profileSelector({Axis direction = Axis.horizontal}) =>
+      SegmentedButton<DownloadProfile>(
+        direction: direction,
+        segments: const [
+          ButtonSegment(
+            value: DownloadProfile.wifi,
+            icon: Icon(Icons.wifi),
+            label: Text('Wi-Fi / 有线'),
+          ),
+          ButtonSegment(
+            value: DownloadProfile.mobile,
+            icon: Icon(Icons.signal_cellular_alt),
+            label: Text('移动数据'),
+          ),
+        ],
+        selected: {_profile},
+        onSelectionChanged: (value) => setState(() => _profile = value.single),
+      );
+
   @override
   Widget build(BuildContext context) {
     final connection =
@@ -42,23 +62,18 @@ class _StorageDownloadSettingsState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SegmentedButton<DownloadProfile>(
-          segments: const [
-            ButtonSegment(
-              value: DownloadProfile.wifi,
-              icon: Icon(Icons.wifi),
-              label: Text('Wi-Fi / 有线'),
+        if (context.isMaterial)
+          LayoutBuilder(
+            builder: (context, constraints) => _profileSelector(
+              direction:
+                  constraints.maxWidth <
+                      MediaQuery.textScalerOf(context).scale(360)
+                  ? Axis.vertical
+                  : Axis.horizontal,
             ),
-            ButtonSegment(
-              value: DownloadProfile.mobile,
-              icon: Icon(Icons.signal_cellular_alt),
-              label: Text('移动数据'),
-            ),
-          ],
-          selected: {_profile},
-          onSelectionChanged: (value) =>
-              setState(() => _profile = value.single),
-        ),
+          )
+        else
+          _profileSelector(),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
@@ -79,7 +94,7 @@ class _StorageDownloadSettingsState
             ],
           ),
         ),
-        GroupedRows(
+        StorageSettingsRows(
           children: [
             SwitchListTile(
               title: const Text('自动下载'),

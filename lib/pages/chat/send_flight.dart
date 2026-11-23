@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
+import 'timeline/timeline_bubble_frame.dart';
 
 enum SendFlightKind { text, sticker }
 
@@ -440,9 +442,8 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
       child: Material(
         type: MaterialType.transparency,
         child: DefaultTextStyle(
-          style: Theme.of(
-            context,
-          ).textTheme.bodyLarge!.copyWith(decoration: TextDecoration.none),
+          style: Theme.of(context).textTheme.bodyLarge!
+              .copyWith(decoration: TextDecoration.none),
           child: AnimatedBuilder(
             animation: _animation,
             child: widget.spec.child,
@@ -453,9 +454,18 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
               final isText = widget.spec.kind == SendFlightKind.text;
               final endBorderRadius =
                   widget.resolveEndBorderRadius?.call() ??
-                  outgoingTextBubbleBorderRadius;
+                  (context.isMaterial
+                      ? timelineBubbleBorderRadius(
+                          context,
+                          isMe: true,
+                          isFirst: true,
+                          isLast: true,
+                        )
+                      : outgoingTextBubbleBorderRadius);
               final borderRadius = BorderRadius.lerp(
-                BorderRadius.circular(NeuRadius.surface),
+                context.isMaterial
+                    ? materialComposerRadius
+                    : BorderRadius.circular(NeuRadius.surface),
                 endBorderRadius,
                 progress,
               )!;
@@ -466,7 +476,11 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: isText
-                            ? Color.lerp(neu.card, neu.accent, progress)
+                            ? Color.lerp(
+                                neu.card,
+                                messageBubbleFill(context, isMe: true),
+                                progress,
+                              )
                             : Colors.transparent,
                         borderRadius: borderRadius,
                       ),
@@ -474,7 +488,11 @@ class _SendFlightOverlayState extends State<_SendFlightOverlay>
                         borderRadius: borderRadius,
                         child: DefaultTextStyle(
                           style: DefaultTextStyle.of(context).style.copyWith(
-                            color: Color.lerp(neu.text, neu.onAccent, progress),
+                            color: Color.lerp(
+                              neu.text,
+                              outgoingBubbleForeground(context),
+                              progress,
+                            ),
                           ),
                           child: child!,
                         ),

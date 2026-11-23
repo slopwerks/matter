@@ -13,9 +13,11 @@ import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_field.dart';
@@ -24,6 +26,7 @@ import '../../widgets/sheets.dart';
 import '../settings/avatar_crop_editor_page.dart';
 import '../settings/timeline_event_settings_page.dart';
 import 'pinned_messages_page.dart';
+import 'material_room_member_rows.dart';
 import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
 
@@ -1222,149 +1225,127 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
           // success and the failure paths fall back to the page snackbar
           // when the dialog is gone.
           canPop: true,
-          child: Dialog(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-            child: GlassPanel(
-              radius: NeuRadius.nav,
-              padding: const EdgeInsets.all(22),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '邀请用户',
-                      style: Theme.of(dialogContext).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    NeuTextField(
-                      hint: '@user:server.example',
-                      autofocus: true,
-                      onChanged: (value) => invitedUserId = value,
-                    ),
-                    if (inviteError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          inviteError!,
-                          style: Theme.of(dialogContext).textTheme.bodyMedium
-                              ?.copyWith(color: dialogContext.neu.error),
-                        ),
-                      ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: NeuButton(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            onPressed: inviting
-                                ? null
-                                : () => Navigator.of(dialogContext).pop(),
-                            child: const Center(child: Text('取消')),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: NeuButton(
-                            accent: true,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            onPressed: inviting
-                                ? null
-                                : () async {
-                                    // Entry guard (not only the disabled button): the
-                                    // rebuild lags a frame, so a second tap on the old
-                                    // widget could otherwise issue a duplicate invite.
-                                    if (inviting) return;
-                                    final userId = invitedUserId.trim();
-                                    if (userId.isEmpty) return;
-                                    setDialogState(() {
-                                      inviting = true;
-                                      inviteError = null;
-                                    });
-                                    try {
-                                      await rust.inviteUserToRoom(
-                                        accountUserId: _openedUserId ?? '',
-                                        roomId: widget.roomId,
-                                        userId: userId,
-                                      );
-                                      // Close the dialog first, then report: if the page
-                                      // is gone (dismissal race), the dialog must not
-                                      // stay stuck in its non-dismissible in-flight state
-                                      // — mirror the error path. `isCurrent` guard: the
-                                      // dialog may already be in its exit animation —
-                                      // popping then would pop the page below it.
-                                      if (dialogContext.mounted &&
-                                          ModalRoute.of(dialogContext)
-                                                  ?.isCurrent ==
-                                              true) {
-                                        Navigator.of(dialogContext).pop();
-                                      }
-                                      // The account may have switched while the request
-                                      // was in flight: the invite itself was guarded
-                                      // server-side, so skip the local bookkeeping (the
-                                      // page shows the switched placeholder).
-                                      if (!mounted || !_accountActive()) return;
-                                      // Room invalidation and the feedback must not
-                                      // depend on the dialog still being up.
-                                      _invalidateRoom();
-                                      _showSnackBar('邀请已发送');
-                                      // Fire the member refetch detached, like the knock
-                                      // approval path: the invitee must appear without
-                                      // waiting for the server join event.
-                                      unawaited(_retryMembers());
-                                    } catch (error) {
-                                      if (!mounted) {
-                                        // The page is gone: close the dialog so it is
-                                        // not stuck in its non-dismissible in-flight
-                                        // state.
-                                        if (dialogContext.mounted &&
-                                            ModalRoute.of(dialogContext)
-                                                    ?.isCurrent ==
-                                                true) {
-                                          Navigator.of(dialogContext).pop();
-                                        }
-                                        return;
-                                      }
-                                      // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
-                                      if (!_accountActive()) {
-                                        if (dialogContext.mounted &&
-                                            ModalRoute.of(dialogContext)
-                                                    ?.isCurrent ==
-                                                true) {
-                                          Navigator.of(dialogContext).pop();
-                                        }
-                                        return;
-                                      }
-                                      if (dialogContext.mounted) {
-                                        setDialogState(() {
-                                          inviting = false;
-                                          // Render the failure inside the dialog: a
-                                          // page-level snackbar would sit beneath the
-                                          // modal barrier and stay invisible while the
-                                          // dialog stays open for retry.
-                                          inviteError = _actionFailureMessage(
-                                            error,
-                                          );
-                                        });
-                                      } else if (mounted) {
-                                        // The dialog was dismissed while the request was
-                                        // in flight: fall back to the page snackbar so
-                                        // the failure is not completely silent.
-                                        _showActionFailure(error);
-                                      }
-                                    }
-                                  },
-                            child: const Center(child: Text('邀请')),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+          child: AppDialogSurface(
+            title: '邀请用户',
+            children: [
+              NeuTextField(
+                hint: '@user:server.example',
+                autofocus: true,
+                onChanged: (value) => invitedUserId = value,
               ),
-            ),
+              if (inviteError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    inviteError!,
+                    style: Theme.of(dialogContext).textTheme.bodyMedium
+                        ?.copyWith(color: dialogContext.neu.error),
+                  ),
+                ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: NeuButton(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      onPressed: inviting
+                          ? null
+                          : () => Navigator.of(dialogContext).pop(),
+                      child: const Center(child: Text('取消')),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: NeuButton(
+                      accent: true,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      onPressed: inviting
+                          ? null
+                          : () async {
+                              // Entry guard (not only the disabled button): the
+                              // rebuild lags a frame, so a second tap on the old
+                              // widget could otherwise issue a duplicate invite.
+                              if (inviting) return;
+                              final userId = invitedUserId.trim();
+                              if (userId.isEmpty) return;
+                              setDialogState(() {
+                                inviting = true;
+                                inviteError = null;
+                              });
+                              try {
+                                await rust.inviteUserToRoom(
+                                  accountUserId: _openedUserId ?? '',
+                                  roomId: widget.roomId,
+                                  userId: userId,
+                                );
+                                // Close the dialog first, then report: if the page
+                                // is gone (dismissal race), the dialog must not
+                                // stay stuck in its non-dismissible in-flight state
+                                // — mirror the error path. `isCurrent` guard: the
+                                // dialog may already be in its exit animation —
+                                // popping then would pop the page below it.
+                                if (dialogContext.mounted &&
+                                    ModalRoute.of(dialogContext)?.isCurrent ==
+                                        true) {
+                                  Navigator.of(dialogContext).pop();
+                                }
+                                // The account may have switched while the request
+                                // was in flight: the invite itself was guarded
+                                // server-side, so skip the local bookkeeping (the
+                                // page shows the switched placeholder).
+                                if (!mounted || !_accountActive()) return;
+                                // Room invalidation and the feedback must not
+                                // depend on the dialog still being up.
+                                _invalidateRoom();
+                                _showSnackBar('邀请已发送');
+                                // Fire the member refetch detached, like the knock
+                                // approval path: the invitee must appear without
+                                // waiting for the server join event.
+                                unawaited(_retryMembers());
+                              } catch (error) {
+                                if (!mounted) {
+                                  // The page is gone: close the dialog so it is
+                                  // not stuck in its non-dismissible in-flight
+                                  // state.
+                                  if (dialogContext.mounted &&
+                                      ModalRoute.of(dialogContext)?.isCurrent ==
+                                          true) {
+                                    Navigator.of(dialogContext).pop();
+                                  }
+                                  return;
+                                }
+                                // 账号可能在请求期间切换：跳过失败反馈（与成功路径一致）。
+                                if (!_accountActive()) {
+                                  if (dialogContext.mounted &&
+                                      ModalRoute.of(dialogContext)?.isCurrent ==
+                                          true) {
+                                    Navigator.of(dialogContext).pop();
+                                  }
+                                  return;
+                                }
+                                if (dialogContext.mounted) {
+                                  setDialogState(() {
+                                    inviting = false;
+                                    // Render the failure inside the dialog: a
+                                    // page-level snackbar would sit beneath the
+                                    // modal barrier and stay invisible while the
+                                    // dialog stays open for retry.
+                                    inviteError = _actionFailureMessage(error);
+                                  });
+                                } else if (mounted) {
+                                  // The dialog was dismissed while the request was
+                                  // in flight: fall back to the page snackbar so
+                                  // the failure is not completely silent.
+                                  _showActionFailure(error);
+                                }
+                              }
+                            },
+                      child: const Center(child: Text('邀请')),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -1464,6 +1445,46 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
               // sheet through it (see the activeUserIdProvider listener).
               _ignoredUsersSheetContext = sheetContext;
               final colors = sheetContext.neu;
+              Future<void> unignore(String userId) async {
+                // Only close the sheet when the server write
+                // succeeded; on failure keep the list visible
+                // so the user can retry, and surface the error
+                // inside the sheet (see onError).
+                await _setUserIgnored(
+                  userId,
+                  false,
+                  onError: (message) {
+                    if (sheetContext.mounted) {
+                      setSheetState(() => _ignoredUsersSheetError = message);
+                    } else if (mounted) {
+                      // The sheet was dismissed while the
+                      // request was in flight: fall back to
+                      // the page snackbar (same discipline as
+                      // the invite dialog) — a silent failure
+                      // would look like a stuck row.
+                      _showSnackBar(message);
+                    }
+                  },
+                  onSuccess: (message) {
+                    // Close the sheet first, then report: a
+                    // page snackbar queued while the sheet is
+                    // still up would sit hidden behind its
+                    // barrier. `isCurrent` guard: the sheet may
+                    // already be in its exit animation.
+                    if (sheetContext.mounted &&
+                        ModalRoute.of(sheetContext)?.isCurrent == true) {
+                      Navigator.of(sheetContext).pop();
+                    }
+                    if (context.mounted) {
+                      _showSnackBar(message);
+                    }
+                  },
+                );
+                // The success path pops the sheet and reports
+                // via onSuccess; a failure keeps it open for
+                // retry.
+              }
+
               if (loadError != null) {
                 return Padding(
                   padding: const EdgeInsets.all(24),
@@ -1507,73 +1528,38 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                     ),
                   for (var index = 0; index < ignoredUsers.length; index++) ...[
                     if (index > 0) const NeuSheetDivider(),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: Text(
-                                ignoredUsers[index],
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(sheetContext)
-                                    .textTheme
-                                    .bodyLarge,
+                    if (sheetContext.isMaterial)
+                      MaterialIgnoredUserRow(
+                        userId: ignoredUsers[index],
+                        onUnignore: () => unignore(ignoredUsers[index]),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Text(
+                                  ignoredUsers[index],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(sheetContext)
+                                      .textTheme
+                                      .bodyLarge,
+                                ),
                               ),
                             ),
-                          ),
-                          NeuIconButton(
-                            icon: Icons.person_add_alt_rounded,
-                            size: 38,
-                            tooltip: '取消忽略',
-                            onPressed: () async {
-                              // Only close the sheet when the server write
-                              // succeeded; on failure keep the list visible
-                              // so the user can retry, and surface the error
-                              // inside the sheet (see onError).
-                              await _setUserIgnored(
-                                ignoredUsers[index],
-                                false,
-                                onError: (message) {
-                                  if (sheetContext.mounted) {
-                                    setSheetState(
-                                      () => _ignoredUsersSheetError = message,
-                                    );
-                                  } else if (mounted) {
-                                    // The sheet was dismissed while the
-                                    // request was in flight: fall back to
-                                    // the page snackbar (same discipline as
-                                    // the invite dialog) — a silent failure
-                                    // would look like a stuck row.
-                                    _showSnackBar(message);
-                                  }
-                                },
-                                onSuccess: (message) {
-                                  // Close the sheet first, then report: a
-                                  // page snackbar queued while the sheet is
-                                  // still up would sit hidden behind its
-                                  // barrier. `isCurrent` guard: the sheet may
-                                  // already be in its exit animation.
-                                  if (sheetContext.mounted &&
-                                      ModalRoute.of(sheetContext)?.isCurrent ==
-                                          true) {
-                                    Navigator.of(sheetContext).pop();
-                                  }
-                                  if (context.mounted) {
-                                    _showSnackBar(message);
-                                  }
-                                },
-                              );
-                              // The success path pops the sheet and reports
-                              // via onSuccess; a failure keeps it open for
-                              // retry.
-                            },
-                          ),
-                        ],
+                            NeuIconButton(
+                              icon: Icons.person_add_alt_rounded,
+                              size: 38,
+                              tooltip: '取消忽略',
+                              onPressed: () => unignore(ignoredUsers[index]),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ],
               );
@@ -1807,6 +1793,12 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
         : null;
     final colors = context.neu;
     final viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
+    final contentInset = context.isMaterial
+        ? ((MediaQuery.sizeOf(context).width - 720) / 2).clamp(
+            0.0,
+            double.infinity,
+          )
+        : 0.0;
     return Scaffold(
       backgroundColor: colors.base,
       extendBodyBehindAppBar: context.isMaterial,
@@ -1834,6 +1826,8 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
       body: Stack(
         children: [
           Positioned.fill(
+            left: contentInset,
+            right: contentInset,
             child: _loading
                 ? Center(
                     child: CircularProgressIndicator(
@@ -1878,7 +1872,9 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                                       if (_avatarPreviewBytes case final bytes?)
                                         ClipRRect(
                                           borderRadius: BorderRadius.circular(
-                                            NeuRadius.content,
+                                            context.isMaterial
+                                                ? 38
+                                                : NeuRadius.content,
                                           ),
                                           child: Image.memory(
                                             bytes,
@@ -1910,24 +1906,48 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 18),
-                                NeuTextField(
-                                  controller: _nameController,
-                                  hint: '房间名称',
-                                ),
+                                if (context.isMaterial) ...[
+                                  Text(
+                                    '修改名称或话题后，点击右上角保存。',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                                if (context.isMaterial)
+                                  TextField(
+                                    controller: _nameController,
+                                    decoration: const InputDecoration(
+                                      labelText: '房间名称',
+                                    ),
+                                  )
+                                else
+                                  NeuTextField(
+                                    controller: _nameController,
+                                    hint: '房间名称',
+                                  ),
                                 const SizedBox(height: 12),
-                                NeuTextField(
-                                  controller: _topicController,
-                                  hint: '房间主题',
-                                  maxLines: 4,
-                                ),
+                                if (context.isMaterial)
+                                  TextField(
+                                    controller: _topicController,
+                                    decoration: const InputDecoration(
+                                      labelText: '房间主题',
+                                    ),
+                                    maxLines: 4,
+                                  )
+                                else
+                                  NeuTextField(
+                                    controller: _topicController,
+                                    hint: '房间主题',
+                                    maxLines: 4,
+                                  ),
                               ],
                             ),
                           ),
                         ),
                         const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                        // The header and every member tile share one rounded card,
-                        // and the tiles are built lazily: off-screen entries are not
-                        // constructed up front.
+                        // Keep member rows lazy even in long rooms.
                         _sliverSectionCard<rust.Contact>(
                           title: _membersLoadError == null
                               ? '成员 ${_members.length}'
@@ -2361,6 +2381,14 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
   }
 
   Widget _knockTile(rust.KnockRequest request) {
+    if (context.isMaterial) {
+      final pending = _pendingKnockUserIds.contains(request.userId);
+      return MaterialRoomKnockRow(
+        request: request,
+        onApprove: pending ? null : () => _runKnockAction(request, true),
+        onReject: pending ? null : () => _runKnockAction(request, false),
+      );
+    }
     final colors = context.neu;
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -2408,6 +2436,21 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     final activeUserId = ref.read(activeUserIdProvider);
     final isCurrentUser = member.id == activeUserId;
     final ignored = _ignoredUsers.contains(member.id);
+    if (context.isMaterial) {
+      return MaterialRoomMemberRow(
+        member: member,
+        isCurrentUser: isCurrentUser,
+        ignored: ignored,
+        tooltip: _ignoredUsersLoadError != null
+            ? '无法加载忽略状态'
+            : ignored
+            ? '取消忽略'
+            : '忽略用户',
+        onToggleIgnored: _ignoredUsersLoadError == null
+            ? () => _setUserIgnored(member.id, !ignored)
+            : null,
+      );
+    }
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: AppAvatar(
@@ -2465,6 +2508,19 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     required Widget child,
     Widget? action,
   }) {
+    if (context.isMaterial) {
+      return MaterialDetailCard(
+        title: title,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (action != null)
+              Align(alignment: Alignment.centerRight, child: action),
+            child,
+          ],
+        ),
+      );
+    }
     return NeuSurface(
       color: context.neu.card,
       radius: NeuRadius.surface,
@@ -2489,10 +2545,7 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     );
   }
 
-  /// One rounded card holding a whole section: the title row, the optional
-  /// error tile and every data row, separated by hairlines. The rows stay lazy
-  /// through the inner [SliverList], so a long member list is not laid out up
-  /// front.
+  /// Lazy rows with hairlines: bare streams in Material, one card in Neu.
   Widget _sliverSectionCard<T>({
     required String title,
     Widget? action,
@@ -2501,9 +2554,49 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
     required Widget Function(T row) rowBuilder,
   }) {
     final colors = context.neu;
-    // Hairlines under a data row start at the row title: card padding 16 +
-    // avatar 40 + ListTile's title gap 16 (same alignment as ChatListDivider).
-    const rowSeparatorIndent = 16.0 + 40 + 16;
+    final theme = Theme.of(context);
+    // Hairlines follow the identity text in each skin.
+    final rowSeparatorIndent = context.isMaterial
+        ? 16 + materialListAvatarSize + materialListContentGap
+        : 16.0 + 40 + 16;
+    final list = SliverList.separated(
+      // Item 0 is the section title; the rest are the error tiles followed
+      // by the data rows.
+      itemCount: leadingRows.length + rows.length + 1,
+      separatorBuilder: (context, index) => Divider(
+        height: 1,
+        // The title and error tiles keep the card's own left inset.
+        indent: index <= leadingRows.length ? 16 : rowSeparatorIndent,
+        endIndent: 16,
+        color: context.isMaterial ? theme.dividerTheme.color : colors.hairline,
+      ),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                ?action,
+              ],
+            ),
+          );
+        }
+        final rowIndex = index - 1;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: rowIndex < leadingRows.length
+              ? leadingRows[rowIndex]
+              : rowBuilder(rows[rowIndex - leadingRows.length]),
+        );
+      },
+    );
+    if (context.isMaterial) return list;
     return DecoratedSliver(
       decoration: NeuDecoration(
         colors: colors,
@@ -2512,43 +2605,7 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
         color: colors.card,
         radius: NeuRadius.surface,
       ),
-      sliver: SliverList.separated(
-        // Item 0 is the section title; the rest are the error tiles followed
-        // by the data rows.
-        itemCount: leadingRows.length + rows.length + 1,
-        separatorBuilder: (context, index) => Divider(
-          height: 1,
-          // The title and error tiles keep the card's own left inset.
-          indent: index <= leadingRows.length ? 16 : rowSeparatorIndent,
-          endIndent: 16,
-          color: colors.hairline,
-        ),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                  ?action,
-                ],
-              ),
-            );
-          }
-          final rowIndex = index - 1;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: rowIndex < leadingRows.length
-                ? leadingRows[rowIndex]
-                : rowBuilder(rows[rowIndex - leadingRows.length]),
-          );
-        },
-      ),
+      sliver: list,
     );
   }
 
@@ -2561,6 +2618,27 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
   }) {
     final colors = context.neu;
     final color = danger ? colors.error : colors.text;
+    if (context.isMaterial) {
+      return NeuAction(
+        label: label,
+        onTap: onTap,
+        child: ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(icon, color: danger ? colors.error : colors.accent),
+          title: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyLarge
+                ?.copyWith(color: color),
+          ),
+          trailing: saving
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right_rounded),
+        ),
+      );
+    }
     return NeuAction(
       radius: NeuRadius.button,
       label: label,

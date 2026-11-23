@@ -6,6 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart'
     show defaultEnterNativeFullscreen, defaultExitNativeFullscreen;
 
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
+import '../../widgets/material_press.dart';
+import '../../widgets/max_content_width.dart';
 import 'media_playback.dart';
 import 'media_progress_bar.dart';
 import 'video_preferences.dart';
@@ -374,18 +378,27 @@ class _VideoControlsState extends State<VideoControls>
               Positioned(
                 top: MediaQuery.paddingOf(context).top,
                 left: 4,
-                child: IconButton(
-                  tooltip: '关闭视频',
-                  color: Colors.white,
-                  onPressed: widget.onClose,
-                  icon: const Icon(Icons.close_rounded),
-                ),
+                child: context.isMaterial
+                    ? _toolbarButton(
+                        tooltip: '关闭视频',
+                        onPressed: widget.onClose,
+                        icon: Icons.close_rounded,
+                      )
+                    : IconButton(
+                        tooltip: '关闭视频',
+                        color: Colors.white,
+                        onPressed: widget.onClose,
+                        icon: const Icon(Icons.close_rounded),
+                      ),
               ),
             if (!_playback.isPlaying)
               Center(
                 child: IconButton.filledTonal(
                   tooltip: _playback.isCompleted ? '重播' : '播放',
                   iconSize: 40,
+                  style: context.isMaterial
+                      ? materialMediaViewerStyle(Theme.of(context)).control
+                      : null,
                   onPressed: _togglePlayback,
                   icon: Icon(
                     _playback.isCompleted
@@ -400,10 +413,13 @@ class _VideoControlsState extends State<VideoControls>
                 bottom: MediaQuery.paddingOf(context).bottom + 96,
                 child: Container(
                   width: 240,
-                  decoration: BoxDecoration(
-                    color: Colors.black87,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  decoration: context.isMaterial
+                      ? materialMediaViewerStyle(Theme.of(context))
+                            .overlayDecoration
+                      : BoxDecoration(
+                          color: Colors.black87,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                   child: Row(
                     children: [
                       IconButton(
@@ -417,12 +433,7 @@ class _VideoControlsState extends State<VideoControls>
                               : Icons.volume_up_rounded,
                         ),
                       ),
-                      Expanded(
-                        child: Slider(
-                          value: _playback.volume,
-                          onChanged: (value) => _playback.setVolume(value),
-                        ),
-                      ),
+                      Expanded(child: _volumeSlider()),
                     ],
                   ),
                 ),
@@ -445,122 +456,171 @@ class _VideoControlsState extends State<VideoControls>
       maxWidth: MediaQuery.sizeOf(context).width - 32,
     ),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    decoration: BoxDecoration(
-      color: Colors.black87,
-      borderRadius: BorderRadius.circular(12),
+    decoration: context.isMaterial
+        ? materialMediaViewerStyle(Theme.of(context)).overlayDecoration
+        : BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(12),
+          ),
+    child: Text(
+      text,
+      style: context.isMaterial
+          ? materialMediaViewerStyle(Theme.of(context)).counter
+          : const TextStyle(color: Colors.white),
     ),
-    child: Text(text, style: const TextStyle(color: Colors.white)),
   );
 
-  Widget _toolbar(BuildContext context) => Container(
-    padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-    decoration: BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.65),
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: MediaProgressBar(controller: _playback, allowScrubbing: true),
-        ),
-        Row(
-          key: const ValueKey('video-toolbar-actions'),
-          children: [
-            _toolbarButton(
-              tooltip: _playback.isPlaying
-                  ? '暂停'
-                  : _playback.isCompleted
-                  ? '重播'
-                  : '播放',
-              onPressed: _togglePlayback,
-              icon: _playback.isPlaying
-                  ? Icons.pause_rounded
-                  : _playback.isCompleted
-                  ? Icons.replay_rounded
-                  : Icons.play_arrow_rounded,
+  Widget _volumeSlider() {
+    final slider = Slider(
+      value: _playback.volume,
+      onChanged: (value) => _playback.setVolume(value),
+    );
+    return context.isMaterial
+        ? SliderTheme(
+            data: materialMediaViewerStyle(Theme.of(context)).slider,
+            child: slider,
+          )
+        : slider;
+  }
+
+  Widget _toolbar(BuildContext context) {
+    final material = context.isMaterial;
+    final toolbar = Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      decoration: material
+          ? materialMediaViewerStyle(Theme.of(context)).overlayDecoration
+          : BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(16),
             ),
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    '${_time(_playback.position)} / ${_time(_playback.duration, unknownWhenZero: true)}',
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontFeatures: [FontFeature.tabularFigures()],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: MediaProgressBar(
+              controller: _playback,
+              allowScrubbing: true,
+            ),
+          ),
+          Row(
+            key: const ValueKey('video-toolbar-actions'),
+            children: [
+              _toolbarButton(
+                tooltip: _playback.isPlaying
+                    ? '暂停'
+                    : _playback.isCompleted
+                    ? '重播'
+                    : '播放',
+                onPressed: _togglePlayback,
+                icon: _playback.isPlaying
+                    ? Icons.pause_rounded
+                    : _playback.isCompleted
+                    ? Icons.replay_rounded
+                    : Icons.play_arrow_rounded,
+              ),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '${_time(_playback.position)} / ${_time(_playback.duration, unknownWhenZero: true)}',
+                      maxLines: 1,
+                      style: material
+                          ? materialMediaViewerStyle(Theme.of(context)).counter
+                          : const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                     ),
                   ),
                 ),
               ),
-            ),
-            _toolbarButton(
-              tooltip: '音量',
-              onPressed: () {
-                setState(() => _volumeVisible = !_volumeVisible);
-                _scheduleHide();
-              },
-              icon: _playback.volume == 0
-                  ? Icons.volume_off_rounded
-                  : Icons.volume_up_rounded,
-            ),
-            _speedMenu(),
-            _toolbarButton(
-              tooltip: _fullscreen ? '退出全屏' : '横屏全屏',
-              onPressed: _toggleFullscreen,
-              icon: _fullscreen
-                  ? Icons.fullscreen_exit_rounded
-                  : Icons.fullscreen_rounded,
-            ),
-            PopupMenuButton<String>(
-              tooltip: '更多',
-              icon: const Icon(Icons.more_horiz_rounded, color: Colors.white),
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-              padding: EdgeInsets.zero,
-              onOpened: _openMenu,
-              onCanceled: _closeMenu,
-              onSelected: (action) {
-                if (action == 'held') {
-                  unawaited(_chooseHeldSpeed());
-                } else {
-                  setState(() => _cover = !_cover);
-                  _closeMenu();
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'held',
-                  child: Text('长按倍速 · ${_speed(_preferences.heldSpeed)}×'),
-                ),
-                PopupMenuItem(
-                  value: 'fit',
-                  child: Text(_cover ? '适应画面' : '铺满画面'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+              _toolbarButton(
+                tooltip: '音量',
+                onPressed: () {
+                  setState(() => _volumeVisible = !_volumeVisible);
+                  _scheduleHide();
+                },
+                icon: _playback.volume == 0
+                    ? Icons.volume_off_rounded
+                    : Icons.volume_up_rounded,
+              ),
+              _speedMenu(),
+              _toolbarButton(
+                tooltip: _fullscreen ? '退出全屏' : '横屏全屏',
+                onPressed: _toggleFullscreen,
+                icon: _fullscreen
+                    ? Icons.fullscreen_exit_rounded
+                    : Icons.fullscreen_rounded,
+              ),
+              PopupMenuButton<String>(
+                tooltip: '更多',
+                style: material
+                    ? materialMediaViewerStyle(Theme.of(context)).control
+                    : null,
+                icon: const Icon(Icons.more_horiz_rounded),
+                iconColor: Colors.white,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                padding: EdgeInsets.zero,
+                onOpened: _openMenu,
+                onCanceled: _closeMenu,
+                onSelected: (action) {
+                  if (action == 'held') {
+                    unawaited(_chooseHeldSpeed());
+                  } else {
+                    setState(() => _cover = !_cover);
+                    _closeMenu();
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'held',
+                    child: Text('长按倍速 · ${_speed(_preferences.heldSpeed)}×'),
+                  ),
+                  PopupMenuItem(
+                    value: 'fit',
+                    child: Text(_cover ? '适应画面' : '铺满画面'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    return material ? MaxContentWidth(child: toolbar) : toolbar;
+  }
 
   Widget _toolbarButton({
     required String tooltip,
     required VoidCallback onPressed,
     required IconData icon,
-  }) => IconButton(
-    tooltip: tooltip,
-    color: Colors.white,
-    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-    padding: EdgeInsets.zero,
-    visualDensity: VisualDensity.compact,
-    onPressed: onPressed,
-    icon: Icon(icon),
-  );
+  }) {
+    if (context.isMaterial) {
+      final style = materialMediaViewerStyle(Theme.of(context)).control;
+      return MaterialPress(
+        builder: (states) => IconButton.filledTonal(
+          statesController: states,
+          style: style,
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: Icon(icon),
+        ),
+      );
+    }
+    return IconButton(
+      tooltip: tooltip,
+      color: Colors.white,
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      onPressed: onPressed,
+      icon: Icon(icon),
+    );
+  }
 
   void _openMenu() {
     _menuOpen = true;
@@ -607,7 +667,9 @@ class _VideoControlsState extends State<VideoControls>
 
   Widget _speedMenu() {
     final value = _preferences.speed;
-    return PopupMenuButton<double>(
+    final material = context.isMaterial;
+    final style = material ? materialMediaViewerStyle(Theme.of(context)) : null;
+    final menu = PopupMenuButton<double>(
       tooltip: '设置播放速度',
       initialValue: value,
       onOpened: _openMenu,
@@ -618,8 +680,16 @@ class _VideoControlsState extends State<VideoControls>
       },
       itemBuilder: (context) => VideoPreferences.speeds
           .map(
-            (speed) =>
-                PopupMenuItem(value: speed, child: Text('${_speed(speed)}×')),
+            (speed) => material
+                ? CheckedPopupMenuItem<double>(
+                    value: speed,
+                    checked: speed == value,
+                    child: Text('${_speed(speed)}×'),
+                  )
+                : PopupMenuItem<double>(
+                    value: speed,
+                    child: Text('${_speed(speed)}×'),
+                  ),
           )
           .toList(),
       child: SizedBox(
@@ -628,11 +698,21 @@ class _VideoControlsState extends State<VideoControls>
         child: Center(
           child: Text(
             '${_speed(value)}×',
-            style: const TextStyle(color: Colors.white, fontSize: 12),
+            style:
+                style?.counter ??
+                const TextStyle(color: Colors.white, fontSize: 12),
           ),
         ),
       ),
     );
+    return style == null
+        ? menu
+        : Material(
+            color: style.control.backgroundColor?.resolve({}),
+            shape: style.control.shape?.resolve({}),
+            clipBehavior: Clip.antiAlias,
+            child: menu,
+          );
   }
 }
 

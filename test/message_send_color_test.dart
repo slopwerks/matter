@@ -175,6 +175,9 @@ void main() {
                   brightness,
                 );
           final colors = theme.extension<NeuColors>()!;
+          final outgoingForeground = material
+              ? theme.colorScheme.onPrimaryContainer
+              : colors.onAccent;
           final container = ProviderContainer(
             overrides: [
               activeUserIdProvider.overrideWith(() => MutableState(_userId)),
@@ -213,15 +216,15 @@ void main() {
           await tester.pump(const Duration(milliseconds: 299));
           expect(flightText, findsOneWidget);
           final landingColor = _paintedTextColor(tester, flightText);
-          expect(landingColor.r, closeTo(colors.onAccent.r, .01));
-          expect(landingColor.g, closeTo(colors.onAccent.g, .01));
-          expect(landingColor.b, closeTo(colors.onAccent.b, .01));
+          expect(landingColor.r, closeTo(outgoingForeground.r, .01));
+          expect(landingColor.g, closeTo(outgoingForeground.g, .01));
+          expect(landingColor.b, closeTo(outgoingForeground.b, .01));
           await tester.pump(const Duration(milliseconds: 100));
           await tester.pump();
           expect(flightText, findsNothing);
           final body = find.text(_text);
           expect(body, findsOneWidget);
-          expect(_paintedTextColor(tester, body), colors.onAccent);
+          expect(_paintedTextColor(tester, body), outgoingForeground);
           api.pendingSend!.complete(r'$echo');
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
@@ -233,7 +236,7 @@ void main() {
             matching: find.text(_text),
           );
           expect(echoText, findsOneWidget);
-          expect(_paintedTextColor(tester, echoText), colors.onAccent);
+          expect(_paintedTextColor(tester, echoText), outgoingForeground);
           expect(
             container.read(messageCacheProvider(_roomId)).single.id,
             r'$echo',

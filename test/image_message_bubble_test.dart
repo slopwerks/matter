@@ -199,7 +199,7 @@ void main() {
     for (final dark in [false, true]) {
       for (final formatted in [false, true]) {
         testWidgets(
-          'caption uses message body typography (material=$material, dark=$dark, html=$formatted)',
+          'caption uses theme-specific typography (material=$material, dark=$dark, html=$formatted)',
           (tester) async {
             final theme = neuTestTheme(material: material, dark: dark);
             await tester.pumpWidget(
@@ -223,7 +223,7 @@ void main() {
                       .style
                 : tester.widget<MessageText>(find.byType(MessageText)).style;
             expect(style.fontSize, theme.textTheme.bodyLarge!.fontSize);
-            expect(style.height, 1.35);
+            expect(style.height, material ? 1.65 : 1.35);
           },
         );
       }

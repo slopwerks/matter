@@ -142,6 +142,57 @@ class NeuSheetDivider extends StatelessWidget {
   }
 }
 
+/// A scrollable form or confirmation whose caller owns the action state.
+class AppDialogSurface extends StatelessWidget {
+  const AppDialogSurface({
+    super.key,
+    required this.title,
+    required this.children,
+    this.message,
+  });
+
+  final String title;
+  final String? message;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final material = context.isMaterial;
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!material) ...[
+          Text(title, style: textTheme.titleMedium),
+          SizedBox(height: message == null ? 16 : 6),
+        ],
+        if (message case final description?)
+          Text(description, style: textTheme.bodyMedium),
+        ...children,
+      ],
+    );
+    if (material) {
+      return AlertDialog(
+        title: Text(title),
+        content: content,
+        scrollable: true,
+        constraints: const BoxConstraints(minWidth: 280, maxWidth: 560),
+      );
+    }
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: GlassPanel(
+        radius: NeuRadius.nav,
+        padding: const EdgeInsets.all(22),
+        child: SingleChildScrollView(child: content),
+      ),
+    );
+  }
+}
+
 /// 玻璃确认对话框。
 Future<bool> showNeuConfirm(
   BuildContext context, {

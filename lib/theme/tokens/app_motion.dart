@@ -8,10 +8,18 @@ import 'package:material_ui/material_ui.dart';
 /// - [routeForward] / [routeReverse] 自绘路由过渡曲线。仅 Neu 需要
 /// （Material 用框架的 FadeForwards 过渡，无单一曲线值）。
 class AppMotion {
-  const AppMotion({this.pressSpring, this.routeForward, this.routeReverse});
+  const AppMotion({
+    this.pressSpring,
+    this.effectsDuration = Duration.zero,
+    this.layoutDuration = Duration.zero,
+    this.routeForward,
+    this.routeReverse,
+  });
 
   /// Material 按压反馈弹簧，数值与 `MaterialPress` 一致。
   static final AppMotion material = AppMotion(
+    effectsDuration: const Duration(milliseconds: 160),
+    layoutDuration: const Duration(milliseconds: 320),
     pressSpring: SpringDescription.withDampingRatio(
       mass: 1,
       stiffness: 500,
@@ -26,6 +34,8 @@ class AppMotion {
   );
 
   final SpringDescription? pressSpring;
+  final Duration effectsDuration;
+  final Duration layoutDuration;
   final Curve? routeForward;
   final Curve? routeReverse;
 }

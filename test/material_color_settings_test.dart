@@ -54,10 +54,12 @@ class _ColorApp extends ConsumerWidget {
 }
 
 Future<void> _tapChip(WidgetTester tester, String label) async {
-  final tooltipFinder = find.byTooltip(label);
-  final target = tooltipFinder.evaluate().isNotEmpty
-      ? tooltipFinder
-      : find.text(label);
+  // Keep both forms live while lazy sections enter the viewport.
+  final target = find.byWidgetPredicate(
+    (widget) =>
+        (widget is Tooltip && widget.message == label) ||
+        (widget is Text && widget.data == label),
+  );
   final scrollable = find.byType(Scrollable).first;
   tester.state<ScrollableState>(scrollable).position.jumpTo(0);
   await tester.pumpAndSettle();
@@ -107,7 +109,10 @@ void main() {
       expect(settings.followSystem, isFalse);
       expect(settings.lightBackground, MaterialBackground.soft);
       expect(settings.darkBackground, MaterialBackground.pure);
-      expect(container.read(appThemeStyleProvider), AppThemeStyle.materialDark);
+      expect(container.read(appThemeStyleProvider), (
+        family: ThemeFamily.material,
+        themeMode: ThemeMode.dark,
+      ));
       final saved = jsonDecode(
         (await SharedPreferences.getInstance()).getString(
           'material_color_settings',
@@ -412,8 +417,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await _tapChip(tester, '紫色');
-    await _tapChip(tester, '色彩风格');
-    await tester.tap(find.text('生动'));
+    await _tapChip(tester, '生动');
     await tester.pumpAndSettle();
     expect(
       container.read(materialColorSettingsProvider).colorStyle,
@@ -498,10 +502,7 @@ void main() {
         matching: find.byType(MaterialSchemeThumbnail),
       ),
     );
-    expect(
-      thumbnail.scheme,
-      ColorScheme.fromSeed(seedColor: defaultMaterialSeedColor),
-    );
+    expect(thumbnail.scheme, materialColorScheme());
     expect(
       container.read(materialColorSchemesProvider).light.surface,
       Colors.white,

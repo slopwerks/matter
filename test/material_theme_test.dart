@@ -23,16 +23,9 @@ void main() {
       final colors = theme.extension<NeuColors>()!;
       expect(theme.useMaterial3, isTrue);
       expect(colors.isMaterial, isTrue);
-      // The page is one step off M3's surface so cards can sit on it: in light
-      // mode surface and surfaceBright are both tone 98, so a page on surface
-      // left the card indistinguishable from it.
       expect(colors.base, theme.scaffoldBackgroundColor);
-      expect(
-        colors.base,
-        brightness == Brightness.dark
-            ? theme.colorScheme.surface
-            : theme.colorScheme.surfaceContainer,
-      );
+      expect(colors.base, theme.colorScheme.surface);
+      expect(colors.surface, theme.colorScheme.surfaceContainerLow);
       expect(colors.text, theme.colorScheme.onSurface);
       expect(colors.accent, theme.colorScheme.primary);
       expect(
@@ -44,6 +37,8 @@ void main() {
         theme.colorScheme.onSurface,
       );
       expect(theme.splashFactory, isNot(NoSplash.splashFactory));
+      expect(theme.listTileTheme.shape, isA<StadiumBorder>());
+      expect(theme.chipTheme.shape, isA<StadiumBorder>());
       final luminances = [
         colors.accent.computeLuminance(),
         colors.onAccent.computeLuminance(),
@@ -72,7 +67,10 @@ void main() {
     },
   );
 
-  for (final style in AppThemeStyle.values) {
+  for (final style in [
+    for (final family in ThemeFamily.values)
+      for (final mode in ThemeMode.values) (family: family, themeMode: mode),
+  ]) {
     test('restores persisted ${style.name}', () async {
       SharedPreferences.setMockInitialValues({'app_theme_style': style.name});
       final container = ProviderContainer();
@@ -90,7 +88,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await container
         .read(appThemeStyleProvider.notifier)
-        .setStyle(AppThemeStyle.materialSystem);
+        .update(family: ThemeFamily.material);
     expect(
       (await SharedPreferences.getInstance()).getString('app_theme_style'),
       'materialSystem',
@@ -98,7 +96,7 @@ void main() {
     expect(container.read(appThemeStyleProvider).themeMode, ThemeMode.system);
     await container
         .read(appThemeStyleProvider.notifier)
-        .setStyle(AppThemeStyle.neuDark);
+        .update(family: ThemeFamily.neu, mode: ThemeMode.dark);
     expect(container.read(appThemeStyleProvider).isMaterial, isFalse);
     expect(
       (await SharedPreferences.getInstance()).getString('app_theme_style'),
@@ -281,7 +279,7 @@ void main() {
       );
       expect(
         outgoing.color,
-        buildMaterialTheme(Brightness.dark).colorScheme.primary,
+        buildMaterialTheme(Brightness.dark).colorScheme.primaryContainer,
       );
       expect(incoming.color, isNotNull);
       expect(outgoing.gradient, isNull);

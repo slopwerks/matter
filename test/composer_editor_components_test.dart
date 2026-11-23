@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:matter/pages/chat/composer/composer_autocomplete_popup.dart';
 import 'package:matter/pages/chat/composer/composer_text_field.dart';
 import 'package:matter/pages/chat/composer_autocomplete.dart';
@@ -9,6 +10,62 @@ import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/theme/neu_theme.dart';
 
 void main() {
+  testWidgets('Material candidates fit long identities at large text sizes', (
+    tester,
+  ) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    ComposerAutocompleteOption? selected;
+    const option = ComposerAutocompleteOption(
+      title: 'A long member display name that needs two lines',
+      subtitle: '@a.long.member.identifier:example.org',
+      insertion: '@member:example.org ',
+    );
+    for (final brightness in Brightness.values) {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: buildMaterialTheme(brightness),
+            home: MediaQuery(
+              data: const MediaQueryData(
+                size: Size(320, 640),
+                textScaler: TextScaler.linear(2),
+              ),
+              child: Scaffold(
+                body: Center(
+                  child: SizedBox(
+                    width: 320,
+                    child: ComposerAutocompletePopup(
+                      options: const [option],
+                      loading: false,
+                      viewportItemCount: 4,
+                      selectedIndex: 0,
+                      scrollController: scroll,
+                      onHover: (_) {},
+                      onSelected: (value) => selected = value,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey('composer-autocomplete-option-0')),
+            )
+            .height,
+        greaterThan(100),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text(option.title));
+      expect(selected, same(option));
+    }
+  });
+
   test('mention candidates prioritize prefixes and keep the 50-item bound', () {
     final options = composerAutocompleteOptions(
       const ComposerAutocompleteMatch(

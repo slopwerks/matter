@@ -656,6 +656,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(api.forwards, ['older']);
+    // Downloading enters the real I/O loop; let the image cache's deferred
+    // cleanup finish after its widgets have been removed.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 10));
   });
 
   testWidgets(

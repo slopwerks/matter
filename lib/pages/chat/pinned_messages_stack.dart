@@ -6,8 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
+import 'chat_notice_frame.dart';
+import '../../widgets/material_press.dart';
 import 'action_failure_message.dart';
 import 'message_pin_actions.dart';
 import 'pinned_message_indicator.dart';
@@ -212,97 +215,126 @@ class _PinnedMessagesStackState extends ConsumerState<PinnedMessagesStack> {
     final index = selectedIndex < 0 ? 0 : selectedIndex;
     _reportVisibleCount(visibleRows);
     final colors = context.neu;
-    return GlassPanel(
-      radius: context.isMaterial ? 0 : NeuRadius.surface,
-      child: SizedBox(
-        key: const ValueKey('pinned-messages-stack'),
-        height: rowHeight * visibleRows,
-        child: Builder(
-          builder: (context) {
-            final message = messages[index];
-            final ignoredSender =
-                ignoredUserIds == null ||
-                (!message.isMe && ignoredUserIds.contains(message.senderId));
-            final content = ignoredSender
-                ? '来自已忽略用户的消息'
-                : message.content.trim().isEmpty
-                ? (message.filename ?? '媒体消息')
-                : message.content;
-            return InkWell(
-              key: ValueKey('pinned-message:${message.id}'),
-              onLongPress: widget.onShowAll,
-              onTap: () {
-                final nextIndex =
-                    _lastJumpedMessageId == message.id || ignoredSender
-                    ? (index + 1) % messages.length
-                    : index;
-                final target = messages[nextIndex];
-                final targetIgnored =
-                    ignoredUserIds == null ||
-                    (!target.isMe && ignoredUserIds.contains(target.senderId));
-                setState(() {
-                  _selectedMessageId = target.id;
-                  _lastJumpedMessageId = target.id;
-                });
-                if (!targetIgnored) widget.onMessageTap(target.id);
-              },
-              child: Row(
-                children: [
-                  const SizedBox(width: 12),
-                  PinnedMessageIndicator(count: messages.length, index: index),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '置顶消息 #${index + 1} · 共 ${messages.length} 条',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: colors.accent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          ignoredSender
-                              ? content
-                              : '${message.senderName}：$content',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: colors.textTertiary,
-                            fontSize: 12.5,
-                          ),
-                        ),
-                      ],
-                    ),
+    final style = context.isMaterial
+        ? materialPinnedStripStyle(Theme.of(context))
+        : null;
+    Widget buildRow([WidgetStatesController? states]) => SizedBox(
+      key: const ValueKey('pinned-messages-stack'),
+      height: rowHeight * visibleRows,
+      child: Builder(
+        builder: (context) {
+          final message = messages[index];
+          final ignoredSender =
+              ignoredUserIds == null ||
+              (!message.isMe && ignoredUserIds.contains(message.senderId));
+          final content = ignoredSender
+              ? '来自已忽略用户的消息'
+              : message.content.trim().isEmpty
+              ? (message.filename ?? '媒体消息')
+              : message.content;
+          return InkWell(
+            statesController: states,
+            key: ValueKey('pinned-message:${message.id}'),
+            onLongPress: widget.onShowAll,
+            onTap: () {
+              final nextIndex =
+                  _lastJumpedMessageId == message.id || ignoredSender
+                  ? (index + 1) % messages.length
+                  : index;
+              final target = messages[nextIndex];
+              final targetIgnored =
+                  ignoredUserIds == null ||
+                  (!target.isMe && ignoredUserIds.contains(target.senderId));
+              setState(() {
+                _selectedMessageId = target.id;
+                _lastJumpedMessageId = target.id;
+              });
+              if (!targetIgnored) widget.onMessageTap(target.id);
+            },
+            child: Row(
+              children: [
+                const SizedBox(width: 12),
+                PinnedMessageIndicator(
+                  count: messages.length,
+                  index: index,
+                  color: style?.foreground ?? colors.accent,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        style == null
+                            ? '置顶消息 #${index + 1} · 共 ${messages.length} 条'
+                            : messages.length == 1
+                            ? '置顶消息'
+                            : '置顶消息  ${index + 1}/${messages.length}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            style?.title ??
+                            TextStyle(
+                              color: colors.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      Text(
+                        ignoredSender
+                            ? content
+                            : '${message.senderName}：$content',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            style?.preview ??
+                            TextStyle(
+                              color: colors.textTertiary,
+                              fontSize: 12.5,
+                            ),
+                      ),
+                    ],
                   ),
-                  if (widget.onShowAll != null)
-                    IconButton(
-                      tooltip: '查看全部置顶消息',
-                      onPressed: widget.onShowAll,
-                      icon: const Icon(Icons.list_alt, size: 20),
-                    ),
+                ),
+                if (widget.onShowAll != null)
+                  IconButton(
+                    tooltip: '查看全部置顶消息',
+                    color: style?.foreground,
+                    onPressed: widget.onShowAll,
+                    icon: const Icon(Icons.list_alt, size: 20),
+                  ),
+                if (style == null || widget.onShowAll == null)
                   IconButton(
                     key: ValueKey('unpin-message:${message.id}'),
                     tooltip: '取消置顶',
+                    color: style?.foreground,
                     onPressed: _unpinningMessageIds.contains(message.id)
                         ? null
                         : () => unawaited(_unpin(message)),
                     icon: Icon(
                       Icons.push_pin_outlined,
-                      color: colors.textTertiary,
+                      color: style == null ? colors.textTertiary : null,
                       size: 19,
                     ),
                   ),
-                  const SizedBox(width: 2),
-                ],
-              ),
-            );
-          },
+                const SizedBox(width: 2),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    if (style == null) {
+      return GlassPanel(radius: NeuRadius.surface, child: buildRow());
+    }
+    return ChatNoticeFrame(
+      child: MaterialPress(
+        builder: (states) => Material(
+          color: style.fill,
+          shape: ChatNoticeFrame.shape,
+          clipBehavior: Clip.antiAlias,
+          child: buildRow(states),
         ),
       ),
     );

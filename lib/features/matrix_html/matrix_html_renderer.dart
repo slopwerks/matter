@@ -7,6 +7,8 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import 'matrix_code_block.dart';
 import 'matrix_html_flow.dart';
@@ -401,9 +403,12 @@ class _MatrixNodeRenderer {
       (max, row) => math.max(max, row.$2.length),
     );
 
-    final borderColor = (baseStyle.color ?? Colors.white).withValues(
-      alpha: 0.25,
-    );
+    final tableStyle = context.isMaterial
+        ? materialHtmlTableStyle(Theme.of(context))
+        : null;
+    final borderColor =
+        tableStyle?.border ??
+        (baseStyle.color ?? Colors.white).withValues(alpha: 0.25);
     final exceedsRichTableBudget =
         rows.length > _maxRichTableRows ||
         columnCount > _maxRichTableColumns ||
@@ -453,12 +458,17 @@ class _MatrixNodeRenderer {
                       TableRow(
                         decoration: isHeader
                             ? BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.14),
+                                color:
+                                    tableStyle?.headerFill ??
+                                    Colors.black.withValues(alpha: 0.14),
                               )
                             : null,
                         children: [
                           for (final cell in cells)
-                            Padding(
+                            Container(
+                              color: !isHeader && cell.tag == 'th'
+                                  ? tableStyle?.headerFill
+                                  : null,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
                                 vertical: 6,
@@ -520,7 +530,12 @@ class _MatrixNodeRenderer {
     final renderer = _MatrixNodeRenderer(
       context: context,
       baseStyle: isHeader
-          ? baseStyle.copyWith(fontWeight: FontWeight.w800)
+          ? baseStyle.copyWith(
+              fontWeight: FontWeight.w800,
+              color: context.isMaterial
+                  ? materialHtmlTableStyle(Theme.of(context)).headerForeground
+                  : null,
+            )
           : baseStyle,
       accentColor: accentColor,
       onLinkTap: onLinkTap,
@@ -1153,10 +1168,13 @@ class _MatrixHtmlImagePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final style = context.isMaterial
+        ? materialHtmlImagePlaceholderStyle(Theme.of(context))
+        : null;
     final icon = Icon(
       failed ? Icons.broken_image_outlined : Icons.image_outlined,
       size: 22,
-      color: Colors.white.withValues(alpha: 0.5),
+      color: style?.foreground ?? Colors.white.withValues(alpha: 0.5),
     );
     final width = this.width;
     if (width == null) {
@@ -1167,8 +1185,8 @@ class _MatrixHtmlImagePlaceholder extends StatelessWidget {
       height: 120,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        color: style?.fill ?? Colors.black.withValues(alpha: 0.12),
+        borderRadius: style?.radius ?? BorderRadius.circular(8),
       ),
       child: icon,
     );

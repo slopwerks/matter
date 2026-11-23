@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/startup_page_provider.dart';
 import '../../theme/neu_colors.dart';
-import '../../theme/material_theme.dart';
+import 'material_preference_option.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/grouped_rows.dart';
 import '../../widgets/max_content_width.dart';
@@ -19,7 +19,7 @@ class StartupPageSettingsPage extends ConsumerWidget {
       extendBodyBehindAppBar: true,
       appBar: buildFloatingAppBar(title: const Text('启动页面')),
       body: MaxContentWidth(
-        maxWidth: 600,
+        maxWidth: context.isMaterial ? 720 : 600,
         child: ListView(
           padding: EdgeInsets.fromLTRB(
             16,
@@ -39,14 +39,10 @@ class StartupPageSettingsPage extends ConsumerWidget {
                 child: GroupedRows(
                   children: [
                     for (final page in StartupPage.values)
-                      RadioListTile<StartupPage>(
-                        key: ValueKey('startup-page-${page.name}'),
+                      MaterialPreferenceOption<StartupPage>(
+                        tileKey: ValueKey('startup-page-${page.name}'),
                         value: page,
                         selected: selected == page,
-                        selectedTileColor: materialChoiceFill(
-                          Theme.of(context),
-                          selected: selected == page,
-                        ),
                         title: Text(page.label),
                         subtitle: page == StartupPage.remember
                             ? const Text('没有记录或记录失效时显示全部会话')

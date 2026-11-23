@@ -6,7 +6,11 @@ import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
 import '../../widgets/neu_surface.dart';
 import 'timeline/timeline_bubble_frame.dart'
-    show enabledNeuBubbleShadows, neuBubbleShape;
+    show
+        enabledNeuBubbleShadows,
+        messageBubbleFill,
+        neuBubbleShape,
+        timelineBubbleBorderRadius;
 
 typedef PollVoteCallback = Future<void> Function(List<String> answerIds);
 typedef PollEndCallback = Future<void> Function();
@@ -216,7 +220,14 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final material = context.isMaterial;
+    final scheme = theme.colorScheme;
+    final foreground = widget.isMe
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface;
+    final supporting = widget.isMe ? foreground : scheme.onSurfaceVariant;
     final poll = widget.poll;
     final ended = poll.ended || _endedLocally;
     final reveal = poll.disclosed || ended;
@@ -228,19 +239,29 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
         !_submitting &&
         _selected.isNotEmpty &&
         !_setsEqual(_selected, _committedVote);
-    final shape = neuBubbleShape(
-      context,
-      BorderRadius.circular(NeuRadius.content),
-    );
+    final shape = material
+        ? RoundedRectangleBorder(
+            borderRadius: timelineBubbleBorderRadius(
+              context,
+              isMe: widget.isMe,
+              isFirst: true,
+              isLast: true,
+            ),
+          )
+        : neuBubbleShape(context, BorderRadius.circular(NeuRadius.content));
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: widget.maxWidth),
       child: Container(
         decoration: ShapeDecoration(
           shape: shape,
-          color: widget.isMe
+          color: material
+              ? messageBubbleFill(context, isMe: widget.isMe)
+              : widget.isMe
               ? colors.accent.withValues(alpha: 0.18)
               : colors.card,
-          shadows: enabledNeuBubbleShadows(context, colors),
+          shadows: material
+              ? const []
+              : enabledNeuBubbleShadows(context, colors),
         ),
         child: ClipPath.shape(
           shape: shape,
@@ -259,11 +280,18 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
                         children: [
                           Icon(
                             Icons.poll_rounded,
-                            color: colors.accent,
+                            color: material ? supporting : colors.accent,
                             size: 18,
                           ),
                           const SizedBox(width: 6),
-                          Text('投票', style: textTheme.bodySmall),
+                          Text(
+                            '投票',
+                            style: material
+                                ? textTheme.labelMedium?.copyWith(
+                                    color: supporting,
+                                  )
+                                : textTheme.bodySmall,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -271,6 +299,7 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
                         poll.question,
                         style: textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
+                          color: material ? foreground : null,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -283,12 +312,16 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
                           totalVoters: totalVoters,
                           reveal: reveal,
                           enabled: !ended && !_submitting,
+                          materialForeground: material ? foreground : null,
+                          materialSupporting: material ? supporting : null,
                           onTap: () => _selectAnswer(answer.id),
                         ),
                       const SizedBox(height: 6),
                       Text(
                         '$totalVoters 人已投票${ended ? ' · 已结束' : ''}',
-                        style: textTheme.labelSmall,
+                        style: textTheme.labelSmall?.copyWith(
+                          color: material ? supporting : null,
+                        ),
                       ),
                       if (multi && !ended) ...[
                         const SizedBox(height: 6),
@@ -328,7 +361,9 @@ class _PollMessageBubbleState extends ConsumerState<PollMessageBubble> {
                             ),
                             label: const Text('结束投票'),
                             style: TextButton.styleFrom(
-                              foregroundColor: colors.textSecondary,
+                              foregroundColor: material
+                                  ? supporting
+                                  : colors.textSecondary,
                             ),
                           ),
                         ),
@@ -363,6 +398,8 @@ class _PollAnswerRow extends StatelessWidget {
   final int totalVoters;
   final bool reveal;
   final bool enabled;
+  final Color? materialForeground;
+  final Color? materialSupporting;
   final VoidCallback onTap;
 
   const _PollAnswerRow({
@@ -373,6 +410,8 @@ class _PollAnswerRow extends StatelessWidget {
     required this.totalVoters,
     required this.reveal,
     required this.enabled,
+    required this.materialForeground,
+    required this.materialSupporting,
     required this.onTap,
   });
 
@@ -392,7 +431,19 @@ class _PollAnswerRow extends StatelessWidget {
           ? Icons.radio_button_checked_rounded
           : Icons.radio_button_unchecked_rounded,
       size: 18,
-      color: colors.accent,
+      color: materialSupporting ?? colors.accent,
+    );
+    final resultFill = FractionallySizedBox(
+      alignment: Alignment.centerLeft,
+      widthFactor: fraction,
+      child: ColoredBox(
+        color:
+            materialSupporting?.withValues(alpha: selected ? .18 : .10) ??
+            colors.accent.withValues(alpha: selected ? .28 : .16),
+        child: SizedBox(
+          height: materialSupporting == null ? 32 : double.infinity,
+        ),
+      ),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -405,16 +456,10 @@ class _PollAnswerRow extends StatelessWidget {
             alignment: Alignment.centerLeft,
             children: [
               if (reveal)
-                FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: fraction,
-                  child: Container(
-                    height: 32,
-                    color: colors.accent.withValues(
-                      alpha: selected ? 0.28 : 0.16,
-                    ),
-                  ),
-                ),
+                if (materialSupporting != null)
+                  Positioned.fill(child: resultFill)
+                else
+                  resultFill,
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                 child: Row(
@@ -425,7 +470,7 @@ class _PollAnswerRow extends StatelessWidget {
                       child: Text(
                         answer.text,
                         style: textTheme.bodyMedium?.copyWith(
-                          color: colors.text,
+                          color: materialForeground ?? colors.text,
                         ),
                       ),
                     ),
@@ -433,7 +478,7 @@ class _PollAnswerRow extends StatelessWidget {
                       Text(
                         '$count',
                         style: textTheme.bodySmall?.copyWith(
-                          color: colors.textTertiary,
+                          color: materialSupporting ?? colors.textTertiary,
                         ),
                       ),
                   ],

@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../features/storage/storage_appearance.dart';
 import '../../features/storage/storage_breakdown.dart';
 import '../../features/storage/storage_models.dart';
+import '../../theme/neu_colors.dart';
 import '../../theme/storage_visual_theme.dart';
 import '../../widgets/grouped_rows.dart';
 
@@ -143,7 +144,7 @@ class _StorageCompositionCardState extends State<StorageCompositionCard> {
     return GroupedRows(
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(context.isMaterial ? 20 : 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -152,7 +153,12 @@ class _StorageCompositionCardState extends State<StorageCompositionCard> {
                   const Icon(Icons.donut_large_outlined),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('空间分布', style: theme.textTheme.titleMedium),
+                    child: Text(
+                      '空间分布',
+                      style: context.isMaterial
+                          ? theme.textTheme.titleSmall
+                          : theme.textTheme.titleMedium,
+                    ),
                   ),
                   TextButton(
                     onPressed: widget.onOpenAll,
@@ -161,16 +167,24 @@ class _StorageCompositionCardState extends State<StorageCompositionCard> {
                 ],
               ),
               const SizedBox(height: 8),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('文件类型')),
-                  ButtonSegment(value: true, label: Text('聊天类型')),
-                ],
-                selected: {_byChat},
-                onSelectionChanged: (value) => setState(() {
-                  _byChat = value.single;
-                  _selected = null;
-                }),
+              LayoutBuilder(
+                builder: (context, constraints) => SegmentedButton<bool>(
+                  direction:
+                      context.isMaterial &&
+                          constraints.maxWidth <
+                              MediaQuery.textScalerOf(context).scale(320)
+                      ? Axis.vertical
+                      : Axis.horizontal,
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('文件类型')),
+                    ButtonSegment(value: true, label: Text('聊天类型')),
+                  ],
+                  selected: {_byChat},
+                  onSelectionChanged: (value) => setState(() {
+                    _byChat = value.single;
+                    _selected = null;
+                  }),
+                ),
               ),
               const SizedBox(height: 16),
               if (buckets.isEmpty)
@@ -185,74 +199,102 @@ class _StorageCompositionCardState extends State<StorageCompositionCard> {
                   ),
                 )
               else
-                Row(
-                  children: [
-                    SizedBox.square(
-                      dimension: 154,
-                      child: StorageRingChart(
-                        buckets: buckets,
-                        palette: widget.palette,
-                        selected: selected?.key,
-                        onSelected: (key) => setState(() => _selected = key),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final stacked =
+                        context.isMaterial &&
+                        constraints.maxWidth <
+                            MediaQuery.textScalerOf(context).scale(400);
+                    return Flex(
+                      direction: stacked ? Axis.vertical : Axis.horizontal,
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: stacked
+                          ? CrossAxisAlignment.stretch
+                          : CrossAxisAlignment.center,
+                      children: [
+                        SizedBox.square(
+                          dimension: 154,
+                          child: StorageRingChart(
+                            buckets: buckets,
+                            palette: widget.palette,
+                            selected: selected?.key,
+                            onSelected: (key) =>
+                                setState(() => _selected = key),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    selected == null
+                                        ? '${widget.snapshot.files.length}'
+                                        : '${(selected.bytes / total * 100).toStringAsFixed(1)}%',
+                                    style: theme.textTheme.headlineSmall,
+                                  ),
+                                  Text(
+                                    selected == null ? '个文件' : '占应用文件',
+                                    style: visuals.secondaryLabel(theme),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: stacked ? 0 : 16,
+                          height: stacked ? 16 : 0,
+                        ),
+                        Flexible(
+                          flex: stacked ? 0 : 1,
+                          fit: FlexFit.tight,
                           child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                selected == null
-                                    ? '${widget.snapshot.files.length}'
-                                    : '${(selected.bytes / total * 100).toStringAsFixed(1)}%',
-                                style: theme.textTheme.headlineSmall,
+                                selected?.label ?? '应用文件占用',
+                                style: theme.textTheme.titleSmall,
                               ),
+                              const SizedBox(height: 6),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  formatStorageBytes(selected?.bytes ?? total),
+                                  style: theme.textTheme.titleLarge,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
                               Text(
-                                selected == null ? '个文件' : '占应用文件',
+                                selected == null
+                                    ? '点击圆环查看分类'
+                                    : '点击下方分类可查看和清理文件',
                                 style: visuals.secondaryLabel(theme),
+                              ),
+                              TextButton.icon(
+                                onPressed: selected == null
+                                    ? widget.onOpenAll
+                                    : () => widget.onOpen(selected),
+                                icon: const Icon(Icons.arrow_forward, size: 18),
+                                label: const Text('查看文件'),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            selected?.label ?? '应用文件占用',
-                            style: theme.textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 6),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              formatStorageBytes(selected?.bytes ?? total),
-                              style: theme.textTheme.titleLarge,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            selected == null ? '点击圆环查看分类' : '点击下方分类可查看和清理文件',
-                            style: visuals.secondaryLabel(theme),
-                          ),
-                          TextButton.icon(
-                            onPressed: selected == null
-                                ? widget.onOpenAll
-                                : () => widget.onOpen(selected),
-                            icon: const Icon(Icons.arrow_forward, size: 18),
-                            label: const Text('查看文件'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               if (buckets.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final columns = constraints.maxWidth > 550 ? 3 : 2;
+                    final columns =
+                        context.isMaterial &&
+                            constraints.maxWidth <
+                                MediaQuery.textScalerOf(context).scale(300)
+                        ? 1
+                        : constraints.maxWidth > 550
+                        ? 3
+                        : 2;
                     final width =
                         (constraints.maxWidth - 8 * (columns - 1)) / columns;
                     return Wrap(

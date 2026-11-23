@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../widgets/material_detail_card.dart';
+import '../../widgets/max_content_width.dart';
 import 'attachment_picker_controls.dart';
 
 const _pollOptionAnimationDuration = Duration(milliseconds: 180);
@@ -135,57 +137,96 @@ class _AttachmentPollTabState extends State<AttachmentPollTab> {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final question = TextField(
+      controller: _question,
+      enabled: !widget.isSending,
+      style: Theme.of(context).textTheme.bodyLarge,
+      decoration: const InputDecoration(labelText: '问题'),
+      onChanged: (_) => setState(() {}),
+    );
+    final answers = <Widget>[
+      ..._buildAnswerRows(),
+      TextButton.icon(
+        onPressed: widget.isSending || _visibleAnswerCount >= 20
+            ? null
+            : _addAnswer,
+        icon: Icon(
+          Icons.add_rounded,
+          color: context.isMaterial ? null : colors.accent,
+        ),
+        label: Text(
+          '添加选项',
+          style: context.isMaterial ? null : TextStyle(color: colors.accent),
+        ),
+      ),
+    ];
+    final rules = <Widget>[
+      SwitchListTile(
+        title: Text('公开投票结果', style: Theme.of(context).textTheme.bodyLarge),
+        value: _disclosed,
+        onChanged: widget.isSending
+            ? null
+            : (v) => setState(() => _disclosed = v),
+        activeThumbColor: context.isMaterial ? null : colors.accent,
+      ),
+      SwitchListTile(
+        title: Text('允许多选', style: Theme.of(context).textTheme.bodyLarge),
+        value: _allowMultiple,
+        onChanged: widget.isSending
+            ? null
+            : (v) => setState(() => _allowMultiple = v),
+        activeThumbColor: context.isMaterial ? null : colors.accent,
+      ),
+    ];
     return Stack(
       children: [
         Positioned.fill(
-          child: ListView(
-            controller: widget.scrollController,
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              attachmentSendBarClearance,
+          child: MaxContentWidth(
+            maxWidth: context.isMaterial ? 560 : double.infinity,
+            child: ListView(
+              controller: widget.scrollController,
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                attachmentSendBarClearance,
+              ),
+              children: context.isMaterial
+                  ? [
+                      MaterialDetailCard(
+                        title: '投票内容',
+                        description: '填写问题和至少两个选项，最多支持 20 个选项。',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            question,
+                            const SizedBox(height: 16),
+                            ...answers,
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      MaterialDetailCard(
+                        title: '投票规则',
+                        child: ListTileTheme.merge(
+                          contentPadding: EdgeInsets.zero,
+                          child: Column(
+                            children: [
+                              rules.first,
+                              const Divider(height: 1),
+                              rules.last,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ]
+                  : [
+                      question,
+                      const SizedBox(height: 16),
+                      ...answers,
+                      ...rules,
+                    ],
             ),
-            children: [
-              TextField(
-                controller: _question,
-                enabled: !widget.isSending,
-                style: Theme.of(context).textTheme.bodyLarge,
-                decoration: const InputDecoration(labelText: '问题'),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              ..._buildAnswerRows(),
-              TextButton.icon(
-                onPressed: widget.isSending || _visibleAnswerCount >= 20
-                    ? null
-                    : _addAnswer,
-                icon: Icon(Icons.add_rounded, color: colors.accent),
-                label: Text('添加选项', style: TextStyle(color: colors.accent)),
-              ),
-              SwitchListTile(
-                title: Text(
-                  '公开投票结果',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                value: _disclosed,
-                onChanged: widget.isSending
-                    ? null
-                    : (v) => setState(() => _disclosed = v),
-                activeThumbColor: colors.accent,
-              ),
-              SwitchListTile(
-                title: Text(
-                  '允许多选',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                value: _allowMultiple,
-                onChanged: widget.isSending
-                    ? null
-                    : (v) => setState(() => _allowMultiple = v),
-                activeThumbColor: colors.accent,
-              ),
-            ],
           ),
         ),
         Positioned(

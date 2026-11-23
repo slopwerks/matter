@@ -11,12 +11,14 @@ import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/max_content_width.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'action_failure_message.dart';
 import 'chat_timestamp.dart';
 import 'message_pin_actions.dart';
+import 'material_message_preview.dart';
 
 class PinnedMessagesPage extends ConsumerStatefulWidget {
   final String roomId;
@@ -372,7 +374,11 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
           : null,
       body: Stack(
         children: [
-          Positioned.fill(child: _buildBody(ignoredUserIdsAsync)),
+          Positioned.fill(
+            child: context.isMaterial
+                ? MaxContentWidth(child: _buildBody(ignoredUserIdsAsync))
+                : _buildBody(ignoredUserIdsAsync),
+          ),
           // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
           if (!context.isMaterial)
             Positioned(
@@ -487,16 +493,29 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
                     ? Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const NeuIconButton(
-                            icon: Icons.push_pin_outlined,
-                            size: 84,
-                            onPressed: null,
-                          ),
+                          if (context.isMaterial)
+                            const Icon(Icons.push_pin_outlined, size: 48)
+                          else
+                            const NeuIconButton(
+                              icon: Icons.push_pin_outlined,
+                              size: 84,
+                              onPressed: null,
+                            ),
                           const SizedBox(height: NeuSpacing.lg),
                           Text(
                             '暂无置顶消息',
-                            style: Theme.of(context).textTheme.bodyMedium,
+                            style: context.isMaterial
+                                ? Theme.of(context).textTheme.titleMedium
+                                : Theme.of(context).textTheme.bodyMedium,
                           ),
+                          if (context.isMaterial) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '置顶重要消息，方便在这里快速找到。',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ],
                       )
                     : _refreshErrorTile(),
@@ -513,13 +532,38 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
-          context.isMaterial ? 0 : NeuSpacing.lg,
+          NeuSpacing.lg,
           topInset + (context.isMaterial ? 0 : NeuSpacing.md),
-          context.isMaterial ? 0 : NeuSpacing.lg,
+          NeuSpacing.lg,
           NeuSpacing.xl,
         ),
-        itemCount: messages.length + (_loadError == null ? 0 : 1),
+        itemCount:
+            messages.length +
+            (context.isMaterial ? 1 : 0) +
+            (_loadError == null ? 0 : 1),
         itemBuilder: (context, index) {
+          if (context.isMaterial) {
+            if (index == 0) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${messages.length} 条置顶消息',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '点击消息回到聊天中的位置。',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              );
+            }
+            index--;
+          }
           if (_loadError != null && index == 0) return _refreshErrorTile();
           final message = messages[index - (_loadError == null ? 0 : 1)];
           final ignoredSender =
@@ -532,20 +576,45 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
           final locked =
               _unpinLocked(message.id) ||
               _inflightUnpinIds.contains(message.id);
+          if (context.isMaterial) {
+            return Column(
+              key: ValueKey('pinned-message:${message.id}'),
+              children: [
+                MaterialMessagePreview(
+                  senderName: message.senderName,
+                  timestamp: message.timestamp,
+                  body: Text(
+                    content,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  onTap: ignoredSender
+                      ? null
+                      : () => Navigator.of(context).pop(message.id),
+                  trailing: NeuIconButton(
+                    icon: Icons.push_pin_outlined,
+                    size: 36,
+                    tooltip: '取消置顶',
+                    onPressed: locked ? null : () => unawaited(_unpin(message)),
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+              ],
+            );
+          }
           return Padding(
             key: ValueKey('pinned-message:${message.id}'),
-            padding: EdgeInsets.only(
-              bottom: context.isMaterial ? 1 : NeuSpacing.md,
-            ),
+            padding: const EdgeInsets.only(bottom: NeuSpacing.md),
             child: NeuAction(
-              radius: context.isMaterial ? 0 : NeuRadius.content,
+              radius: NeuRadius.content,
               onTap: ignoredSender
                   ? null
                   : () => Navigator.of(context).pop(message.id),
               child: NeuSurface(
-                color: context.isMaterial ? colors.glassFill : colors.card,
-                radius: context.isMaterial ? 0 : NeuRadius.content,
-                padding: EdgeInsets.all(context.isMaterial ? 16 : 14),
+                color: colors.card,
+                radius: NeuRadius.content,
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -735,43 +804,49 @@ class _PinnedMessagesPageState extends ConsumerState<PinnedMessagesPage> {
 
   Widget _refreshErrorTile() {
     final colors = context.neu;
+    final row = Row(
+      children: [
+        Icon(Icons.sync_problem_rounded, color: colors.error, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '刷新失败，当前显示上次结果',
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: colors.text),
+              ),
+              Text(
+                '$_loadError',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        NeuIconButton(
+          icon: Icons.refresh_rounded,
+          size: 36,
+          tooltip: '重试刷新',
+          onPressed: () => unawaited(_reload()),
+        ),
+      ],
+    );
+    const padding = EdgeInsets.fromLTRB(14, 10, 8, 10);
     return Padding(
       padding: const EdgeInsets.only(bottom: NeuSpacing.md),
-      child: NeuSurface(
-        color: colors.surfaceStrong,
-        radius: context.isMaterial ? 0 : NeuRadius.content,
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-        child: Row(
-          children: [
-            Icon(Icons.sync_problem_rounded, color: colors.error, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '刷新失败，当前显示上次结果',
-                    style: Theme.of(context).textTheme.bodyMedium
-                        ?.copyWith(color: colors.text),
-                  ),
-                  Text(
-                    '$_loadError',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+      child: context.isMaterial
+          ? Card(
+              child: Padding(padding: padding, child: row),
+            )
+          : NeuSurface(
+              color: colors.surfaceStrong,
+              radius: NeuRadius.content,
+              padding: padding,
+              child: row,
             ),
-            NeuIconButton(
-              icon: Icons.refresh_rounded,
-              size: 36,
-              tooltip: '重试刷新',
-              onPressed: () => unawaited(_reload()),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

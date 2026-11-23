@@ -1,5 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -7,14 +6,15 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/session_credential_store.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/app_component_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
-import '../../widgets/neu_decoration.dart';
-import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'homeserver_list.dart';
 import 'homeserver_resolver.dart';
+import 'login_form.dart';
+import 'login_layout.dart';
 
 Future<bool> showSessionCredentialCompatibilityDialog(
   BuildContext context, {
@@ -84,6 +84,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   // Tab state: 0 = login, 1 = register, 2 = token login
   int _tabIndex = 0;
+  bool _choseLoginMethod = false;
 
   @override
   void initState() {
@@ -594,80 +595,73 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final hasWelcome =
+        context.isMaterial &&
+        !widget.addingAccount &&
+        !widget.resumeSession &&
+        widget.initialUserId == null &&
+        widget.initialHomeserver == null;
+    final welcome = hasWelcome && !_choseLoginMethod;
+    void choose(int mode) => setState(() {
+      _tabIndex = mode;
+      _choseLoginMethod = true;
+      _uiaaSession = null;
+      _clearError();
+    });
+    void backToWelcome() => setState(() => _choseLoginMethod = false);
     return PopScope(
-      canPop: !widget.addingAccount || (!_isLoading && !_hasCompletedRustLogin),
+      canPop:
+          (!hasWelcome || welcome) &&
+          (!widget.addingAccount || (!_isLoading && !_hasCompletedRustLogin)),
+      onPopInvokedWithResult: (popped, _) {
+        if (!popped && hasWelcome && !_isLoading && !_hasCompletedRustLogin) {
+          backToWelcome();
+        }
+      },
       child: Scaffold(
-        extendBodyBehindAppBar: widget.addingAccount,
+        extendBodyBehindAppBar: widget.addingAccount && !context.isMaterial,
         appBar: widget.addingAccount
             ? buildFloatingAppBar(title: const Text('添加账号'))
+            : hasWelcome && !welcome
+            ? buildFloatingAppBar(
+                title: Text(['登录', '创建账号', 'Token 登录'][_tabIndex]),
+                leading: IconButton(
+                  onPressed: _isLoading || _hasCompletedRustLogin
+                      ? null
+                      : backToWelcome,
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: '返回',
+                ),
+              )
             : null,
         backgroundColor: context.neu.base,
-        body: SafeArea(
-          top: !widget.addingAccount,
-          child: CustomScrollView(
-            slivers: [
-              if (widget.addingAccount)
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height:
-                        MediaQuery.viewPaddingOf(context).top + kToolbarHeight,
-                  ),
-                ),
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 430),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 28),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 40),
-                          _buildHeader(),
-                          const SizedBox(height: 32),
-                          _buildModeChips(),
-                          const SizedBox(height: 20),
-                          _buildFormCard(),
-                          const Spacer(),
-                          _buildFooter(),
-                        ],
-                      ),
+        body: LoginLayout(
+          addingAccount: widget.addingAccount,
+          resumeSession: widget.resumeSession,
+          modeSelector: hasWelcome
+              ? const SizedBox.shrink()
+              : _buildModeChips(),
+          form: welcome
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FilledButton(
+                      onPressed: () => choose(0),
+                      child: const Text('登录已有账号'),
                     ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+                    const SizedBox(height: NeuSpacing.sm),
+                    FilledButton.tonal(
+                      onPressed: () => choose(1),
+                      child: const Text('创建账号'),
+                    ),
+                    TextButton(
+                      onPressed: () => choose(2),
+                      child: const Text('其他登录方式 · Token'),
+                    ),
+                  ],
+                )
+              : _buildFormCard(),
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    final colors = context.neu;
-    return Center(
-      child: Column(
-        children: [
-          NeuSurface(
-            accent: true,
-            width: 88,
-            height: 88,
-            radius: NeuRadius.nav,
-            child: Icon(
-              Icons.chat_bubble_rounded,
-              size: 40,
-              color: colors.onAccent,
-            ),
-          ),
-          const SizedBox(height: 22),
-          Text(
-            'Matter',
-            style: Theme.of(context).textTheme.headlineMedium
-                ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -1),
-          ),
-          const SizedBox(height: NeuSpacing.sm),
-          Text('Matrix 客户端', style: Theme.of(context).textTheme.bodyMedium),
-        ],
       ),
     );
   }
@@ -676,6 +670,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     const labels = ['登录', '注册', 'Token'];
     if (context.isMaterial) {
       return SegmentedButton<int>(
+        showSelectedIcon: false,
         segments: [
           for (var i = 0; i < labels.length; i++)
             ButtonSegment(value: i, label: Text(labels[i])),
@@ -714,46 +709,29 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Widget _buildFormCard() {
-    return NeuSurface(
-      radius: NeuRadius.surface,
-      color: context.neu.surfaceStrong,
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildLabel('Homeserver'),
-          const SizedBox(height: NeuSpacing.sm),
-          _buildHomeserverField(),
-          if (_tabIndex == 0) ..._buildLoginFields(),
-          if (_tabIndex == 1) ..._buildRegisterFields(),
-          if (_tabIndex == 2) ..._buildTokenLoginFields(),
-          if (_error != null) ...[
-            const SizedBox(height: NeuSpacing.md),
-            _buildErrorBanner(),
-          ],
-          const SizedBox(height: 22),
-          _buildActionButton(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHomeserverField() {
-    return NeuTextField(
-      controller: _homeserverController,
-      hint: 'matrix.org',
-      leading: const Icon(Icons.dns_rounded),
-      trailing: NeuIconButton(
-        size: 32,
-        icon: Icons.unfold_more_rounded,
-        tooltip: '选择预设服务器',
-        onPressed: _homeservers.isEmpty ? null : _showHomeserverSheet,
-      ),
-      textInputAction: TextInputAction.next,
-      onChanged: (_) => _clearError(),
-    );
-  }
+  Widget _buildFormCard() => LoginForm(
+    mode: _tabIndex,
+    homeserver: _homeserverController,
+    username: _usernameController,
+    password: _passwordController,
+    registrationToken: _tokenController,
+    userId: _userIdController,
+    deviceId: _deviceIdController,
+    accessToken: _accessTokenController,
+    passwordVisible: _isPasswordVisible,
+    registrationTokenRequired: _uiaaSession != null,
+    loading: _isLoading,
+    error: _error,
+    onChanged: _clearError,
+    onTogglePassword: () =>
+        setState(() => _isPasswordVisible = !_isPasswordVisible),
+    onChooseHomeserver: _homeservers.isEmpty ? null : _showHomeserverSheet,
+    onSubmit: switch (_tabIndex) {
+      1 => _register,
+      2 => _loginWithAccessToken,
+      _ => _login,
+    },
+  );
 
   /// Open the preset-server list as a bottom sheet. Triggered by the trailing
   /// arrow button only — focusing the field stays a pure typing gesture and
@@ -774,13 +752,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
           ),
-          for (final entry in _homeservers)
-            NeuSheetItem(
-              icon: Icons.dns_rounded,
-              label: entry.label,
-              trailing: _buildHomeserverTrailing(entry),
-              onTap: () => Navigator.of(context).pop(entry),
-            ),
+          for (final entry in _homeservers) _buildHomeserverItem(entry),
           const SizedBox(height: NeuSpacing.sm),
         ],
       ),
@@ -790,6 +762,29 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _homeserverController.text = selected.domain;
       _clearError();
     }
+  }
+
+  Widget _buildHomeserverItem(HomeserverEntry entry) {
+    if (context.isMaterial) {
+      final selected =
+          entry.domain.toLowerCase() ==
+          _homeserverController.text.trim().toLowerCase();
+      return ListTile(
+        leading: const Icon(Icons.dns_rounded),
+        title: Text(entry.label),
+        subtitle: entry.domain == entry.label ? null : Text(entry.domain),
+        selected: selected,
+        selectedTileColor: AppComponentTheme.of(context).selectedRowFill,
+        trailing: selected ? const Icon(Icons.check_rounded) : null,
+        onTap: () => Navigator.of(context).pop(entry),
+      );
+    }
+    return NeuSheetItem(
+      icon: Icons.dns_rounded,
+      label: entry.label,
+      trailing: _buildHomeserverTrailing(entry),
+      onTap: () => Navigator.of(context).pop(entry),
+    );
   }
 
   Widget? _buildHomeserverTrailing(HomeserverEntry entry) {
@@ -816,214 +811,5 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ],
       ],
     );
-  }
-
-  List<Widget> _buildLoginFields() {
-    return [
-      _buildLabel('用户名'),
-      const SizedBox(height: NeuSpacing.sm),
-      NeuTextField(
-        controller: _usernameController,
-        hint: 'username',
-        leading: const Icon(Icons.person_outline_rounded),
-        textInputAction: TextInputAction.next,
-        onChanged: (_) => _clearError(),
-      ),
-      const SizedBox(height: NeuSpacing.lg),
-      _buildLabel('密码'),
-      const SizedBox(height: NeuSpacing.sm),
-      NeuTextField(
-        controller: _passwordController,
-        hint: '你的密码',
-        leading: const Icon(Icons.lock_outline_rounded),
-        obscureText: !_isPasswordVisible,
-        trailing: _buildPasswordToggle(),
-        textInputAction: TextInputAction.done,
-        onChanged: (_) => _clearError(),
-        onSubmitted: (_) => _login(),
-      ),
-    ];
-  }
-
-  List<Widget> _buildRegisterFields() {
-    return [
-      _buildLabel('用户名'),
-      const SizedBox(height: NeuSpacing.sm),
-      NeuTextField(
-        controller: _usernameController,
-        hint: 'username (不含 @ 和域名)',
-        leading: const Icon(Icons.person_outline_rounded),
-        textInputAction: TextInputAction.next,
-        onChanged: (_) => _clearError(),
-      ),
-      const SizedBox(height: NeuSpacing.lg),
-      _buildLabel('密码'),
-      const SizedBox(height: NeuSpacing.sm),
-      NeuTextField(
-        controller: _passwordController,
-        hint: '你的密码',
-        leading: const Icon(Icons.lock_outline_rounded),
-        obscureText: !_isPasswordVisible,
-        trailing: _buildPasswordToggle(),
-        textInputAction: _uiaaSession != null
-            ? TextInputAction.next
-            : TextInputAction.done,
-        onChanged: (_) => _clearError(),
-        onSubmitted: _uiaaSession == null ? (_) => _register() : null,
-      ),
-      if (_uiaaSession != null) ...[
-        const SizedBox(height: NeuSpacing.lg),
-        _buildLabel('注册 Token'),
-        const SizedBox(height: NeuSpacing.sm),
-        NeuTextField(
-          controller: _tokenController,
-          hint: '输入服务器要求的注册 Token',
-          leading: const Icon(Icons.vpn_key_rounded),
-          textInputAction: TextInputAction.done,
-          onChanged: (_) => _clearError(),
-          onSubmitted: (_) => _register(),
-        ),
-      ],
-    ];
-  }
-
-  List<Widget> _buildTokenLoginFields() {
-    return [
-      _buildLabel('User ID'),
-      const SizedBox(height: NeuSpacing.sm),
-      NeuTextField(
-        controller: _userIdController,
-        hint: '@user:matrix.local',
-        leading: const Icon(Icons.person_outline_rounded),
-        textInputAction: TextInputAction.next,
-        onChanged: (_) => _clearError(),
-      ),
-      const SizedBox(height: NeuSpacing.lg),
-      _buildLabel('Device ID'),
-      const SizedBox(height: NeuSpacing.sm),
-      NeuTextField(
-        controller: _deviceIdController,
-        hint: 'MATTER (可选)',
-        leading: const Icon(Icons.devices_rounded),
-        textInputAction: TextInputAction.next,
-        onChanged: (_) => _clearError(),
-      ),
-      const SizedBox(height: NeuSpacing.lg),
-      _buildLabel('Access Token'),
-      const SizedBox(height: NeuSpacing.sm),
-      NeuTextField(
-        controller: _accessTokenController,
-        hint: '你的 Access Token',
-        leading: const Icon(Icons.key_rounded),
-        textInputAction: TextInputAction.done,
-        onChanged: (_) => _clearError(),
-        onSubmitted: (_) => _loginWithAccessToken(),
-      ),
-    ];
-  }
-
-  Widget _buildPasswordToggle() {
-    return NeuIconButton(
-      size: 32,
-      icon: _isPasswordVisible
-          ? Icons.visibility_off_rounded
-          : Icons.visibility_rounded,
-      onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
-    );
-  }
-
-  Widget _buildErrorBanner() {
-    final colors = context.neu;
-    return NeuSurface(
-      depth: NeuDepth.flat,
-      radius: NeuRadius.content,
-      color: colors.error.withValues(alpha: .12),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline_rounded, color: colors.error, size: 18),
-          const SizedBox(width: NeuSpacing.sm),
-          Expanded(
-            child: Text(
-              _error!,
-              style: Theme.of(context).textTheme.bodyMedium
-                  ?.copyWith(color: colors.error),
-            ),
-          ),
-          const SizedBox(width: NeuSpacing.sm),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: _error!));
-              neuToast(context, '已复制到剪贴板');
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: Text(
-                '复制',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.error,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton() {
-    final colors = context.neu;
-    final label = switch (_tabIndex) {
-      0 => '登录',
-      1 => _uiaaSession != null ? '完成注册' : '注册',
-      2 => 'Token 登录',
-      _ => '',
-    };
-
-    final onPressed = _isLoading
-        ? null
-        : switch (_tabIndex) {
-            0 => _login,
-            1 => _register,
-            2 => _loginWithAccessToken,
-            _ => () {},
-          };
-
-    return SizedBox(
-      width: double.infinity,
-      child: NeuButton(
-        accent: true,
-        padding: const EdgeInsets.symmetric(vertical: 15),
-        onPressed: onPressed,
-        child: _isLoading
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  color: colors.onAccent,
-                  strokeWidth: 2.5,
-                ),
-              )
-            : Text(label),
-      ),
-    );
-  }
-
-  Widget _buildFooter() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Text(
-          'Made with AI by Matter Team',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLabel(String text) {
-    return Text(text, style: Theme.of(context).textTheme.titleSmall);
   }
 }

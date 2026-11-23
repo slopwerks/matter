@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 
 /// Sending while closer than this fraction of the visible timeline scrolls
 /// directly to the newest message.
@@ -60,12 +61,14 @@ bool shouldShowLatestMessageControl({
 class LatestMessageControl extends StatefulWidget {
   final bool visible;
   final bool showSentNotice;
+  final Widget? unreadControl;
   final VoidCallback onPressed;
 
   const LatestMessageControl({
     super.key,
     required this.visible,
     required this.showSentNotice,
+    this.unreadControl,
     required this.onPressed,
   });
 
@@ -119,49 +122,58 @@ class _LatestMessageControlState extends State<LatestMessageControl>
     );
   }
 
-  Widget _buildNotice(double value) {
+  Widget _buildNotice(double value, double expandedWidth) {
     final characters = _noticeText.runes
         .map(String.fromCharCode)
         .toList(growable: false);
     return ExcludeSemantics(
       child: OverflowBox(
         minWidth: 0,
-        maxWidth: _expandedWidth,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var index = 0; index < characters.length; index++)
-              Builder(
-                builder: (context) {
-                  final colors = context.neu;
-                  final start = 0.12 + index * 0.045;
-                  final progress = _intervalProgress(
-                    value,
-                    start: start,
-                    end: (start + 0.28).clamp(0.0, 1.0),
-                  );
-                  final isViewCharacter = index >= characters.length - 2;
-                  return Opacity(
-                    opacity: progress,
-                    child: Transform.translate(
-                      offset: Offset(0, 7 * (1 - progress)),
-                      child: Text(
-                        characters[index],
-                        style: TextStyle(
-                          color: isViewCharacter
-                              ? colors.accentPressed
-                              : colors.text,
-                          fontSize: 13.5,
-                          fontWeight: isViewCharacter
-                              ? FontWeight.w700
-                              : FontWeight.w600,
+        maxWidth: expandedWidth,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < characters.length; index++)
+                Builder(
+                  builder: (context) {
+                    final colors = context.neu;
+                    final material = context.isMaterial;
+                    final style = material
+                        ? materialLatestMessageStyle(Theme.of(context))
+                        : null;
+                    final start = 0.12 + index * 0.045;
+                    final progress = _intervalProgress(
+                      value,
+                      start: start,
+                      end: (start + 0.28).clamp(0.0, 1.0),
+                    );
+                    final isViewCharacter = index >= characters.length - 2;
+                    return Opacity(
+                      opacity: progress,
+                      child: Transform.translate(
+                        offset: Offset(0, 7 * (1 - progress)),
+                        child: Text(
+                          characters[index],
+                          style: style != null
+                              ? (isViewCharacter ? style.action : style.notice)
+                              : TextStyle(
+                                  color: isViewCharacter
+                                      ? colors.accentPressed
+                                      : colors.text,
+                                  fontSize: 13.5,
+                                  fontWeight: isViewCharacter
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-          ],
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -170,6 +182,31 @@ class _LatestMessageControlState extends State<LatestMessageControl>
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final radius = BorderRadius.circular(NeuRadius.surface);
+    final style = material ? materialLatestMessageStyle(theme) : null;
+    final shape = style?.shape ?? RoundedRectangleBorder(borderRadius: radius);
+    final painter = TextPainter(
+      text: TextSpan(text: _noticeText, style: style?.action),
+      textScaler: MediaQuery.textScalerOf(context),
+      textDirection: Directionality.of(context),
+    )..layout();
+    final expandedWidth = material
+        ? (painter.width + 2 * materialTimelinePillInset).clamp(
+            48.0,
+            MediaQuery.sizeOf(context).width - 32,
+          )
+        : _expandedWidth;
+    final height = material ? materialTimelinePillHeight(context) : 44.0;
+    painter.text = TextSpan(text: '回到最新', style: theme.textTheme.labelMedium);
+    painter.layout();
+    final jumpWidth =
+        painter.width +
+        materialTimelinePillIcon +
+        4 +
+        2 * materialTimelinePillInset;
+    painter.dispose();
     return IgnorePointer(
       ignoring: !widget.visible,
       child: AnimatedOpacity(
@@ -184,6 +221,13 @@ class _LatestMessageControlState extends State<LatestMessageControl>
             animation: _replacementController,
             builder: (context, _) {
               final value = _replacementController.value;
+              // Keep the controller mounted while unread navigation occupies the slot.
+              // Restore it only after the sent notice has finished retracting.
+              if (!widget.showSentNotice &&
+                  _replacementController.isDismissed &&
+                  widget.unreadControl != null) {
+                return widget.unreadControl!;
+              }
               final widthProgress = _intervalProgress(
                 value,
                 start: 0,
@@ -197,37 +241,96 @@ class _LatestMessageControlState extends State<LatestMessageControl>
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: widget.onPressed,
-                    borderRadius: BorderRadius.circular(NeuRadius.surface),
-                    child: Ink(
-                      width: lerpDouble(
-                        _collapsedWidth,
-                        _expandedWidth,
-                        widthProgress,
+                    customBorder: shape,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        vertical:
+                            material &&
+                                theme.materialTapTargetSize ==
+                                    MaterialTapTargetSize.padded
+                            ? (kMinInteractiveDimension - height).clamp(
+                                    0.0,
+                                    double.infinity,
+                                  ) /
+                                  2
+                            : 0,
                       ),
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: colors.surfaceStrong.withValues(alpha: 0.96),
-                        borderRadius: BorderRadius.circular(NeuRadius.surface),
-                        border: Border.all(color: colors.glassBorder),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(NeuRadius.surface),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Opacity(
-                              opacity: 1 - arrowExit,
-                              child: Transform.translate(
-                                offset: Offset(0, -6 * arrowExit),
-                                child: Icon(
-                                  Icons.keyboard_arrow_down_rounded,
-                                  color: colors.text,
-                                  size: 25,
+                      child: Ink(
+                        width: lerpDouble(
+                          material ? jumpWidth : _collapsedWidth,
+                          expandedWidth,
+                          widthProgress,
+                        ),
+                        height: height,
+                        decoration: material
+                            ? ShapeDecoration(
+                                color: theme.colorScheme.secondaryContainer,
+                                shape: shape,
+                              )
+                            : BoxDecoration(
+                                color: colors.surfaceStrong.withValues(
+                                  alpha: 0.96,
+                                ),
+                                borderRadius: radius,
+                                border: Border.all(color: colors.glassBorder),
+                              ),
+                        padding: material
+                            ? const EdgeInsets.all(materialTimelinePillInset)
+                            : EdgeInsets.zero,
+                        child: ClipPath(
+                          clipper: ShapeBorderClipper(shape: shape),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Opacity(
+                                opacity: 1 - arrowExit,
+                                child: Transform.translate(
+                                  offset: Offset(0, -6 * arrowExit),
+                                  child: material
+                                      ? FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            spacing: 4,
+                                            children: [
+                                              Icon(
+                                                Icons
+                                                    .keyboard_arrow_down_rounded,
+                                                size: materialTimelinePillIcon,
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSecondaryContainer,
+                                              ),
+                                              Text(
+                                                '回到最新',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelMedium
+                                                    ?.copyWith(
+                                                      color: theme
+                                                          .colorScheme
+                                                          .onSecondaryContainer,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          color: colors.text,
+                                          size: 25,
+                                        ),
                                 ),
                               ),
-                            ),
-                            _buildNotice(value),
-                          ],
+                              _buildNotice(
+                                value,
+                                material
+                                    ? expandedWidth -
+                                          2 * materialTimelinePillInset
+                                    : expandedWidth,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

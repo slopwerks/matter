@@ -313,6 +313,45 @@ void main() {
   group('images', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
+    testWidgets(
+      'Material image loading and failure use semantic icon colours',
+      (tester) async {
+        for (final dark in [false, true]) {
+          final pending = Completer<String?>();
+          final theme = neuTestTheme(material: true, dark: dark);
+          await tester.pumpWidget(
+            ProviderScope(
+              child: MaterialApp(
+                theme: theme,
+                home: Scaffold(
+                  body: MatrixHtmlMessage(
+                    key: ValueKey(dark),
+                    html: '<p><img src="mxc://example.org/pending"></p>',
+                    style: theme.textTheme.bodyLarge!,
+                    accentColor: theme.colorScheme.primary,
+                    imageResolver: (_, _) => pending.future,
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<Icon>(find.byIcon(Icons.image_outlined)).color,
+            theme.colorScheme.onSurfaceVariant,
+          );
+          pending.complete(null);
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<Icon>(find.byIcon(Icons.broken_image_outlined)).color,
+            theme.colorScheme.onSurfaceVariant,
+          );
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      },
+    );
+
     testWidgets('image blocks fall back to alt text when unloading', (
       tester,
     ) async {

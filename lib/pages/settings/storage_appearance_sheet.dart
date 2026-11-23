@@ -6,7 +6,10 @@ import '../../features/storage/storage_breakdown.dart';
 import '../../features/storage/storage_models.dart';
 import '../../features/storage/storage_providers.dart';
 import '../../features/storage/storage_settings.dart';
+import '../../theme/app_component_theme.dart';
+import '../../theme/neu_colors.dart';
 import '../../theme/storage_visual_theme.dart';
+import '../../widgets/material_detail_card.dart';
 import 'storage_charts.dart';
 
 Future<void> showStorageAppearance(
@@ -36,6 +39,7 @@ class _StorageAppearanceSheetState
         ref.watch(storageSettingsProvider).asData?.value ??
         const StorageSettings();
     final palette = settings.chartPalette;
+    final material = context.isMaterial;
     final visuals = StorageVisualTheme.of(context);
     final buckets = widget.snapshot == null
         ? const [
@@ -44,56 +48,64 @@ class _StorageAppearanceSheetState
             StorageBucket(key: 'other', label: '其他', bytes: 20, colorIndex: 2),
           ]
         : storageBreakdown(widget.snapshot!);
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * .85,
+    final preview = Center(
+      child: SizedBox.square(
+        dimension: 154,
+        child: StorageRingChart(
+          buckets: buckets,
+          palette: palette,
+          child: Center(child: Text(widget.snapshot == null ? '配色示意' : '实时预览')),
+        ),
       ),
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(24),
+    );
+    final choices = RadioGroup<StoragePalette>(
+      groupValue: palette,
+      onChanged: (value) async {
+        if (value == null || _saving) return;
+        setState(() => _saving = true);
+        try {
+          await ref
+              .read(storageSettingsProvider.notifier)
+              .save(settings.copyWith(chartPalette: value));
+        } catch (error) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('保存配色失败：$error')));
+          }
+        } finally {
+          if (mounted) setState(() => _saving = false);
+        }
+      },
+      child: Column(
         children: [
-          Text('图表配色', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          const Text('颜色随明暗主题调整，选择后立即预览。'),
-          const SizedBox(height: 12),
-          Center(
-            child: SizedBox.square(
-              dimension: 154,
-              child: StorageRingChart(
-                buckets: buckets,
-                palette: palette,
-                child: Center(
-                  child: Text(widget.snapshot == null ? '配色示意' : '实时预览'),
-                ),
-              ),
-            ),
-          ),
-          RadioGroup<StoragePalette>(
-            groupValue: palette,
-            onChanged: (value) async {
-              if (value == null || _saving) return;
-              setState(() => _saving = true);
-              try {
-                await ref
-                    .read(storageSettingsProvider.notifier)
-                    .save(settings.copyWith(chartPalette: value));
-              } catch (error) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text('保存配色失败：$error')));
-                }
-              } finally {
-                if (mounted) setState(() => _saving = false);
-              }
-            },
-            child: Column(
-              children: [
-                for (final preset in StoragePalette.values)
-                  RadioListTile<StoragePalette>(
-                    value: preset,
-                    enabled: !_saving,
-                    title: Text(preset.label),
-                    secondary: Row(
+          for (final preset in StoragePalette.values)
+            RadioListTile<StoragePalette>(
+              value: preset,
+              enabled: !_saving,
+              selected: material && palette == preset,
+              selectedTileColor: material
+                  ? AppComponentTheme.of(context).selectedRowFill
+                  : null,
+              title: Text(preset.label),
+              subtitle: material
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Wrap(
+                        spacing: 5,
+                        runSpacing: 5,
+                        children: [
+                          for (var i = 0; i < 4; i++)
+                            CircleAvatar(
+                              radius: 8,
+                              backgroundColor: visuals.color(i, preset),
+                            ),
+                        ],
+                      ),
+                    )
+                  : null,
+              secondary: material
+                  ? null
+                  : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         for (var i = 0; i < 4; i++)
@@ -106,10 +118,39 @@ class _StorageAppearanceSheetState
                           ),
                       ],
                     ),
-                  ),
-              ],
             ),
-          ),
+        ],
+      ),
+    );
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          24 + (material ? MediaQuery.viewPaddingOf(context).bottom : 0),
+        ),
+        children: [
+          Text('图表配色', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          if (material) ...[
+            MaterialDetailCard(
+              title: '用量图预览',
+              description: '颜色随明暗主题调整，选择后立即预览。',
+              child: preview,
+            ),
+            const SizedBox(height: 16),
+            MaterialDetailCard(title: '配色方案', child: choices),
+          ] else ...[
+            const Text('颜色随明暗主题调整，选择后立即预览。'),
+            const SizedBox(height: 12),
+            preview,
+            choices,
+          ],
           const SizedBox(height: 12),
           FilledButton(
             onPressed: () => Navigator.pop(context),

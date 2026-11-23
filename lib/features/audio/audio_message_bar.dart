@@ -26,60 +26,64 @@ class AudioMessageBar extends StatelessWidget {
     builder: (context, child) {
       final canJump =
           session.current?.roomId != null && session.current?.messageId != null;
-      return GlassPanel(
-        radius: context.isMaterial ? 0 : NeuRadius.surface,
-        child: SizedBox(
-          key: const ValueKey('audio-message-bar'),
-          height: audioMessageBarHeight,
-          child: Row(
-            children: [
-              AudioPlayButton(session: session, color: context.neu.accent),
-              Expanded(
-                child: InkWell(
-                  onTap: canJump ? onSourceTap : null,
-                  child: Tooltip(
-                    message: canJump ? '回到音频消息' : '音频队列',
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          session.current?.filename ??
-                              '播放队列（${session.tracks.length}）',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                        Text(
-                          session.error ??
-                              (session.loading
-                                  ? '正在加载…'
-                                  : session.current == null
-                                  ? '待播放'
-                                  : '${audioTime(session.position)} / ${audioTime(session.duration, unknownWhenZero: true)}'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                      ],
-                    ),
+      final bar = SizedBox(
+        key: const ValueKey('audio-message-bar'),
+        height: audioMessageBarHeight,
+        child: Row(
+          children: [
+            AudioPlayButton(session: session, color: context.neu.accent),
+            Expanded(
+              child: InkWell(
+                onTap: canJump ? onSourceTap : null,
+                child: Tooltip(
+                  message: canJump ? '回到音频消息' : '音频队列',
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        session.current?.filename ??
+                            '播放队列（${session.tracks.length}）',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      Text(
+                        session.error ??
+                            (session.loading
+                                ? '正在加载…'
+                                : session.current == null
+                                ? '待播放'
+                                : '${audioTime(session.position)} / ${audioTime(session.duration, unknownWhenZero: true)}'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ],
                   ),
                 ),
               ),
-              IconButton(
-                tooltip: '播放队列',
-                onPressed: onQueueTap,
-                icon: const Icon(Icons.queue_music_rounded),
-              ),
-              IconButton(
-                tooltip: '关闭音频播放器',
-                onPressed: session.stop,
-                icon: const Icon(Icons.close_rounded),
-              ),
-            ],
-          ),
+            ),
+            IconButton(
+              tooltip: '播放队列',
+              onPressed: onQueueTap,
+              icon: const Icon(Icons.queue_music_rounded),
+            ),
+            IconButton(
+              tooltip: '关闭音频播放器',
+              onPressed: session.stop,
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ],
         ),
       );
+      if (context.isMaterial) {
+        return Material(
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+          child: bar,
+        );
+      }
+      return GlassPanel(radius: NeuRadius.surface, child: bar);
     },
   );
 }

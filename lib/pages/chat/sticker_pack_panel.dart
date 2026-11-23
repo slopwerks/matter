@@ -341,6 +341,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
               itemBuilder: (context, index) {
                 final pack = packs[index];
                 return _PackThumb(
+                  label: pack.title,
                   sticker: pack.stickers.first,
                   fallback: pack.accent,
                   selected: index == _activePackIndex,
@@ -452,12 +453,14 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
 }
 
 class _PackThumb extends StatelessWidget {
+  final String label;
   final StickerItem sticker;
   final String fallback;
   final bool selected;
   final VoidCallback onTap;
 
   const _PackThumb({
+    required this.label,
     required this.sticker,
     required this.fallback,
     required this.selected,
@@ -467,26 +470,33 @@ class _PackThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    return InkWell(
-      borderRadius: BorderRadius.circular(NeuRadius.button),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        width: 40,
-        height: 40,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: selected ? colors.accentSoft : colors.card,
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        selected: selected,
+        button: true,
+        child: InkWell(
           borderRadius: BorderRadius.circular(NeuRadius.button),
-          border: Border.all(
-            color: selected
-                ? colors.accent.withValues(alpha: 0.5)
-                : colors.hairline,
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 40,
+            height: 40,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: selected ? colors.accentSoft : colors.card,
+              borderRadius: BorderRadius.circular(NeuRadius.button),
+              border: Border.all(
+                color: selected
+                    ? colors.accent.withValues(alpha: 0.5)
+                    : colors.hairline,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(NeuRadius.tag),
+              child: RemoteStickerPreview(sticker: sticker, fallback: fallback),
+            ),
           ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(NeuRadius.tag),
-          child: RemoteStickerPreview(sticker: sticker, fallback: fallback),
         ),
       ),
     );
@@ -521,7 +531,7 @@ class _StickerCard extends StatelessWidget {
       onLongPressEnd: onLongPressEnd,
       onLongPressCancel: onLongPressCancel,
       behavior: HitTestBehavior.opaque,
-      child: Ink(
+      child: DecoratedBox(
         decoration: BoxDecoration(
           color: colors.card,
           borderRadius: BorderRadius.circular(NeuRadius.button),

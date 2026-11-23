@@ -1,9 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:material_ui/material_ui.dart' as material_ui;
 import 'package:pro_image_editor/pro_image_editor.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
+import '../../theme/image_editor_theme.dart';
 
 /// Lightweight square cropper used for profile avatars.
 class AvatarCropEditorPage extends StatelessWidget {
@@ -13,23 +14,32 @@ class AvatarCropEditorPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.neu;
+    final neu = context.neu;
+    final colors = context.isMaterial
+        ? materialMediaChromeStyle(Theme.of(context))
+        : (
+            base: neu.base,
+            surface: neu.surfaceStrong,
+            text: neu.text,
+            textSecondary: neu.textTertiary,
+            accent: neu.accent,
+          );
     final dark = Theme.of(context).brightness == Brightness.dark;
     final overlayIconBrightness = dark ? Brightness.light : Brightness.dark;
-    // pro_image_editor 14 renders with the decoupled `material_ui` package,
-    // whose ThemeData is not interchangeable with the SDK one.
-    final editorTheme = material_ui.ThemeData(
-      useMaterial3: true,
-      brightness: Theme.of(context).brightness,
-      scaffoldBackgroundColor: colors.base,
-      colorScheme: material_ui.ColorScheme.fromSeed(
-        seedColor: colors.accent,
-        brightness: Theme.of(context).brightness,
-        primary: colors.accent,
-        surface: colors.surfaceStrong,
-        onSurface: colors.text,
-      ),
-    );
+    final editorTheme = context.isMaterial
+        ? buildMaterialImageEditorTheme(Theme.of(context))
+        : ThemeData(
+            useMaterial3: true,
+            brightness: Theme.of(context).brightness,
+            scaffoldBackgroundColor: colors.base,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: colors.accent,
+              brightness: Theme.of(context).brightness,
+              primary: colors.accent,
+              surface: colors.surface,
+              onSurface: colors.text,
+            ),
+          );
 
     return CropRotateEditor.memory(
       imageBytes,
@@ -73,15 +83,15 @@ class AvatarCropEditorPage extends StatelessWidget {
               appBarBackground: colors.base,
               appBarColor: colors.text,
               background: colors.base,
-              bottomBarBackground: colors.surfaceStrong,
+              bottomBarBackground: colors.surface,
               bottomBarColor: colors.text,
               cropCornerColor: colors.accent,
-              helperLineColor: colors.textTertiary,
+              helperLineColor: colors.textSecondary,
               cropOverlayColor: Colors.black,
               uiOverlayStyle: SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
                 statusBarIconBrightness: overlayIconBrightness,
-                systemNavigationBarColor: colors.surfaceStrong,
+                systemNavigationBarColor: colors.surface,
                 systemNavigationBarIconBrightness: overlayIconBrightness,
               ),
             ),

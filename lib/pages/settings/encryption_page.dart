@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -15,6 +14,10 @@ import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_field.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
+import 'encryption_dialog_surface.dart';
+import 'encryption_verification_dialog.dart';
+import 'material_device_details_sheet.dart';
+import 'material_encryption_sections.dart';
 
 class EncryptionPage extends ConsumerStatefulWidget {
   const EncryptionPage({super.key});
@@ -295,6 +298,14 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
     final verified = _recoveryInfo?.deviceVerified;
+    if (context.isMaterial) {
+      return MaterialEncryptionOverview(
+        verified: verified,
+        description: _recoveryError == null
+            ? _recoveryLabel(_recoveryInfo?.state)
+            : '加密状态读取失败，请下拉重试',
+      );
+    }
     return NeuSurface(
       color: colors.card,
       radius: NeuRadius.surface,
@@ -340,6 +351,42 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
     final verificationById = {
       for (final device in _devices) device.deviceId: device,
     };
+    if (context.isMaterial) {
+      final entries = accountDevices != null
+          ? [
+              for (final account in accountDevices)
+                (
+                  account: account,
+                  verification: verificationById[account.deviceId],
+                ),
+            ]
+          : [
+              for (final device in _devices)
+                (account: null, verification: device),
+            ];
+      bool isCurrent(
+        ({rust.AccountDevice? account, rust.VerificationDevice? verification})
+        entry,
+      ) => entry.account?.isCurrent ?? entry.verification?.isCurrent ?? false;
+      return MaterialEncryptionDevices(
+        current: [
+          for (final entry in entries.where(isCurrent))
+            _buildDevice(entry.account, entry.verification),
+        ],
+        others: [
+          for (final entry in entries.where((entry) => !isCurrent(entry)))
+            _buildDevice(entry.account, entry.verification),
+        ],
+        notices: [
+          if (_devicesError != null) '设备验证状态刷新失败，请下拉重试',
+          if (_accountDevicesError != null)
+            accountDevices == null
+                ? '登录设备信息暂不可用，显示已同步的验证设备'
+                : '登录设备信息刷新失败，显示上次结果',
+        ],
+        emptyText: accountDevices == null ? '暂时没有读取到设备，请先完成一次同步' : '暂无登录设备',
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -417,6 +464,21 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
     final isVerified = isCurrent
         ? _recoveryInfo?.deviceVerified == true
         : _devicesError == null && (device?.isVerified ?? false);
+    if (context.isMaterial) {
+      return MaterialEncryptionDevice(
+        name: name,
+        deviceId: deviceId,
+        current: isCurrent,
+        verified: isCurrent
+            ? _recoveryInfo?.deviceVerified
+            : _devicesError == null
+            ? device?.isVerified
+            : null,
+        hasVerification: device != null,
+        onDetails: account == null ? null : () => _openDeviceDetails(account),
+        onVerify: _busy ? null : () => _startVerification(deviceId),
+      );
+    }
     return GestureDetector(
       onTap: account == null ? null : () => _openDeviceDetails(account),
       child: NeuSurface(
@@ -517,51 +579,63 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
   }
 
   Future<void> _openDeviceDetails(rust.AccountDevice device) async {
+    Future<void> rename() async {
+      Navigator.of(context).pop();
+      await _renameDevice(device);
+    }
+
+    Future<void> verify() async {
+      Navigator.of(context).pop();
+      await _startVerification(device.deviceId);
+    }
+
     await showNeuSheet<void>(
       context: context,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-            child: Text(
-              device.displayName?.trim().isNotEmpty == true
-                  ? device.displayName!
-                  : '未命名设备',
-              style: Theme.of(context).textTheme.titleMedium,
+      child: context.isMaterial
+          ? MaterialDeviceDetailsSheet(
+              device: device,
+              lastSeen: _formatLastSeen(device),
+              onRename: rename,
+              onVerify: _busy ? null : verify,
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                  child: Text(
+                    device.displayName?.trim().isNotEmpty == true
+                        ? device.displayName!
+                        : '未命名设备',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                _DeviceDetailRow(label: 'Device ID', value: device.deviceId),
+                _DeviceDetailRow(
+                  label: 'IP 地址',
+                  value: device.lastSeenIp ?? '未知',
+                ),
+                _DeviceDetailRow(label: '上次活动', value: _formatLastSeen(device)),
+                if (device.isCurrent)
+                  const _DeviceDetailRow(label: '状态', value: '当前设备'),
+                ...[
+                  const SizedBox(height: 4),
+                  NeuSheetItem(
+                    icon: Icons.edit_rounded,
+                    label: '重命名',
+                    onTap: rename,
+                  ),
+                  if (!device.isCurrent)
+                    NeuSheetItem(
+                      icon: Icons.shield_outlined,
+                      label: '验证',
+                      onTap: _busy ? () => {} : verify,
+                    ),
+                ],
+                const SizedBox(height: 8),
+              ],
             ),
-          ),
-          _DeviceDetailRow(label: 'Device ID', value: device.deviceId),
-          _DeviceDetailRow(label: 'IP 地址', value: device.lastSeenIp ?? '未知'),
-          _DeviceDetailRow(label: '上次活动', value: _formatLastSeen(device)),
-          if (device.isCurrent)
-            const _DeviceDetailRow(label: '状态', value: '当前设备'),
-          ...[
-            const SizedBox(height: 4),
-            NeuSheetItem(
-              icon: Icons.edit_rounded,
-              label: '重命名',
-              onTap: () async {
-                Navigator.of(context).pop();
-                await _renameDevice(device);
-              },
-            ),
-            if (!device.isCurrent)
-              NeuSheetItem(
-                icon: Icons.shield_outlined,
-                label: '验证',
-                onTap: _busy
-                    ? () => {}
-                    : () async {
-                        Navigator.of(context).pop();
-                        await _startVerification(device.deviceId);
-                      },
-              ),
-          ],
-          const SizedBox(height: 8),
-        ],
-      ),
     );
   }
 
@@ -617,7 +691,7 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _VerificationDialog(initialStatus: status),
+      builder: (_) => EncryptionVerificationDialog(initialStatus: status),
     );
     _verificationDialogOpen = false;
     if (mounted) await _refreshDevicesAndRecovery();
@@ -627,6 +701,17 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
     final canCreate = _recoveryInfo?.state == 'disabled';
+    if (context.isMaterial) {
+      return MaterialEncryptionRecovery(
+        controller: _recoveryController,
+        hidden: _hideRecoveryValue,
+        canCreate: canCreate,
+        onVisibilityChanged: () =>
+            setState(() => _hideRecoveryValue = !_hideRecoveryValue),
+        onRecover: _busy ? null : _recoverEncryption,
+        onCreate: _busy ? null : _enableRecovery,
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -663,20 +748,7 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
               NeuButton(
                 accent: true,
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                onPressed: _busy
-                    ? null
-                    : () => _run(() async {
-                        await rust.recoverEncryption(
-                          accountUserId: _accountUserId,
-                          recoveryKeyOrPassphrase: _recoveryController.text,
-                        );
-                        if (!_isCurrentAccount) return;
-                        _recoveryController.clear();
-                        await _refreshDevicesAndRecovery();
-                        if (mounted && _isCurrentAccount) {
-                          neuToast(context, '恢复信息已导入，历史消息将按需解密');
-                        }
-                      }),
+                onPressed: _busy ? null : _recoverEncryption,
                 child: const Center(child: Text('恢复加密数据')),
               ),
               if (canCreate) ...[
@@ -693,6 +765,19 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
       ],
     );
   }
+
+  Future<void> _recoverEncryption() => _run(() async {
+    await rust.recoverEncryption(
+      accountUserId: _accountUserId,
+      recoveryKeyOrPassphrase: _recoveryController.text,
+    );
+    if (!_isCurrentAccount) return;
+    _recoveryController.clear();
+    await _refreshDevicesAndRecovery();
+    if (mounted && _isCurrentAccount) {
+      neuToast(context, '恢复信息已导入，历史消息将按需解密');
+    }
+  });
 
   Future<void> _enableRecovery() async {
     final passphrase = await showNeuPrompt(
@@ -715,333 +800,9 @@ class _EncryptionPageState extends ConsumerState<EncryptionPage> {
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (dialogContext) => Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-          child: GlassPanel(
-            radius: NeuRadius.nav,
-            padding: const EdgeInsets.all(22),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '保存恢复密钥',
-                    style: Theme.of(dialogContext).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '这是恢复历史加密消息的最后保障。请保存到安全的位置，关闭后不会再次显示。',
-                    style: Theme.of(dialogContext).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 14),
-                  NeuSurface(
-                    depth: NeuDepth.pressed,
-                    radius: NeuRadius.button,
-                    padding: const EdgeInsets.all(12),
-                    child: SelectableText(
-                      key,
-                      style: Theme.of(dialogContext).textTheme.bodySmall
-                          ?.copyWith(fontFamily: 'monospace', height: 1.6),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: NeuButton(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          icon: const Icon(Icons.copy_rounded, size: 16),
-                          onPressed: () async {
-                            await Clipboard.setData(ClipboardData(text: key));
-                            if (dialogContext.mounted) {
-                              neuToast(dialogContext, '恢复密钥已复制');
-                            }
-                          },
-                          child: const Center(child: Text('复制')),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: NeuButton(
-                          accent: true,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          onPressed: () => Navigator.pop(dialogContext),
-                          child: const Center(child: Text('我已保存')),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+        builder: (_) => EncryptionRecoveryKeyDialog(recoveryKey: key),
       );
     });
-  }
-}
-
-class _VerificationDialog extends StatefulWidget {
-  const _VerificationDialog({required this.initialStatus});
-
-  final rust.DeviceVerificationStatus initialStatus;
-
-  @override
-  State<_VerificationDialog> createState() => _VerificationDialogState();
-}
-
-class _VerificationDialogState extends State<_VerificationDialog> {
-  Timer? _timer;
-  late rust.DeviceVerificationStatus _status;
-  bool _busy = false;
-  bool _polling = false;
-
-  bool get _finished => _status.phase == 'done' || _status.phase == 'cancelled';
-
-  @override
-  void initState() {
-    super.initState();
-    _status = widget.initialStatus;
-    if (!_finished) {
-      _timer = Timer.periodic(
-        const Duration(milliseconds: 500),
-        (_) => _poll(),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  String get _title => switch (_status.phase) {
-    'requested' => '设备验证请求',
-    'waiting' => '等待另一台设备',
-    'starting' => '正在建立验证',
-    'comparing' => '比较 Emoji',
-    'done' => '验证完成',
-    'cancelled' => '验证已取消',
-    _ => '设备验证',
-  };
-
-  String get _description => switch (_status.phase) {
-    'requested' => '设备 ${_status.deviceId} 请求验证当前设备。',
-    'waiting' => '已向设备 ${_status.deviceId} 发送请求，请在另一台设备上接受。',
-    'starting' => '正在与设备 ${_status.deviceId} 建立 Emoji 验证。',
-    'comparing' => '请确认两台设备上的 Emoji 完全相同。',
-    'done' => '设备 ${_status.deviceId} 已成功验证。',
-    'cancelled' => '本次设备验证已取消，不会更改任何信任状态。',
-    _ => _status.message,
-  };
-
-  Future<void> _poll() async {
-    if (_polling || _finished || !mounted) return;
-    _polling = true;
-    try {
-      final status = await rust.getDeviceVerificationStatus();
-      if (!mounted || status == null) return;
-      setState(() => _status = status);
-      if (_finished) _timer?.cancel();
-    } catch (_) {
-      // Sync can briefly be unavailable while verification events are applied.
-    } finally {
-      _polling = false;
-    }
-  }
-
-  Future<void> _run(Future<void> Function() action) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await action();
-      await _poll();
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('验证操作失败：$error')));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _cancel({required bool mismatch}) async {
-    await _run(() async {
-      await rust.cancelDeviceVerification(mismatch: mismatch);
-      if (!mounted) return;
-      _timer?.cancel();
-      setState(() {
-        _status = rust.DeviceVerificationStatus(
-          phase: 'cancelled',
-          deviceId: _status.deviceId,
-          flowId: _status.flowId,
-          incoming: _status.incoming,
-          emojis: const [],
-          message: 'Verification cancelled',
-        );
-      });
-    });
-  }
-
-  Future<void> _close() async {
-    if (_status.phase == 'done') {
-      try {
-        await rust.cancelDeviceVerification(mismatch: false);
-      } catch (_) {
-        // The SDK may already have discarded the completed flow.
-      }
-    }
-    if (mounted) Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.neu;
-    final textTheme = Theme.of(context).textTheme;
-    final comparing = _status.phase == 'comparing';
-    final color = switch (_status.phase) {
-      'done' => colors.success,
-      'cancelled' => colors.error,
-      _ => colors.accent,
-    };
-    final icon = switch (_status.phase) {
-      'done' => Icons.verified_rounded,
-      'cancelled' => Icons.cancel_rounded,
-      _ => Icons.phonelink_lock_rounded,
-    };
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-      child: GlassPanel(
-        radius: NeuRadius.nav,
-        padding: const EdgeInsets.all(22),
-        // The default width/height takes pretty much the whole
-        // screen on horizontal displays (desktop or tablets),
-        // so we set the width to be proportional of the port size
-        // here. Height seems to adapt itself correspondingly.
-        // TODO: Tweak this value
-        width: MediaQuery.widthOf(context) > MediaQuery.heightOf(context)
-            ? MediaQuery.widthOf(context) * 0.5
-            : null,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 40),
-              const SizedBox(height: 12),
-              Text(
-                _title,
-                textAlign: TextAlign.center,
-                style: textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _description,
-                textAlign: TextAlign.center,
-                style: textTheme.bodyMedium,
-              ),
-              if (comparing) ...[
-                const SizedBox(height: 20),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _status.emojis.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 0.9,
-                  ),
-                  itemBuilder: (context, index) => NeuSurface(
-                    depth: NeuDepth.pressed,
-                    color: colors.card,
-                    radius: NeuRadius.button,
-                    child: Center(
-                      child: Text(
-                        _status.emojis[index].symbol,
-                        style: const TextStyle(fontSize: 30),
-                      ),
-                    ),
-                  ),
-                ),
-              ] else if (!_finished && _status.phase != 'requested') ...[
-                const SizedBox(height: 20),
-                const LinearProgressIndicator(),
-              ],
-              const SizedBox(height: 20),
-              _buildActions(comparing),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActions(bool comparing) {
-    final buttons = <Widget>[];
-    void add(Widget button) {
-      if (buttons.isNotEmpty) buttons.add(const SizedBox(width: 12));
-      buttons.add(Expanded(child: button));
-    }
-
-    if (_finished) {
-      add(
-        NeuButton(
-          accent: true,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          onPressed: _busy ? null : _close,
-          child: const Center(child: Text('关闭')),
-        ),
-      );
-    } else if (_status.phase == 'requested') {
-      add(
-        NeuButton(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          onPressed: _busy ? null : () => _cancel(mismatch: false),
-          child: const Center(child: Text('拒绝')),
-        ),
-      );
-      add(
-        NeuButton(
-          accent: true,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          onPressed: _busy ? null : () => _run(rust.acceptDeviceVerification),
-          child: const Center(child: Text('接受')),
-        ),
-      );
-    } else if (comparing) {
-      add(
-        NeuButton(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          onPressed: _busy ? null : () => _cancel(mismatch: true),
-          child: const Center(child: Text('不相同')),
-        ),
-      );
-      add(
-        NeuButton(
-          accent: true,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          icon: const Icon(Icons.check_rounded),
-          onPressed: _busy ? null : () => _run(rust.confirmDeviceVerification),
-          child: const Center(child: Text('完全相同')),
-        ),
-      );
-    } else {
-      add(
-        NeuButton(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          onPressed: _busy ? null : () => _cancel(mismatch: false),
-          child: const Center(child: Text('取消验证')),
-        ),
-      );
-    }
-    return Row(children: buttons);
   }
 }
 

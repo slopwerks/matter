@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -26,13 +28,17 @@ import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart';
 import '../../src/rust/api/matrix/unread.dart' as unread;
 import '../../theme/neu_colors.dart';
+import '../../theme/tokens.dart';
 import '../../widgets/app_avatar.dart';
-import '../../widgets/floating_app_bar.dart';
+import '../../widgets/chat_route_scope.dart';
+import '../../widgets/material_list_detail.dart';
+import '../../widgets/max_content_width.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 import 'attachment_caption_composer.dart' show attachmentCaptionClearance;
 import 'chat_timestamp.dart';
+import 'chat_notice_frame.dart';
 import 'composer_picker_panel.dart';
 import 'desktop_file_drop.dart';
 import 'date_separator.dart';
@@ -40,6 +46,7 @@ import 'floating_date_header.dart';
 import 'forward_message_sheet.dart';
 import 'latest_message_control.dart';
 import 'local_outgoing_matcher.dart';
+import 'material_room_details_panel.dart';
 import 'message_group.dart';
 import 'image_message_runs.dart';
 import 'message_input.dart';
@@ -54,62 +61,10 @@ import 'timeline/timeline_clustering.dart' show clusterTimelineMessages;
 import 'timeline/timeline_plus_one.dart' show plusOneEligibleIds;
 import 'unread_messages_banner.dart';
 import 'unread_navigation.dart';
+import 'material_unread_pill.dart';
+import 'action_failure_message.dart';
 
-final chatRouteObserver = _ChatRouteObserver();
-
-class _ChatRouteObserver extends RouteObserver<ModalRoute<dynamic>> {
-  final _coveringRoutes = <ModalRoute<dynamic>, Route<dynamic>>{};
-
-  bool isCoveredByPopup(ModalRoute<dynamic>? route) =>
-      route != null && _coveringRoutes[route] is PopupRoute<dynamic>;
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute case final ModalRoute<dynamic> previousModalRoute) {
-      _coveringRoutes[previousModalRoute] = route;
-    }
-    super.didPush(route, previousRoute);
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _forgetRoute(route);
-    super.didPop(route, previousRoute);
-  }
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _forgetRoute(route);
-    super.didRemove(route, previousRoute);
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    if (oldRoute != null) {
-      final coveringRoute = _coveringRoutes.remove(oldRoute);
-      if (newRoute case final ModalRoute<dynamic> newModalRoute) {
-        if (coveringRoute != null) {
-          _coveringRoutes[newModalRoute] = coveringRoute;
-        }
-      }
-      for (final entry in _coveringRoutes.entries.toList()) {
-        if (identical(entry.value, oldRoute)) {
-          if (newRoute == null) {
-            _coveringRoutes.remove(entry.key);
-          } else {
-            _coveringRoutes[entry.key] = newRoute;
-          }
-        }
-      }
-    }
-    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-  }
-
-  void _forgetRoute(Route<dynamic> route) {
-    _coveringRoutes.remove(route);
-    _coveringRoutes.removeWhere((_, covering) => identical(covering, route));
-  }
-}
+export '../../widgets/chat_route_scope.dart' show chatRouteObserver;
 
 class ChatDetailPage extends ConsumerStatefulWidget {
   final String roomId;
@@ -121,7 +76,19 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final bool isDm;
   final String? initialMessageId;
   final bool embedded;
+  final bool paneVisible;
   final VoidCallback? onBack;
+  static void openPanelAction(GlobalKey chatKey, RoomPanelAction action) {
+    final state = chatKey.currentState;
+    if (state is _ChatDetailPageState) state._openPanelAction(action);
+  }
+
+  /// The shell owns system back for a retained single-pane chat.
+  static void handleSystemBack(GlobalKey chatKey) {
+    final state = chatKey.currentState;
+    if (state is _ChatDetailPageState) state._handleSystemBack();
+  }
+
   final bool detailsPanelOpen;
   final VoidCallback? onToggleDetailsPanel;
   final VoidCallback? onRoomLeft;
@@ -146,6 +113,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.isDm = false,
     this.initialMessageId,
     this.embedded = false,
+    this.paneVisible = true,
     this.onBack,
     this.detailsPanelOpen = false,
     this.onToggleDetailsPanel,
@@ -205,6 +173,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   String? _typingSubscriptionId;
   String? _roomSubscriptionId;
   ModalRoute<dynamic>? _route;
+  List<({ChatRouteObserver observer, ModalRoute<dynamic> route})>
+  _routeBindings = [];
+  bool get _routesCurrent =>
+      _routeBindings.every((entry) => entry.route.isCurrent);
+  bool _tabActive = true;
+  bool get _paneVisible => widget.paneVisible && _tabActive;
   final List<ChatMessage> _olderMessages = [];
   final List<MessageGroup> _groupedMessages = [];
   final Map<String, ChatMessage> _messageIndex = {};
@@ -245,6 +219,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   unread.RoomUnreadState? _entryUnread;
   String? _entryUnreadOwner;
   bool _jumpingToUnread = false;
+  bool _markingEntryRead = false;
+  AxisDirection? _unreadDirection = AxisDirection.up;
+  bool _unreadPositionScheduled = false;
   bool _refreshUnreadOnActivation = false;
   String? _unreadRetryTargetId;
   UnreadNavigation? _unreadNavigation;
@@ -255,6 +232,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   bool _unreadCandidateUpdateScheduled = false;
   bool get _showUnreadNavigation => _entryUnread != null;
   double _unreadTopInset = 0;
+  double get _noticeGap => context.isMaterial ? ChatNoticeFrame.topGap : 0;
+  double get _unreadBannerExtent =>
+      context.isMaterial ? 0 : unreadMessagesBannerHeight;
   double _unreadBottomInset = 0;
   final _unreadPageTokens = <String>{};
   bool _olderLoadArmed = true;
@@ -457,6 +437,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   @override
   void didUpdateWidget(covariant ChatDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.paneVisible != oldWidget.paneVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_paneVisible) {
+          _activateRoom();
+        } else {
+          _deactivateRoom();
+        }
+      });
+    }
     if (oldWidget.roomName != widget.roomName) {
       _roomName = widget.roomName;
     }
@@ -526,11 +516,30 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final scope = ChatRouteScope.of(context);
+    final active = scope?.active ?? true;
+    if (active != _tabActive) {
+      _tabActive = active;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_paneVisible) {
+          _activateRoom();
+        } else {
+          _deactivateRoom();
+        }
+      });
+    }
     final route = ModalRoute.of(context);
-    if (route == _route) return;
-    if (_route != null) chatRouteObserver.unsubscribe(this);
+    final bindings = ChatRouteScope.routesOf(context);
+    if (route == _route && listEquals(bindings, _routeBindings)) return;
+    for (final entry in _routeBindings) {
+      entry.observer.unsubscribe(this);
+    }
     _route = route;
-    if (route != null) chatRouteObserver.subscribe(this, route);
+    _routeBindings = bindings;
+    for (final entry in _routeBindings) {
+      entry.observer.subscribe(this, entry.route);
+    }
   }
 
   @override
@@ -548,12 +557,30 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 
   @override
   void didPushNext() {
-    if (chatRouteObserver.isCoveredByPopup(_route)) {
+    if (_routeBindings.any(
+          (entry) => entry.observer.isCoveredByPopup(entry.route),
+        ) &&
+        _routeBindings.every(
+          (entry) =>
+              entry.route.isCurrent ||
+              entry.observer.isCoveredByPopup(entry.route),
+        )) {
       _suspendRoomView();
     } else {
       // A full page replaces this chat, so tear down its room subscriptions.
       _deactivateRoom();
     }
+  }
+
+  void _handleSystemBack() {
+    if (!_paneVisible) return;
+    if (_inputPanelMode != InputPanelMode.none ||
+        MediaQuery.viewInsetsOf(context).bottom > 0) {
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      _setInputPanelMode(InputPanelMode.none);
+      return;
+    }
+    widget.onBack?.call();
   }
 
   @override
@@ -624,6 +651,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   }
 
   void _activateRoom({bool resetAutoReadSuppression = false}) {
+    if (!_paneVisible || !_routesCurrent) return;
     // Never activate unless the app itself is in the foreground: a route
     // callback (e.g. a cover popped while inactive/paused) must not make the
     // room "being viewed" again in the background. A null lifecycle state
@@ -870,6 +898,88 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
   }
 
+  Future<void> _markEntryRead() async {
+    final account = _entryUnreadOwner;
+    final entry = _entryUnread;
+    final room = widget.roomId;
+    if (_markingEntryRead ||
+        entry == null ||
+        account == null ||
+        ref.read(activeUserIdProvider) != account) {
+      return;
+    }
+    setState(() => _markingEntryRead = true);
+    final revision = ref.read(roomAutoReadSuppressionRevisionProvider(room));
+    bool current() =>
+        mounted &&
+        identical(entry, _entryUnread) &&
+        widget.roomId == room &&
+        ref.read(activeUserIdProvider) == account &&
+        ref.read(roomAutoReadSuppressionRevisionProvider(room)) == revision;
+    try {
+      final cleared = await markRoomAsReadWithPushCleanup(
+        accountUserId: account,
+        roomId: room,
+        explicit: true,
+      );
+      if (!current()) return;
+      if (!cleared) throw StateError('未能清除未读标记');
+      setRoomAutoReadSuppressed(ref, room, suppressed: false);
+      setRoomUnreadOverrideById(ref, room, unread: false);
+      ref.invalidate(allChatRoomsProvider);
+      ref.invalidate(allUngroupedRoomsProvider);
+      ref.invalidate(allSpaceChildrenProvider);
+      ref.invalidate(searchRoomsProvider);
+      setState(_clearUnreadNavigation);
+    } catch (error) {
+      if (mounted && current()) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(actionFailureMessage(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _markingEntryRead = false);
+    }
+  }
+
+  void _scheduleUnreadPosition() {
+    if (_entryUnread == null ||
+        !context.isMaterial ||
+        _unreadPositionScheduled) {
+      return;
+    }
+    _unreadPositionScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _unreadPositionScheduled = false;
+      if (!mounted || _entryUnread == null) return;
+      final id = _unreadRetryTargetId ?? _unreadNavigation?.firstNavigableId;
+      final box = _messageAnchorKeys[id]?.currentContext?.findRenderObject();
+      final viewport = _scrollViewportKey.currentContext?.findRenderObject();
+      AxisDirection? direction = AxisDirection.up;
+      if (box is RenderBox &&
+          box.attached &&
+          box.hasSize &&
+          viewport is RenderBox &&
+          viewport.hasSize &&
+          _unreadMessagePainted(box, viewport)) {
+        final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+        direction = top < _unreadTopInset
+            ? AxisDirection.up
+            : top >= viewport.size.height - _unreadBottomInset
+            ? AxisDirection.down
+            : null;
+      } else if (id != null && _messageIndex.containsKey(id)) {
+        final target = _timelineEntryIndexForMessage(id);
+        final built = _builtMessageEntryIndices();
+        if (target != null && built.isNotEmpty && target < built.first) {
+          direction = AxisDirection.down;
+        }
+      }
+      if (direction != _unreadDirection) {
+        setState(() => _unreadDirection = direction);
+      }
+    });
+  }
+
   void _cancelUnreadScan() {
     _unreadScanGeneration++;
     _unreadScanRunning = false;
@@ -882,6 +992,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
     _cancelUnreadScan();
     _entryUnread = null;
+    _unreadDirection = AxisDirection.up;
     _unreadNavigation = null;
     _unreadNextBatch = null;
     _unreadScanError = null;
@@ -1085,9 +1196,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       if (current() && located) setState(_clearUnreadNavigation);
     } catch (error) {
       if (mounted && _entryUnread == entry) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('无法定位未读消息: $error')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法定位未读消息: $error')));
       }
     } finally {
       if (mounted) {
@@ -1109,7 +1219,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   void dispose() {
     _cancelUnreadScan();
     WidgetsBinding.instance.removeObserver(this);
-    chatRouteObserver.unsubscribe(this);
+    for (final entry in _routeBindings) {
+      entry.observer.unsubscribe(this);
+    }
     final currentRoomIdNotifier = _currentRoomIdNotifier;
     final roomId = widget.roomId;
     final roomViewOwnerState = _roomViewOwnerStateForDispose;
@@ -1175,6 +1287,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   bool _handleScrollNotification(ScrollNotification notification) {
     final metrics = notification.metrics;
     if (notification.depth != 0) return false;
+    _scheduleUnreadPosition();
     _updateLatestMessageControl(metrics);
     if (notification is UserScrollNotification) {
       _userScrollActive = notification.direction != ScrollDirection.idle;
@@ -1602,8 +1715,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           throw StateError('目标消息尚未完成布局');
         }
         final readableTop =
-            _unreadTopInset +
-            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
+            _unreadTopInset + (_showUnreadNavigation ? _unreadBannerExtent : 0);
         final readableHeight =
             viewport.size.height - _unreadBottomInset - readableTop;
         if (readableHeight <= 0) return false;
@@ -1646,8 +1758,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         }
         final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
         final readableTop =
-            _unreadTopInset +
-            (_showUnreadNavigation ? unreadMessagesBannerHeight : 0);
+            _unreadTopInset + (_showUnreadNavigation ? _unreadBannerExtent : 0);
         final bottom = viewport.size.height - _unreadBottomInset;
         if (!_unreadMessagePainted(box, viewport) ||
             top < readableTop - 1 ||
@@ -1682,9 +1793,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           '$error\n$stack',
         ),
       );
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('无法跳转到该消息: $error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('无法跳转到该消息: $error')));
       return false;
     } finally {
       if (mounted && generation == _messageJumpGeneration) {
@@ -1711,10 +1821,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     if (_searchRouteOpen) return;
     _searchRouteOpen = true;
     try {
-      final messageId = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => ChatSearchPage(roomId: widget.roomId),
-        ),
+      final messageId = await ChatSearchPage.open(
+        context,
+        roomId: widget.roomId,
       );
       if (messageId != null && mounted) {
         await _jumpToMessage(messageId);
@@ -1734,7 +1843,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final rooms =
         ref.read(allChatRoomsProvider).asData?.value ?? const <ChatRoom>[];
     final room = rooms.where((room) => room.id == track.roomId).firstOrNull;
-    await Navigator.of(context, rootNavigator: true).push(
+    await MaterialListDetail.push(
+      context,
       MaterialPageRoute<void>(
         builder: (_) => ChatDetailPage(
           roomId: track.roomId!,
@@ -1747,8 +1857,20 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     );
   }
 
+  void _openPanelAction(RoomPanelAction action) {
+    switch (action) {
+      case RoomPanelAction.search:
+        unawaited(_openMessageSearch());
+      case RoomPanelAction.pins:
+        unawaited(_openPinnedMessages());
+      case RoomPanelAction.manage:
+        break;
+    }
+  }
+
   Future<void> _openPinnedMessages() async {
-    final messageId = await Navigator.of(context).push<String>(
+    final messageId = await MaterialListDetail.push<String>(
+      context,
       MaterialPageRoute(
         builder: (_) => PinnedMessagesPage(roomId: widget.roomId),
       ),
@@ -1880,7 +2002,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _forwardNoticeTimer?.cancel();
     setState(() => _forwardNoticeRoom = null);
     if (room.id == widget.roomId) return;
-    Navigator.of(context).push(
+    MaterialListDetail.push(
+      context,
       MaterialPageRoute<void>(
         builder: (_) => ChatDetailPage(
           roomId: room.id,
@@ -2058,9 +2181,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         _olderLoadBlockedByError = true;
         _automaticOlderLoadBlocked = true;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('加载更早消息失败: $error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('加载更早消息失败: $error')));
     }
   }
 
@@ -2136,9 +2258,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         _newerLoadBlocked = true;
         _newerLoadBlockedByError = true;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('加载更新消息失败: $error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('加载更新消息失败: $error')));
     } finally {
       if (mounted && generation == _focusedWindowGeneration) {
         setState(() => _isLoadingNewer = false);
@@ -2897,8 +3018,34 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final audioVisible = ref.watch(audioPlayerVisibleProvider);
     final audioHeight = audioVisible ? audioMessageBarHeight : 0.0;
     final entryUnread = _entryUnreadOwner == activeUserId ? _entryUnread : null;
+    final unreadLoading =
+        _jumpingToUnread ||
+        (_unreadScanError == null &&
+            !_unreadNeedsHistoryFallback &&
+            _unreadRetryTargetId == null &&
+            _unreadNavigation?.firstNavigableId == null &&
+            (!(_unreadNavigation?.complete ?? false) ||
+                (_unreadNavigation?.hasUnresolved ?? false)));
+    final unreadUnavailable =
+        _unreadScanError == null &&
+        !_unreadNeedsHistoryFallback &&
+        _unreadRetryTargetId == null &&
+        _unreadNavigation?.firstNavigableId == null &&
+        (_unreadNavigation?.complete ?? false) &&
+        !(_unreadNavigation?.hasUnresolved ?? false);
+    final showUnreadPill =
+        context.isMaterial &&
+        entryUnread != null &&
+        _unreadDirection != null &&
+        !_initialMessageJumpPending &&
+        _forwardNoticeRoom == null &&
+        !(mediaQuery.size.width < 600 && keepsStablePicker);
+    final showLatest =
+        !_initialMessageJumpPending &&
+        (_showLatestMessageControl || _focusedBrowsing) &&
+        _forwardNoticeRoom == null;
     final unreadHeight = entryUnread != null && _showUnreadNavigation
-        ? unreadMessagesBannerHeight
+        ? _unreadBannerExtent
         : 0.0;
     final audioSession = ref.read(audioPlaybackSessionProvider);
     final colors = context.neu;
@@ -2943,11 +3090,12 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     final messageBottomPadding = inputChromeHeight + panelReservedHeight;
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
     final pinnedStackHeight =
-        kPinnedMessageRowHeight * _pinnedStackVisibleCount;
+        (kPinnedMessageRowHeight + _noticeGap) * _pinnedStackVisibleCount;
     _unreadTopInset = headerInset + pinnedStackHeight + audioHeight;
     _unreadBottomInset =
         inputChromeHeight + math.max(panelReservedHeight, keyboardHeight);
     _scheduleUnreadCandidateUpdate();
+    _scheduleUnreadPosition();
     // The timeline fills the whole screen and runs under the floating glass
     // header (like the prototype); its clip edge sits at the screen edge
     // where the gradient-blur layer is nearly opaque, so no hard clip line
@@ -2978,11 +3126,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       settings: visualSettings,
       child: PopScope(
         canPop:
-            !widget.embedded &&
-            _inputPanelMode == InputPanelMode.none &&
-            !keyboardVisible,
+            !_paneVisible ||
+            (!widget.embedded &&
+                _inputPanelMode == InputPanelMode.none &&
+                !keyboardVisible),
         onPopInvokedWithResult: (didPop, _) {
-          if (didPop) return;
+          if (didPop || !_paneVisible) return;
+          // The Material shell dispatches back once, after modal details.
+          if (context.isMaterial && widget.onBack != null) return;
           SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
           _setInputPanelMode(InputPanelMode.none);
         },
@@ -2997,7 +3148,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             children: [
               Positioned.fill(child: ColoredBox(color: colors.base)),
               Positioned.fill(
-                child: Builder(
+                child: _TimelineEntrance(
+                  enabled: widget.embedded && context.isMaterial,
                   builder: (context) {
                     final messages = messageCacheOwner == activeUserId
                         ? history.anchorId == null
@@ -3113,90 +3265,119 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           in membersAsync.asData?.value ?? const <Contact>[])
                         member.id: member,
                     };
-                    final timeline = TweenAnimationBuilder<double>(
-                      tween: Tween<double>(end: messageBottomPadding),
-                      duration: animatePanelChange
-                          ? const Duration(milliseconds: 180)
-                          : Duration.zero,
-                      curve: Curves.easeOutCubic,
-                      builder: (context, animatedBottomPadding, _) {
-                        return LayoutBuilder(
-                          builder: (context, constraints) {
-                            final reserve = 8 + animatedBottomPadding;
-                            final anchor =
-                                pivot == null || constraints.maxHeight <= 0
-                                ? 0.0
-                                : (reserve / constraints.maxHeight).clamp(
-                                    0.0,
-                                    1.0,
-                                  );
-                            return NotificationListener<
-                              ScrollMetricsNotification
-                            >(
-                              onNotification: _handleScrollMetricsNotification,
-                              child: NotificationListener<ScrollNotification>(
-                                onNotification: _handleScrollNotification,
-                                child: CustomScrollView(
-                                  key: _scrollViewportKey,
-                                  reverse: true,
-                                  controller: _scrollController,
-                                  // Pages newer than the pivot grow below this
-                                  // origin, without changing the reading offset.
-                                  center: pivot == null
-                                      ? null
-                                      : _timelineCenterKey,
-                                  // In reverse layout, move the reading origin up
-                                  // with the real composer/keyboard reservation.
-                                  anchor: anchor,
-                                  slivers: [
-                                    SliverPadding(
-                                      padding: EdgeInsets.only(
-                                        bottom: 8 + animatedBottomPadding,
+                    final timeline = MaxContentWidth(
+                      maxWidth: context.isMaterial ? 720 : double.infinity,
+                      usePaneSize: context.isMaterial,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(end: messageBottomPadding),
+                        duration: animatePanelChange
+                            ? const Duration(milliseconds: 180)
+                            : Duration.zero,
+                        curve: Curves.easeOutCubic,
+                        builder: (context, animatedBottomPadding, _) {
+                          return LayoutBuilder(
+                            builder: (context, constraints) {
+                              final reserve = 8 + animatedBottomPadding;
+                              final anchor =
+                                  pivot == null || constraints.maxHeight <= 0
+                                  ? 0.0
+                                  : (reserve / constraints.maxHeight).clamp(
+                                      0.0,
+                                      1.0,
+                                    );
+                              return NotificationListener<
+                                ScrollMetricsNotification
+                              >(
+                                onNotification:
+                                    _handleScrollMetricsNotification,
+                                child: NotificationListener<ScrollNotification>(
+                                  onNotification: _handleScrollNotification,
+                                  child: CustomScrollView(
+                                    key: _scrollViewportKey,
+                                    reverse: true,
+                                    controller: _scrollController,
+                                    // Pages newer than the pivot grow below this
+                                    // origin, without changing the reading offset.
+                                    center: pivot == null
+                                        ? null
+                                        : _timelineCenterKey,
+                                    // In reverse layout, move the reading origin up
+                                    // with the real composer/keyboard reservation.
+                                    anchor: anchor,
+                                    slivers: [
+                                      SliverPadding(
+                                        padding: EdgeInsets.only(
+                                          bottom: 8 + animatedBottomPadding,
+                                        ),
                                       ),
-                                    ),
-                                    if (_focusedBrowsing && _isLoadingNewer)
-                                      const SliverToBoxAdapter(
-                                        child: Padding(
-                                          padding: EdgeInsets.all(12),
-                                          child: Center(
-                                            child: SizedBox.square(
-                                              dimension: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
+                                      if (_focusedBrowsing && _isLoadingNewer)
+                                        const SliverToBoxAdapter(
+                                          child: Padding(
+                                            padding: EdgeInsets.all(12),
+                                            child: Center(
+                                              child: SizedBox.square(
+                                                dimension: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    if (_focusedBrowsing &&
-                                        !_isLoadingNewer &&
-                                        _hasMoreNewerMessages)
-                                      SliverToBoxAdapter(
-                                        child: Center(
-                                          child: TextButton.icon(
-                                            key: const ValueKey(
-                                              'newer-history-retry',
-                                            ),
-                                            onPressed: _retryNewerMessages,
-                                            icon: const Icon(
-                                              Icons.refresh_rounded,
-                                              size: 16,
-                                            ),
-                                            label: Text(
-                                              _newerLoadBlockedByError
-                                                  ? '重试加载更新消息'
-                                                  : '加载更新消息',
+                                      if (_focusedBrowsing &&
+                                          !_isLoadingNewer &&
+                                          _hasMoreNewerMessages)
+                                        SliverToBoxAdapter(
+                                          child: Center(
+                                            child: TextButton.icon(
+                                              key: const ValueKey(
+                                                'newer-history-retry',
+                                              ),
+                                              onPressed: _retryNewerMessages,
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 16,
+                                              ),
+                                              label: Text(
+                                                _newerLoadBlockedByError
+                                                    ? '重试加载更新消息'
+                                                    : '加载更新消息',
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    if (pivot != null)
+                                      if (pivot != null)
+                                        SliverList(
+                                          delegate: SliverChildBuilderDelegate(
+                                            (context, index) =>
+                                                _buildTimelineEntry(
+                                                  timelineEntries[pivotIndex -
+                                                      1 -
+                                                      index],
+                                                  avatarMap,
+                                                  membersById,
+                                                  messageIndex,
+                                                  8 + animatedBottomPadding,
+                                                  _plusOneIds,
+                                                ),
+                                            childCount: pivotIndex,
+                                            findChildIndexCallback: (key) {
+                                              final index =
+                                                  _findTimelineEntryIndex(key);
+                                              return index == null ||
+                                                      index >= pivotIndex
+                                                  ? null
+                                                  : pivotIndex - 1 - index;
+                                            },
+                                          ),
+                                        ),
                                       SliverList(
+                                        key: _timelineCenterKey,
                                         delegate: SliverChildBuilderDelegate(
                                           (context, index) =>
                                               _buildTimelineEntry(
-                                                timelineEntries[pivotIndex -
-                                                    1 -
+                                                timelineEntries[pivotIndex +
                                                     index],
                                                 avatarMap,
                                                 membersById,
@@ -3204,90 +3385,69 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                                                 8 + animatedBottomPadding,
                                                 _plusOneIds,
                                               ),
-                                          childCount: pivotIndex,
+                                          childCount:
+                                              timelineEntries.length -
+                                              pivotIndex,
                                           findChildIndexCallback: (key) {
                                             final index =
                                                 _findTimelineEntryIndex(key);
                                             return index == null ||
-                                                    index >= pivotIndex
+                                                    index < pivotIndex
                                                 ? null
-                                                : pivotIndex - 1 - index;
+                                                : index - pivotIndex;
                                           },
                                         ),
                                       ),
-                                    SliverList(
-                                      key: _timelineCenterKey,
-                                      delegate: SliverChildBuilderDelegate(
-                                        (context, index) => _buildTimelineEntry(
-                                          timelineEntries[pivotIndex + index],
-                                          avatarMap,
-                                          membersById,
-                                          messageIndex,
-                                          8 + animatedBottomPadding,
-                                          _plusOneIds,
-                                        ),
-                                        childCount:
-                                            timelineEntries.length - pivotIndex,
-                                        findChildIndexCallback: (key) {
-                                          final index = _findTimelineEntryIndex(
-                                            key,
-                                          );
-                                          return index == null ||
-                                                  index < pivotIndex
-                                              ? null
-                                              : index - pivotIndex;
-                                        },
-                                      ),
-                                    ),
-                                    if (_automaticOlderLoadBlocked &&
-                                        _hasMoreMessages)
-                                      if (timelineEntries.isEmpty)
-                                        SliverFillRemaining(
-                                          hasScrollBody: false,
-                                          child: Center(
-                                            child: TextButton.icon(
-                                              onPressed: _retryOlderMessages,
-                                              icon: const Icon(
-                                                Icons.refresh_rounded,
+                                      if (_automaticOlderLoadBlocked &&
+                                          _hasMoreMessages)
+                                        if (timelineEntries.isEmpty)
+                                          SliverFillRemaining(
+                                            hasScrollBody: false,
+                                            child: Center(
+                                              child: TextButton.icon(
+                                                onPressed: _retryOlderMessages,
+                                                icon: const Icon(
+                                                  Icons.refresh_rounded,
+                                                ),
+                                                label: const Text('重试加载更早消息'),
                                               ),
-                                              label: const Text('重试加载更早消息'),
+                                            ),
+                                          )
+                                        else
+                                          SliverToBoxAdapter(
+                                            child: Center(
+                                              child: TextButton.icon(
+                                                onPressed: _retryOlderMessages,
+                                                icon: const Icon(
+                                                  Icons.refresh_rounded,
+                                                  size: 16,
+                                                ),
+                                                label: const Text('加载更早消息'),
+                                              ),
                                             ),
                                           ),
-                                        )
-                                      else
-                                        SliverToBoxAdapter(
-                                          child: Center(
-                                            child: TextButton.icon(
-                                              onPressed: _retryOlderMessages,
-                                              icon: const Icon(
-                                                Icons.refresh_rounded,
-                                                size: 16,
-                                              ),
-                                              label: const Text('加载更早消息'),
-                                            ),
-                                          ),
+                                      SliverPadding(
+                                        padding: EdgeInsets.only(
+                                          // The timeline runs under the floating
+                                          // header and the pinned stack; keep the
+                                          // oldest end clear of both layers.
+                                          top:
+                                              headerInset +
+                                              pinnedStackHeight +
+                                              audioHeight +
+                                              unreadHeight +
+                                              4,
                                         ),
-                                    SliverPadding(
-                                      padding: EdgeInsets.only(
-                                        // The timeline runs under the floating
-                                        // header and the pinned stack; keep the
-                                        // oldest end clear of both layers.
-                                        top:
-                                            headerInset +
-                                            pinnedStackHeight +
-                                            audioHeight +
-                                            unreadHeight +
-                                            4,
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                      child: const SizedBox.shrink(),
+                              );
+                            },
+                          );
+                        },
+                        child: const SizedBox.shrink(),
+                      ),
                     );
                     if (!_initialMessageJumpPending) return timeline;
                     return Stack(
@@ -3359,28 +3519,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                         unawaited(showAudioPlayerPanel(context, audioSession)),
                   ),
                 ),
-              if (entryUnread != null && _showUnreadNavigation)
+              if (entryUnread != null && !context.isMaterial)
                 Positioned(
-                  left: context.isMaterial ? 0 : 12,
-                  right: context.isMaterial ? 0 : 12,
+                  left: 12,
+                  right: 12,
                   top: headerInset + pinnedStackHeight + audioHeight,
                   child: UnreadMessagesBanner(
                     count: _unreadNavigation?.candidateCount,
-                    loading:
-                        _jumpingToUnread ||
-                        (_unreadScanError == null &&
-                            !_unreadNeedsHistoryFallback &&
-                            _unreadRetryTargetId == null &&
-                            _unreadNavigation?.firstNavigableId == null &&
-                            (!(_unreadNavigation?.complete ?? false) ||
-                                (_unreadNavigation?.hasUnresolved ?? false))),
-                    unavailable:
-                        _unreadScanError == null &&
-                        !_unreadNeedsHistoryFallback &&
-                        _unreadRetryTargetId == null &&
-                        _unreadNavigation?.firstNavigableId == null &&
-                        (_unreadNavigation?.complete ?? false) &&
-                        !(_unreadNavigation?.hasUnresolved ?? false),
+                    loading: unreadLoading,
+                    unavailable: unreadUnavailable,
                     historyFallback: _unreadNeedsHistoryFallback,
                     failed: _unreadScanError != null,
                     onPressed: () => unawaited(
@@ -3411,10 +3558,34 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOutCubic,
                 child: LatestMessageControl(
-                  visible:
-                      !_initialMessageJumpPending &&
-                      (_showLatestMessageControl || _focusedBrowsing) &&
-                      _forwardNoticeRoom == null,
+                  unreadControl: showUnreadPill
+                      ? ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: math.max(0, mediaQuery.size.width - 32),
+                          ),
+                          child: MaterialUnreadPill(
+                            label: _unreadScanError != null
+                                ? '加载失败 · 重试'
+                                : unreadUnavailable
+                                ? '暂无可定位的未读'
+                                : _unreadNeedsHistoryFallback
+                                ? '查看较早消息'
+                                : '${_unreadNavigation?.candidateCount ?? entryUnread.unreadCount} 条新消息',
+                            loading: unreadLoading,
+                            failed: _unreadScanError != null,
+                            below: _unreadDirection == AxisDirection.down,
+                            onMarkRead: _markingEntryRead
+                                ? null
+                                : _markEntryRead,
+                            onJump: unreadUnavailable || unreadLoading
+                                ? null
+                                : _unreadScanError != null
+                                ? _retryUnreadPages
+                                : _jumpToFirstUnread,
+                          ),
+                        )
+                      : null,
+                  visible: showUnreadPill || showLatest,
                   showSentNotice: _showSentNotice,
                   onPressed: () {
                     if (_focusedBrowsing) {
@@ -3551,8 +3722,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// Floating glass top bar: back/avatar/title plus the room actions. The
   /// only persistent glass layer on this page (see GlassPanel discipline).
   AppBar _buildMaterialTopBar(String subtitle) {
-    final compact = MediaQuery.sizeOf(context).width < _headerCompactBreakpoint;
-    return buildFloatingAppBar(
+    final theme = Theme.of(context);
+    return AppBar(
+      actionsPadding: const EdgeInsetsDirectional.only(end: 12),
       automaticallyImplyLeading: !widget.embedded,
       leading: widget.onBack == null
           ? null
@@ -3571,13 +3743,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                   _roomName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: theme.textTheme.titleMedium,
                 ),
                 Text(
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -3585,30 +3759,27 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ],
       ),
       actions: [
-        NeuIconButton(
-          icon: Icons.search_rounded,
+        IconButton(
+          icon: const Icon(Icons.search_rounded),
           tooltip: '搜索消息',
           onPressed: () => unawaited(_openMessageSearch()),
         ),
-        if (!compact)
+        if (_pinnedStackVisibleCount == 0)
           IconButton(
             icon: const Icon(Icons.push_pin_outlined),
             tooltip: '置顶消息',
             onPressed: () => unawaited(_openPinnedMessages()),
           ),
-        if (widget.embedded && widget.onToggleDetailsPanel != null)
-          IconButton(
-            icon: const Icon(Icons.people_outline),
-            tooltip: widget.detailsPanelOpen ? '隐藏详情' : '显示详情',
-            isSelected: widget.detailsPanelOpen,
-            onPressed: widget.onToggleDetailsPanel,
-          ),
         IconButton(
-          icon: const Icon(Icons.more_vert_rounded),
-          tooltip: '更多',
-          onPressed: compact
-              ? _showMoreActions
-              : () => _showRoomDetails(context),
+          icon: const Icon(Icons.people_outline),
+          tooltip: widget.onToggleDetailsPanel == null
+              ? '房间详情'
+              : widget.detailsPanelOpen
+              ? '隐藏详情'
+              : '显示详情',
+          isSelected: widget.detailsPanelOpen,
+          onPressed:
+              widget.onToggleDetailsPanel ?? () => _showRoomDetails(context),
         ),
       ],
     );
@@ -3763,11 +3934,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 14,
+            width: 18,
             height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.5,
-              color: context.neu.textTertiary.withValues(alpha: 0.6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                for (var i = 0; i < 3; i++)
+                  Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: context.neu.textTertiary.withValues(alpha: 0.6),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(width: 8),
@@ -3788,8 +3969,55 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     );
   }
 
-  void _showRoomDetails(BuildContext context) {
-    showNeuSheet<void>(
+  Future<void> _showRoomDetails(BuildContext context) async {
+    final roomId = widget.roomId;
+    void openManagement() {
+      if (!mounted || !context.mounted || widget.roomId != roomId) return;
+      MaterialListDetail.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RoomManagementPage(
+            roomId: roomId,
+            roomName: _roomName,
+            avatarUrl: _avatarUrl,
+            onRoomClosed: widget.onRoomLeft,
+            onRoomDetailsChanged: _handleRoomDetailsChanged,
+          ),
+        ),
+      );
+    }
+
+    if (context.isMaterial) {
+      final action = await showModalBottomSheet<RoomPanelAction>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        clipBehavior: Clip.antiAlias,
+        constraints: const BoxConstraints(maxWidth: 420),
+        builder: (sheetContext) => SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * .85,
+          child: MaterialRoomDetailsPanel(
+            roomId: roomId,
+            roomName: _roomName,
+            avatarUrl: _avatarUrl,
+            onManage: () =>
+                Navigator.of(sheetContext).pop(RoomPanelAction.manage),
+            onTimelineAction: (action) =>
+                Navigator.of(sheetContext).pop(action),
+          ),
+        ),
+      );
+      if (!mounted || widget.roomId != roomId || action == null) return;
+      if (action == RoomPanelAction.manage) {
+        openManagement();
+      } else {
+        _openPanelAction(action);
+      }
+      return;
+    }
+
+    await showNeuSheet<void>(
       context: context,
       child: Builder(
         builder: (sheetContext) => Column(
@@ -3830,17 +4058,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               label: '房间管理',
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => RoomManagementPage(
-                      roomId: widget.roomId,
-                      roomName: _roomName,
-                      avatarUrl: _avatarUrl,
-                      onRoomClosed: widget.onRoomLeft,
-                      onRoomDetailsChanged: _handleRoomDetailsChanged,
-                    ),
-                  ),
-                );
+                openManagement();
               },
             ),
             // Room members preview
@@ -3859,18 +4077,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           label: '成员 (${members.length})',
                           onTap: () {
                             Navigator.of(sheetContext).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => RoomManagementPage(
-                                  roomId: widget.roomId,
-                                  roomName: _roomName,
-                                  avatarUrl: _avatarUrl,
-                                  onRoomClosed: widget.onRoomLeft,
-                                  onRoomDetailsChanged:
-                                      _handleRoomDetailsChanged,
-                                ),
-                              ),
-                            );
+                            openManagement();
                           },
                         ),
                         Padding(
@@ -3920,6 +4127,29 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
 }
 
 enum _TimelineEntryType { group, date }
+
+class _TimelineEntrance extends StatelessWidget {
+  const _TimelineEntrance({required this.enabled, required this.builder});
+
+  final bool enabled;
+  final WidgetBuilder builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final fade = enabled && !MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: fade ? .8 : 1, end: 1),
+      duration: fade ? context.tokens.motion.effectsDuration : Duration.zero,
+      curve: Curves.easeOut,
+      builder: (_, opacity, child) => Opacity(
+        key: const ValueKey('room-timeline-opacity'),
+        opacity: fade ? opacity : 1,
+        child: child,
+      ),
+      child: Builder(builder: builder),
+    );
+  }
+}
 
 class _TimelineEntry {
   final _TimelineEntryType type;

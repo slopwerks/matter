@@ -98,6 +98,26 @@ class _ReactionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isMaterial) {
+      final theme = Theme.of(context);
+      final scheme = theme.colorScheme;
+      return FilterChip(
+        avatar: Text(reaction.key),
+        label: Text('${reaction.senders.length}'),
+        labelStyle: theme.textTheme.labelSmall?.copyWith(
+          color: reacted
+              ? scheme.onSecondaryContainer
+              : scheme.onSurfaceVariant,
+        ),
+        selected: reacted,
+        side: reacted ? BorderSide.none : null,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onSelected: (_) => onTap(),
+      );
+    }
     final colors = context.neu;
     return GestureDetector(
       onTap: onTap,

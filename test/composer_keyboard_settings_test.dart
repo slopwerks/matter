@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/pages/chat/composer/composer_autocomplete_popup.dart';
 import 'package:matter/pages/settings/composer_keyboard_settings_page.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/composer_keyboard_settings_provider.dart';
@@ -59,6 +60,7 @@ Widget _input(
   bool material = const bool.fromEnvironment('MATTER_TEST_MATERIAL'),
   bool dark = true,
   TargetPlatform platform = TargetPlatform.linux,
+  double textScale = 1,
 }) => UncontrolledProviderScope(
   container: container,
   child: MaterialApp(
@@ -66,6 +68,11 @@ Widget _input(
       material: material,
       dark: dark,
     ).copyWith(platform: platform),
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child!,
+    ),
     home: Scaffold(
       body: Align(
         alignment: Alignment.bottomCenter,
@@ -97,6 +104,46 @@ void main() {
     api.pendingSend = null;
     api.sendCalls = 0;
     SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('keyboard scrolling keeps scaled Material candidates visible', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(_input(container, material: true, textScale: 1.6));
+    await tester.enterText(find.byType(TextField), ':s');
+    await tester.pumpAndSettle();
+    final popup = tester.widget<ComposerAutocompletePopup>(
+      find.byType(ComposerAutocompletePopup),
+    );
+    expect(popup.options.length, greaterThan(10));
+    for (var index = 0; index < 10; index++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+    await tester.pump();
+    final selected = find.byKey(
+      const ValueKey('composer-autocomplete-option-10'),
+    );
+    final viewport = tester.getRect(
+      find.descendant(
+        of: find.byType(ComposerAutocompletePopup),
+        matching: find.byType(ListView),
+      ),
+    );
+    final row = tester.getRect(selected);
+    expect(row.top, greaterThanOrEqualTo(viewport.top - 1));
+    expect(row.bottom, lessThanOrEqualTo(viewport.bottom + 1));
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      popup.options[10].insertion.trimRight(),
+    );
+    expect(api.sendCalls, 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('persists independent choices across provider containers', () async {
@@ -207,7 +254,7 @@ void main() {
             final toolbar = find.byKey(
               const ValueKey('desktop-composer-toolbar'),
             );
-            if (width >= 600) {
+            if (width >= 600 && !material) {
               final toolbarRect = tester.getRect(toolbar);
               expect(emptyRect.height, greaterThanOrEqualTo(80));
               expect(emptyRect.height, lessThan(96));
@@ -223,6 +270,14 @@ void main() {
             } else {
               expect(toolbar, findsNothing);
               expect(emptyRect.height, lessThan(96));
+              if (material) {
+                expect(emptyRect.width, lessThanOrEqualTo(720));
+                final surface = tester.getRect(
+                  find.byKey(const ValueKey('message-input-surface')),
+                );
+                final plus = tester.getCenter(find.byIcon(Icons.add_rounded));
+                expect(plus.dx - surface.left, surface.bottom - plus.dy);
+              }
             }
             await tester.enterText(
               field,
@@ -233,8 +288,10 @@ void main() {
             expect(expandedRect.height, greaterThan(emptyRect.height));
             expect(expandedRect.height, lessThanOrEqualTo(180));
             await tester.enterText(field, 'first\ndraft');
-            await tester.tap(find.byTooltip('更多'));
+            if (material) expect(find.byTooltip('更多'), findsNothing);
+            await tester.tap(find.byTooltip(material ? '附件' : '更多'));
             await tester.pumpAndSettle();
+            if (material) expect(find.text('发送图片'), findsOneWidget);
             expect(find.text('Markdown 编辑器'), findsOneWidget);
             await tester.tap(find.text('发送与换行按键'));
             await tester.pumpAndSettle();
@@ -316,10 +373,14 @@ void main() {
         expect(tester.getSize(find.byType(IconButton).first).height, 48);
         expect(
           tester.getSize(find.byType(TextField)).height,
-          greaterThanOrEqualTo(96),
+          material ? lessThan(96) : greaterThanOrEqualTo(96),
         );
         expect(find.byType(GlassPanel), findsNothing);
-        await tester.tap(find.byTooltip('更多'));
+        if (material) {
+          await tester.longPress(find.byTooltip('附件'));
+        } else {
+          await tester.tap(find.byTooltip('更多'));
+        }
         await tester.pumpAndSettle();
         expect(find.text('Markdown 编辑器'), findsOneWidget);
         expect(tester.takeException(), isNull);

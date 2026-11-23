@@ -87,15 +87,19 @@ void main() {
       tester,
     ) async {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      addTearDown(() => tester.binding.handleAppLifecycleStateChanged(
-        AppLifecycleState.resumed,
-      ));
+      addTearDown(
+        () => tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        ),
+      );
       final service = _PendingDownloadService();
       final update = ReleaseUpdate(
         version: '0.2.0',
         notes: '',
         releasePage: Uri.parse('https://github.com/slopwerks/matter/releases'),
-        downloadUrl: Uri.parse('https://github.com/slopwerks/matter/matter.apk'),
+        downloadUrl: Uri.parse(
+          'https://github.com/slopwerks/matter/matter.apk',
+        ),
         assetSize: 65536,
         digest: null,
       );
@@ -194,4 +198,51 @@ void main() {
 
     expect(summary, 'What changed\n• First fix\n• Second fix\n…');
   });
+
+  testWidgets(
+    'Material version summary scrolls at narrow widths and large text',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final service = _PendingDownloadService();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: neuTestTheme(material: true),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(1.6)),
+            child: child!,
+          ),
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAvailableUpdateDialog(
+                context,
+                service: service,
+                current: const InstalledAppVersion(version: '0.1.2'),
+                update: ReleaseUpdate(
+                  version: '0.2.0',
+                  notes: '- 修复若干问题\n- 优化更新体验',
+                  releasePage: Uri.parse('https://example.org/releases'),
+                  downloadUrl: Uri.parse('https://example.org/matter.apk'),
+                  assetSize: 36 * 1024 * 1024,
+                  digest: null,
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('Android arm64'), findsOneWidget);
+      expect(find.text('36.0 MB'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('稍后'));
+      await tester.pumpAndSettle();
+      expect(service.cancelled, isFalse);
+      expect(service.installs, 0);
+      expect(find.byType(AlertDialog), findsNothing);
+    },
+  );
 }

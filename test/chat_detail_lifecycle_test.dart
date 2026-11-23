@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/chat_detail_page.dart';
 import 'package:matter/pages/chat/unread_messages_banner.dart';
+import 'package:matter/pages/chat/material_unread_pill.dart';
 import 'package:matter/pages/chat/emoji_picker_panel.dart';
 import 'package:matter/pages/chat/image_message_bubble.dart';
 import 'package:matter/pages/chat/image_message_collection.dart';
@@ -24,6 +25,8 @@ import 'package:matter/src/rust/api/matrix/unread.dart' as unread;
 import 'package:matter/src/rust/api/matrix/history.dart' as history;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/widgets/neu_surface.dart';
+import 'package:matter/widgets/material_adaptive_shell.dart';
+import 'package:matter/widgets/material_list_detail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:media_kit/media_kit.dart' as media;
 import 'package:matter/features/audio/audio_playback_session.dart';
@@ -445,6 +448,190 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  Future<ProviderContainer> nestedChat(
+    WidgetTester tester, {
+    ValueNotifier<int>? tab,
+  }) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer(
+      overrides: [
+        ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+        roomMembersProvider.overrideWith((ref, id) async => []),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = '@alice:example.org';
+    final position = ValueNotifier(0.0);
+    final selected = tab ?? ValueNotifier(0);
+    addTearDown(position.dispose);
+    if (tab == null) addTearDown(selected.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: neuTestTheme(material: true),
+          navigatorObservers: [chatRouteObserver],
+          home: ValueListenableBuilder<int>(
+            valueListenable: selected,
+            builder: (_, index, _) => MaterialAdaptiveShell(
+              window: MaterialWindowClass.large,
+              index: index,
+              onNavigate: (i) => selected.value = i,
+              position: position,
+              profile: const SizedBox(),
+              railAccount: const SizedBox(),
+              railActions: (_) => const SizedBox(),
+              railSpaces: const SizedBox(),
+              unreadCount: 0,
+              chatOpen: false,
+              pages: [
+                MaterialListDetail(
+                  active: index == 0,
+                  emptyLabel: 'empty',
+                  emptyIcon: Icons.chat,
+                  list: Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () => MaterialListDetail.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => const ChatDetailPage(
+                            roomId: '!room:example.org',
+                            roomName: 'Room',
+                          ),
+                        ),
+                      ),
+                      child: const Text('open'),
+                    ),
+                  ),
+                ),
+                const Scaffold(body: Text('other tab')),
+                const SizedBox(),
+                const SizedBox(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(container.read(currentRoomIdProvider), '!room:example.org');
+    expect(
+      container.read(roomViewOwnerProvider('!room:example.org')),
+      '@alice:example.org',
+    );
+    return container;
+  }
+
+  for (final root in [false, true]) {
+    testWidgets(
+      'nested chat relinquishes read ownership when covered (root: $root)',
+      (tester) async {
+        final container = await nestedChat(tester);
+        final nav = Navigator.of(
+          tester.element(find.byType(ChatDetailPage)),
+          rootNavigator: root,
+        );
+        unawaited(
+          nav.push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('cover')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          container.read(roomViewOwnerProvider('!room:example.org')),
+          isNull,
+          reason: 'A chat hidden by another nested route must not auto-read incoming messages',
+        );
+        expect(container.read(currentRoomIdProvider), isNull);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          container.read(roomViewOwnerProvider('!room:example.org')),
+          isNull,
+        );
+        nav.pop();
+        await tester.pumpAndSettle();
+        expect(
+          container.read(roomViewOwnerProvider('!room:example.org')),
+          '@alice:example.org',
+        );
+      },
+    );
+  }
+
+  testWidgets(
+    'root popup suspends nested chat reads and preserves subscriptions',
+    (tester) async {
+      final container = await nestedChat(tester);
+      final subscriptions = rustApi.roomSubscriptionAccounts.length;
+      final context = tester.element(find.byType(ChatDetailPage));
+      unawaited(
+        showDialog<void>(
+          context: context,
+          builder: (_) => const AlertDialog(content: Text('cover')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        container.read(roomViewOwnerProvider('!room:example.org')),
+        isNull,
+      );
+      expect(container.read(currentRoomIdProvider), '!room:example.org');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(
+        container.read(roomViewOwnerProvider('!room:example.org')),
+        isNull,
+      );
+      Navigator.of(context, rootNavigator: true).pop();
+      await tester.pumpAndSettle();
+      expect(
+        container.read(roomViewOwnerProvider('!room:example.org')),
+        '@alice:example.org',
+      );
+      expect(rustApi.roomSubscriptionAccounts.length, subscriptions);
+    },
+  );
+
+  testWidgets('nested chat relinquishes read ownership on tab switch', (
+    tester,
+  ) async {
+    final tab = ValueNotifier(0);
+    addTearDown(tab.dispose);
+    final container = await nestedChat(tester, tab: tab);
+    tab.value = 1;
+    await tester.pumpAndSettle();
+    expect(
+      container.read(roomViewOwnerProvider('!room:example.org')),
+      isNull,
+      reason: 'A retained chat in an inactive tab must not auto-read incoming messages',
+    );
+    expect(container.read(currentRoomIdProvider), isNull);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(container.read(roomViewOwnerProvider('!room:example.org')), isNull);
+    tab.value = 0;
+    await tester.pumpAndSettle();
+    expect(
+      container.read(roomViewOwnerProvider('!room:example.org')),
+      '@alice:example.org',
+    );
+  });
+
   for (final crossRoom in [false, true]) {
     for (final material in [false, true]) {
       testWidgets(
@@ -818,6 +1005,44 @@ void main() {
     expect(rustApi.typingSubscriptionAccounts.last, '@alice:example.org');
     expect(rustApi.roomSubscriptionAccounts.last, '@alice:example.org');
   });
+
+  testWidgets(
+    'Material uses the pin strip as the single visible pin list entry',
+    (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      rustApi.pinnedMessages = [_message(r'$pin')];
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true),
+            home: ChatDetailPage(roomId: '!room:example.org', roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final header = find.byType(AppBar);
+      expect(
+        find.descendant(of: header, matching: find.byTooltip('置顶消息')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: header, matching: find.byTooltip('更多')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: header, matching: find.byTooltip('房间详情')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('查看全部置顶消息'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PinnedMessagesPage), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('the chat header opens the pinned messages page', (tester) async {
     final container = ProviderContainer();
@@ -3933,7 +4158,8 @@ void main() {
 
   for (final material in [false, true]) {
     // Keep the fitting boundary and the oversized case in both layouts.
-    for (final lines in [23, 26]) {
+    final fittingLines = material ? 20 : 23;
+    for (final lines in [fittingLines, 26]) {
       testWidgets(
         'unread single jump fully exposes a fitting target material=$material lines=$lines',
         (tester) async {
@@ -3967,7 +4193,9 @@ void main() {
               unreadEventIds: [r'$single-target'],
             ),
           );
-          await tester.tap(find.byType(UnreadMessagesBanner));
+          await tester.tap(
+            material ? find.text('1 条新消息') : find.byType(UnreadMessagesBanner),
+          );
           await tester.pumpAndSettle();
           final bubble = tester.getRect(
             find.byKey(const ValueKey(r'text-bubble:$single-target')),
@@ -3976,14 +4204,24 @@ void main() {
             find.byKey(const ValueKey('message-input-surface')),
           );
           // This text fits in a screen, so one click must expose all of it.
-          if (lines <= 23) {
+          if (lines == fittingLines) {
+            expect(
+              bubble.height,
+              lessThanOrEqualTo(input.top - (material ? 56 : 82)),
+            );
             expect(bubble.top, greaterThanOrEqualTo(material ? 56 : 82));
             expect(bubble.bottom, lessThanOrEqualTo(input.top + 1));
-            expect(find.byType(UnreadMessagesBanner), findsNothing);
+            expect(
+              find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
+              findsNothing,
+            );
           } else {
             expect(bubble.top, greaterThanOrEqualTo(material ? 56 : 82));
             expect(bubble.top, lessThan(input.top));
-            expect(find.byType(UnreadMessagesBanner), findsNothing);
+            expect(
+              find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
+              findsNothing,
+            );
           }
           expect(rustApi.unreadReadEventIds, isEmpty);
           await tester.pumpWidget(const SizedBox.shrink());
@@ -4078,6 +4316,114 @@ void main() {
       expect(find.byType(UnreadMessagesBanner), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'Material unread pill floats beside the composer and marks the room read',
+    (tester) async {
+      await openGeometryUnread(
+        tester,
+        List.generate(
+          90,
+          (i) => _message(
+            'msg-$i',
+            timestamp: '${500 + i}',
+            content: '消息 ${i + 1}',
+          ),
+        ),
+        material: true,
+        snapshot: const unread.RoomUnreadState(
+          unreadCount: 1,
+          boundaryResolved: true,
+          unreadEventIds: ['msg-88'],
+        ),
+      );
+      final scroll = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .controller!;
+      scroll.jumpTo(scroll.position.viewportDimension * 2);
+      await tester.pumpAndSettle();
+      expect(find.text('1 条新消息'), findsOneWidget);
+      expect(find.text('回到最新'), findsNothing);
+      final pill = tester.getRect(find.byType(MaterialUnreadPill));
+      final input = tester.getRect(
+        find.byKey(const ValueKey('message-input-surface')),
+      );
+      expect(pill.right, closeTo(384, 1));
+      expect(pill.width, lessThan(input.width));
+      expect(pill.bottom, lessThanOrEqualTo(input.top));
+      expect(pill.bottom, greaterThan(input.top - 60));
+      Future<void> sendFromHistory(String text) async {
+        await tester.enterText(find.byType(TextField), text);
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.send_rounded));
+        await tester.pump();
+        rustApi.pendingSend!.complete('sent-$text');
+        await tester.pump();
+      }
+
+      final latest = find.byType(LatestMessageControl);
+      final ink = find.descendant(of: latest, matching: find.byType(Ink));
+      final surfaces = find.descendant(
+        of: find.byType(MaterialUnreadPill),
+        matching: find.byType(Material),
+      );
+      expect(tester.getSize(surfaces.first).height, 36);
+      expect(tester.getSize(surfaces.last).height, 36);
+      await sendFromHistory('first');
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+      expect(tester.getSize(ink).height, 36);
+      final expanding = tester.getSize(ink).width;
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.getSize(ink).height, 36);
+      final full = tester.getSize(ink).width;
+      expect(full, greaterThan(expanding));
+      await tester.pump(const Duration(milliseconds: 2800));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.getSize(ink).width, lessThan(full));
+      await tester.pumpAndSettle();
+      expect(find.byType(MaterialUnreadPill), findsOneWidget);
+      final readOffset = scroll.offset;
+      final unreadSurface = tester.getRect(
+        find
+            .descendant(
+              of: find.byType(MaterialUnreadPill),
+              matching: find.byType(Material),
+            )
+            .last,
+      );
+      await tester.tap(find.byTooltip('全部标为已读'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<LatestMessageControl>(find.byType(LatestMessageControl))
+            .visible,
+        isTrue,
+      );
+      final latestSurface = tester.getRect(
+        find.descendant(
+          of: find.byType(LatestMessageControl),
+          matching: find.byType(Ink),
+        ),
+      );
+      expect(latestSurface.bottom, unreadSurface.bottom);
+      expect(scroll.offset, readOffset);
+      await sendFromHistory('second');
+      await tester.pump(const Duration(milliseconds: 550));
+      expect(
+        tester.widget<LatestMessageControl>(latest).showSentNotice,
+        isTrue,
+      );
+      await tester.tap(find.byType(LatestMessageControl));
+      await tester.pumpAndSettle();
+      expect(scroll.offset, closeTo(scroll.position.minScrollExtent, 1));
+      expect(rustApi.lastMarkReadExplicit, true);
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+      expect(rustApi.getMessagesAroundCalls, 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 5));
     },
   );
 
@@ -4357,7 +4703,11 @@ void main() {
             ),
           );
           if (jump) {
-            await tester.tap(find.byType(UnreadMessagesBanner));
+            await tester.tap(
+              material
+                  ? find.text('2 条新消息')
+                  : find.byType(UnreadMessagesBanner),
+            );
             await tester.pumpAndSettle();
           }
           final controller = tester
@@ -4379,7 +4729,7 @@ void main() {
           await tester.pumpAndSettle();
           final before = tester.getRect(bubble);
           expect(
-            find.byType(UnreadMessagesBanner),
+            find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
             jump ? findsNothing : findsOneWidget,
           );
           final forwardBefore = List.of(rustApi.messagesAfterEventIds);
@@ -4392,7 +4742,7 @@ void main() {
           expect(after.bottom, lessThanOrEqualTo(input.top + 1));
           expect(after.top, closeTo(before.top - 300, 2));
           expect(
-            find.byType(UnreadMessagesBanner),
+            find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
             jump ? findsNothing : findsOneWidget,
           );
           expect(rustApi.messagesAfterEventIds, forwardBefore);
@@ -4417,8 +4767,8 @@ void main() {
             ),
           );
           expect(
-            find.byType(UnreadMessagesBanner),
-            jump ? findsNothing : findsOneWidget,
+            find.byType(material ? MaterialUnreadPill : UnreadMessagesBanner),
+            jump || material ? findsNothing : findsOneWidget,
           );
           await tester.tap(find.byIcon(Icons.keyboard_rounded));
           tester.view.viewInsets = const FakeViewPadding(bottom: 300);
@@ -4671,11 +5021,16 @@ void main() {
           _message(r'$first-screen', timestamp: '2', content: 'visible unread'),
         ], material: material);
         expect(find.text('visible unread'), findsOneWidget);
-        expect(find.text('1 条未读 · 跳到最早未读'), findsOneWidget);
+
         expect(rustApi.readLifecycle.first, 'capture');
         expect(rustApi.markRoomAsReadCalls, greaterThan(0));
-        await tester.tap(find.byType(UnreadMessagesBanner));
-        await tester.pumpAndSettle();
+        if (material) {
+          expect(find.byType(MaterialUnreadPill), findsNothing);
+        } else {
+          expect(find.text('1 条未读 · 跳到最早未读'), findsOneWidget);
+          await tester.tap(find.byType(UnreadMessagesBanner));
+          await tester.pumpAndSettle();
+        }
         expect(find.byType(UnreadMessagesBanner), findsNothing);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
@@ -4755,7 +5110,9 @@ void main() {
           const roomId = '!unread-entry:example.org';
           const account = '@alice:example.org';
           final target = _message(r'$first-unread', timestamp: '201');
-          final entryLabel = hasMarker ? '123 条未读 · 跳到最早未读' : '查看较早消息';
+          final entryLabel = hasMarker
+              ? (material ? '123 条新消息' : '123 条未读 · 跳到最早未读')
+              : '查看较早消息';
           rustApi.entryUnread = unread.RoomUnreadState(
             unreadCount: 123,
             readEventId: hasMarker ? r'$read-boundary' : null,
@@ -4993,7 +5350,8 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    final more = find.byIcon(Icons.more_vert_rounded);
+    await tester.tap(more.evaluate().isEmpty ? find.byTooltip('房间详情') : more);
     await tester.pumpAndSettle();
     await tester.tap(find.text('房间管理'));
     await tester.pumpAndSettle();

@@ -266,7 +266,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
       _keyboardMouse ||
       ref.read(composerAttachmentDraftProvider(_draftKey)).selected.isNotEmpty;
 
-  bool get _expandedComposer => MediaQuery.sizeOf(context).width >= 600;
+  bool get _expandedComposer =>
+      !context.isMaterial && MediaQuery.sizeOf(context).width >= 600;
 
   Future<void> _pasteClipboard(SelectionChangedCause cause) async {
     if (_readingClipboard ||
@@ -415,7 +416,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.neu;
     final desktop = ref
         .watch(interactionModeProvider)
         .usesKeyboardMouse(Theme.of(context).platform);
@@ -470,6 +470,48 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final panelContentHeight = attachmentKeyboard
         ? widget.pickerHeight
         : widget.pickerFullHeight;
+    final attachments = inlineImages && (hasImages || pendingImages.isSending)
+        ? AttachmentPicker(
+            key: _pendingImagesKey,
+            inline: true,
+            draft: pendingImages,
+            composerController: _controller,
+            onInlineSend: _sendPendingImages,
+            roomId: widget.roomId,
+            accountUserId: _draftKey.userId,
+            height: 0,
+            maxHeight: 0,
+            totalMembers: widget.totalMembers,
+            onRefresh: (_) => refreshMessagesContainer(
+              ProviderScope.containerOf(context, listen: false),
+              widget.roomId,
+            ),
+            resolveSendPresentation: widget.resolveSendPresentation,
+            onMessageQueued: widget.onMessageQueued,
+            onMessageSent: widget.onMessageSent,
+            onHeightChanged: (_) {},
+            onClose: _showKeyboard,
+          )
+        : null;
+
+    final quote = editing != null
+        ? ComposerQuoteBanner.editing(
+            content: editing.content,
+            sendInFlight: editingSendInFlight,
+            onCancel: () {
+              ref.read(editingMessageProvider(_draftKey).notifier).value = null;
+              ref.read(editingDraftProvider(_draftKey).notifier).value = null;
+              if (desktop) _focusNode.requestFocus();
+            },
+          )
+        : replyTo != null
+        ? ComposerQuoteBanner.reply(
+            senderName: replyTo.senderName,
+            content: replyTo.content,
+            onCancel: () =>
+                ref.read(replyingToProvider(_draftKey).notifier).value = null,
+          )
+        : null;
 
     final input = SafeArea(
       top: false,
@@ -478,26 +520,10 @@ class MessageInputState extends ConsumerState<MessageInput> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Edit bar takes precedence; otherwise show reply bar.
-            if (editing != null)
-              ComposerQuoteBanner.editing(
-                content: editing.content,
-                sendInFlight: editingSendInFlight,
-                onCancel: () {
-                  ref.read(editingMessageProvider(_draftKey).notifier).value =
-                      null;
-                  ref.read(editingDraftProvider(_draftKey).notifier).value =
-                      null;
-                },
-              )
-            else if (replyTo != null)
-              ComposerQuoteBanner.reply(
-                senderName: replyTo.senderName,
-                content: replyTo.content,
-                onCancel: () {
-                  ref.read(replyingToProvider(_draftKey).notifier).value = null;
-                },
-              ),
+            if (context.isMaterial && !MediaQuery.disableAnimationsOf(context))
+              ComposerQuoteTransition(key: ValueKey(_draftKey), banner: quote)
+            else
+              ?quote,
             if (autocompleteMatch != null &&
                 (autocompleteOptions.isNotEmpty || autocompleteLoading))
               Flexible(
@@ -520,6 +546,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
             ComposerSurface(
               expanded: expanded,
               compact: desktop,
+              attachments: context.isMaterial ? attachments : null,
               child: ComposerActionsBar(
                 expanded: expanded,
                 compact: desktop,
@@ -542,30 +569,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 onToggleAttachment: _toggleAttachmentPicker,
                 onShowTools: _tools.showToolsMenu,
                 onSend: _sendMessage,
-                attachments:
-                    inlineImages && (hasImages || pendingImages.isSending)
-                    ? AttachmentPicker(
-                        key: _pendingImagesKey,
-                        inline: true,
-                        draft: pendingImages,
-                        composerController: _controller,
-                        onInlineSend: _sendPendingImages,
-                        roomId: widget.roomId,
-                        accountUserId: _draftKey.userId,
-                        height: 0,
-                        maxHeight: 0,
-                        totalMembers: widget.totalMembers,
-                        onRefresh: (_) => refreshMessagesContainer(
-                          ProviderScope.containerOf(context, listen: false),
-                          widget.roomId,
-                        ),
-                        resolveSendPresentation: widget.resolveSendPresentation,
-                        onMessageQueued: widget.onMessageQueued,
-                        onMessageSent: widget.onMessageSent,
-                        onHeightChanged: (_) {},
-                        onClose: _showKeyboard,
-                      )
-                    : null,
+                attachments: context.isMaterial ? null : attachments,
                 editor: ComposerTextField(
                   key: _textFieldKey,
                   controller: _controller,
@@ -663,7 +667,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
     if (expanded) return input;
     if (context.isMaterial) {
-      return ColoredBox(color: colors.glassFill, child: input);
+      return input;
     }
     return ClipRect(
       child: Stack(

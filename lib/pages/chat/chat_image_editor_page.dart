@@ -2,10 +2,11 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:material_ui/material_ui.dart' as material_ui;
 import 'package:pro_image_editor/pro_image_editor.dart';
 
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
+import '../../theme/image_editor_theme.dart';
 
 enum ChatImageEditorTool { crop, paint }
 
@@ -67,26 +68,35 @@ class _ChatImageEditorPageState extends State<ChatImageEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.neu;
+    final neu = context.neu;
+    final colors = context.isMaterial
+        ? materialMediaChromeStyle(Theme.of(context))
+        : (
+            base: neu.base,
+            surface: neu.surface,
+            text: neu.text,
+            textSecondary: neu.textSecondary,
+            accent: neu.accent,
+          );
     final overlayIconBrightness =
         context.isMaterial && Theme.of(context).brightness == Brightness.light
         ? Brightness.dark
         : Brightness.light;
-    // pro_image_editor 14 renders with the decoupled `material_ui` package,
-    // whose ThemeData is not interchangeable with the SDK one.
-    final editorTheme = material_ui.ThemeData(
-      useMaterial3: true,
-      brightness: Theme.of(context).brightness,
-      scaffoldBackgroundColor: colors.base,
-      colorScheme: material_ui.ColorScheme.fromSeed(
-        seedColor: colors.accent,
-        brightness: Theme.of(context).brightness,
-        primary: colors.accent,
-        secondary: colors.accent,
-        surface: colors.surface,
-        onSurface: colors.text,
-      ),
-    );
+    final editorTheme = context.isMaterial
+        ? buildMaterialImageEditorTheme(Theme.of(context))
+        : ThemeData(
+            useMaterial3: true,
+            brightness: Theme.of(context).brightness,
+            scaffoldBackgroundColor: colors.base,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: colors.accent,
+              brightness: Theme.of(context).brightness,
+              primary: colors.accent,
+              secondary: colors.accent,
+              surface: colors.surface,
+              onSurface: colors.text,
+            ),
+          );
 
     final callbacks = ProImageEditorCallbacks(
       onImageEditingComplete: (bytes) async {

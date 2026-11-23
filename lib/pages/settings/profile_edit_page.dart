@@ -7,10 +7,12 @@ import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/material_detail_card.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_field.dart';
@@ -161,20 +163,84 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
     );
   }
 
+  Widget _buildMaterialPage(BuildContext context, String fallbackName) {
+    final theme = Theme.of(context);
+    final profileStyle = materialProfileCardStyle(theme);
+    final userId = _profile?.userId ?? ref.read(currentUserProvider)?.id ?? '';
+    return Scaffold(
+      appBar: buildFloatingAppBar(title: const Text('个人资料')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : MaxContentWidth(
+              maxWidth: 560,
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  24 + MediaQuery.paddingOf(context).bottom,
+                ),
+                children: [
+                  Card(
+                    color: profileStyle.fill,
+                    child: ListTile(
+                      minTileHeight: 88,
+                      leading: AppAvatar(
+                        fallback: fallbackName,
+                        size: 56,
+                        url: _avatarHttpUrl,
+                      ),
+                      title: Text('更换头像', style: profileStyle.title),
+                      trailing: const Icon(Icons.camera_alt_rounded),
+                      iconColor: profileStyle.foreground,
+                      enabled: !_saving,
+                      onTap: _saving ? null : _pickAvatar,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  MaterialDetailCard(
+                    title: '昵称',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: _nameController,
+                          decoration: const InputDecoration(hintText: '输入你的昵称'),
+                          onSubmitted: _saving ? null : (_) => _saveName(),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: _saving ? null : _saveName,
+                          child: const Text('保存'),
+                        ),
+                        if (_saving) const LinearProgressIndicator(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  MaterialDetailCard(
+                    title: '用户 ID',
+                    description: '用户 ID 是你的唯一标识，无法更改',
+                    child: Text(userId, style: theme.textTheme.bodyMedium),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colors = context.neu;
-    final textTheme = Theme.of(context).textTheme;
     final fallbackName = _profile?.displayName.isNotEmpty == true
         ? _profile!.displayName
         : (ref.read(currentUserProvider)?.displayName ?? '我');
+    if (context.isMaterial) return _buildMaterialPage(context, fallbackName);
+
+    final colors = context.neu;
+    final textTheme = Theme.of(context).textTheme;
     final viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
     return Scaffold(
       backgroundColor: colors.base,
-      extendBodyBehindAppBar: context.isMaterial,
-      appBar: context.isMaterial
-          ? buildFloatingAppBar(title: const Text('个人资料'))
-          : null,
       body: Stack(
         children: [
           Positioned.fill(
@@ -304,51 +370,49 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
                   ),
           ),
           // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
-          if (!context.isMaterial)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: viewPaddingTop + kToolbarHeight,
-              child: const TopFadeBlur(useShader: true),
-            ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: viewPaddingTop + kToolbarHeight,
+            child: const TopFadeBlur(useShader: true),
+          ),
           // 标题栏移到上方浮层,滚动内容从它下方穿过。
-          if (!context.isMaterial)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: SizedBox(
-                  height: kToolbarHeight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                      left: NeuSpacing.sm,
-                      right: NeuSpacing.md,
-                    ),
-                    child: Row(
-                      children: [
-                        NeuIconButton(
-                          icon: Icons.arrow_back_ios_new_rounded,
-                          size: 40,
-                          tooltip: '返回',
-                          onPressed: () => Navigator.of(context).maybePop(),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(
+                height: kToolbarHeight,
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    left: NeuSpacing.sm,
+                    right: NeuSpacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      NeuIconButton(
+                        icon: Icons.arrow_back_ios_new_rounded,
+                        size: 40,
+                        tooltip: '返回',
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
+                      const SizedBox(width: NeuSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          '个人资料',
+                          style: textTheme.titleLarge,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: NeuSpacing.sm),
-                        Expanded(
-                          child: Text(
-                            '个人资料',
-                            style: textTheme.titleLarge,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
+          ),
         ],
       ),
     );

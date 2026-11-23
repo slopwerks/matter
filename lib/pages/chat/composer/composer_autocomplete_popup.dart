@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../src/rust/api/matrix.dart' as rust;
+import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../widgets/app_avatar.dart';
 import '../composer_autocomplete.dart';
@@ -119,6 +120,18 @@ List<T> _boundedMatches<T>(
   return [...leading, ...remaining.take(limit - leading.length)];
 }
 
+// Keyboard scrolling and painting must use the same scaled row geometry.
+double composerAutocompleteItemExtent(BuildContext context) {
+  if (!context.isMaterial) return 52;
+  final text = Theme.of(context).textTheme;
+  final scaler = MediaQuery.textScalerOf(context);
+  double lineHeight(TextStyle style) =>
+      scaler.scale(style.fontSize!) * (style.height ?? 1.0);
+  final contentHeight =
+      2 * lineHeight(text.titleSmall!) + 2 * lineHeight(text.labelSmall!);
+  return contentHeight.clamp(44, double.infinity) + 16;
+}
+
 class ComposerAutocompletePopup extends StatelessWidget {
   const ComposerAutocompletePopup({
     super.key,
@@ -145,26 +158,38 @@ class ComposerAutocompletePopup extends StatelessWidget {
         ? 0
         : selectedIndex.clamp(0, options.length - 1);
     final visibleItems = options.length.clamp(1, viewportItemCount);
-    final height = loading && options.isEmpty ? 52.0 : visibleItems * 52.0;
+    final itemExtent = composerAutocompleteItemExtent(context);
+    final height = loading && options.isEmpty
+        ? itemExtent
+        : visibleItems * itemExtent;
     final colors = context.neu;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final material = context.isMaterial;
     return TextFieldTapRegion(
       child: Container(
         key: const ValueKey('composer-autocomplete-panel'),
         height: height,
         margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+        padding: material ? const EdgeInsets.all(1) : null,
         clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: colors.surfaceStrong,
-          borderRadius: BorderRadius.circular(NeuRadius.button),
-          border: Border.all(color: colors.hairline),
-        ),
+        decoration: material
+            ? ShapeDecoration(
+                color: scheme.surfaceContainerHigh,
+                shape: theme.popupMenuTheme.shape ?? materialListItemShape,
+              )
+            : BoxDecoration(
+                color: colors.surfaceStrong,
+                borderRadius: BorderRadius.circular(NeuRadius.button),
+                border: Border.all(color: colors.hairline),
+              ),
         child: loading && options.isEmpty
             ? Center(
                 child: SizedBox.square(
                   dimension: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: colors.accent,
+                    color: material ? null : colors.accent,
                   ),
                 ),
               )
@@ -175,14 +200,17 @@ class ComposerAutocompletePopup extends StatelessWidget {
                   controller: scrollController,
                   padding: EdgeInsets.zero,
                   physics: const ClampingScrollPhysics(),
-                  itemExtent: 52,
+                  itemExtent: itemExtent,
                   itemCount: options.length,
                   itemBuilder: (context, index) {
                     final option = options[index];
+                    final selected = index == indexInRange;
                     return Material(
                       key: ValueKey('composer-autocomplete-option-$index'),
-                      color: index == indexInRange
-                          ? colors.accentSoft
+                      color: selected
+                          ? material
+                                ? scheme.secondaryContainer
+                                : colors.accentSoft
                           : Colors.transparent,
                       child: InkWell(
                         onHover: (hovering) {
@@ -192,7 +220,10 @@ class ComposerAutocompletePopup extends StatelessWidget {
                         },
                         onTap: () => onSelected(option),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: material ? 8 : 0,
+                          ),
                           child: Row(
                             children: [
                               if (option.emoji case final emoji?)
@@ -206,11 +237,13 @@ class ComposerAutocompletePopup extends StatelessWidget {
                               else
                                 AppAvatar(
                                   fallback: option.title,
-                                  size: 32,
+                                  size: material ? materialListAvatarSize : 32,
                                   radius: 16,
                                   url: option.avatarUrl,
                                 ),
-                              const SizedBox(width: 10),
+                              SizedBox(
+                                width: material ? materialListContentGap : 10,
+                              ),
                               Expanded(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -218,20 +251,30 @@ class ComposerAutocompletePopup extends StatelessWidget {
                                   children: [
                                     Text(
                                       option.title,
-                                      maxLines: 1,
+                                      maxLines: material ? 2 : 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall,
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            color: material && selected
+                                                ? scheme.onSecondaryContainer
+                                                : null,
+                                          ),
                                     ),
                                     if (option.subtitle case final subtitle?)
                                       Text(
                                         subtitle,
-                                        maxLines: 1,
+                                        maxLines: material ? 2 : 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall,
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              color: material
+                                                  ? selected
+                                                        ? scheme
+                                                              .onSecondaryContainer
+                                                        : scheme
+                                                              .onSurfaceVariant
+                                                  : null,
+                                            ),
                                       ),
                                   ],
                                 ),

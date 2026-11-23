@@ -3,26 +3,45 @@ import 'package:flutter/services.dart';
 
 import '../../../src/rust/api/matrix.dart';
 import '../../../theme/neu_colors.dart';
+import '../../../theme/material_theme.dart';
 import '../../../widgets/glass.dart';
+import '../../../widgets/material_press.dart';
 
-/// An icon-over-text action button used inside the floating message menu.
+/// The message action keeps each skin's own menu presentation.
 class _IconTextAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final Color? color;
+  final bool destructive;
 
   const _IconTextAction({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.color,
+    this.destructive = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
-    final c = color ?? colors.textSecondary;
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    if (material) {
+      return MaterialPress(
+        builder: (states) => TextButton.icon(
+          statesController: states,
+          style: materialMessageMenuActionStyle(
+            theme,
+            destructive: destructive,
+          ),
+          onPressed: onTap,
+          icon: Icon(icon, size: 22),
+          label: Text(label),
+        ),
+      );
+    }
+    final color = destructive ? colors.error : null;
+    final iconColor = color ?? colors.textSecondary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(NeuRadius.tag),
@@ -31,11 +50,11 @@ class _IconTextAction extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: c, size: 22),
+            Icon(icon, color: iconColor, size: 22),
             const SizedBox(height: 3),
             Text(
               label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              style: theme.textTheme.bodySmall?.copyWith(
                 color: color ?? colors.text,
                 fontWeight: FontWeight.w500,
               ),
@@ -101,6 +120,7 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
   static const _gap = 8.0;
 
   final _menuKey = GlobalKey();
+  final _viewportKey = GlobalKey();
   final _focusNode = FocusNode();
   double? _left;
   double? _top;
@@ -132,6 +152,16 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_ready && context.isMaterial) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _measureAndPosition(),
+      );
+    }
+  }
+
   void _measureAndPosition() {
     final ro = _menuKey.currentContext?.findRenderObject();
     if (ro is! RenderBox || !ro.hasSize) return;
@@ -147,16 +177,29 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
 
   ({double left, double top}) _resolvePosition(Size size) {
     final mq = MediaQuery.of(context);
-    final w = mq.size.width;
-    final h = mq.size.height;
+    final material = context.isMaterial;
+    final viewport = _viewportKey.currentContext?.findRenderObject();
+    final available = material && viewport is RenderBox && viewport.hasSize
+        ? viewport.size
+        : mq.size;
+    final w = available.width;
+    final h = available.height;
     final safe = mq.padding;
     final mLeft = safe.left + 8;
     final mRight = w - safe.right - 8;
 
     final b = widget.bubbleRect;
+    final minTop = safe.top + _gap;
+    final maxTop = (h - safe.bottom - _gap - size.height).clamp(
+      minTop,
+      double.infinity,
+    );
     if (b == null) {
       final left = (w - size.width) / 2;
-      return (left: left.clamp(mLeft, mRight - size.width), top: safe.top + 16);
+      return (
+        left: left.clamp(mLeft, mRight - size.width),
+        top: material ? (safe.top + 16).clamp(minTop, maxTop) : safe.top + 16,
+      );
     }
 
     final spaceAbove = b.top - safe.top;
@@ -170,7 +213,7 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
     if (left + size.width > mRight) left = mRight - size.width;
     if (left < mLeft) left = mLeft;
 
-    return (left: left, top: top);
+    return (left: left, top: material ? top.clamp(minTop, maxTop) : top);
   }
 
   /// Closes the menu, then runs the selected action.
@@ -180,32 +223,30 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
   }
 
   Widget _buildEmojiRow() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ..._quickEmojis.map((emoji) => _emojiButton(emoji)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(NeuRadius.tag),
-                onTap: () => _select(widget.onShowFullEmojiPicker),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Icon(
-                    Icons.add_rounded,
-                    color: context.neu.textTertiary,
-                    size: 22,
-                  ),
-                ),
-              ),
-            ),
-          ],
+    final material = context.isMaterial;
+    final more = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: InkWell(
+        borderRadius: material ? null : BorderRadius.circular(NeuRadius.tag),
+        onTap: () => _select(widget.onShowFullEmojiPicker),
+        child: Padding(
+          padding: EdgeInsets.all(material ? 6 : 8),
+          child: Icon(
+            Icons.add_rounded,
+            color: material
+                ? Theme.of(context).colorScheme.onSurfaceVariant
+                : context.neu.textTertiary,
+            size: 22,
+          ),
         ),
       ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: _menuItems([
+        ..._quickEmojis.map(_emojiButton),
+        material ? Tooltip(message: '选择表情', child: more) : more,
+      ]),
     );
   }
 
@@ -213,10 +254,12 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: InkWell(
-        borderRadius: BorderRadius.circular(NeuRadius.tag),
+        borderRadius: context.isMaterial
+            ? null
+            : BorderRadius.circular(NeuRadius.tag),
         onTap: () => _select(() => widget.onReact(emoji)),
         child: Padding(
-          padding: const EdgeInsets.all(8),
+          padding: EdgeInsets.all(context.isMaterial ? 6 : 8),
           child: Text(emoji, style: const TextStyle(fontSize: 22)),
         ),
       ),
@@ -229,104 +272,154 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
     final isText = msg.msgType == MessageType.text;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isText)
-              _IconTextAction(
-                icon: Icons.copy_rounded,
-                label: '复制',
-                onTap: () => _select(widget.onCopy),
-              ),
-            if (widget.onReadFullScreen != null)
-              _IconTextAction(
-                icon: Icons.article_outlined,
-                label: '全屏阅读',
-                onTap: () => _select(widget.onReadFullScreen!),
-              ),
-            _IconTextAction(
-              icon: Icons.reply_rounded,
-              label: '回复',
-              onTap: () => _select(widget.onReply),
-            ),
-            if (widget.onPlusOne != null)
-              _IconTextAction(
-                icon: Icons.plus_one_rounded,
-                label: '+1',
-                onTap: () => _select(widget.onPlusOne!),
-              ),
-            if (!isEvent)
-              _IconTextAction(
-                icon: Icons.forward_rounded,
-                label: '转发',
-                onTap: () => _select(widget.onForward),
-              ),
-            if (!isEvent && widget.onPin != null)
-              _IconTextAction(
-                icon: widget.isPinned!
-                    ? Icons.push_pin_rounded
-                    : Icons.push_pin_outlined,
-                label: widget.isPinned! ? '取消置顶' : '置顶',
-                onTap: () => _select(widget.onPin!),
-              ),
-            if (!isEvent && widget.pinStateLoading)
-              SizedBox(
-                width: 56,
-                height: 48,
-                child: Center(
-                  child: SizedBox.square(
+      child: _menuItems([
+        if (isText)
+          _IconTextAction(
+            icon: Icons.copy_rounded,
+            label: '复制',
+            onTap: () => _select(widget.onCopy),
+          ),
+        if (widget.onReadFullScreen != null)
+          _IconTextAction(
+            icon: Icons.article_outlined,
+            label: '全屏阅读',
+            onTap: () => _select(widget.onReadFullScreen!),
+          ),
+        _IconTextAction(
+          icon: Icons.reply_rounded,
+          label: '回复',
+          onTap: () => _select(widget.onReply),
+        ),
+        if (widget.onPlusOne != null)
+          _IconTextAction(
+            icon: Icons.plus_one_rounded,
+            label: '+1',
+            onTap: () => _select(widget.onPlusOne!),
+          ),
+        if (!isEvent)
+          _IconTextAction(
+            icon: Icons.forward_rounded,
+            label: '转发',
+            onTap: () => _select(widget.onForward),
+          ),
+        if (!isEvent && widget.onPin != null)
+          _IconTextAction(
+            icon: widget.isPinned!
+                ? Icons.push_pin_rounded
+                : Icons.push_pin_outlined,
+            label: widget.isPinned! ? '取消置顶' : '置顶',
+            onTap: () => _select(widget.onPin!),
+          ),
+        if (!isEvent && widget.pinStateLoading)
+          context.isMaterial
+              ? TextButton.icon(
+                  onPressed: null,
+                  style: materialMessageMenuActionStyle(Theme.of(context)),
+                  icon: const SizedBox.square(
                     dimension: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.6,
-                      color: context.neu.textTertiary,
+                    child: CircularProgressIndicator(strokeWidth: 1.6),
+                  ),
+                  label: const Text('正在读取置顶状态'),
+                )
+              : SizedBox(
+                  width: 56,
+                  height: 48,
+                  child: Center(
+                    child: SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        color: context.isMaterial
+                            ? null
+                            : context.neu.textTertiary,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            if (widget.isMe && isText)
-              _IconTextAction(
-                icon: Icons.edit_outlined,
-                label: '编辑',
-                onTap: () => _select(widget.onEdit),
-              ),
-            if (widget.isMe)
-              _IconTextAction(
-                icon: Icons.delete_outline_rounded,
-                label: '撤回',
-                color: context.neu.error,
-                onTap: () => _select(widget.onRecall),
-              ),
-          ],
-        ),
-      ),
+        if (widget.isMe && isText)
+          _IconTextAction(
+            icon: Icons.edit_outlined,
+            label: '编辑',
+            onTap: () => _select(widget.onEdit),
+          ),
+        if (widget.isMe)
+          _IconTextAction(
+            icon: Icons.delete_outline_rounded,
+            label: '撤回',
+            destructive: true,
+            onTap: () => _select(widget.onRecall),
+          ),
+      ], vertical: true),
     );
   }
 
-  Widget _buildMenu() {
-    final msg = widget.message;
-    final isEvent = msg.msgType == MessageType.event;
+  Widget _menuItems(List<Widget> children, {bool vertical = false}) =>
+      context.isMaterial
+      ? vertical
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              )
+            : Wrap(children: children)
+      : SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(mainAxisSize: MainAxisSize.min, children: children),
+        );
+
+  Widget _buildMenu(BoxConstraints viewport) {
+    final isEvent = widget.message.msgType == MessageType.event;
+    final material = context.isMaterial;
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!isEvent) _buildEmojiRow(),
+        if (!isEvent)
+          Divider(color: material ? null : context.neu.hairline, height: 0.5),
+        _buildActionRow(),
+      ],
+    );
+    if (material) {
+      final theme = Theme.of(context);
+      final menu = theme.popupMenuTheme;
+      final safe = MediaQuery.paddingOf(context);
+      return ConstrainedBox(
+        key: _menuKey,
+        constraints: BoxConstraints(
+          maxWidth: (viewport.maxWidth - safe.horizontal - 2 * _gap).clamp(
+            0.0,
+            materialMessageMenuMaxWidth,
+          ),
+          maxHeight: (viewport.maxHeight - safe.vertical - 2 * _gap).clamp(
+            0.0,
+            double.infinity,
+          ),
+        ),
+        child: Material(
+          color: menu.color ?? theme.colorScheme.surfaceContainerHigh,
+          elevation: menu.elevation ?? 0,
+          shape: menu.shape,
+          surfaceTintColor: menu.surfaceTintColor,
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(child: body),
+        ),
+      );
+    }
     return Material(
       type: MaterialType.transparency,
       child: GlassPanel(
         key: _menuKey,
         radius: NeuRadius.surface,
         padding: EdgeInsets.zero,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!isEvent) _buildEmojiRow(),
-            if (!isEvent) Divider(color: context.neu.hairline, height: 0.5),
-            _buildActionRow(),
-          ],
-        ),
+        child: body,
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      LayoutBuilder(builder: (context, viewport) => _buildOverlay(viewport));
+
+  Widget _buildOverlay(BoxConstraints viewport) {
     return Focus(
       focusNode: _focusNode,
       onKeyEvent: (_, event) {
@@ -337,6 +430,7 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
         return KeyEventResult.handled;
       },
       child: Stack(
+        key: _viewportKey,
         children: [
           // Full-screen dismiss barrier.
           Positioned.fill(
@@ -363,7 +457,7 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
                   child: child,
                 ),
               ),
-              child: _buildMenu(),
+              child: _buildMenu(viewport),
             ),
           ),
         ],

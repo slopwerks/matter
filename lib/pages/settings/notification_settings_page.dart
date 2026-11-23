@@ -14,6 +14,7 @@ import '../../src/rust/api/matrix/notifications.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/max_content_width.dart';
+import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_surface.dart';
 import '../../widgets/sheets.dart';
 
@@ -455,23 +456,51 @@ class _NotificationSettingsPageState
       void change(bool next) => _saveRule(rule, next, selected, title);
       final detail = supported ? subtitle : '$subtitle\n此服务器不支持该规则';
       if (mode) {
+        void select(bool? next) {
+          if (next != null) change(next);
+        }
+
+        final key = ValueKey(rule);
+        if (context.isMaterial) {
+          return ListTile(
+            title: Text(title),
+            enabled: enabled,
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(detail),
+                const SizedBox(height: 12),
+                DropdownMenu<bool>(
+                  key: key,
+                  expandedInsets: EdgeInsets.zero,
+                  enabled: enabled,
+                  initialSelection: selected,
+                  selectOnly: true,
+                  enableSearch: false,
+                  dropdownMenuEntries: const [
+                    DropdownMenuEntry(value: true, label: '所有消息'),
+                    DropdownMenuEntry(value: false, label: '仅提及'),
+                  ],
+                  onSelected: enabled ? select : null,
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        }
         return ListTile(
           title: Text(title),
           subtitle: Text(detail),
           enabled: enabled,
           trailing: DropdownButton<bool>(
-            key: ValueKey(rule),
+            key: key,
             value: selected,
             underline: const SizedBox.shrink(),
             items: const [
               DropdownMenuItem(value: true, child: Text('所有消息')),
               DropdownMenuItem(value: false, child: Text('仅提及')),
             ],
-            onChanged: enabled
-                ? (next) {
-                    if (next != null) change(next);
-                  }
-                : null,
+            onChanged: enabled ? select : null,
           ),
         );
       }
@@ -673,6 +702,7 @@ class _NotificationSettingsPageState
                 ),
                 DropdownButtonFormField<PushBackend>(
                   initialValue: _backend,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: '推送通道',
                     border: OutlineInputBorder(),
@@ -798,28 +828,33 @@ class _SettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall
-                ?.copyWith(color: context.neu.textSecondary),
-          ),
-        ),
-        NeuSurface(
-          color: context.neu.card,
-          radius: NeuRadius.surface,
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Material(
-            type: MaterialType.transparency,
+    child: context.isMaterial
+        ? MaterialDetailCard(
+            title: title,
             child: Column(children: children),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(color: context.neu.textSecondary),
+                ),
+              ),
+              NeuSurface(
+                color: context.neu.card,
+                radius: NeuRadius.surface,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Column(children: children),
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
-    ),
   );
 }
 

@@ -53,14 +53,20 @@ void main() {
         expect(tester.takeException(), isNull);
       });
 
-      for (final expanded in [false, true]) {
+      for (final wide in [false, true]) {
         testWidgets(
-          '$label controls (expanded=$expanded) retain callbacks and busy guards',
+          '$label controls (wide=$wide) retain callbacks and busy guards',
           (tester) async {
             var sends = 0;
             var emojis = 0;
             var attachments = 0;
             var menus = 0;
+            // Match the host: Material keeps its capsule at desktop widths.
+            final expanded = !material && wide;
+            final toolsOnTap = material && wide;
+            final attachmentIcon = expanded
+                ? Icons.image_outlined
+                : Icons.add_rounded;
             BuildContext? anchor;
             Widget controls({
               bool busy = false,
@@ -68,9 +74,9 @@ void main() {
               bool hasImages = false,
             }) => ComposerActionsBar(
               expanded: expanded,
-              compact: expanded,
-              showMore: expanded,
-              inlineImages: expanded,
+              compact: wide,
+              showMore: wide,
+              inlineImages: wide,
               emojiIcon: Icons.sentiment_satisfied_alt_rounded,
               emojiSelected: false,
               attachmentSelected: false,
@@ -87,7 +93,7 @@ void main() {
               onSend: () => sends++,
             );
             Widget app(Widget child) =>
-                _app(theme, child, width: expanded ? 800 : 320);
+                _app(theme, child, width: wide ? 800 : 320);
             await tester.pumpWidget(app(controls()));
             if (expanded) {
               expect(
@@ -102,14 +108,16 @@ void main() {
             await tester.tap(
               find.byIcon(Icons.sentiment_satisfied_alt_rounded),
             );
-            await tester.tap(
-              find.byIcon(expanded ? Icons.image_outlined : Icons.add_rounded),
-            );
+            await tester.tap(find.byIcon(attachmentIcon));
             expect(emojis, 1);
-            expect(attachments, 1);
-            await tester.longPress(
-              find.byIcon(expanded ? Icons.image_outlined : Icons.add_rounded),
-            );
+            expect(attachments, toolsOnTap ? 0 : 1);
+            if (toolsOnTap) {
+              expect(find.byIcon(Icons.image_outlined), findsNothing);
+              expect(find.byIcon(Icons.more_horiz_rounded), findsNothing);
+            } else {
+              expect(menus, 0);
+              await tester.longPress(find.byIcon(attachmentIcon));
+            }
             expect(menus, 1);
             expect(anchor!.findRenderObject(), isA<RenderBox>());
             if (expanded) {
@@ -130,14 +138,10 @@ void main() {
             await tester.tap(
               find.byIcon(Icons.sentiment_satisfied_alt_rounded),
             );
-            await tester.tap(
-              find.byIcon(expanded ? Icons.image_outlined : Icons.add_rounded),
-            );
-            await tester.longPress(
-              find.byIcon(expanded ? Icons.image_outlined : Icons.add_rounded),
-            );
+            await tester.tap(find.byIcon(attachmentIcon));
+            await tester.longPress(find.byIcon(attachmentIcon));
             expect(emojis, 1);
-            expect(attachments, 1);
+            expect(attachments, toolsOnTap ? 0 : 1);
             expect(menus, menuCount);
             expect(sends, 1);
             expect(find.byType(CircularProgressIndicator), findsOneWidget);

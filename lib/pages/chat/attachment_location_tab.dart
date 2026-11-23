@@ -192,17 +192,28 @@ class _AttachmentLocationTabState extends State<AttachmentLocationTab> {
           top: 10,
           right: 10,
           child: _locating
-              ? NeuSurface(
-                  depth: NeuDepth.flat,
-                  radius: 20,
-                  width: 40,
-                  height: 40,
-                  padding: const EdgeInsets.all(11),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: colors.accent,
-                  ),
-                )
+              ? context.isMaterial
+                    ? const Card(
+                        margin: EdgeInsets.zero,
+                        child: SizedBox.square(
+                          dimension: 40,
+                          child: Padding(
+                            padding: EdgeInsets.all(11),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      )
+                    : NeuSurface(
+                        depth: NeuDepth.flat,
+                        radius: 20,
+                        width: 40,
+                        height: 40,
+                        padding: const EdgeInsets.all(11),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.accent,
+                        ),
+                      )
               : NeuIconButton(
                   tooltip: '回到当前位置',
                   size: 40,
@@ -210,6 +221,24 @@ class _AttachmentLocationTabState extends State<AttachmentLocationTab> {
                   icon: Icons.my_location_rounded,
                 ),
         ),
+        if (context.isMaterial)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: attachmentSendBarClearance + 8,
+            child: IgnorePointer(
+              child: Card(
+                margin: EdgeInsets.zero,
+                child: ListTile(
+                  leading: const Icon(Icons.location_on_outlined),
+                  title: const Text('发送所选位置'),
+                  subtitle: Text(
+                    '${selected.latitude.toStringAsFixed(5)}, ${selected.longitude.toStringAsFixed(5)}',
+                  ),
+                ),
+              ),
+            ),
+          ),
         Positioned(
           left: 0,
           right: 0,

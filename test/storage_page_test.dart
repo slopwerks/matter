@@ -89,6 +89,10 @@ void main() {
     testWidgets(
       'storage totals navigate to protected file details (material=$material)',
       (tester) async {
+        if (material) {
+          await tester.binding.setSurfaceSize(const Size(320, 800));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+        }
         await pump(tester, const StoragePage(), material);
         expect(find.text('应用文件占用'), findsOneWidget);
         expect(find.text('安装包与本地库'), findsOneWidget);
@@ -141,6 +145,10 @@ void main() {
     testWidgets(
       'download settings persist independent profiles (material=$material)',
       (tester) async {
+        if (material) {
+          await tester.binding.setSurfaceSize(const Size(320, 800));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+        }
         await pump(tester, const StorageSettingsPage(), material);
         await tester.tap(find.text('移动数据'));
         await tester.pumpAndSettle();

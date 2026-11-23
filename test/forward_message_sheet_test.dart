@@ -199,6 +199,13 @@ void main() {
     final noticeMaterial = tester.widget<Material>(
       find.byKey(const ValueKey('forward-success-notice-surface')),
     );
+    final context = tester.element(find.byType(ForwardSuccessNotice));
+    if (context.isMaterial) {
+      expect(
+        noticeMaterial.color,
+        Theme.of(context).colorScheme.inverseSurface,
+      );
+    }
     final textRect = tester
         .getRect(find.text('成功转发到'))
         .expandToInclude(tester.getRect(find.text('目标会话')));
@@ -207,7 +214,7 @@ void main() {
     expect(textRect.center.dx, closeTo(200, 0.5));
     expect(
       noticeMaterial.borderRadius,
-      BorderRadius.circular(NeuRadius.button),
+      BorderRadius.circular(context.isMaterial ? 8 : NeuRadius.button),
     );
 
     await tester.tap(find.byKey(const ValueKey('forward-success-room-link')));

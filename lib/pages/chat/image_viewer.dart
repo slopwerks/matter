@@ -12,6 +12,7 @@ import '../../providers/image_view_history.dart';
 import '../../providers/message_cache_persistence.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import 'file_download_saver.dart';
 import 'file_message_bubble.dart' show sanitizeAttachmentFilename;
 import 'forward_message_sheet.dart';
@@ -19,6 +20,7 @@ import 'image_loading_policy.dart';
 import 'image_media.dart';
 import 'image_placeholders.dart';
 import 'image_viewer_media.dart';
+import 'image_viewer_footer.dart';
 import 'image_zoom_frame.dart';
 
 export 'image_viewer_media.dart' show ImageHistoryLoader, ImageViewerSource;
@@ -309,7 +311,22 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
   Widget _buildToolbar(BuildContext context, ImageViewerMedia media) {
-    final colors = context.neu;
+    final neu = context.neu;
+    final material = context.isMaterial;
+    final style = materialMediaViewerStyle(Theme.of(context));
+    final colors = context.isMaterial
+        ? (
+            base: style.background,
+            text: style.foreground,
+            textSecondary: style.supporting,
+            error: neu.error,
+          )
+        : (
+            base: neu.base,
+            text: neu.text,
+            textSecondary: neu.textSecondary,
+            error: neu.error,
+          );
     final source = media.source;
     final busy =
         media.original == OriginalImageState.resolving ||
@@ -349,10 +366,17 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
-      leading: IconButton(
+      title: context.isMaterial ? const Text('图片预览') : null,
+      titleTextStyle: context.isMaterial ? style.title : null,
+      leading: ImageViewerIconButton(
         tooltip: '关闭',
         onPressed: () => Navigator.of(context).pop(),
-        icon: const Icon(CupertinoIcons.chevron_back, size: 22),
+        icon: Icon(
+          context.isMaterial
+              ? Icons.close_rounded
+              : CupertinoIcons.chevron_back,
+          size: 22,
+        ),
       ),
       actions: [
         if (showOriginal)
@@ -388,7 +412,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
               ),
             ),
           ),
-        IconButton(
+        ImageViewerIconButton(
           tooltip: '下载',
           onPressed: _downloading.contains(source.id)
               ? null
@@ -402,7 +426,12 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                     strokeWidth: 2,
                   ),
                 )
-              : const Icon(CupertinoIcons.arrow_down_to_line, size: 22),
+              : Icon(
+                  material
+                      ? Icons.download_rounded
+                      : CupertinoIcons.arrow_down_to_line,
+                  size: 22,
+                ),
         ),
         if (supportsSaveAs ||
             canReply ||
@@ -412,7 +441,11 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
           PopupMenuButton<_ViewerAction>(
             key: const ValueKey('image-viewer-more'),
             tooltip: '更多操作',
-            icon: const Icon(CupertinoIcons.ellipsis, size: 22),
+            style: context.isMaterial ? style.control : null,
+            icon: Icon(
+              material ? Icons.more_horiz_rounded : CupertinoIcons.ellipsis,
+              size: 22,
+            ),
             onOpened: () => _menuMedia = media,
             onCanceled: () => setState(() => _menuMedia = null),
             onSelected: (action) {
@@ -437,13 +470,18 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                   child: const Text('另存为…'),
                 ),
               if (canReply)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: _ViewerAction.reply,
                   child: Row(
                     children: [
-                      Icon(CupertinoIcons.arrowshape_turn_up_left, size: 20),
-                      SizedBox(width: 12),
-                      Text('回复'),
+                      Icon(
+                        material
+                            ? Icons.reply_rounded
+                            : CupertinoIcons.arrowshape_turn_up_left,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('回复'),
                     ],
                   ),
                 ),
@@ -451,22 +489,32 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                 PopupMenuItem(
                   value: _ViewerAction.forward,
                   enabled: !_forwarding.contains(source.id),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(CupertinoIcons.arrowshape_turn_up_right, size: 20),
-                      SizedBox(width: 12),
-                      Text('转发'),
+                      Icon(
+                        material
+                            ? Icons.forward_rounded
+                            : CupertinoIcons.arrowshape_turn_up_right,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('转发'),
                     ],
                   ),
                 ),
               if (canJump)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: _ViewerAction.jump,
                   child: Row(
                     children: [
-                      Icon(CupertinoIcons.chat_bubble_text, size: 20),
-                      SizedBox(width: 12),
-                      Text('转到消息'),
+                      Icon(
+                        material
+                            ? Icons.chat_bubble_outline_rounded
+                            : CupertinoIcons.chat_bubble_text,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('转到消息'),
                     ],
                   ),
                 ),
@@ -578,86 +626,26 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
               left: 0,
               right: 0,
               bottom: MediaQuery.paddingOf(context).bottom + 12,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (description?.trim().isNotEmpty == true)
-                    Container(
-                      key: const ValueKey('image-viewer-caption'),
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(context).height * .25,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: .75),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: SingleChildScrollView(
-                        child: SelectableText(
-                          description!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (_captionErrors.contains(captionRoot) &&
-                      media.source.message?.imageMetadata?.albumRoot != null)
-                    IconButton(
-                      tooltip: '重试描述',
-                      color: Colors.white,
-                      onPressed: () => _loadCaption(media.source),
-                      icon: const Icon(CupertinoIcons.arrow_clockwise),
-                    ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        tooltip: _index == 0 && _hasMore ? '加载更早图片' : '上一张',
-                        onPressed:
-                            !_zoomed &&
-                                !_loadingOlder &&
-                                (_index > 0 || _hasMore)
-                            ? _previous
-                            : null,
-                        icon: _loadingOlder
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                CupertinoIcons.chevron_left,
-                                color: Colors.white,
-                                size: 22,
-                              ),
-                      ),
-
-                      IconButton(
-                        tooltip: '下一张',
-                        onPressed: !_zoomed && _index < _sources.length - 1
-                            ? () => _pages.nextPage(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeOut,
-                              )
-                            : null,
-                        icon: const Icon(
-                          CupertinoIcons.chevron_right,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              child: ImageViewerFooter(
+                description: description,
+                pageLabel: '${_index + 1} / ${_sources.length}',
+                previousTooltip: _index == 0 && _hasMore ? '加载更早图片' : '上一张',
+                loadingOlder: _loadingOlder,
+                onRetryCaption:
+                    _captionErrors.contains(captionRoot) &&
+                        media.source.message?.imageMetadata?.albumRoot != null
+                    ? () => _loadCaption(media.source)
+                    : null,
+                onPrevious:
+                    !_zoomed && !_loadingOlder && (_index > 0 || _hasMore)
+                    ? _previous
+                    : null,
+                onNext: !_zoomed && _index < _sources.length - 1
+                    ? () => _pages.nextPage(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                      )
+                    : null,
               ),
             ),
           ],
@@ -754,8 +742,10 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
                         media.original == OriginalImageState.failed
                     ? TextButton.icon(
                         onPressed: media.resolveImage,
-                        icon: const Icon(
-                          CupertinoIcons.arrow_clockwise,
+                        icon: Icon(
+                          context.isMaterial
+                              ? Icons.refresh_rounded
+                              : CupertinoIcons.arrow_clockwise,
                           color: Colors.white,
                           size: 22,
                         ),

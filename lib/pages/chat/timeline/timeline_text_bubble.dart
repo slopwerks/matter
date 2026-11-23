@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
+import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 
 import '../../../features/markdown/markdown_composer.dart';
@@ -55,8 +56,8 @@ class TimelineTextBubble extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final maxBubbleWidth = TimelineBubbleFrame.maxWidth(context);
     final textStyle = textTheme.bodyLarge!.copyWith(
-      color: isMe ? colors.onAccent : colors.text,
-      height: 1.35,
+      color: isMe ? outgoingBubbleForeground(context) : colors.text,
+      height: context.isMaterial ? 1.625 : 1.35,
     );
     final previewTextSource = formattedBody == null || formattedBody.isEmpty
         ? message.content
@@ -118,7 +119,9 @@ class TimelineTextBubble extends StatelessWidget {
             key: ValueKey('formatted-body:${message.id}'),
             html: readerHtml,
             style: textStyle,
-            accentColor: isMe ? colors.onAccent : colors.accent,
+            accentColor: isMe
+                ? outgoingBubbleForeground(context)
+                : colors.accent,
             mentionDisplayNames: mentionDisplayNames,
             onMentionTap: onMentionTap,
             trailingMetadata: metadata,
@@ -132,7 +135,7 @@ class TimelineTextBubble extends StatelessWidget {
             metadata: metadata,
             maxWidth: maxBubbleWidth - 28,
             minWidth: replyPreviewWidth,
-            linkColor: isMe ? colors.onAccent : colors.accent,
+            linkColor: isMe ? outgoingBubbleForeground(context) : colors.accent,
             onUrlTap: linkRouter.open,
             mentionDisplayNames: mentionDisplayNames,
             mentionedUserIds: message.mentionedUserIds,
@@ -157,6 +160,9 @@ class TimelineTextBubble extends StatelessWidget {
     bool isMe,
   ) {
     final colors = context.neu;
+    final style = context.isMaterial
+        ? materialTimelinePreviewStyle(Theme.of(context))
+        : null;
     return Semantics(
       button: true,
       label: '跳转到被回复的消息',
@@ -170,13 +176,17 @@ class TimelineTextBubble extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isMe
-                ? Colors.white.withValues(alpha: 0.16)
-                : colors.base.withValues(alpha: 0.65),
-            borderRadius: BorderRadius.circular(NeuRadius.tag),
+            color:
+                style?.fill ??
+                (isMe
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : colors.base.withValues(alpha: 0.65)),
+            borderRadius: style?.radius ?? BorderRadius.circular(NeuRadius.tag),
             border: Border(
               left: BorderSide(
-                color: isMe ? Colors.white70 : colors.accent,
+                color:
+                    style?.accent ??
+                    (isMe ? outgoingBubbleForeground(context) : colors.accent),
                 width: 3,
               ),
             ),
@@ -194,9 +204,12 @@ class TimelineTextBubble extends StatelessWidget {
 
   TextStyle _replyPreviewTextStyle(BuildContext context, bool isMe) {
     final colors = context.neu;
-    return Theme.of(context).textTheme.bodySmall!.copyWith(
-      color: isMe
-          ? colors.onAccent.withValues(alpha: 0.7)
+    final theme = Theme.of(context);
+    return theme.textTheme.bodySmall!.copyWith(
+      color: context.isMaterial
+          ? materialTimelinePreviewStyle(theme).foreground
+          : isMe
+          ? outgoingBubbleForeground(context).withValues(alpha: 0.7)
           : colors.textTertiary,
       height: 1.3,
     );

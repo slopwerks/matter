@@ -2,11 +2,14 @@ import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoPageTransitionsBui
 import 'package:material_ui/material_ui.dart';
 
 import 'app_component_theme.dart';
+import 'material_color_scheme.dart';
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
 import 'tokens.dart';
 
-const defaultMaterialSeedColor = Color(0xFF5B8DEF);
+export 'material_color_scheme.dart';
+
+part 'material_chat_styles.dart';
 
 const double materialListAvatarSize = 44;
 const double materialDenseListAvatarSize = 40;
@@ -16,45 +19,207 @@ const materialListItemShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.all(Radius.circular(materialSurfaceRadius)),
 );
 
-TextStyle? materialListTitleStyle(ThemeData theme, {bool unread = false}) =>
-    theme.textTheme.titleMedium?.copyWith(
-      fontSize: 16,
-      fontWeight: unread ? FontWeight.w600 : FontWeight.w500,
-    );
+({
+  Color brandFill,
+  Color brandForeground,
+  Color errorFill,
+  Color errorForeground,
+})
+materialAuthStyle(ThemeData theme) => (
+  brandFill: theme.colorScheme.primaryContainer,
+  brandForeground: theme.colorScheme.onPrimaryContainer,
+  errorFill: theme.colorScheme.errorContainer,
+  errorForeground: theme.colorScheme.onErrorContainer,
+);
+
+({
+  Color foreground,
+  TextStyle? title,
+  TextStyle? label,
+  TextStyle? number,
+  TextStyle? metric,
+})
+materialStorageOverviewStyle(ThemeData theme) => (
+  foreground: theme.colorScheme.onSurfaceVariant,
+  title: theme.textTheme.titleSmall,
+  label: theme.textTheme.bodySmall?.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+  ),
+  number: theme.textTheme.displaySmall,
+  metric: theme.textTheme.titleLarge,
+);
 
 TextTheme materialConversationTextTheme(
   ThemeData theme, {
   required bool unread,
   required bool muted,
-}) => theme.textTheme.copyWith(
-  titleMedium: materialListTitleStyle(theme, unread: unread),
-  bodyMedium: theme.textTheme.bodyMedium?.copyWith(
-    color: unread
-        ? theme.colorScheme.onSurface
-        : theme.colorScheme.onSurfaceVariant,
-  ),
-  labelSmall: theme.textTheme.labelSmall?.copyWith(
-    color: unread && !muted
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurfaceVariant,
+  required bool pendingMembership,
+}) {
+  final scheme = theme.colorScheme;
+  final foreground = pendingMembership
+      ? materialRoomMembershipColors(theme).foreground
+      : null;
+  return theme.textTheme.copyWith(
+    titleMedium: materialListTitleStyle(
+      theme,
+      unread: unread,
+    )?.copyWith(color: foreground),
+    bodyMedium: theme.textTheme.bodyMedium?.copyWith(
+      color:
+          foreground ?? (unread ? scheme.onSurface : scheme.onSurfaceVariant),
+    ),
+    labelSmall: theme.textTheme.labelSmall?.copyWith(
+      color:
+          foreground ??
+          (unread && !muted ? scheme.primary : scheme.onSurfaceVariant),
+    ),
+  );
+}
+
+({Color fill, Color foreground, TextStyle? title, TextStyle? subtitle})
+materialProfileCardStyle(ThemeData theme, {bool detail = false}) => (
+  fill: theme.colorScheme.primaryContainer,
+  foreground: theme.colorScheme.onPrimaryContainer,
+  title: (detail ? theme.textTheme.headlineSmall : theme.textTheme.titleMedium)
+      ?.copyWith(
+        fontSize: detail ? materialPageTitleSize : 18,
+        color: theme.colorScheme.onPrimaryContainer,
+      ),
+  subtitle: theme.textTheme.bodyMedium?.copyWith(
+    color: theme.colorScheme.onPrimaryContainer,
   ),
 );
 
+({Color fill, TextStyle? text}) materialEncryptionValueStyle(ThemeData theme) =>
+    (
+      fill: theme.colorScheme.surfaceContainerHighest,
+      text: theme.textTheme.bodySmall?.copyWith(
+        fontFamily: 'monospace',
+        height: 1.6,
+      ),
+    );
+
+({Color fill, TextStyle? level, TextStyle? metadata, TextStyle? message})
+materialLogEntryStyle(ThemeData theme, String level) {
+  final scheme = theme.colorScheme;
+  final foreground = switch (level) {
+    'error' => scheme.error,
+    'warn' => scheme.tertiary,
+    'debug' => scheme.onSurfaceVariant,
+    _ => scheme.primary,
+  };
+  return (
+    fill: level == 'error' ? scheme.errorContainer : scheme.surface,
+    level: theme.textTheme.labelMedium?.copyWith(
+      color: level == 'error' ? scheme.onErrorContainer : foreground,
+    ),
+    metadata: theme.textTheme.labelSmall?.copyWith(
+      color: level == 'error'
+          ? scheme.onErrorContainer
+          : scheme.onSurfaceVariant,
+      fontFamily: 'monospace',
+    ),
+    message: theme.textTheme.bodySmall?.copyWith(
+      color: level == 'error' ? scheme.onErrorContainer : scheme.onSurface,
+      fontFamily: 'monospace',
+      height: 1.5,
+    ),
+  );
+}
+
 ({Color fill, Color foreground, TextStyle? title, TextStyle? subtitle})
-materialProfileCardStyle(ThemeData theme) => (
-  fill: theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
-  foreground: theme.colorScheme.onSurfaceVariant,
-  title: theme.textTheme.titleMedium?.copyWith(
-    fontSize: 18,
-    color: theme.colorScheme.onSurface,
-  ),
-  subtitle: theme.textTheme.bodyMedium,
+materialSettingsPresetStyle(ThemeData theme, {required bool selected}) {
+  final scheme = theme.colorScheme;
+  final foreground = selected ? scheme.onSecondaryContainer : scheme.onSurface;
+  return (
+    fill: selected ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+    foreground: foreground,
+    title: materialListTitleStyle(theme)?.copyWith(color: foreground),
+    subtitle: theme.textTheme.labelSmall?.copyWith(
+      color: selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+    ),
+  );
+}
+
+({
+  Color fill,
+  Color foreground,
+  Color decoration,
+  Color searchFill,
+  TextStyle? title,
+  ShapeBorder? shape,
+})
+materialRootHeaderStyle(ThemeData theme, {required bool compact}) => (
+  fill: compact
+      ? theme.colorScheme.primaryContainer
+      : theme.colorScheme.surface,
+  foreground: compact
+      ? theme.colorScheme.onPrimaryContainer
+      : theme.colorScheme.onSurface,
+  decoration: theme.colorScheme.primary.withValues(alpha: .1),
+  searchFill: compact
+      ? theme.colorScheme.surface
+      : theme.colorScheme.surfaceContainerHigh,
+  title: compact
+      ? theme.textTheme.headlineLarge?.copyWith(
+          color: theme.colorScheme.onPrimaryContainer,
+        )
+      : theme.textTheme.headlineMedium?.copyWith(
+          fontSize: 28,
+          fontWeight: FontWeight.w700,
+        ),
+  shape: compact
+      ? const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(40)),
+        )
+      : null,
 );
+
+({Color fill, Color foreground}) materialSpaceAvatarStyle(
+  ThemeData theme,
+  int index,
+) => switch (index % 4) {
+  0 => (
+    fill: theme.colorScheme.primaryContainer,
+    foreground: theme.colorScheme.onPrimaryContainer,
+  ),
+  1 => (
+    fill: theme.colorScheme.secondaryContainer,
+    foreground: theme.colorScheme.onSecondaryContainer,
+  ),
+  2 => (
+    fill: theme.colorScheme.tertiaryContainer,
+    foreground: theme.colorScheme.onTertiaryContainer,
+  ),
+  _ => (
+    fill: theme.colorScheme.surfaceContainerHigh,
+    foreground: theme.colorScheme.onSurface,
+  ),
+};
 
 TextStyle? materialSettingsSectionStyle(ThemeData theme) => theme
     .textTheme
     .titleSmall
     ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+
+({Color fill, Color accent, TextStyle? label, TextStyle code})
+materialCodePreviewStyle(ThemeData theme) => (
+  fill: theme.colorScheme.primaryContainer,
+  accent: theme.colorScheme.primary,
+  label: theme.textTheme.labelMedium?.copyWith(
+    color: theme.colorScheme.onPrimaryContainer,
+  ),
+  code: theme.textTheme.bodyMedium!.copyWith(
+    fontSize: 13,
+    color: theme.colorScheme.onPrimaryContainer,
+  ),
+);
+
+TextStyle materialSearchHighlightStyle(ThemeData theme) => TextStyle(
+  color: theme.colorScheme.onPrimaryContainer,
+  backgroundColor: theme.colorScheme.primaryContainer,
+  fontWeight: FontWeight.w700,
+);
 
 const materialPreviewBubbleShape = RoundedSuperellipseBorder(
   borderRadius: BorderRadius.all(Radius.circular(12)),
@@ -141,47 +306,9 @@ const double materialPageTitleSize = 24;
 const FontWeight materialPageTitleWeight = FontWeight.w600;
 
 /// [buildMaterialTheme] 的 page/card 两级配色。
-///
-/// 层次靠填充的明度差,不靠描边和阴影:深色下只向亮走——比所在面更暗的一层
-/// 读起来是"洞",不是"层"。浅色下页面压灰、卡片近白,纯白贴灰会显得扎眼。
-///
-/// 配色预设会把 `surface` 拉离 M3 的容器阶梯(纯黑/纯白),此时容器角色不再与
-/// 页面相连,退回按明度抬一档,保证卡片始终比页面"近"。
-({Color page, Color card}) _surfacesOf(ColorScheme scheme) {
-  final dark = scheme.brightness == Brightness.dark;
-  // 浅色下的页面必须压一档,不能取 `surface`:M3 在浅色下把 `surface` 和
-  // `surfaceBright` 都放在 tone 98,两者几乎同色,卡片和页面就分不出来。
-  final page = dark ? scheme.surface : scheme.surfaceContainer;
-  final card = dark ? scheme.surfaceContainer : scheme.surfaceBright;
-  final blended = Color.alphaBlend(
-    Colors.white.withValues(alpha: dark ? .06 : .5),
-    page,
-  );
-  final cardStepsAway =
-      (card.computeLuminance() - page.computeLuminance()).abs() > .01;
-  final resolvedCard = cardStepsAway ? card : blended;
-  final pageLuminance = page.computeLuminance();
-  final cardLuminance = resolvedCard.computeLuminance();
-  double contrast(Color color) {
-    final luminance = color.computeLuminance();
-    return luminance < cardLuminance
-        ? (cardLuminance + .05) / (luminance + .05)
-        : (luminance + .05) / (cardLuminance + .05);
-  }
-
-  // pure/soft 浅色预设的阶跃略低于 1.11；只在不足时微调页面，
-  // 保留卡片与强调色，按最小的 8-bit 混色步长拉开层级。
-  if (contrast(page) < 1.11) {
-    final away = cardLuminance > pageLuminance ? Colors.black : Colors.white;
-    for (var step = 1; step <= 255; step++) {
-      final adjusted = Color.lerp(page, away, step / 255)!;
-      if (contrast(adjusted) >= 1.11) {
-        return (page: adjusted, card: resolvedCard);
-      }
-    }
-  }
-  return (page: page, card: resolvedCard);
-}
+/// 原型的页面与卡片直接消费语义表面，不额外修正其亮度。
+({Color page, Color card}) _surfacesOf(ColorScheme scheme) =>
+    (page: scheme.surface, card: scheme.surfaceContainerLow);
 
 /// Background presets change neutral surfaces while preserving accent roles.
 ColorScheme applyMaterialBackground(
@@ -235,11 +362,11 @@ ThemeData buildMaterialTheme(
 }) {
   final scheme =
       colorScheme ??
-      ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
+      materialColorScheme(seedColor: seedColor, brightness: brightness);
   final dark = brightness == Brightness.dark;
   final surfaces = _surfacesOf(scheme);
   final text = _buildTextTheme(scheme);
-  final overlaySurface = scheme.surfaceContainer.withValues(alpha: .88);
+  final overlaySurface = scheme.surfaceContainer;
   // 分隔线取正文色的 14%,不用 outlineVariant:后者在深色页上比对浅色页重一倍,
   // 还会带种子的色偏。
   final hairline = scheme.onSurface.withValues(alpha: .14);
@@ -256,8 +383,8 @@ ThemeData buildMaterialTheme(
       card: surfaces.card,
       overlay: overlaySurface,
       hairline: hairline,
-      bubbleOutgoing: scheme.primary,
-      bubbleIncoming: surfaces.card,
+      bubbleOutgoing: scheme.primaryContainer,
+      bubbleIncoming: scheme.surfaceContainerHigh,
     ),
     typography: AppTypography(
       pageTitle: text.headlineSmall!,
@@ -312,13 +439,10 @@ ThemeData buildMaterialTheme(
       titleTextStyle: text.headlineSmall,
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: overlaySurface,
-      // 不在这里改 indicatorColor:底部 dock 的指示器由
-      // `MaterialTabNavigationBar` 自绘,它读的是 `secondaryContainer` 的
-      // 中性盘。改成半透明主色会把指示器抽成一层几乎看不见的膜。
-      // 选中项的颜色走 indicator 之外:图标和文字取 primary。
+      backgroundColor: scheme.surfaceContainerHigh,
+      indicatorColor: scheme.secondaryContainer,
       elevation: 0,
-      height: 68,
+      height: 56,
       labelTextStyle: WidgetStateProperty.resolveWith(
         (states) => text.labelMedium?.copyWith(
           fontWeight: states.contains(WidgetState.selected)
@@ -355,8 +479,8 @@ ThemeData buildMaterialTheme(
       textColor: scheme.onSurface,
       titleTextStyle: listTitle,
       subtitleTextStyle: text.bodyMedium?.copyWith(fontSize: 14),
-      // The group owns its outline; ink inside a run reaches the row edges.
-      shape: const RoundedRectangleBorder(),
+      shape: buttonShape,
+      selectedTileColor: scheme.secondaryContainer,
     ),
 
     // ── 控件 ──────────────────────────────────────────────────────────
@@ -401,21 +525,19 @@ ThemeData buildMaterialTheme(
       ),
     ),
     chipTheme: ChipThemeData(
-      backgroundColor: scheme.surfaceContainer,
-      selectedColor: scheme.primary,
-      secondarySelectedColor: scheme.primary,
+      backgroundColor: Colors.transparent,
+      selectedColor: scheme.secondaryContainer,
+      secondarySelectedColor: scheme.secondaryContainer,
       labelStyle: text.labelLarge?.copyWith(
         fontSize: 14,
         color: scheme.onSurface,
       ),
       secondaryLabelStyle: text.labelLarge?.copyWith(
         fontSize: 14,
-        color: scheme.onPrimary,
+        color: scheme.onSecondaryContainer,
       ),
-      side: BorderSide.none,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(NeuRadius.nav)),
-      ),
+      side: BorderSide(color: scheme.outlineVariant),
+      shape: buttonShape,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       showCheckmark: false,
     ),
@@ -596,7 +718,9 @@ ThemeData buildMaterialTheme(
       ),
       AppComponentTheme(
         conversationLayout: ConversationRowLayout.trailingStatus,
-        rowRadius: materialSurfaceRadius,
+        rowRadius: 36,
+        rowVerticalPadding: 14,
+        selectedRowFill: scheme.secondaryContainer,
         rowHorizontalPadding: 12,
         avatarSize: materialListAvatarSize,
         denseAvatarSize: materialDenseListAvatarSize,
@@ -637,6 +761,7 @@ TextTheme _buildTextTheme(ColorScheme scheme) {
   return TextTheme(
     // 大数字:仪表盘、统计里的主值。
     displaySmall: slot(36, FontWeight.w700, height: 1.2, tabular: true),
+    headlineLarge: slot(34, FontWeight.w700, height: 42 / 34),
     // 页面大标题(自绘标题行、SliverAppBar.large)。
     headlineMedium: slot(materialPageTitleSize, materialPageTitleWeight),
     // 顶栏标题、对话框标题。

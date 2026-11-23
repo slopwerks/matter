@@ -8,9 +8,11 @@ import '../../features/markdown/markdown_format_toolbar.dart';
 import '../../features/markdown/markdown_text_editing_controller.dart';
 import '../../features/matrix_html/matrix_html_renderer.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_surface.dart';
+import '../../widgets/max_content_width.dart';
 
 /// What the full-screen markdown composer returns to the message input:
 /// the (possibly edited) draft [text], and whether the message was [sent]
@@ -163,6 +165,22 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
   Widget build(BuildContext context) {
     final colors = context.neu;
     final viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
+    final modeControl = SegmentedButton<bool>(
+      segments: const [
+        ButtonSegment(
+          value: false,
+          icon: Icon(Icons.edit_rounded),
+          label: Text('编辑'),
+        ),
+        ButtonSegment(
+          value: true,
+          icon: Icon(Icons.visibility_rounded),
+          label: Text('预览'),
+        ),
+      ],
+      selected: {_previewing},
+      onSelectionChanged: (selection) => _setPreviewing(selection.first),
+    );
     return PopScope(
       // Keep system back from dropping in-editor edits: veto it and close
       // through the same draft-returning path as the close button.
@@ -173,7 +191,6 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
       },
       child: Scaffold(
         backgroundColor: colors.base,
-        extendBodyBehindAppBar: context.isMaterial,
         appBar: context.isMaterial
             ? buildFloatingAppBar(
                 title: const Text('Markdown'),
@@ -200,123 +217,147 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
                 ],
               )
             : null,
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: Padding(
-                // 标题栏移到上方浮层,编辑区从它下方开始。
-                padding: EdgeInsets.only(
-                  top: viewPaddingTop + kToolbarHeight + NeuSpacing.lg,
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                        child: SegmentedButton<bool>(
-                          segments: const [
-                            ButtonSegment(
-                              value: false,
-                              icon: Icon(Icons.edit_rounded),
-                              label: Text('编辑'),
-                            ),
-                            ButtonSegment(
-                              value: true,
-                              icon: Icon(Icons.visibility_rounded),
-                              label: Text('预览'),
-                            ),
-                          ],
-                          selected: {_previewing},
-                          onSelectionChanged: (selection) =>
-                              _setPreviewing(selection.first),
+        body: context.isMaterial
+            ? SafeArea(
+                top: false,
+                child: MaxContentWidth(
+                  maxWidth: 720,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(child: modeControl),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            clipBehavior: Clip.antiAlias,
+                            child: _previewing
+                                ? _buildPreview()
+                                : _buildEditor(),
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: _previewing ? _buildPreview() : _buildEditor(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
-            if (!context.isMaterial)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: viewPaddingTop + kToolbarHeight,
-                child: const TopFadeBlur(useShader: true),
-              ),
-            // 标题栏移到上方浮层,编辑区从它下方穿过。
-            if (!context.isMaterial)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: SizedBox(
-                    height: kToolbarHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        left: NeuSpacing.sm,
-                        right: NeuSpacing.md,
-                      ),
-                      child: Row(
-                        children: [
-                          NeuIconButton(
-                            icon: Icons.close_rounded,
-                            size: 40,
-                            tooltip: '关闭',
-                            onPressed: _close,
-                          ),
-                          const SizedBox(width: NeuSpacing.sm),
-                          Expanded(
+                        if (MediaQuery.viewInsetsOf(context).bottom == 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
                             child: Text(
-                              'Markdown',
-                              style: Theme.of(context).textTheme.titleLarge,
-                              overflow: TextOverflow.ellipsis,
+                              '选中文字可设置加粗、斜体、删除线或剧透。',
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ),
-                          if (_sending)
-                            Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  color: colors.accent,
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            )
-                          else
-                            NeuIconButton(
-                              icon: Icons.send_rounded,
-                              size: 40,
-                              accent: true,
-                              tooltip: '发送',
-                              onPressed: _hasText ? _send : null,
-                            ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
+              )
+            : Stack(
+                children: [
+                  Positioned.fill(
+                    child: Padding(
+                      // 标题栏移到上方浮层,编辑区从它下方开始。
+                      padding: EdgeInsets.only(
+                        top: viewPaddingTop + kToolbarHeight + NeuSpacing.lg,
+                      ),
+                      child: SafeArea(
+                        top: false,
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                              child: modeControl,
+                            ),
+                            Expanded(
+                              child: _previewing
+                                  ? _buildPreview()
+                                  : _buildEditor(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // 渐变模糊层:柔和过渡从标题栏下方滚过的内容。
+                  if (!context.isMaterial)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: viewPaddingTop + kToolbarHeight,
+                      child: const TopFadeBlur(useShader: true),
+                    ),
+                  // 标题栏移到上方浮层,编辑区从它下方穿过。
+                  if (!context.isMaterial)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        bottom: false,
+                        child: SizedBox(
+                          height: kToolbarHeight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              left: NeuSpacing.sm,
+                              right: NeuSpacing.md,
+                            ),
+                            child: Row(
+                              children: [
+                                NeuIconButton(
+                                  icon: Icons.close_rounded,
+                                  size: 40,
+                                  tooltip: '关闭',
+                                  onPressed: _close,
+                                ),
+                                const SizedBox(width: NeuSpacing.sm),
+                                Expanded(
+                                  child: Text(
+                                    'Markdown',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (_sending)
+                                  Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: SizedBox.square(
+                                      dimension: 20,
+                                      child: CircularProgressIndicator(
+                                        color: colors.accent,
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  NeuIconButton(
+                                    icon: Icons.send_rounded,
+                                    size: 40,
+                                    accent: true,
+                                    tooltip: '发送',
+                                    onPressed: _hasText ? _send : null,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
       ),
     );
   }
 
   Widget _buildEditor() {
     final colors = context.neu;
-    final editorStyle = Theme.of(context).textTheme.titleMedium
-        ?.copyWith(fontWeight: FontWeight.w400, height: 1.5);
+    final editorStyle = context.isMaterial
+        ? materialReaderTextStyle(Theme.of(context))
+        : Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w400, height: 1.5);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: context.isMaterial ? 0 : 20),
       child: TextField(
         controller: _controller,
         focusNode: _focusNode,
@@ -330,21 +371,24 @@ class _MarkdownComposerPageState extends ConsumerState<MarkdownComposerPage> {
         keyboardType: TextInputType.multiline,
         cursorColor: colors.accent,
         style: editorStyle,
-        decoration: InputDecoration(
-          hintText: '用 Markdown 编写消息…',
-          hintStyle: editorStyle?.copyWith(color: colors.textTertiary),
-          border: InputBorder.none,
-        ),
+        decoration: context.isMaterial
+            ? materialMarkdownEditorDecoration
+            : InputDecoration(
+                hintText: '用 Markdown 编写消息…',
+                hintStyle: editorStyle?.copyWith(color: colors.textTertiary),
+                border: InputBorder.none,
+              ),
       ),
     );
   }
 
   Widget _buildPreview() {
     final colors = context.neu;
-    final textStyle =
-        Theme.of(context).textTheme.titleMedium
-            ?.copyWith(fontWeight: FontWeight.w400, height: 1.5) ??
-        const TextStyle(fontSize: 16, height: 1.5);
+    final textStyle = context.isMaterial
+        ? materialReaderTextStyle(Theme.of(context))
+        : Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w400, height: 1.5) ??
+              const TextStyle(fontSize: 16, height: 1.5);
     final compiled = _composer.compile(_controller.text);
     final formattedBody = compiled.formattedBody;
     final Widget content;

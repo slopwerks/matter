@@ -1,10 +1,14 @@
 import 'package:material_ui/material_ui.dart';
+
+import '../../widgets/material_list_detail.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/neu_surface.dart';
+import 'material_room_details_panel.dart';
 import 'room_metadata_patch.dart';
 import 'room_management_page.dart';
 
@@ -12,6 +16,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
   final String roomId;
   final String roomName;
   final String? avatarUrl;
+  final ValueChanged<RoomPanelAction>? onTimelineAction;
   final VoidCallback? onRoomLeft;
   final ValueChanged<RoomMetadataPatch>? onRoomDetailsChanged;
 
@@ -21,14 +26,24 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
     required this.roomName,
     this.avatarUrl,
     this.onRoomLeft,
+    this.onTimelineAction,
     this.onRoomDetailsChanged,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (context.isMaterial) {
+      return MaterialRoomDetailsPanel(
+        roomId: roomId,
+        roomName: roomName,
+        avatarUrl: avatarUrl,
+        onTimelineAction: onTimelineAction,
+        onManage: () => _openRoomManagement(context),
+      );
+    }
+
     final colors = context.neu;
     final membersAsync = ref.watch(roomMembersProvider(roomId));
-
     return ColoredBox(
       color: colors.surface,
       child: Column(
@@ -56,17 +71,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
                   icon: Icons.settings_rounded,
                   size: 38,
                   tooltip: '房间管理',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => RoomManagementPage(
-                        roomId: roomId,
-                        roomName: roomName,
-                        avatarUrl: avatarUrl,
-                        onRoomClosed: onRoomLeft,
-                        onRoomDetailsChanged: onRoomDetailsChanged,
-                      ),
-                    ),
-                  ),
+                  onPressed: () => _openRoomManagement(context),
                 ),
               ],
             ),
@@ -101,9 +106,8 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
                     ),
                     title: Text(
                       member.name,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.w600),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -134,4 +138,17 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
       ),
     );
   }
+
+  void _openRoomManagement(BuildContext context) => MaterialListDetail.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => RoomManagementPage(
+        roomId: roomId,
+        roomName: roomName,
+        avatarUrl: avatarUrl,
+        onRoomClosed: onRoomLeft,
+        onRoomDetailsChanged: onRoomDetailsChanged,
+      ),
+    ),
+  );
 }

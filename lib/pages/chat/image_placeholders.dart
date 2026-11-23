@@ -2,6 +2,8 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/material_theme.dart';
+import '../../theme/neu_colors.dart';
 import 'blurhash_codec.dart';
 
 final _decodedHashes = <String, Future<Uint8List?>>{};
@@ -58,50 +60,62 @@ class SpoilerImageCover extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: reason?.isNotEmpty == true ? '显示隐藏图片：$reason' : '显示隐藏图片',
-    child: GestureDetector(
-      key: const ValueKey('spoiler-image-cover'),
-      onTap: onReveal,
-      behavior: HitTestBehavior.opaque,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          BlurhashPlaceholder(hash: hash, color: color),
-          ColoredBox(color: Colors.black.withValues(alpha: .35)),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: .45),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.eye_slash,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-                if (reason?.trim().isNotEmpty == true)
-                  Padding(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = context.isMaterial
+        ? materialImageControlColors(theme, overPhoto: true)
+        : null;
+    return Semantics(
+      button: true,
+      label: reason?.isNotEmpty == true ? '显示隐藏图片：$reason' : '显示隐藏图片',
+      child: GestureDetector(
+        key: const ValueKey('spoiler-image-cover'),
+        onTap: onReveal,
+        behavior: HitTestBehavior.opaque,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            BlurhashPlaceholder(hash: hash, color: color),
+            ColoredBox(color: Colors.black.withValues(alpha: .35)),
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
                     padding: const EdgeInsets.all(12),
-                    child: Text(
-                      reason!,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white),
+                    decoration: BoxDecoration(
+                      color: style?.fill ?? Colors.black.withValues(alpha: .45),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      style == null
+                          ? CupertinoIcons.eye_slash
+                          : Icons.visibility_off_outlined,
+                      color: style?.foreground ?? Colors.white,
+                      size: 26,
                     ),
                   ),
-              ],
+                  if (reason?.trim().isNotEmpty == true)
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        reason!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: style == null
+                            ? const TextStyle(color: Colors.white)
+                            : theme.textTheme.labelMedium?.copyWith(
+                                color: style.foreground,
+                              ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
