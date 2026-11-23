@@ -244,11 +244,13 @@ the lens; sliding carries its spring and jelly deformation across destinations.
 In the compact layout, page swipes drive the same continuous position. Wider
 layouts use the side rail to switch destinations. The dock hides while a single-pane
 chat or a secondary detail is open. The rail defaults to 80 dp from 600 dp and 256 dp from 1200 dp.
-The toggle animates its width and fades between layouts. Dragging follows the
+The toggle spends 320 ms changing width and fading between layouts. Dragging follows the
 pointer directly. Double-clicking the divider restores the responsive default. The
 device remembers the preferred width and limits it to fit the window.
-Its four labelled destinations share a moving indicator with the page
-transition. The chat list offers space shortcuts by name in its filter row.
+The collapsed rail centers four icon buttons with hover and keyboard-focus
+labels. The stadium indicator stretches briefly toward the next destination as
+the page fades in place. The
+expanded rail shows destination names inline. The chat list offers space shortcuts by name in its filter row.
 
 From 840 dp the conversation list opens beside the chat at a default width of
 320 dp. Its divider remembers the user's width separately from the navigation
@@ -279,8 +281,9 @@ resizing keep forms and routes alive; switching accounts resets them.
 The empty selection belongs only to the split pane. On narrower windows the
 list remains underneath route transitions, so entering and leaving a detail
 never exposes a desktop placeholder.
-Secondary routes use a continuous 240 ms fade with a short horizontal slide;
-iOS retains its native transition and back gesture. Their transitions never
+In split layouts, new rooms and secondary routes fade in place. In single-pane
+layouts secondary detail routes use a short horizontal slide and fade, and iOS
+retains its native transition and back gesture. Their transitions never
 replace the underlying list with a plain background between pages.
 Settings reading surfaces cap at 720 dp and the profile form at 560 dp.
 `MaterialDetailCard` keeps section headings and rows on the same filled surface.

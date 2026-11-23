@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/tokens.dart';
 import 'mobile_tab_view.dart';
 import 'conversation_routes.dart';
+import 'pane_transitions.dart';
 import 'compact_capsule_transition.dart';
 import 'material_tab_navigation_bar.dart';
 
@@ -160,17 +161,17 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
         );
     final duration = MediaQuery.disableAnimationsOf(context) || _draggingRail
         ? Duration.zero
-        : context.tokens.motion.effectsDuration;
+        : context.tokens.motion.layoutDuration;
     return TweenAnimationBuilder<double>(
       tween: Tween(end: target),
       duration: duration,
-      curve: Curves.easeOutCubic,
+      curve: Curves.easeInOutCubicEmphasized,
       builder: (context, width, _) => _buildPanes(
         context,
         railWidth: window.hasRail
             ? (_draggingRail || duration == Duration.zero
                   ? target
-                  : width.clamp(64.0, maxWidth))
+                  : width.clamp(64.0, available))
             : 0,
         maxWidth: maxWidth,
         expanded: target >= 192,
@@ -293,6 +294,7 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
               expandedRail: expanded,
               child: MobileTabView(
                 key: pagesKey,
+                stationary: window.hasRail,
                 index: index,
                 position: position,
                 onChanged: onNavigate,
@@ -396,140 +398,150 @@ class _RailDestinations extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final label = Theme.of(context).textTheme.labelMedium!;
-    const rowHeight = 56.0;
-    const gap = 4.0;
-    final pitch = extended
-        ? rowHeight + gap
-        : (40 +
-                  MediaQuery.textScalerOf(context).scale(label.fontSize!) *
-                      (label.height ?? 1.4))
-              .clamp(rowHeight, double.infinity);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final spacing = context.tokens.spacing;
+    final height = extended ? 56.0 : kMinInteractiveDimension;
+    final gap = spacing.xs;
     final reduced = MediaQuery.disableAnimationsOf(context);
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: extended ? 12 : 0),
-      child: Stack(
-        children: [
-          ValueListenableBuilder<double>(
-            valueListenable: position,
-            builder: (_, page, child) => Positioned(
-              top:
-                  (extended ? 0 : 4) +
-                  (reduced ? index.toDouble() : page) * pitch,
-              left: 0,
-              right: 0,
-              height: extended ? rowHeight : 32,
-              child: child!,
-            ),
-            child: Align(
-              child: Container(
-                key: const ValueKey('rail-indicator'),
-                width: extended ? double.infinity : 56,
-                height: double.infinity,
-                decoration: ShapeDecoration(
-                  color: scheme.secondaryContainer,
-                  shape: const StadiumBorder(),
+      padding: EdgeInsets.symmetric(
+        horizontal: extended ? spacing.md : spacing.sm,
+      ),
+      child: Align(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: extended ? double.infinity : 56,
+          ),
+          child: Stack(
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: index.toDouble()),
+                duration: reduced
+                    ? Duration.zero
+                    : context.tokens.motion.layoutDuration,
+                curve: Curves.easeInOutCubic,
+                builder: (_, tail, child) => ValueListenableBuilder<double>(
+                  valueListenable: position,
+                  child: child,
+                  builder: (_, page, indicator) {
+                    final head = reduced ? index.toDouble() : page;
+                    final lag = reduced
+                        ? 0.0
+                        : ((tail - head) * (height + gap)).clamp(
+                            -gap * 3,
+                            gap * 3,
+                          );
+                    return Positioned(
+                      top: head * (height + gap) + (lag < 0 ? lag : 0),
+                      left: 0,
+                      right: 0,
+                      height: height + lag.abs(),
+                      child: indicator!,
+                    );
+                  },
+                ),
+                child: DecoratedBox(
+                  key: const ValueKey('rail-indicator'),
+                  decoration: ShapeDecoration(
+                    color: scheme.secondaryContainer,
+                    shape: const StadiumBorder(),
+                  ),
                 ),
               ),
-            ),
-          ),
-          Material(
-            type: MaterialType.transparency,
-            child: Column(
-              spacing: extended ? gap : 0,
-              children: [
-                for (final (i, destination) in _destinations.indexed)
-                  Semantics(
-                    button: true,
-                    selected: index == i,
-                    child: InkWell(
-                      customBorder: extended ? const StadiumBorder() : null,
-                      borderRadius: extended ? null : BorderRadius.circular(16),
-                      hoverColor: extended && index == i
-                          ? Colors.transparent
-                          : null,
-                      onTap: () => onNavigate(i),
-                      child: SizedBox(
-                        height: extended ? rowHeight : pitch,
-                        width: double.infinity,
-                        child: extended
-                            ? Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 18,
-                                ),
-                                child: Row(
-                                  spacing: 12,
-                                  children: [
-                                    Icon(
-                                      index == i
-                                          ? destination.selected
-                                          : destination.icon,
-                                      color: index == i
-                                          ? scheme.onSecondaryContainer
-                                          : scheme.onSurfaceVariant,
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        destination.label,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelLarge
-                                            ?.copyWith(
-                                              color: index == i
-                                                  ? scheme.onSecondaryContainer
-                                                  : scheme.onSurfaceVariant,
+              Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  spacing: gap,
+                  children: [
+                    for (final (i, destination) in _destinations.indexed)
+                      Builder(
+                        builder: (_) {
+                          final selected = index == i;
+                          final color = selected
+                              ? scheme.onSecondaryContainer
+                              : scheme.onSurfaceVariant;
+                          final icon = Icon(
+                            selected ? destination.selected : destination.icon,
+                            color: color,
+                          );
+                          final unread = i == 0 && unreadCount > 0;
+                          Widget button(BuildContext context) => Semantics(
+                            button: true,
+                            selected: selected,
+                            label: extended ? null : destination.label,
+                            child: InkWell(
+                              customBorder: const StadiumBorder(),
+                              hoverColor: selected ? Colors.transparent : null,
+                              onFocusChange: extended
+                                  ? null
+                                  : (focused) {
+                                      if (focused &&
+                                          FocusManager.instance.highlightMode ==
+                                              FocusHighlightMode.traditional) {
+                                        context
+                                            .findAncestorStateOfType<
+                                              TooltipState
+                                            >()
+                                            ?.ensureTooltipVisible();
+                                      } else if (!focused) {
+                                        Tooltip.dismissAllToolTips();
+                                      }
+                                    },
+                              onTap: () => onNavigate(i),
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: height,
+                                child: extended
+                                    ? Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                        ),
+                                        child: Row(
+                                          spacing: spacing.md,
+                                          children: [
+                                            icon,
+                                            Expanded(
+                                              child: Text(
+                                                destination.label,
+                                                style: theme
+                                                    .textTheme
+                                                    .labelLarge
+                                                    ?.copyWith(color: color),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (i == 0 && unreadCount > 0)
-                                      Badge.count(count: unreadCount),
-                                  ],
-                                ),
-                              )
-                            : Column(
-                                children: [
-                                  const SizedBox(height: 4),
-                                  SizedBox(
-                                    height: 32,
-                                    child: Center(
-                                      child: Badge.count(
-                                        count: unreadCount,
-                                        isLabelVisible:
-                                            i == 0 && unreadCount > 0,
-                                        child: Icon(
-                                          index == i
-                                              ? destination.selected
-                                              : destination.icon,
-                                          color: index == i
-                                              ? scheme.onSecondaryContainer
-                                              : scheme.onSurfaceVariant,
+                                            if (unread)
+                                              Badge.count(count: unreadCount),
+                                          ],
+                                        ),
+                                      )
+                                    : Center(
+                                        child: Badge.count(
+                                          count: unreadCount,
+                                          isLabelVisible: unread,
+                                          child: icon,
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    destination.label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: label.copyWith(
-                                      color: index == i
-                                          ? scheme.onSurface
-                                          : scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
                               ),
+                            ),
+                          );
+                          return extended
+                              ? button(context)
+                              : Tooltip(
+                                  message: destination.label,
+                                  excludeFromSemantics: true,
+                                  child: Builder(builder: button),
+                                );
+                        },
                       ),
-                    ),
-                  ),
-              ],
-            ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -711,7 +723,26 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
                           children: [
                             Offstage(
                               offstage: widget.routesOpen,
-                              child: PrimaryCapsuleEditor(child: widget.detail),
+                              child: TweenAnimationBuilder<double>(
+                                key: ValueKey(widget.roomId),
+                                tween: Tween(begin: 0, end: 1),
+                                duration: context.tokens.motion.effectsDuration,
+                                curve: Curves.easeOut,
+                                child: PrimaryCapsuleEditor(
+                                  child: widget.detail,
+                                ),
+                                builder: (context, opacity, child) => Opacity(
+                                  opacity:
+                                      window.hasSplit &&
+                                          widget.roomId != null &&
+                                          !MediaQuery.disableAnimationsOf(
+                                            context,
+                                          )
+                                      ? opacity
+                                      : 1,
+                                  child: child,
+                                ),
+                              ),
                             ),
                             Offstage(
                               offstage: !widget.routesOpen,
@@ -726,13 +757,22 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
                                     );
                                   }
                                 },
-                                child: Navigator(
-                                  key: widget.navigator,
-                                  observers: [_observer],
-                                  onGenerateRoute: (_) =>
-                                      MaterialPageRoute<void>(
-                                        builder: (_) => const SizedBox.shrink(),
-                                      ),
+                                child: Theme(
+                                  data: window.hasSplit
+                                      ? Theme.of(context).copyWith(
+                                          pageTransitionsTheme:
+                                              PaneFadeTransitions.theme,
+                                        )
+                                      : Theme.of(context),
+                                  child: Navigator(
+                                    key: widget.navigator,
+                                    observers: [_observer],
+                                    onGenerateRoute: (_) =>
+                                        MaterialPageRoute<void>(
+                                          builder: (_) =>
+                                              const SizedBox.shrink(),
+                                        ),
+                                  ),
                                 ),
                               ),
                             ),

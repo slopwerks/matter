@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/app.dart';
@@ -18,6 +19,7 @@ import 'package:matter/providers/navigation_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
 import 'package:matter/theme/material_theme.dart';
+import 'package:matter/widgets/material_adaptive_shell.dart';
 import 'package:matter/widgets/material_tab_navigation_bar.dart';
 import 'package:matter/widgets/mobile_tab_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -657,6 +659,13 @@ void main() {
       await tester.tap(find.byTooltip('收起侧栏'));
       await tester.pump();
       expect(tester.getSize(rail).width, 80);
+      await tester.tap(find.byTooltip('空间'));
+      await tester.pump();
+      expect(
+        tester.widget<MobileTabView>(find.byType(MobileTabView)).position.value,
+        1,
+      );
+      expect(tester.takeException(), isNull);
     },
   );
 
@@ -681,6 +690,37 @@ void main() {
       expect(container.read(navigationIndexProvider), 0);
     }
   });
+
+  testWidgets(
+    'collapsed rail keeps a full target and names keyboard destinations',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(840, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final container = await _pumpApp(tester);
+      final rail = find.byKey(const ValueKey('material-navigation-rail'));
+      await tester.drag(
+        find.byKey(const ValueKey('material-rail-divider')),
+        const Offset(-100, 0),
+      );
+      await tester.pumpAndSettle();
+      final chat = find.byTooltip('聊天');
+      expect(tester.getSize(rail).width, 64);
+      expect(tester.getSize(chat), const Size.square(kMinInteractiveDimension));
+      expect(tester.getCenter(chat).dx, tester.getCenter(rail).dx);
+      Focus.of(
+        tester.element(
+          find.descendant(of: chat, matching: find.byIcon(Icons.chat_bubble)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(find.text('空间'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(container.read(navigationIndexProvider), 1);
+    },
+  );
 
   testWidgets('expanded rail hover matches the selected space capsule', (
     tester,
@@ -717,6 +757,51 @@ void main() {
     await mouse.removePointer();
   });
 
+  testWidgets(
+    'split room changes fade the latest detail at its final position',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final navigator = GlobalKey<NavigatorState>();
+      final room = ValueNotifier('A');
+      addTearDown(room.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildMaterialTheme(Brightness.light),
+          home: ValueListenableBuilder<String>(
+            valueListenable: room,
+            builder: (_, id, _) => MaterialConversationLayout(
+              window: MaterialWindowClass.large,
+              list: const Text('rooms'),
+              detail: Text(id),
+              roomId: id,
+              navigator: navigator,
+              routesOpen: false,
+              active: true,
+              onRoutesChanged: (_) {},
+              onCloseSupporting: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final origin = tester.getTopLeft(find.text('A'));
+      for (final id in ['B', 'C']) {
+        room.value = id;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 40));
+        final detail = find.text(id);
+        final fade = find
+            .ancestor(of: detail, matching: find.byType(Opacity))
+            .first;
+        expect(tester.widget<Opacity>(fade).opacity, inExclusiveRange(0, 1));
+        expect(tester.getTopLeft(detail), origin);
+      }
+      expect(find.text('B', skipOffstage: false), findsNothing);
+      await tester.pumpAndSettle();
+    },
+  );
+
   testWidgets('desktop destination changes have a visible transition', (
     tester,
   ) async {
@@ -727,6 +812,7 @@ void main() {
     expect(tester.getSize(navigation).width, 256);
     final indicator = find.byKey(const ValueKey('rail-indicator'));
     final startY = tester.getCenter(indicator).dy;
+    final restingHeight = tester.getSize(indicator).height;
     await tester.tap(
       find.descendant(
         of: navigation,
@@ -737,6 +823,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 64));
     final movingY = tester.getCenter(indicator).dy;
     expect(movingY, greaterThan(startY));
+    expect(tester.getSize(indicator).height, greaterThan(restingHeight));
+    final pane = find.byKey(const ValueKey('material-shell-content'));
+    expect(
+      tester.getTopLeft(find.byType(ContactsPage)).dx,
+      tester.getTopLeft(pane).dx,
+    );
     final fades = find.ancestor(
       of: find.byType(ContactsPage),
       matching: find.byType(Opacity),
@@ -745,6 +837,7 @@ void main() {
     expect(tester.widget<Opacity>(fades.first).opacity, inExclusiveRange(0, 1));
     await tester.pumpAndSettle();
     expect(tester.getCenter(indicator).dy, greaterThan(movingY));
+    expect(tester.getSize(indicator).height, restingHeight);
     expect(tester.widget<Opacity>(fades.first).opacity, 1);
   });
 }

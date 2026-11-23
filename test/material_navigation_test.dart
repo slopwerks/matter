@@ -125,7 +125,9 @@ void main() {
           await tester.tap(
             find.descendant(
               of: navigation,
-              matching: find.text(destination.label),
+              matching: desktop && width < 1200
+                  ? find.byTooltip(destination.label)
+                  : find.text(destination.label),
             ),
           );
           await tester.pump();
@@ -148,7 +150,16 @@ void main() {
             tester.widget<Scaffold>(scaffold).extendBodyBehindAppBar,
             destination.label != '设置',
           );
-          expect(find.text(destination.label), findsWidgets);
+          if (desktop && width < 1200) {
+            await tester.pumpAndSettle();
+            final button = find.byTooltip(destination.label);
+            expect(
+              tester.getRect(button),
+              tester.getRect(find.byKey(const ValueKey('rail-indicator'))),
+            );
+          } else {
+            expect(find.text(destination.label), findsWidgets);
+          }
           expect(tester.takeException(), isNull);
           if (width >= 840 && destination.label == '空间') {
             await tester.tap(find.byTooltip('探索公开房间'));
@@ -181,7 +192,7 @@ void main() {
           await tester.tap(
             find.descendant(
               of: find.byKey(const ValueKey('material-navigation-rail')),
-              matching: find.text('设置'),
+              matching: width < 1200 ? find.byTooltip('设置') : find.text('设置'),
             ),
           );
           await tester.pumpAndSettle();

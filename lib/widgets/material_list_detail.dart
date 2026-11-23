@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'material_adaptive_shell.dart';
 import 'conversation_routes.dart';
 import 'max_content_width.dart';
+import 'pane_transitions.dart';
 
 /// Secondary destinations retain one list and one route stack across resizing.
 class MaterialListDetail extends StatefulWidget {
@@ -117,16 +118,20 @@ class _MaterialListDetailState extends State<MaterialListDetail> {
                           },
                           child: Theme(
                             data: theme.copyWith(
-                              pageTransitionsTheme: PageTransitionsTheme(
-                                builders: {
-                                  for (final platform in TargetPlatform.values)
-                                    platform: platform == TargetPlatform.iOS
-                                        ? theme
-                                              .pageTransitionsTheme
-                                              .builders[platform]!
-                                        : const _DetailPageTransitionsBuilder(),
-                                },
-                              ),
+                              pageTransitionsTheme: split
+                                  ? PaneFadeTransitions.theme
+                                  : PageTransitionsTheme(
+                                      builders: {
+                                        for (final platform
+                                            in TargetPlatform.values)
+                                          platform:
+                                              platform == TargetPlatform.iOS
+                                              ? theme
+                                                    .pageTransitionsTheme
+                                                    .builders[platform]!
+                                              : const _DetailPageTransitionsBuilder(),
+                                      },
+                                    ),
                             ),
                             child: Navigator(
                               key: _navigator,
