@@ -64,9 +64,7 @@ pub(super) async fn set_avatar_url(mxc: String) -> Result<(), String> {
             .await
             .map_err(|e| api_err("auth", format!("Failed to remove avatar: {e}")))?;
     } else {
-        use std::convert::TryFrom;
-        let mxc_uri = matrix_sdk::ruma::OwnedMxcUri::try_from(trimmed)
-            .map_err(|e| api_err("auth", format!("Invalid mxc URI: {e}")))?;
+        let mxc_uri = matrix_sdk::ruma::OwnedMxcUri::from(trimmed);
         account
             .set_avatar_url(Some(&mxc_uri))
             .await

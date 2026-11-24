@@ -23,8 +23,7 @@ pub(super) async fn send_sticker(
         )
         .ok_or_else(|| api_err("rooms", format!("房间不存在: {room_id}")))?;
 
-    let content_uri = matrix_sdk::ruma::OwnedMxcUri::try_from(image_url.trim())
-        .map_err(|e| api_err("rooms", format!("Invalid sticker MXC URI: {e}")))?;
+    let content_uri = matrix_sdk::ruma::OwnedMxcUri::from(image_url.trim());
 
     let mut info = matrix_sdk::ruma::events::room::ImageInfo::new();
     if let Some(mime_type) = mime_type.filter(|value| !value.trim().is_empty()) {
