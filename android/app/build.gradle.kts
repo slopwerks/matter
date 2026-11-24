@@ -1,6 +1,7 @@
 import com.android.apksig.ApkSigner
 import com.android.apksig.ApkVerifier
 import com.android.apksig.SigningCertificateLineage
+import com.flutter.gradle.tasks.CopyFlutterApksTask
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.KeyStore
@@ -193,8 +194,11 @@ val signReleaseApks = tasks.register("signReleaseApks") {
     }
 }
 
-tasks.matching { it.name == "assembleRelease" }.configureEach {
+// Both assemble dependencies can otherwise run in either order. Put signing
+// directly before Flutter's copy, then copy the matching v4 signature beside it.
+tasks.withType<CopyFlutterApksTask>().matching { it.name == "copyFlutterApksRelease" }.configureEach {
     dependsOn(signReleaseApks)
+    outputs.files(outputApks.map { apks -> apks.map { File("${it.asFile.path}.idsig") } })
     doLast {
         copy {
             from(layout.buildDirectory.dir("outputs/apk/release")) { include("*.apk.idsig") }
