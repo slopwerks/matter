@@ -135,7 +135,8 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
   }
 
   void _syncSearchCollapse() {
-    final offset = !context.isMaterial && _scrollController.hasClients
+    if (context.isMaterial) return;
+    final offset = _scrollController.hasClients
         ? _scrollController.offset
         : 0.0;
     _searchCollapse.value = (offset / _searchBarExtent).clamp(0.0, 1.0);
@@ -187,6 +188,25 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
       onChanged: (value) {
         setState(() => _searchQuery = value.toLowerCase());
       },
+      trailing: _searchQuery.isEmpty
+          ? null
+          : context.isMaterial
+          ? IconButton(
+              icon: const Icon(Icons.close_rounded),
+              tooltip: '清除搜索',
+              onPressed: () {
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+              },
+            )
+          : GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+              },
+              child: const Icon(Icons.close_rounded),
+            ),
     );
     final body = Stack(
       children: [
@@ -425,7 +445,14 @@ class _EmptyView extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const NeuIconButton(icon: Icons.contacts_rounded, size: 72),
+        if (context.isMaterial)
+          Icon(
+            Icons.contacts_rounded,
+            size: 56,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          )
+        else
+          const NeuIconButton(icon: Icons.contacts_rounded, size: 72),
         const SizedBox(height: NeuSpacing.md),
         Text(
           onClear == null ? '暂无联系人' : '没有匹配的联系人',
@@ -568,80 +595,84 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
   @override
   Widget build(BuildContext context) {
     final contact = widget.contact;
+    final material = context.isMaterial;
+    final rowBody = Row(
+      children: [
+        AppAvatar(
+          fallback: contact.name,
+          size: material ? materialListAvatarSize : 48,
+          url: _resolvedAvatarUrl,
+        ),
+        SizedBox(width: material ? materialListContentGap : 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                contact.name,
+                maxLines: material ? 1 : null,
+                overflow: material ? TextOverflow.ellipsis : null,
+                style: material
+                    ? materialListTitleStyle(Theme.of(context))
+                    : Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                contact.status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: material
+                    ? Theme.of(context).textTheme.bodyMedium
+                    : Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: NeuSpacing.sm),
+        if (material)
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
+            tooltip: '发消息',
+            onPressed: widget.creatingDm ? null : _createDm,
+          )
+        else
+          NeuIconButton(
+            icon: Icons.chat_bubble_outline_rounded,
+            size: 36,
+            tooltip: '发消息',
+            onPressed: widget.creatingDm ? null : _createDm,
+          ),
+      ],
+    );
     return NeuAction(
-      radius: context.isMaterial ? materialSurfaceRadius : NeuRadius.content,
+      radius: material ? materialSurfaceRadius : NeuRadius.content,
       onTap: _showProfile,
-      onPressedChanged: (value) => setState(() => _pressed = value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 110),
-        padding: EdgeInsets.symmetric(
-          horizontal: context.isMaterial ? 12 : 8,
-          vertical: 10,
-        ),
-        decoration: ShapeDecoration(
-          color: _pressed ? context.neu.accentSoft : null,
-          shape: context.isMaterial
-              ? materialListItemShape
-              : (ChatVisualSettingsScope.maybeOf(context)
-                        ?.superellipseBorderEnabled ??
-                    true)
-              ? RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(NeuRadius.content),
-                )
-              : RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(NeuRadius.content),
-                ),
-        ),
-        child: Row(
-          children: [
-            AppAvatar(
-              fallback: contact.name,
-              size: context.isMaterial ? materialListAvatarSize : 48,
-              radius: NeuRadius.content,
-              url: _resolvedAvatarUrl,
-            ),
-            SizedBox(width: context.isMaterial ? materialListContentGap : 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    contact.name,
-                    maxLines: context.isMaterial ? 1 : null,
-                    overflow: context.isMaterial ? TextOverflow.ellipsis : null,
-                    style: context.isMaterial
-                        ? materialListTitleStyle(Theme.of(context))
-                        : Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    contact.status,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.isMaterial
-                        ? Theme.of(context).textTheme.bodyMedium
-                        : Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
+      onPressedChanged: material
+          ? null
+          : (value) => setState(() => _pressed = value),
+      child: material
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: rowBody,
+            )
+          : AnimatedContainer(
+              duration: const Duration(milliseconds: 110),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              decoration: ShapeDecoration(
+                color: _pressed ? context.neu.accentSoft : null,
+                shape:
+                    (ChatVisualSettingsScope.maybeOf(context)
+                            ?.superellipseBorderEnabled ??
+                        true)
+                    ? RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(NeuRadius.content),
+                      )
+                    : RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(NeuRadius.content),
+                      ),
               ),
+              child: rowBody,
             ),
-            const SizedBox(width: NeuSpacing.sm),
-            if (context.isMaterial)
-              IconButton(
-                icon: const Icon(Icons.chat_bubble_outline_rounded),
-                tooltip: '发消息',
-                onPressed: widget.creatingDm ? null : _createDm,
-              )
-            else
-              NeuIconButton(
-                icon: Icons.chat_bubble_outline_rounded,
-                size: 36,
-                tooltip: '发消息',
-                onPressed: widget.creatingDm ? null : _createDm,
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -231,8 +231,8 @@ class _NeuIconButtonState extends State<NeuIconButton> {
     if (context.isMaterial) {
       final style = IconButton.styleFrom(
         minimumSize: Size.square(widget.size),
-        maximumSize: Size.square(widget.size),
         padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.padded,
         iconSize: widget.size * .44,
       ).merge(MaterialPress.feedbackStyle);
       final icon = widget.badge

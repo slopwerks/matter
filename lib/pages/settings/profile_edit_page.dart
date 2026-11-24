@@ -211,9 +211,16 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
                         const SizedBox(height: 12),
                         FilledButton(
                           onPressed: _saving ? null : _saveName,
-                          child: const Text('保存'),
+                          child: _saving
+                              ? SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: theme.colorScheme.onPrimary,
+                                  ),
+                                )
+                              : const Text('保存'),
                         ),
-                        if (_saving) const LinearProgressIndicator(),
                       ],
                     ),
                   ),

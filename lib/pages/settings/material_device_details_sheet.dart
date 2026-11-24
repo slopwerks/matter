@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../src/rust/api/matrix.dart' as rust;
+import '../../theme/material_theme.dart';
+import '../../widgets/grouped_rows.dart';
 import '../../widgets/material_detail_card.dart';
 
 /// Device presentation only; the encryption page owns account and write guards.
@@ -63,27 +65,27 @@ class MaterialDeviceDetailsSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          MaterialDetailCard(
-            title: '设备操作',
-            child: Column(
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.edit_rounded),
-                  title: const Text('重命名'),
-                  onTap: onRename,
-                ),
-                if (!device.isCurrent) ...[
-                  const Divider(height: 1),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.shield_outlined),
-                    title: const Text('验证'),
-                    onTap: onVerify,
-                  ),
-                ],
-              ],
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              '设备操作',
+              style: materialSettingsSectionStyle(Theme.of(context)),
             ),
+          ),
+          GroupedRows(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_rounded),
+                title: const Text('重命名'),
+                onTap: onRename,
+              ),
+              if (!device.isCurrent)
+                ListTile(
+                  leading: const Icon(Icons.shield_outlined),
+                  title: const Text('验证'),
+                  onTap: onVerify,
+                ),
+            ],
           ),
         ],
       ),

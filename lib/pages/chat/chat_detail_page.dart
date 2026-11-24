@@ -31,6 +31,7 @@ import '../../theme/neu_colors.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/chat_route_scope.dart';
+import '../../widgets/floating_app_bar.dart';
 import '../../widgets/material_list_detail.dart';
 import '../../widgets/max_content_width.dart';
 import '../../widgets/glass.dart';
@@ -3723,13 +3724,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   /// only persistent glass layer on this page (see GlassPanel discipline).
   AppBar _buildMaterialTopBar(String subtitle) {
     final theme = Theme.of(context);
+    final route = ModalRoute.of(context);
+    final backButton = widget.onBack != null
+        ? BackButton(onPressed: widget.onBack)
+        : (!widget.embedded && (route?.impliesAppBarDismissal ?? false))
+        ? const BackButton()
+        : null;
     return AppBar(
       actionsPadding: const EdgeInsetsDirectional.only(end: 12),
-      automaticallyImplyLeading: !widget.embedded,
-      leading: widget.onBack == null
+      automaticallyImplyLeading: false,
+      leading: backButton == null
           ? null
-          : BackButton(onPressed: widget.onBack),
-      titleSpacing: widget.embedded ? 16 : 0,
+          : Center(child: MaterialToolbar(child: backButton)),
+      titleSpacing: backButton == null ? 16 : 4,
       title: Row(
         children: [
           AppAvatar(fallback: _roomName, size: 36, url: _avatarUrl),
@@ -3759,27 +3766,36 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ],
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.search_rounded),
-          tooltip: '搜索消息',
-          onPressed: () => unawaited(_openMessageSearch()),
-        ),
-        if (_pinnedStackVisibleCount == 0)
-          IconButton(
-            icon: const Icon(Icons.push_pin_outlined),
-            tooltip: '置顶消息',
-            onPressed: () => unawaited(_openPinnedMessages()),
+        MaterialToolbar(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 6,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.search_rounded),
+                tooltip: '搜索消息',
+                onPressed: () => unawaited(_openMessageSearch()),
+              ),
+              if (_pinnedStackVisibleCount == 0)
+                IconButton(
+                  icon: const Icon(Icons.push_pin_outlined),
+                  tooltip: '置顶消息',
+                  onPressed: () => unawaited(_openPinnedMessages()),
+                ),
+              IconButton(
+                icon: const Icon(Icons.people_outline),
+                tooltip: widget.onToggleDetailsPanel == null
+                    ? '房间详情'
+                    : widget.detailsPanelOpen
+                    ? '隐藏详情'
+                    : '显示详情',
+                isSelected: widget.detailsPanelOpen,
+                onPressed:
+                    widget.onToggleDetailsPanel ??
+                    () => _showRoomDetails(context),
+              ),
+            ],
           ),
-        IconButton(
-          icon: const Icon(Icons.people_outline),
-          tooltip: widget.onToggleDetailsPanel == null
-              ? '房间详情'
-              : widget.detailsPanelOpen
-              ? '隐藏详情'
-              : '显示详情',
-          isSelected: widget.detailsPanelOpen,
-          onPressed:
-              widget.onToggleDetailsPanel ?? () => _showRoomDetails(context),
         ),
       ],
     );

@@ -78,6 +78,7 @@ class MaterialAdaptiveShell extends StatefulWidget {
     required this.railSpaces,
     required this.unreadCount,
     required this.chatOpen,
+    this.dockBlurEnabled = true,
     this.floatingActionButton,
     this.pagesKey,
   });
@@ -93,6 +94,7 @@ class MaterialAdaptiveShell extends StatefulWidget {
   final Widget railSpaces;
   final int unreadCount;
   final bool chatOpen;
+  final bool dockBlurEnabled;
   final Widget? floatingActionButton;
   final Key? pagesKey;
 
@@ -370,6 +372,8 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
           : _MaterialDock(
               index: index,
               position: position,
+              unreadCount: widget.unreadCount,
+              blurEnabled: widget.dockBlurEnabled,
               onNavigate: onNavigate,
             ),
     );
@@ -552,11 +556,15 @@ class _MaterialDock extends StatefulWidget {
   const _MaterialDock({
     required this.index,
     required this.position,
+    required this.unreadCount,
+    required this.blurEnabled,
     required this.onNavigate,
   });
 
   final int index;
   final ValueNotifier<double> position;
+  final int unreadCount;
+  final bool blurEnabled;
   final ValueChanged<int> onNavigate;
 
   @override
@@ -582,11 +590,13 @@ class _MaterialDockState extends State<_MaterialDock> {
       child: DockSurface(
         radius: 31,
         lift: _lift,
+        blurEnabled: widget.blurEnabled,
         child: MaterialTabNavigationBar(
           key: const ValueKey('material-dock'),
           position: widget.position,
           lift: _lift,
           selectedIndex: widget.index,
+          badges: widget.unreadCount > 0 ? {0: widget.unreadCount} : const {},
           onDestinationSelected: widget.onNavigate,
           destinations: [
             for (final destination in _destinations)

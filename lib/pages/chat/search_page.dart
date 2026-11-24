@@ -244,8 +244,10 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage>
       child: Row(
         children: [
           NeuIconButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            size: 40,
+            icon: context.isMaterial
+                ? Icons.arrow_back_rounded
+                : Icons.arrow_back_ios_new_rounded,
+            size: context.isMaterial ? 44 : 40,
             tooltip: '返回',
             onPressed: () => Navigator.of(context).maybePop(),
           ),

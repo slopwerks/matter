@@ -16,8 +16,8 @@ import '../../widgets/app_avatar.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/grouped_rows.dart';
 import '../../widgets/max_content_width.dart';
-import '../../widgets/material_detail_card.dart';
 import '../../widgets/material_root_header.dart';
 import '../../widgets/material_header_transition.dart';
 import '../../widgets/material_adaptive_shell.dart';
@@ -1485,23 +1485,20 @@ class _SpaceChildTile extends ConsumerWidget {
     );
 
     if (material) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: MaterialPress(
-          builder: (states) => Card(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: InkWell(
-              statesController: states,
-              onTap: () => _openSpaceChild(context, room, hasUnread),
-              child: Container(
-                alignment: AlignmentDirectional.centerStart,
-                constraints: const BoxConstraints(minHeight: 96),
-                padding: const EdgeInsets.all(NeuSpacing.lg),
-                child: content,
-              ),
+      return MaterialPress(
+        builder: (states) => Card(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: InkWell(
+            statesController: states,
+            onTap: () => _openSpaceChild(context, room, hasUnread),
+            child: Container(
+              alignment: AlignmentDirectional.centerStart,
+              constraints: const BoxConstraints(minHeight: 96),
+              padding: const EdgeInsets.all(NeuSpacing.lg),
+              child: content,
             ),
           ),
         ),

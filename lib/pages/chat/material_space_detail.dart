@@ -147,7 +147,6 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
                 child: TabBar(
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
-                  indicatorSize: TabBarIndicatorSize.tab,
                   padding: const EdgeInsets.symmetric(
                     horizontal: NeuSpacing.lg,
                   ),
@@ -160,83 +159,79 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
                 ),
               ),
               Expanded(
-                child: HeaderScrollListener(
-                  onScroll: (metrics) =>
-                      _syncHeader(metrics, expandedHeight - kToolbarHeight),
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: MaxContentWidth(
-                          maxWidth: 1100,
-                          child: Padding(
-                            padding: EdgeInsets.all(
-                              wide ? NeuSpacing.xl : NeuSpacing.lg,
-                            ),
-                            child: AnimatedSwitcher(
-                              duration: tabDuration,
-                              switchInCurve: Curves.easeOutCubic,
-                              layoutBuilder: (current, outgoing) => Stack(
-                                alignment: Alignment.topCenter,
-                                children: [
-                                  if (outgoing.isNotEmpty)
-                                    ExcludeSemantics(
-                                      child: ExcludeFocus(
-                                        child: IgnorePointer(
-                                          child: outgoing.last,
-                                        ),
-                                      ),
-                                    ),
-                                  ?current,
-                                ],
+                child: AnimatedSwitcher(
+                  duration: tabDuration,
+                  switchInCurve: Curves.easeOutCubic,
+                  layoutBuilder: (current, outgoing) => Stack(
+                    alignment: Alignment.topCenter,
+                    children: [
+                      if (outgoing.isNotEmpty)
+                        ExcludeSemantics(
+                          child: ExcludeFocus(
+                            child: IgnorePointer(child: outgoing.last),
+                          ),
+                        ),
+                      ?current,
+                    ],
+                  ),
+                  child: HeaderScrollListener(
+                    key: ValueKey(_materialSpaceTab),
+                    onScroll: (metrics) =>
+                        _syncHeader(metrics, expandedHeight - kToolbarHeight),
+                    child: CustomScrollView(
+                      key: PageStorageKey(
+                        'space-tab-$_materialSpaceTab:${widget.space.id}',
+                      ),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: MaxContentWidth(
+                            maxWidth: 1100,
+                            child: Padding(
+                              padding: EdgeInsets.all(
+                                wide ? NeuSpacing.xl : NeuSpacing.lg,
                               ),
-                              child: KeyedSubtree(
-                                key: ValueKey(_materialSpaceTab),
-                                child: switch (_materialSpaceTab) {
-                                  0 => children.when(
-                                    data: (rooms) =>
-                                        _materialRooms(context, rooms, manage),
-                                    loading: () => const Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                    error: (error, _) => Text('加载房间失败: $error'),
+                              child: switch (_materialSpaceTab) {
+                                0 => children.when(
+                                  data: (rooms) =>
+                                      _materialRooms(context, rooms, manage),
+                                  loading: () => const Center(
+                                    child: CircularProgressIndicator(),
                                   ),
-                                  1 => members.when(
-                                    data: (people) => _SpaceMembers(
-                                      people: people,
-                                      onInvite: invite,
-                                    ),
-                                    loading: () => const Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                    error: (error, _) => Text('加载成员失败: $error'),
-                                  ),
-                                  _ => _SpaceAbout(
-                                    details: details,
-                                    rooms: children,
-                                    onEdit: detailsLoaded
-                                        ? (field) => _showEditSpaceDialog(
-                                            context,
-                                            ref,
-                                            details,
-                                            field: field,
-                                          )
-                                        : null,
-                                    onManage: manage,
+                                  error: (error, _) => Text('加载房间失败: $error'),
+                                ),
+                                1 => members.when(
+                                  data: (people) => _SpaceMembers(
+                                    people: people,
                                     onInvite: invite,
-                                    onCopy: _copySpaceLink,
-                                    onLeave: () => _confirmLeaveSpace(
-                                      context,
-                                      ref,
-                                      details,
-                                    ),
                                   ),
-                                },
-                              ),
+                                  loading: () => const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                  error: (error, _) => Text('加载成员失败: $error'),
+                                ),
+                                _ => _SpaceAbout(
+                                  details: details,
+                                  rooms: children,
+                                  onEdit: detailsLoaded
+                                      ? (field) => _showEditSpaceDialog(
+                                          context,
+                                          ref,
+                                          details,
+                                          field: field,
+                                        )
+                                      : null,
+                                  onManage: manage,
+                                  onInvite: invite,
+                                  onCopy: _copySpaceLink,
+                                  onLeave: () =>
+                                      _confirmLeaveSpace(context, ref, details),
+                                ),
+                              },
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -344,6 +339,7 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
       final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
       return Wrap(
         spacing: gap,
+        runSpacing: gap,
         children: [
           for (final room in rooms)
             SizedBox(

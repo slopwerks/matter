@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
+import '../../widgets/material_press.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
 
@@ -22,44 +23,48 @@ class SettingsProfileCard extends StatelessWidget {
     final theme = Theme.of(context);
     if (context.isMaterial) {
       final style = materialProfileCardStyle(theme);
-      return NeuAction(
-        radius: materialSurfaceRadius,
-        onTap: onTap,
-        child: Card(
+      return MaterialPress(
+        maxGrowth: 4,
+        builder: (states) => Card(
           color: style.fill,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Row(
-              children: [
-                AppAvatar(
-                  fallback: user?.displayName ?? '我',
-                  size: 52,
-                  url: user?.avatarUrl,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: 4,
-                    children: [
-                      Text(
-                        user?.displayName ?? '未登录',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: style.title,
-                      ),
-                      Text(
-                        user?.id ?? '点击登录你的 Matrix 账号',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: style.subtitle,
-                      ),
-                    ],
+          child: InkWell(
+            statesController: states,
+            borderRadius: BorderRadius.circular(materialSurfaceRadius),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  AppAvatar(
+                    fallback: user?.displayName ?? '我',
+                    size: 52,
+                    url: user?.avatarUrl,
                   ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.edit_outlined, size: 20, color: style.foreground),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 4,
+                      children: [
+                        Text(
+                          user?.displayName ?? '未登录',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: style.title,
+                        ),
+                        Text(
+                          user?.id ?? '点击登录你的 Matrix 账号',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: style.subtitle,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.edit_outlined, size: 20, color: style.foreground),
+                ],
+              ),
             ),
           ),
         ),

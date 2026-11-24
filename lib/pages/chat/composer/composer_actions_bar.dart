@@ -77,6 +77,7 @@ class ComposerActionsBar extends StatelessWidget {
       editor: editor,
       emojiButton: _toolButton(
         icon: emojiIcon,
+        tooltip: '表情与贴纸',
         selected: emojiSelected,
         onPressed: sendBusy ? null : onToggleEmoji,
       ),
@@ -138,11 +139,11 @@ class ComposerActionsBar extends StatelessWidget {
               child: hasText || hasImages
                   ? SizedBox.square(
                       key: const ValueKey('send_only'),
-                      dimension: 44,
+                      dimension: material && compact ? 32 : 44,
                       child: sendBusy
                           ? Center(
                               child: SizedBox.square(
-                                dimension: 20,
+                                dimension: material && compact ? 16 : 20,
                                 child: CircularProgressIndicator(
                                   color: colors.accent,
                                   strokeWidth: 2,
@@ -151,18 +152,18 @@ class ComposerActionsBar extends StatelessWidget {
                             )
                           : NeuIconButton(
                               icon: Icons.send_rounded,
-                              size: 44,
+                              size: material && compact ? 32 : 44,
                               accent: true,
                               onPressed: onSend,
                             ),
                     )
-                  : const SizedBox.square(
-                      key: ValueKey('voice_only'),
-                      dimension: 44,
+                  : SizedBox.square(
+                      key: const ValueKey('voice_only'),
+                      dimension: material && compact ? 32 : 44,
                       child: NeuIconButton(
                         tooltip: '语音消息暂未提供',
                         icon: Icons.mic_none_rounded,
-                        size: 44,
+                        size: material && compact ? 32 : 44,
                         onPressed: null,
                       ),
                     ),

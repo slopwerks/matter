@@ -2,8 +2,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
+import '../../widgets/grouped_rows.dart';
 import '../../widgets/material_detail_card.dart';
-import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
 
 /// Presentation for the existing private-chat, create-group and join flows.
@@ -84,35 +84,23 @@ class MaterialCreateChatForm extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Card(
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              NeuAction(
-                label: '创建群组',
-                radius: 0,
-                onTap: onCreateGroup,
-                child: const ListTile(
-                  leading: Icon(Icons.group_add_outlined),
-                  title: Text('创建群组'),
-                  subtitle: Text('创建一个新的群聊房间'),
-                  trailing: Icon(Icons.chevron_right_rounded),
-                ),
-              ),
-              const Divider(height: 1),
-              NeuAction(
-                label: '通过地址加入',
-                radius: 0,
-                onTap: onJoinRoom,
-                child: const ListTile(
-                  leading: Icon(Icons.meeting_room_outlined),
-                  title: Text('通过地址加入'),
-                  subtitle: Text('输入房间 ID、别名或粘贴 Matrix 链接'),
-                  trailing: Icon(Icons.chevron_right_rounded),
-                ),
-              ),
-            ],
-          ),
+        GroupedRows(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.group_add_outlined),
+              title: const Text('创建群组'),
+              subtitle: const Text('创建一个新的群聊房间'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: onCreateGroup,
+            ),
+            ListTile(
+              leading: const Icon(Icons.meeting_room_outlined),
+              title: const Text('通过地址加入'),
+              subtitle: const Text('输入房间 ID、别名或粘贴 Matrix 链接'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: onJoinRoom,
+            ),
+          ],
         ),
       ],
     );

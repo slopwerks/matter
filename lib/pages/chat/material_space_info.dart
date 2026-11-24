@@ -101,75 +101,89 @@ class _SpaceAbout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final heading = materialSettingsSectionStyle(theme);
     final count = rooms.value?.where((room) => room.roomType != 'space').length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MaterialDetailCard(
-          title: '空间资料',
-          child: Column(
-            children: [
-              ListTile(
-                title: const Text('名称'),
-                subtitle: Text(details.name),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: onEdit == null ? null : () => onEdit!(_SpaceField.name),
-              ),
-              ListTile(
-                title: const Text('话题'),
-                subtitle: Text(
-                  details.topic?.isNotEmpty == true ? details.topic! : '未设置',
-                ),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: onEdit == null ? null : () => onEdit!(_SpaceField.topic),
-              ),
-              ListTile(
-                title: const Text('房间'),
-                subtitle: Text(
-                  count != null
-                      ? '$count 个可见房间'
-                      : rooms.hasError
-                      ? '房间数暂不可用'
-                      : '加载中…',
-                ),
-                onTap: onManage,
-              ),
-              MaterialIdentityId(details.id),
-            ],
-          ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text('空间资料', style: heading),
         ),
-        const SizedBox(height: NeuSpacing.md),
-        MaterialDetailCard(
-          title: '共享与管理',
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.person_add_outlined),
-                title: const Text('邀请成员'),
-                subtitle: details.canInvite == false
-                    ? const Text('当前账号没有邀请权限')
-                    : null,
-                enabled: onInvite != null,
-                onTap: onInvite,
+        GroupedRows(
+          dividerIndent: NeuSpacing.lg,
+          children: [
+            ListTile(
+              title: const Text('名称'),
+              subtitle: Text(details.name),
+              trailing: const Icon(Icons.edit_outlined),
+              onTap: onEdit == null ? null : () => onEdit!(_SpaceField.name),
+            ),
+            ListTile(
+              title: const Text('话题'),
+              subtitle: Text(
+                details.topic?.isNotEmpty == true ? details.topic! : '未设置',
               ),
-              ListTile(
-                leading: const Icon(Icons.link),
-                title: const Text('复制空间链接'),
-                onTap: onCopy,
+              trailing: const Icon(Icons.edit_outlined),
+              onTap: onEdit == null ? null : () => onEdit!(_SpaceField.topic),
+            ),
+            ListTile(
+              title: const Text('房间'),
+              subtitle: Text(
+                count != null
+                    ? '$count 个可见房间'
+                    : rooms.hasError
+                    ? '房间数暂不可用'
+                    : '加载中…',
               ),
-              const ListTile(
-                leading: Icon(Icons.lock_outline),
-                title: Text('隐私与加密'),
-                subtitle: Text('每个房间有独立的加入规则与加密状态。'),
+              onTap: onManage,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: NeuSpacing.sm,
+                vertical: NeuSpacing.xs,
               ),
-            ],
-          ),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: MaterialIdentityId(details.id),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: NeuSpacing.md),
+        const SizedBox(height: NeuSpacing.lg),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text('共享与管理', style: heading),
+        ),
+        GroupedRows(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person_add_outlined),
+              title: const Text('邀请成员'),
+              subtitle: details.canInvite == false
+                  ? const Text('当前账号没有邀请权限')
+                  : null,
+              enabled: onInvite != null,
+              onTap: onInvite,
+            ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('复制空间链接'),
+              onTap: onCopy,
+            ),
+            const ListTile(
+              leading: Icon(Icons.lock_outline),
+              title: Text('隐私与加密'),
+              subtitle: Text('每个房间有独立的加入规则与加密状态。'),
+            ),
+          ],
+        ),
+        const SizedBox(height: NeuSpacing.lg),
         OutlinedButton.icon(
           onPressed: onLeave,
           style: OutlinedButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
+            foregroundColor: theme.colorScheme.error,
           ),
           icon: const Icon(Icons.logout),
           label: const Text('退出空间'),

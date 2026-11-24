@@ -18,6 +18,7 @@ import 'pages/settings/encryption_page.dart';
 import 'pages/settings/settings_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/material_color_provider.dart';
 import 'providers/navigation_provider.dart';
 import 'providers/startup_page_provider.dart';
 import 'src/rust/api/matrix.dart' as rust;

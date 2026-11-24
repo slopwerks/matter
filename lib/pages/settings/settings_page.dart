@@ -314,6 +314,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   List<rust.AccountInfo> _accounts = [];
+  final _searchController = TextEditingController();
   String _query = '';
   void _setSettingsQuery(String value) => setState(() => _query = value);
   Object? _accountsLoadError;
@@ -339,6 +340,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _loadAppVersion();
     _loadCredentialCompatibilityMode();
     unawaited(refreshCurrentUserProfile(ref));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAppVersion() async {

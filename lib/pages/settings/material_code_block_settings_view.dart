@@ -4,6 +4,7 @@ import '../../features/matrix_html/matrix_code_block.dart';
 import '../../providers/code_block_settings_provider.dart';
 import '../../theme/material_theme.dart';
 import '../../widgets/floating_app_bar.dart';
+import '../../widgets/grouped_rows.dart';
 import '../../widgets/material_detail_card.dart';
 import '../../widgets/max_content_width.dart';
 
@@ -205,36 +206,49 @@ class _ThemeChoices extends StatelessWidget {
   final ValueChanged<String> onChanged;
 
   @override
-  Widget build(BuildContext context) => MaterialDetailCard(
-    title: title,
-    description: description,
-    child: RadioGroup<String>(
-      groupValue: selected,
-      onChanged: (value) {
-        if (value != null) onChanged(value);
-      },
-      child: Column(
-        children: [
-          for (final (index, choice) in choices.indexed) ...[
-            if (index > 0) const Divider(height: 1),
-            RadioListTile<String>.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: choice.id,
-              selected: selected == choice.id,
-              selectedTileColor: materialChoiceFill(
-                Theme.of(context),
-                selected: selected == choice.id,
-              ),
-              title: Text(choice.name),
-              subtitle: Text(choice.id),
-              secondary: CircleAvatar(
-                radius: 8,
-                backgroundColor: choice.backgroundColor,
-              ),
-            ),
-          ],
-        ],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: materialSettingsSectionStyle(theme)),
+              const SizedBox(height: 2),
+              Text(description, style: theme.textTheme.bodySmall),
+            ],
+          ),
+        ),
+        RadioGroup<String>(
+          groupValue: selected,
+          onChanged: (value) {
+            if (value != null) onChanged(value);
+          },
+          child: GroupedRows(
+            dividerIndent: 16,
+            children: [
+              for (final choice in choices)
+                RadioListTile<String>.adaptive(
+                  value: choice.id,
+                  selected: selected == choice.id,
+                  selectedTileColor: materialChoiceFill(
+                    theme,
+                    selected: selected == choice.id,
+                  ),
+                  title: Text(choice.name),
+                  subtitle: Text(choice.id),
+                  secondary: CircleAvatar(
+                    radius: 8,
+                    backgroundColor: choice.backgroundColor,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }

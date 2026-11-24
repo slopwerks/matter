@@ -99,9 +99,12 @@ extension _MaterialAppLayout on _MatterAppState {
           onCreate: newChat,
           onFindRoom: () => openChatTool(const RoomDirectoryPage()),
         ),
-        unreadCount: window.hasRail
-            ? _railUnreadCount(ref.watch(inboxRoomsProvider).value ?? const [])
-            : 0,
+        unreadCount: _railUnreadCount(
+          ref.watch(inboxRoomsProvider).value ?? const [],
+        ),
+        dockBlurEnabled: ref.watch(
+          materialColorSettingsProvider.select((s) => s.dockBlurEnabled),
+        ),
         railSpaces: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
