@@ -93,10 +93,12 @@ dependencies:
   path: any
   lpinyin: ^2.0.3
 dependency_overrides:
-  # Local upstream copies with Android API compatibility fixes.
+  # Local upstream copies with Android API and shader control-flow fixes.
   # See vendor/flutter/README.md for provenance and the patch scope.
   geolocator_android:
     path: vendor/flutter/geolocator_android
+  inspire_blur:
+    path: vendor/flutter/inspire_blur
   # Upstream has some fixes related to iOS/macOS (SPM support) and
   # Windows (some CMake changes) that are not in any pub.dev release
   # yet (media-kit/media-kit#1473).
