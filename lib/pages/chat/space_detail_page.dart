@@ -1485,23 +1485,20 @@ class _SpaceChildTile extends ConsumerWidget {
     );
 
     if (material) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: MaterialPress(
-          builder: (states) => Card(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: InkWell(
-              statesController: states,
-              onTap: () => _openSpaceChild(context, room, hasUnread),
-              child: Container(
-                alignment: AlignmentDirectional.centerStart,
-                constraints: const BoxConstraints(minHeight: 96),
-                padding: const EdgeInsets.all(NeuSpacing.lg),
-                child: content,
-              ),
+      return MaterialPress(
+        builder: (states) => Card(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: InkWell(
+            statesController: states,
+            onTap: () => _openSpaceChild(context, room, hasUnread),
+            child: Container(
+              alignment: AlignmentDirectional.centerStart,
+              constraints: const BoxConstraints(minHeight: 96),
+              padding: const EdgeInsets.all(NeuSpacing.lg),
+              child: content,
             ),
           ),
         ),
