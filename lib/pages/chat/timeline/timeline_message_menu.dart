@@ -81,6 +81,9 @@ class TimelineMessageMenu extends StatefulWidget {
 
   /// Repeats the message content as a new event; null when not repeatable.
   final VoidCallback? onPlusOne;
+
+  /// Adds the sticker pack behind a sticker message to the account.
+  final VoidCallback? onAddStickerPack;
   final VoidCallback onForward;
   final VoidCallback onEdit;
   final VoidCallback onRecall;
@@ -100,6 +103,7 @@ class TimelineMessageMenu extends StatefulWidget {
     required this.onCopy,
     required this.onReply,
     this.onPlusOne,
+    this.onAddStickerPack,
     required this.onForward,
     required this.onEdit,
     required this.onRecall,
@@ -295,6 +299,12 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
             icon: Icons.plus_one_rounded,
             label: '+1',
             onTap: () => _select(widget.onPlusOne!),
+          ),
+        if (widget.onAddStickerPack != null)
+          _IconTextAction(
+            icon: Icons.emoji_emotions_outlined,
+            label: '添加贴纸包',
+            onTap: () => _select(widget.onAddStickerPack!),
           ),
         if (!isEvent)
           _IconTextAction(
