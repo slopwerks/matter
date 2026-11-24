@@ -66,7 +66,6 @@ class MaterialForwardMessagePicker extends StatelessWidget {
                         child: NeuIconButton(
                           icon: Icons.close_rounded,
                           tooltip: '关闭',
-                          size: 40,
                           onPressed: onClose,
                         ),
                       ),
