@@ -1111,4 +1111,29 @@ void main() {
     expect(jumped, 'older');
     expect(find.byType(InteractiveViewer), findsNothing);
   });
+  testWidgets('tapping the empty area around the image closes the viewer', (
+    tester,
+  ) async {
+    await pumpImages(tester, [imageMessage('only')]);
+    await openImage(tester, 'only');
+    expect(find.byKey(const ValueKey('image-viewer-toolbar')), findsOneWidget);
+    await tester.tapAt(const Offset(4, 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const ValueKey('image-viewer-toolbar')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('msg-image:image-preview:only')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('tapping the image itself keeps the viewer open', (tester) async {
+    await pumpImages(tester, [imageMessage('only')]);
+    await openImage(tester, 'only');
+    await tester.tapAt(const Offset(400, 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const ValueKey('image-viewer-toolbar')), findsOneWidget);
+  });
+
 }

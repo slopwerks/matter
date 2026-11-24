@@ -603,6 +603,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                         media: pageMedia,
                         active: index == _index,
                         onDispose: () => _releaseMedia(pageMedia),
+                        onClose: () => Navigator.of(context).pop(),
                         onZoomChanged: (zoomed) {
                           if (index == _index && _zoomed != zoomed) {
                             setState(() => _zoomed = zoomed);
@@ -671,6 +672,7 @@ class _ImageViewerPage extends StatefulWidget {
   final ValueChanged<bool> onZoomChanged;
   final ValueChanged<bool> onMultiTouchChanged;
   final VoidCallback onDispose;
+  final VoidCallback onClose;
 
   const _ImageViewerPage({
     super.key,
@@ -679,6 +681,7 @@ class _ImageViewerPage extends StatefulWidget {
     required this.onZoomChanged,
     required this.onMultiTouchChanged,
     required this.onDispose,
+    required this.onClose,
   });
 
   @override
@@ -686,6 +689,37 @@ class _ImageViewerPage extends StatefulWidget {
 }
 
 class _ImageViewerPageState extends State<_ImageViewerPage> {
+  static const double _tapSlop = 18;
+
+  final GlobalKey _imageKey = GlobalKey();
+  Offset? _tapOrigin;
+  int _pointers = 0;
+  bool _zoomed = false;
+
+  void _handlePointerDown(PointerDownEvent event) {
+    _pointers += 1;
+    _tapOrigin = _pointers == 1 ? event.position : null;
+  }
+
+  void _handlePointerUp(PointerUpEvent event) {
+    _pointers = _pointers > 1 ? _pointers - 1 : 0;
+    final origin = _tapOrigin;
+    _tapOrigin = null;
+    if (origin == null || _zoomed) return;
+    if ((event.position - origin).distance > _tapSlop) return;
+    final box = _imageKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    if ((box.localToGlobal(Offset.zero) & box.size).contains(event.position)) {
+      return;
+    }
+    widget.onClose();
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    _pointers = _pointers > 0 ? _pointers - 1 : 0;
+    _tapOrigin = null;
+  }
+
   @override
   void dispose() {
     widget.onDispose();
@@ -712,30 +746,40 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
       return Stack(
         children: [
           Positioned.fill(
-            child: ZoomableImageFrame(
-              active: widget.active,
-              onZoomChanged: widget.onZoomChanged,
-              onMultiTouchChanged: widget.onMultiTouchChanged,
-              child: SizedBox.expand(
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: source.aspectRatio,
-                    child: HeroMode(
-                      enabled: widget.active,
-                      child: Hero(
-                        tag: source.heroTag,
-                        createRectTween: (begin, end) =>
-                            RectTween(begin: begin, end: end),
-                        flightShuttleBuilder: roundedImageFlightShuttle,
-                        child: HeroImageClip(
-                          borderRadius: BorderRadius.zero,
-                          child: ChatMediaImage(
-                            imageUrl: displayedUrl,
-                            imageBytes: media.bytes,
-                            blurhash: source.message?.imageMetadata?.blurhash,
-                            fit: BoxFit.contain,
-                            onLoaded: () => media.markLoaded(displayedUrl),
-                            onError: () => media.markFailed(displayedUrl),
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: _handlePointerDown,
+              onPointerUp: _handlePointerUp,
+              onPointerCancel: _handlePointerCancel,
+              child: ZoomableImageFrame(
+                active: widget.active,
+                onZoomChanged: (zoomed) {
+                  _zoomed = zoomed;
+                  widget.onZoomChanged(zoomed);
+                },
+                onMultiTouchChanged: widget.onMultiTouchChanged,
+                child: SizedBox.expand(
+                  child: Center(
+                    child: AspectRatio(
+                      key: _imageKey,
+                      aspectRatio: source.aspectRatio,
+                      child: HeroMode(
+                        enabled: widget.active,
+                        child: Hero(
+                          tag: source.heroTag,
+                          createRectTween: (begin, end) =>
+                              RectTween(begin: begin, end: end),
+                          flightShuttleBuilder: roundedImageFlightShuttle,
+                          child: HeroImageClip(
+                            borderRadius: BorderRadius.zero,
+                            child: ChatMediaImage(
+                              imageUrl: displayedUrl,
+                              imageBytes: media.bytes,
+                              blurhash: source.message?.imageMetadata?.blurhash,
+                              fit: BoxFit.contain,
+                              onLoaded: () => media.markLoaded(displayedUrl),
+                              onError: () => media.markFailed(displayedUrl),
+                            ),
                           ),
                         ),
                       ),
