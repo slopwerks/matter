@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/theme/material_theme.dart';
 import 'package:matter/widgets/floating_app_bar.dart';
 import 'package:matter/widgets/glass.dart';
+import 'package:matter/widgets/material_adaptive_shell.dart';
 import 'package:matter/widgets/material_root_header.dart';
+import 'package:matter/widgets/material_search_header.dart';
 
 void main() {
   for (final brightness in Brightness.values) {
@@ -172,4 +174,84 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  testWidgets(
+    'MaterialSearchHeader collapse keeps root header profile state alive',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final theme = buildMaterialTheme(Brightness.dark);
+      final position = ValueNotifier(0.0);
+      addTearDown(position.dispose);
+      var collapsed = false;
+      late StateSetter updateState;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: MaterialAdaptiveShell(
+            window: MaterialWindowClass.compact,
+            index: 0,
+            onNavigate: (_) {},
+            position: position,
+            unreadCount: 0,
+            chatOpen: false,
+            profile: const IconButton(onPressed: null, icon: _StateMarker()),
+            railAccount: const SizedBox.shrink(),
+            railActions: (_) => const SizedBox.shrink(),
+            railSpaces: const SizedBox.shrink(),
+            pages: [
+              StatefulBuilder(
+                builder: (context, setState) {
+                  updateState = setState;
+                  return Scaffold(
+                    body: MaterialSearchHeader(
+                      title: '聊天',
+                      collapsed: collapsed,
+                      searchLabel: '搜索',
+                      search: const SearchBar(hintText: '搜索'),
+                      onSearch: () {},
+                    ),
+                  );
+                },
+              ),
+              const SizedBox.shrink(),
+              const SizedBox.shrink(),
+              const SizedBox.shrink(),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final initialState = tester.state<_StateMarkerState>(
+        find.byType(_StateMarker),
+      );
+      updateState(() => collapsed = true);
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<_StateMarkerState>(find.byType(_StateMarker)),
+        same(initialState),
+      );
+
+      updateState(() => collapsed = false);
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<_StateMarkerState>(find.byType(_StateMarker)),
+        same(initialState),
+      );
+    },
+  );
+}
+
+class _StateMarker extends StatefulWidget {
+  const _StateMarker();
+  @override
+  State<_StateMarker> createState() => _StateMarkerState();
+}
+
+class _StateMarkerState extends State<_StateMarker> {
+  @override
+  Widget build(BuildContext context) => const SizedBox.square(dimension: 28);
 }

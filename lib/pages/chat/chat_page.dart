@@ -67,9 +67,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<double> _searchCollapse = ValueNotifier(0);
   bool _headerSearchVisible = false;
+  bool _preserveCollapsedAcrossFilterSwitch = false;
+  final Map<
+    ({
+      String? spaceId,
+      bool unreadOnly,
+      bool directMessagesOnly,
+      bool ungroupedRoomsOnly,
+    }),
+    double
+  >
+  _filterScrollOffsets = {};
   ({
     String? userId,
     String? spaceId,
+    bool unreadOnly,
     bool directMessagesOnly,
     bool ungroupedRoomsOnly,
     HiddenRoomsState hiddenRooms,
@@ -77,6 +89,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   })?
   _loadedRoomsScope;
   List<ChatRoom>? _loadedRooms;
+
+  ({
+    String? spaceId,
+    bool unreadOnly,
+    bool directMessagesOnly,
+    bool ungroupedRoomsOnly,
+  })
+  _filterKeyFor(ChatPage widget) => (
+    spaceId: widget.spaceId,
+    unreadOnly: widget.unreadOnly,
+    directMessagesOnly: widget.directMessagesOnly,
+    ungroupedRoomsOnly: widget.ungroupedRoomsOnly,
+  );
 
   /// Material 使用标准工具栏高度;新拟物包含上下 padding 12 + 8。
   double get _headerHeight => context.isMaterial ? kToolbarHeight : 64;
@@ -91,6 +116,29 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   @override
+  void didUpdateWidget(covariant ChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldFilter = _filterKeyFor(oldWidget);
+    final newFilter = _filterKeyFor(widget);
+    if (oldFilter == newFilter) return;
+    if (_scrollController.hasClients) {
+      _filterScrollOffsets[oldFilter] = _scrollController.offset;
+    }
+    final targetOffset = _filterScrollOffsets[newFilter] ?? 0.0;
+    _preserveCollapsedAcrossFilterSwitch = _headerSearchVisible;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _filterKeyFor(widget) != newFilter) return;
+      if (!_scrollController.hasClients) return;
+      final max = _scrollController.position.maxScrollExtent;
+      final clamped = targetOffset.clamp(0.0, max);
+      if ((_scrollController.offset - clamped).abs() > 0.5) {
+        _scrollController.jumpTo(clamped);
+      }
+      _syncSearchCollapse();
+    });
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     _searchCollapse.dispose();
@@ -102,14 +150,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ? _scrollController.offset
         : 0.0;
     if (context.isMaterial) {
+      if (!_scrollController.hasClients) {
+        if (_preserveCollapsedAcrossFilterSwitch && _headerSearchVisible) {
+          return;
+        }
+        if (_headerSearchVisible) {
+          setState(() => _headerSearchVisible = false);
+        }
+        return;
+      }
+      if (_preserveCollapsedAcrossFilterSwitch &&
+          _headerSearchVisible &&
+          offset <= 0) {
+        return;
+      }
       // Keep the expanded header when collapsing would make a short list
       // fit entirely and force its scroll position back to zero.
-      final show =
-          _scrollController.hasClients &&
-          MaterialSearchHeader.shouldCollapse(
-            _scrollController.position,
-            _headerSearchVisible,
-          );
+      final show = MaterialSearchHeader.shouldCollapse(
+        _scrollController.position,
+        _headerSearchVisible,
+      );
       if (show != _headerSearchVisible) {
         setState(() => _headerSearchVisible = show);
       }
@@ -370,12 +430,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             },
           );
           return collapsible
-              ? NotificationListener<ScrollMetricsNotification>(
+              ? NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
-                    if (notification.depth == 0) _syncSearchCollapse();
+                    if (notification.depth == 0 &&
+                        notification is ScrollStartNotification &&
+                        notification.dragDetails != null) {
+                      _preserveCollapsedAcrossFilterSwitch = false;
+                    }
                     return false;
                   },
-                  child: list,
+                  child: NotificationListener<ScrollMetricsNotification>(
+                    onNotification: (notification) {
+                      if (notification.depth == 0) _syncSearchCollapse();
+                      return false;
+                    },
+                    child: list,
+                  ),
                 )
               : list;
         }
@@ -486,6 +556,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final roomsScope = (
       userId: ref.watch(activeUserIdProvider),
       spaceId: widget.spaceId,
+      unreadOnly: widget.unreadOnly,
       directMessagesOnly: widget.directMessagesOnly,
       ungroupedRoomsOnly: widget.ungroupedRoomsOnly,
       hiddenRooms: ref.watch(hiddenRoomsProvider),

@@ -40,6 +40,12 @@ class MaterialRootHeader extends StatelessWidget
     final theme = Theme.of(context);
     final style = materialRootHeaderStyle(theme, compact: compact);
     final profile = compact ? MaterialAdaptiveShell.profileOf(context) : null;
+    final keyedProfile = profile == null
+        ? null
+        : KeyedSubtree(
+            key: const ValueKey('root-header-profile'),
+            child: profile,
+          );
     final header = AppBar(
       automaticallyImplyLeading: false,
       toolbarHeight: _toolbarHeight,
@@ -48,7 +54,7 @@ class MaterialRootHeader extends StatelessWidget
       titleTextStyle: style.title,
       clipBehavior: Clip.antiAlias,
       title: CascadeTitle(text: title, style: style.title!),
-      actions: [...actions, ?profile, const SizedBox(width: 12)],
+      actions: [...actions, ?keyedProfile, const SizedBox(width: 12)],
       flexibleSpace: compact
           ? MaterialHeaderDecoration(color: style.decoration)
           : null,

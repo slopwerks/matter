@@ -116,12 +116,14 @@ class RemoteStickerPreview extends ConsumerStatefulWidget {
   final StickerItem sticker;
   final BoxFit fit;
   final String? fallback;
+  final int? cacheDimension;
 
   const RemoteStickerPreview({
     super.key,
     required this.sticker,
     this.fit = BoxFit.contain,
     this.fallback,
+    this.cacheDimension,
   });
 
   @override
@@ -131,6 +133,7 @@ class RemoteStickerPreview extends ConsumerStatefulWidget {
 
 class _RemoteStickerPreviewState extends ConsumerState<RemoteStickerPreview> {
   String? _sourceUrl;
+  String? _resolvedUrl;
   Future<String?>? _resolvedFuture;
 
   @override
@@ -152,19 +155,46 @@ class _RemoteStickerPreviewState extends ConsumerState<RemoteStickerPreview> {
     final sourceUrl = widget.sticker.thumbnailUrl ?? widget.sticker.imageUrl;
     _sourceUrl = sourceUrl;
     if (sourceUrl == null) {
-      _resolvedFuture = Future<String?>.value(null);
+      _resolvedUrl = null;
+      _resolvedFuture = null;
       return;
     }
     if (!sourceUrl.startsWith('mxc://')) {
-      _resolvedFuture = Future<String?>.value(sourceUrl);
+      _resolvedUrl = sourceUrl;
+      _resolvedFuture = null;
       return;
     }
     final cachedOriginalUrl = _matrixDownloadUrl(
-      cachedResolvedMxcUrl(ref, sourceUrl),
+      cachedResolvedMxcUrl(ref, sourceUrl) ??
+          cachedOriginalMxcUrl(ref, sourceUrl),
     );
-    _resolvedFuture = cachedOriginalUrl == null
-        ? resolveMxcUrlFull(ref, sourceUrl)
-        : Future<String?>.value(cachedOriginalUrl);
+    if (cachedOriginalUrl != null) {
+      _resolvedUrl = cachedOriginalUrl;
+      _resolvedFuture = null;
+      return;
+    }
+    _resolvedUrl = null;
+    _resolvedFuture = resolveMxcUrlFull(ref, sourceUrl);
+  }
+
+  Widget _buildImage(String sourceUrl, String resolvedUrl) {
+    final cacheDimension = widget.cacheDimension;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: AuthenticatedImageMessage(
+        imageUrl: resolvedUrl,
+        fit: widget.fit,
+        cacheWidth: cacheDimension,
+        cacheHeight: cacheDimension,
+        onLoaded: sourceUrl.startsWith('mxc://')
+            ? () {
+                if (_sourceUrl == sourceUrl) {
+                  rememberResolvedMxcUrl(ref, sourceUrl, resolvedUrl);
+                }
+              }
+            : null,
+      ),
+    );
   }
 
   @override
@@ -172,6 +202,11 @@ class _RemoteStickerPreviewState extends ConsumerState<RemoteStickerPreview> {
     final sourceUrl = _sourceUrl;
     if (sourceUrl == null) {
       return _StickerFallback(label: widget.fallback);
+    }
+
+    final syncUrl = _resolvedUrl;
+    if (syncUrl != null) {
+      return _buildImage(sourceUrl, syncUrl);
     }
 
     return FutureBuilder<String?>(
@@ -193,20 +228,7 @@ class _RemoteStickerPreviewState extends ConsumerState<RemoteStickerPreview> {
           return _StickerFallback(label: widget.fallback);
         }
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: AuthenticatedImageMessage(
-            imageUrl: resolvedUrl,
-            fit: widget.fit,
-            onLoaded: sourceUrl.startsWith('mxc://')
-                ? () {
-                    if (_sourceUrl == sourceUrl) {
-                      rememberResolvedMxcUrl(ref, sourceUrl, resolvedUrl);
-                    }
-                  }
-                : null,
-          ),
-        );
+        return _buildImage(sourceUrl, resolvedUrl);
       },
     );
   }

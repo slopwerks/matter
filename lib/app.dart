@@ -865,9 +865,12 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   );
 
   Widget _buildDesktopRoomList({Widget? filters}) {
+    final stableMaterialKey = filters != null
+        ? const ValueKey('material-chat-list')
+        : null;
     return switch (_desktopRoomSource) {
       _DesktopRoomSource.unread || _DesktopRoomSource.allChats => ChatPage(
-        key: ValueKey(_desktopRoomSource),
+        key: stableMaterialKey ?? ValueKey(_desktopRoomSource),
         unreadOnly: _desktopRoomSource == _DesktopRoomSource.unread,
         emptyLabel: _desktopRoomSource == _DesktopRoomSource.unread
             ? '没有未读会话'
@@ -880,7 +883,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
         onRoomSelected: _selectRoom,
       ),
       _DesktopRoomSource.directMessages => ChatPage(
-        key: const ValueKey('desktop-direct-messages'),
+        key: stableMaterialKey ?? const ValueKey('desktop-direct-messages'),
         embedded: true,
         filters: filters,
         title: '私聊',
@@ -891,7 +894,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
         onRoomSelected: _selectRoom,
       ),
       _DesktopRoomSource.ungroupedRooms => ChatPage(
-        key: const ValueKey('desktop-ungrouped-rooms'),
+        key: stableMaterialKey ?? const ValueKey('desktop-ungrouped-rooms'),
         embedded: true,
         filters: filters,
         title: '未归属群组',
@@ -903,7 +906,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       ),
       _DesktopRoomSource.space => switch (_selectedDesktopSpace) {
         final space? => ChatPage(
-          key: ValueKey('desktop-space:${space.id}'),
+          key: stableMaterialKey ?? ValueKey('desktop-space:${space.id}'),
           embedded: true,
           filters: filters,
           title: space.name,

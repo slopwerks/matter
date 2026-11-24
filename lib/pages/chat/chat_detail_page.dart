@@ -344,9 +344,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         _inputPanelMode == InputPanelMode.attachment;
     final opensPicker =
         mode == InputPanelMode.emoji || mode == InputPanelMode.attachment;
+    final hasSoftKeyboard = switch (Theme.of(context).platform) {
+      TargetPlatform.linux ||
+      TargetPlatform.macOS ||
+      TargetPlatform.windows => false,
+      _ => true,
+    };
     setState(() {
       _keepPickerDuringKeyboardOpen =
-          pickerIsOpen && mode == InputPanelMode.keyboard;
+          hasSoftKeyboard && pickerIsOpen && mode == InputPanelMode.keyboard;
       if (mode == InputPanelMode.none) {
         _keepPickerDuringKeyboardOpen = false;
       }
