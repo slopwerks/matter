@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../providers/chat_visual_settings_provider.dart';
+import '../../providers/disabled_sticker_packs_provider.dart';
 import '../../theme/neu_colors.dart';
 import '../../theme/material_theme.dart';
 import '../../widgets/app_avatar.dart';
@@ -27,6 +28,7 @@ import '../settings/avatar_crop_editor_page.dart';
 import '../settings/timeline_event_settings_page.dart';
 import 'pinned_messages_page.dart';
 import 'material_room_member_rows.dart';
+import 'sticker_catalog.dart';
 import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
 
@@ -1994,6 +1996,44 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                           ),
                         ],
                         const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                        if (stickerPacks.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: _section(
+                              title: '贴纸包',
+                              child: Column(
+                                children: [
+                                  for (final pack in stickerPacks)
+                                    SwitchListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      activeThumbColor: context.neu.accent,
+                                      title: Text(
+                                        pack.title,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyLarge,
+                                      ),
+                                      subtitle: Text(
+                                        disabledStickerPacks.contains(pack.id)
+                                            ? '已停用，本房间不显示'
+                                            : '本房间自动启用',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                      value: !disabledStickerPacks.contains(
+                                        pack.id,
+                                      ),
+                                      onChanged: (enabled) => unawaited(
+                                        _setStickerPackEnabled(
+                                          pack.id,
+                                          enabled,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
                         SliverToBoxAdapter(
                           child: _section(
                             title: '通知与消息',
@@ -2501,6 +2541,29 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
         onPressed: onRetry,
       ),
     );
+  }
+
+  /// Packs this room publishes itself, in list order.
+  List<StickerPack> get stickerPacks {
+    final remote = ref.watch(stickerPacksProvider(widget.roomId)).asData?.value;
+    if (remote == null) return const [];
+    return stickerPacksFromRemote(remote.toList())
+        .where((pack) => ownsRoomPack(pack, roomId: widget.roomId))
+        .toList();
+  }
+
+  Set<String> get disabledStickerPacks {
+    final account = ref.watch(activeUserIdProvider);
+    if (account == null) return const {};
+    return ref.watch(disabledStickerPacksProvider((account: account)));
+  }
+
+  Future<void> _setStickerPackEnabled(String packId, bool enabled) async {
+    final account = ref.read(activeUserIdProvider);
+    if (account == null) return;
+    await ref
+        .read(disabledStickerPacksProvider((account: account)).notifier)
+        .setEnabled(packId, enabled);
   }
 
   Widget _section({
