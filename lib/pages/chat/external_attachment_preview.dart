@@ -6,6 +6,7 @@ import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/max_content_width.dart';
+import 'attachment_caption_composer.dart';
 import 'attachment_media_draft.dart';
 
 /// Clipboard and dropped files share the picker's existing upload pipeline.
@@ -27,7 +28,15 @@ class ExternalAttachmentPreview extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: draft,
     builder: (context, _) {
+      final originalToggle = draft.hasImages
+          ? AttachmentOriginalToggle(
+              sendOriginal: !draft.hasCompressibleImages || draft.sendOriginal,
+              enabled: !draft.isSending && draft.hasCompressibleImages,
+              onPressed: draft.toggleSendOriginal,
+            )
+          : null;
       final actions = <Widget>[
+        ?originalToggle,
         TextButton(
           onPressed: draft.isSending ? null : onClose,
           child: const Text('取消'),
@@ -78,15 +87,17 @@ class ExternalAttachmentPreview extends StatelessWidget {
                     alignment: Alignment.centerRight,
                     child: Wrap(
                       alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 8,
                       runSpacing: 8,
                       children: actions,
                     ),
                   )
                 : Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      actions.first,
+                      ?originalToggle,
+                      const Spacer(),
+                      actions[actions.length - 2],
                       const SizedBox(width: 8),
                       actions.last,
                     ],

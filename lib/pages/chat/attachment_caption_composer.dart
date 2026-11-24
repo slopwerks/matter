@@ -9,6 +9,75 @@ import 'attachment_media_draft.dart';
 
 const attachmentCaptionClearance = 144.0;
 
+class AttachmentOriginalToggle extends StatelessWidget {
+  final bool sendOriginal;
+  final bool enabled;
+  final VoidCallback? onPressed;
+
+  const AttachmentOriginalToggle({
+    super.key,
+    required this.sendOriginal,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final colors = context.neu;
+    final activeColor = material ? theme.colorScheme.primary : colors.accent;
+    final inactiveColor = material
+        ? theme.colorScheme.onSurfaceVariant
+        : colors.textSecondary;
+    final foreground = sendOriginal ? activeColor : inactiveColor;
+    final tooltip = !enabled
+        ? 'GIF / WebP 保留原文件发送'
+        : sendOriginal
+        ? '发送原图（点击切换为自动压缩）'
+        : '自动压缩大图/特殊格式（点击切换为发送原图）';
+    return Tooltip(
+      message: tooltip,
+      child: TextButton(
+        key: const ValueKey('attachment-original-toggle'),
+        onPressed: enabled ? onPressed : null,
+        style: TextButton.styleFrom(
+          foregroundColor: foreground,
+          disabledForegroundColor: inactiveColor.withValues(alpha: .72),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          minimumSize: const Size(0, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: const StadiumBorder(),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              sendOriginal
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 16,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '原图',
+              style: material
+                  ? theme.textTheme.labelMedium?.copyWith(color: foreground)
+                  : TextStyle(
+                      color: foreground,
+                      fontSize: 12,
+                      fontWeight: sendOriginal
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AttachmentCaptionComposer extends StatefulWidget {
   final AttachmentMediaDraft draft;
   final VoidCallback onSend;
@@ -16,6 +85,7 @@ class AttachmentCaptionComposer extends StatefulWidget {
   final VoidCallback? onFocus;
   final int? sendCount;
   final bool allowDescription;
+  final bool showOriginalToggle;
 
   const AttachmentCaptionComposer({
     super.key,
@@ -25,6 +95,7 @@ class AttachmentCaptionComposer extends StatefulWidget {
     this.onFocus,
     this.sendCount,
     this.allowDescription = true,
+    this.showOriginalToggle = true,
   });
 
   @override
@@ -148,6 +219,31 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
         ),
       ],
     );
+    final column = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        content,
+        if (widget.showOriginalToggle &&
+            widget.allowDescription &&
+            widget.draft.hasImages)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 4, top: 2),
+              child: AttachmentOriginalToggle(
+                sendOriginal:
+                    !widget.draft.hasCompressibleImages ||
+                    widget.draft.sendOriginal,
+                enabled:
+                    !widget.draft.isSending &&
+                    widget.draft.hasCompressibleImages,
+                onPressed: widget.draft.toggleSendOriginal,
+              ),
+            ),
+          ),
+      ],
+    );
     return SafeArea(
       top: false,
       child: MaxContentWidth(
@@ -163,7 +259,7 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
                       horizontal: 8,
                       vertical: 4,
                     ),
-                    child: content,
+                    child: column,
                   ),
                 )
               : GlassPanel(
@@ -172,7 +268,7 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
                     horizontal: 8,
                     vertical: 4,
                   ),
-                  child: content,
+                  child: column,
                 ),
         ),
       ),

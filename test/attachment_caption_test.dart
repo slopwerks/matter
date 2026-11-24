@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/attachment_caption_composer.dart';
+import 'package:matter/pages/chat/attachment_image_preparation.dart';
 import 'package:matter/pages/chat/attachment_image_preview_page.dart';
 import 'package:matter/pages/chat/attachment_media_draft.dart';
 import 'package:matter/pages/chat/attachment_picker.dart';
@@ -40,6 +41,19 @@ class _CloudAsset implements AssetEntity {
   Future<String> get titleAsync async => 'holiday.jpg';
   @override
   Future<String?> get mimeTypeAsync async => 'image/jpeg';
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ExtensionlessAsset implements AssetEntity {
+  _ExtensionlessAsset(this._file);
+  final File _file;
+  @override
+  String get id => 'extensionless-image';
+  @override
+  Size get size => const Size(8, 8);
+  @override
+  Future<File?> get originFile async => _file;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -199,13 +213,20 @@ void main() {
       draft.toggle(one);
       draft.description.text = '共同描述';
       draft.applyEdit(one, _pixel, 'one.jpg');
+      expect(one.compress, isFalse);
+      expect(draft.sendOriginal, isTrue);
       draft.toggleCompression(one);
       expect(draft.selected, [two, one]);
       expect(draft.order(two), 1);
       expect(draft.order(one), 2);
       expect(one.editedFilename, 'one.png');
       expect(one.editedMimeType, 'image/png');
+      expect(one.compress, isTrue);
+      expect(draft.sendOriginal, isFalse);
+      draft.toggleSendOriginal();
       expect(one.compress, isFalse);
+      expect(two.compress, isFalse);
+      expect(draft.sendOriginal, isTrue);
       expect(draft.description.text, '共同描述');
       draft.toggle(two);
       expect(draft.order(one), 1);
@@ -525,6 +546,68 @@ void main() {
       expect(find.text('closed'), findsOneWidget);
     },
   );
+
+  Future<Uint8List> makeLargePng(WidgetTester tester) async {
+    return (await tester.runAsync(() async {
+      final recorder = ui.PictureRecorder();
+      ui.Canvas(recorder).drawColor(const Color(0xff226688), ui.BlendMode.src);
+      final picture = recorder.endRecording();
+      final bigImage = await picture.toImage(4200, 16);
+      final bytes = (await bigImage.toByteData(format: ui.ImageByteFormat.png))!
+          .buffer
+          .asUint8List();
+      bigImage.dispose();
+      picture.dispose();
+      return bytes;
+    }))!;
+  }
+
+  testWidgets('large unedited image defaults to sending original bytes', (
+    tester,
+  ) async {
+    final bigPng = await makeLargePng(tester);
+    files = ['${temp.path}/large_photo.png'];
+    await tester.runAsync(() => File(files.single).writeAsBytes(bigPng));
+
+    await pick(tester);
+    expect(
+      find.byKey(const ValueKey('attachment-original-toggle')),
+      findsOneWidget,
+    );
+    await send(tester, 1);
+    expect(api.calls.single.bytes, bigPng);
+    expect(api.calls.single.filename, 'large_photo.png');
+  });
+
+  testWidgets('toggling original off in picker compresses oversized image', (
+    tester,
+  ) async {
+    final bigPng = await makeLargePng(tester);
+    files = ['${temp.path}/large_photo.png'];
+    await tester.runAsync(() => File(files.single).writeAsBytes(bigPng));
+
+    await pick(tester);
+    await tester.tap(find.byKey(const ValueKey('attachment-original-toggle')));
+    await tester.pump();
+    await send(tester, 1);
+    expect(api.calls.single.filename, 'large_photo.jpg');
+    expect(api.calls.single.bytes, isNot(equals(bigPng)));
+  });
+
+  test('extensionless image asset without declared MIME falls back to magic-byte detection', () async {
+    final extensionless = File('${temp.path}/camera_photo');
+    await extensionless.writeAsBytes(_pixel);
+    final asset = _ExtensionlessAsset(extensionless);
+    final prepared = await prepareAttachmentAssetImage(
+      asset: asset,
+      file: extensionless,
+      filename: 'camera_photo',
+      mimeType: null,
+      compress: false,
+    );
+    expect(prepared.bytes, _pixel);
+    expect(prepared.mimeType, 'image/png');
+  });
 }
 
 class _KeyboardHarness extends StatefulWidget {

@@ -7,6 +7,7 @@ import '../../providers/interaction_mode_provider.dart';
 
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
+import 'attachment_caption_composer.dart';
 import 'attachment_media_draft.dart';
 
 class ComposerAttachmentStrip extends ConsumerWidget {
@@ -79,7 +80,24 @@ class ComposerAttachmentStrip extends ConsumerWidget {
         },
       ),
     );
-    if (!material) return strip;
+    final originalToggle = images.isEmpty
+        ? null
+        : AttachmentOriginalToggle(
+            sendOriginal: !draft.hasCompressibleImages || draft.sendOriginal,
+            enabled: !draft.isSending && draft.hasCompressibleImages,
+            onPressed: draft.toggleSendOriginal,
+          );
+    if (!material) {
+      if (originalToggle == null) return strip;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          strip,
+          Align(alignment: Alignment.centerLeft, child: originalToggle),
+        ],
+      );
+    }
     final style = materialAttachmentStageStyle(theme);
     final gallery = materialGalleryStyle(theme);
     return Padding(
@@ -112,6 +130,7 @@ class ComposerAttachmentStrip extends ConsumerWidget {
                       style: style.status,
                     ),
                   ),
+                  ?originalToggle,
                   TextButton(
                     onPressed: draft.isSending
                         ? null
