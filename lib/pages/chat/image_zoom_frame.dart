@@ -1,16 +1,30 @@
 import 'package:material_ui/material_ui.dart';
 
+/// Page physics for a gallery of zoomable images.
+///
+/// A single finger pages through the gallery; as soon as a second finger lands
+/// the page swipe has to yield to the pinch, otherwise the drag recognizers win
+/// the gesture arena and the zoom never starts.
+ScrollPhysics imageViewerScrollPhysics({
+  required bool zoomed,
+  required bool multiTouch,
+}) => zoomed || multiTouch
+    ? const NeverScrollableScrollPhysics()
+    : const PageScrollPhysics();
+
 /// Image gestures adapted from the original viewer in commit 98469ca.
 class ZoomableImageFrame extends StatefulWidget {
   final Widget child;
   final bool active;
   final ValueChanged<bool> onZoomChanged;
+  final ValueChanged<bool>? onMultiTouchChanged;
 
   const ZoomableImageFrame({
     super.key,
     required this.child,
     required this.active,
     required this.onZoomChanged,
+    this.onMultiTouchChanged,
   });
 
   @override
@@ -29,6 +43,16 @@ class _ZoomableImageFrameState extends State<ZoomableImageFrame>
       .animate(_zoomController);
   Offset? _doubleTapPosition;
   bool _zoomed = false;
+  int _pointers = 0;
+  bool _multiTouch = false;
+
+  void _handlePointerCount(int pointers) {
+    _pointers = pointers;
+    final multiTouch = pointers > 1;
+    if (multiTouch == _multiTouch) return;
+    _multiTouch = multiTouch;
+    widget.onMultiTouchChanged?.call(multiTouch);
+  }
 
   @override
   void initState() {
@@ -90,17 +114,22 @@ class _ZoomableImageFrameState extends State<ZoomableImageFrame>
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onDoubleTapDown: (details) => _doubleTapPosition = details.localPosition,
-    onDoubleTap: _doubleTap,
-    child: InteractiveViewer(
-      transformationController: _transform,
-      minScale: 1,
-      maxScale: _zoomLevels.last,
-      clipBehavior: Clip.none,
-      panEnabled: _zoomed,
-      onInteractionStart: (_) => _zoomController.stop(),
-      child: widget.child,
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) => _handlePointerCount(_pointers + 1),
+    onPointerUp: (_) => _handlePointerCount(_pointers - 1),
+    onPointerCancel: (_) => _handlePointerCount(_pointers - 1),
+    child: GestureDetector(
+      onDoubleTapDown: (details) => _doubleTapPosition = details.localPosition,
+      onDoubleTap: _doubleTap,
+      child: InteractiveViewer(
+        transformationController: _transform,
+        minScale: 1,
+        maxScale: _zoomLevels.last,
+        clipBehavior: Clip.none,
+        panEnabled: _zoomed,
+        onInteractionStart: (_) => _zoomController.stop(),
+        child: widget.child,
+      ),
     ),
   );
 }
@@ -147,6 +176,9 @@ class _DismissibleImageGalleryState extends State<DismissibleImageGallery>
   }
 
   void _settle() {
+    // Nothing was dragged, and a cancelled drag can arrive mid-build while the
+    // gesture detectors are rebuilt: leave the frame alone instead.
+    if (_dragY == 0) return;
     _settleAnimation = Tween<double>(begin: _dragY, end: 0).animate(
       CurvedAnimation(parent: _settleController, curve: Curves.easeOutCubic),
     );
