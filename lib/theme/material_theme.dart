@@ -1,4 +1,5 @@
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoPageTransitionsBuilder;
+import 'package:cupertino_ui/cupertino_ui.dart'
+    show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
 
 import 'app_component_theme.dart';
@@ -243,15 +244,35 @@ enum MaterialBackground {
   };
 }
 
+ButtonStyle _toolbarButtonStyle({
+  required Brightness brightness,
+  required ColorScheme scheme,
+  Color? lightFill,
+}) =>
+    IconButton.styleFrom(
+      shape: const StadiumBorder(),
+      minimumSize: const Size.square(44),
+      padding: EdgeInsets.zero,
+    ).copyWith(
+      backgroundColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? scheme.secondaryContainer
+            : brightness == Brightness.dark
+            ? scheme.surfaceContainerHigh
+            : lightFill ?? scheme.surfaceContainerLow,
+      ),
+      foregroundColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? scheme.onSecondaryContainer
+            : scheme.onSurface,
+      ),
+    );
+
 /// Neutral, pill-shaped toolbar controls above the scrolling page.
-ButtonStyle materialToolbarButtonStyle(ThemeData theme) => IconButton.styleFrom(
-  backgroundColor: theme.brightness == Brightness.dark
-      ? theme.colorScheme.surfaceContainerHigh
-      : theme.cardTheme.color,
-  foregroundColor: theme.colorScheme.onSurface,
-  shape: const StadiumBorder(),
-  minimumSize: const Size.square(44),
-  padding: EdgeInsets.zero,
+ButtonStyle materialToolbarButtonStyle(ThemeData theme) => _toolbarButtonStyle(
+  brightness: theme.brightness,
+  scheme: theme.colorScheme,
+  lightFill: theme.cardTheme.color,
 );
 
 const composerControlShape = RoundedRectangleBorder(
@@ -512,7 +533,7 @@ ThemeData buildMaterialTheme(
     ),
     searchBarTheme: SearchBarThemeData(
       elevation: const WidgetStatePropertyAll(0),
-      backgroundColor: WidgetStatePropertyAll(surfaces.card),
+      backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainer),
       surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
       shape: const WidgetStatePropertyAll(buttonShape),
       padding: const WidgetStatePropertyAll(
@@ -545,6 +566,20 @@ ThemeData buildMaterialTheme(
       style: ButtonStyle(
         shape: const WidgetStatePropertyAll(buttonShape),
         side: const WidgetStatePropertyAll(BorderSide.none),
+        backgroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? scheme.secondaryContainer
+              : states.contains(WidgetState.disabled)
+              ? scheme.surfaceContainerLowest
+              : scheme.surfaceContainer,
+        ),
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? scheme.onSecondaryContainer
+              : states.contains(WidgetState.disabled)
+              ? scheme.onSurface.withValues(alpha: .38)
+              : scheme.onSurface,
+        ),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -724,12 +759,10 @@ ThemeData buildMaterialTheme(
         rowHorizontalPadding: 12,
         avatarSize: materialListAvatarSize,
         denseAvatarSize: materialDenseListAvatarSize,
-        toolbarStyle: IconButton.styleFrom(
-          backgroundColor: dark ? scheme.surfaceContainerHigh : surfaces.card,
-          foregroundColor: scheme.onSurface,
-          shape: const StadiumBorder(),
-          minimumSize: const Size.square(44),
-          padding: EdgeInsets.zero,
+        toolbarStyle: _toolbarButtonStyle(
+          brightness: brightness,
+          scheme: scheme,
+          lightFill: surfaces.card,
         ),
       ),
       tokens,
