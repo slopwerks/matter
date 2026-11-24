@@ -1,0 +1,40 @@
+// Android build configuration for photo_manager 3.12.0 (Apache-2.0).
+// Sources remain in the resolved Pub package; this project uses AGP 9 Kotlin.
+import java.util.regex.Pattern
+
+def yaml = new File(project.projectDir.parentFile, 'pubspec.yaml').text
+def matcher = Pattern.compile("^version:\\s*['|\"]?([^\\n|'|\"]*)['|\"]?\$", Pattern.MULTILINE).matcher(yaml)
+matcher.find()
+
+group 'com.fluttercandies.photo_manager'
+version matcher.group(1).replaceAll("\\+", "-")
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.fluttercandies.photo_manager'
+    compileSdkVersion 36
+
+    defaultConfig {
+        minSdkVersion 16
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+}
+
+dependencies {
+    implementation 'com.github.bumptech.glide:glide:4.16.0'
+    implementation 'androidx.exifinterface:exifinterface:1.4.2'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
