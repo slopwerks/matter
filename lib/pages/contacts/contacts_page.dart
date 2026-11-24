@@ -135,7 +135,8 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
   }
 
   void _syncSearchCollapse() {
-    final offset = !context.isMaterial && _scrollController.hasClients
+    if (context.isMaterial) return;
+    final offset = _scrollController.hasClients
         ? _scrollController.offset
         : 0.0;
     _searchCollapse.value = (offset / _searchBarExtent).clamp(0.0, 1.0);
@@ -187,6 +188,25 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
       onChanged: (value) {
         setState(() => _searchQuery = value.toLowerCase());
       },
+      trailing: _searchQuery.isEmpty
+          ? null
+          : context.isMaterial
+          ? IconButton(
+              icon: const Icon(Icons.close_rounded),
+              tooltip: '清除搜索',
+              onPressed: () {
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+              },
+            )
+          : GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+              },
+              child: const Icon(Icons.close_rounded),
+            ),
     );
     final body = Stack(
       children: [
@@ -425,7 +445,14 @@ class _EmptyView extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const NeuIconButton(icon: Icons.contacts_rounded, size: 72),
+        if (context.isMaterial)
+          Icon(
+            Icons.contacts_rounded,
+            size: 56,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          )
+        else
+          const NeuIconButton(icon: Icons.contacts_rounded, size: 72),
         const SizedBox(height: NeuSpacing.md),
         Text(
           onClear == null ? '暂无联系人' : '没有匹配的联系人',

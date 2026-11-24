@@ -68,9 +68,20 @@ extension _MaterialSettingsDirectory on _SettingsPageState {
         hint: '搜索设置或开关',
         query: _query,
         searchBuilder: (focus) => AppSearchField(
+          controller: _searchController,
           focusNode: focus,
           hint: '搜索设置或开关',
           onChanged: (value) => _setSettingsQuery(value),
+          trailing: _query.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: '清除搜索',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () {
+                    _searchController.clear();
+                    _setSettingsQuery('');
+                  },
+                ),
         ),
 
         body: ListView(

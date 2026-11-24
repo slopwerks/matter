@@ -25,9 +25,16 @@ class StorageRoomsSection extends StatefulWidget {
 }
 
 class _StorageRoomsSectionState extends State<StorageRoomsSection> {
+  final _searchController = TextEditingController();
   String _query = '';
   StorageChatType? _type;
   bool _recent = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,8 +146,19 @@ class _StorageRoomsSectionState extends State<StorageRoomsSection> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AppSearchField(
+                controller: _searchController,
                 hint: '搜索聊天',
                 onChanged: (value) => setState(() => _query = value),
+                trailing: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '清除搜索',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
               ),
               const SizedBox(height: 8),
               Wrap(
