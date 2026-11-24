@@ -1,0 +1,28 @@
+// Android build configuration for desktop_drop 0.8.4 (Apache-2.0).
+// Sources remain in the resolved Pub package; this project uses AGP 9 Kotlin.
+group 'com.example.desktop_drop'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'one.mixin.desktop.drop'
+    compileSdk 36
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+    defaultConfig {
+        minSdkVersion 16
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}

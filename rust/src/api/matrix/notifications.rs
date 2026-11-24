@@ -336,7 +336,11 @@ pub async fn set_notification_keyword(
                 if keywords_from_rules(&rules).contains(&keyword) {
                     return Ok(());
                 }
-                let id = format!("matter.keyword.{:x}", Sha256::digest(keyword.as_bytes()));
+                let digest = Sha256::digest(keyword.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                let id = format!("matter.keyword.{digest}");
                 let rule = NewPushRule::Content(NewPatternedPushRule::new(
                     id.clone(),
                     keyword,

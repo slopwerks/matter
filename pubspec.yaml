@@ -19,8 +19,8 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 version: 0.1.13+12
 
 environment:
-  sdk: ^3.13.0
-  flutter: ">=3.47.7"
+  sdk: ^3.14.0
+  flutter: ">=3.50.1"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -40,7 +40,7 @@ dependencies:
   flutter_riverpod: ^3.3.2
   google_fonts: ^9.0.0
   intl: ^0.20.3
-  flutter_sticky_header: ^0.8.0
+  flutter_sticky_header: ^0.11.0
   shared_preferences: ^2.5.5
   path_provider: ^2.1.6
   freezed_annotation: ^3.1.0
@@ -65,10 +65,10 @@ dependencies:
   html: ^0.15.6
   http: ^1.6.0
   url_launcher: ^6.3.2
-  pro_image_editor: ^14.11.0
+  pro_image_editor: ^14.29.0
   # Use the same decoupled Material types throughout the app and image editor.
-  material_ui: ^1.6.0
-  cupertino_ui: ^1.1.6
+  material_ui: ^1.11.1
+  cupertino_ui: ^1.1.7
   flutter_cache_manager: ^3.4.1
   riverpod: ^3.3.2
   package_info_plus: ^10.2.0
@@ -81,18 +81,24 @@ dependencies:
   flutter_math_fork: ^0.7.4
   re_highlight: ^0.0.3
   inspire_blur: ^0.4.1
-  firebase_core: ^4.15.0
-  firebase_messaging: ^16.7.0
-  flutter_local_notifications: ^22.3.1
-  jni: ^1.0.3
-  jni_flutter: ^1.0.3
+  firebase_core: ^5.2.0
+  firebase_messaging: ^17.1.0
+  flutter_local_notifications: ^23.0.4
+  jni: ^1.2.1
+  jni_flutter: ^1.1.0
   dynamic_color: ^2.1.0
-  pasteboard: ^0.6.0
+  pasteboard: ^0.6.2
   desktop_drop: ^0.8.4
   connectivity_plus: ^7.0.0
   path: any
   lpinyin: ^2.0.3
 dependency_overrides:
+  # Local upstream copies with Android API and shader control-flow fixes.
+  # See vendor/flutter/README.md for provenance and the patch scope.
+  geolocator_android:
+    path: vendor/flutter/geolocator_android
+  inspire_blur:
+    path: vendor/flutter/inspire_blur
   # Upstream has some fixes related to iOS/macOS (SPM support) and
   # Windows (some CMake changes) that are not in any pub.dev release
   # yet (media-kit/media-kit#1473).

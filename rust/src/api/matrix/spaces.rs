@@ -74,7 +74,7 @@ pub(super) async fn get_spaces() -> Result<Vec<Space>, String> {
             });
         }
 
-        spaces.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        spaces.sort_by_key(|space| space.name.to_lowercase());
         Ok(spaces)
     })
     .await

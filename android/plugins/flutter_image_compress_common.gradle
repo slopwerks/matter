@@ -1,0 +1,35 @@
+// Android build configuration for flutter_image_compress_common 1.1.1 (MIT).
+// Sources remain in the resolved Pub package; this project uses AGP 9 Kotlin.
+group 'com.fluttercandies.flutter_image_compress'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.fluttercandies.flutter_image_compress'
+    compileSdkVersion 34
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+    defaultConfig {
+        minSdkVersion 21
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.exifinterface:exifinterface:1.4.2'
+    implementation 'androidx.heifwriter:heifwriter:1.0.0'
+    implementation 'commons-io:commons-io:2.16.1'
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}

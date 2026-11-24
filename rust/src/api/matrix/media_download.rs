@@ -146,7 +146,7 @@ pub(in crate::api) async fn reacquire_media_client(
 pub(super) async fn download_media_bytes(mxc_url: String) -> Option<Vec<u8>> {
     let client = get_client().await?;
     let source = matrix_sdk::ruma::events::room::MediaSource::Plain(
-        matrix_sdk::ruma::OwnedMxcUri::try_from(mxc_url.as_str()).ok()?,
+        matrix_sdk::ruma::OwnedMxcUri::from(mxc_url.as_str()),
     );
     let url = media_download_url(&client, &source).ok()?;
     let identity = media_client_identity(&client).await.ok()?;

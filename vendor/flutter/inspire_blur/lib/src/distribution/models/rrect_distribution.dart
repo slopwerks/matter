@@ -1,0 +1,113 @@
+part of 'package:inspire_blur/src/distribution/blur_distribution.dart';
+
+/// A rounded rectangle blur distribution.
+///
+/// Blur intensity across the area is controlled by the gradient
+/// progression control points defined by [values] and [stops].
+final class RRectDistribution extends GradientDistribution {
+  /// The normalized distance from the left and right edges to the start
+  /// of the blur region.
+  ///
+  /// Normalized to the range `[0.0, 0.5)`. Values greater than or equal
+  /// to `0.5` will collapse the blur area.
+  final double horizontalInset;
+
+  /// The normalized distance from the top and bottom edges to the start
+  /// of the blur region.
+  ///
+  /// Normalized to the range `[0.0, 0.5)`. Values greater than or equal
+  /// to `0.5` will collapse the blur area.
+  final double verticalInset;
+
+  /// The normalized corner radius of the shape.
+  ///
+  /// The value must be in the range `[0.0, 1.0]`.
+  ///
+  /// A value of `0.0` produces a rectangle, while `1.0` produces the
+  /// maximum corner rounding for the given shape.
+  final double cornerRadius;
+
+  /// Creates a rounded-rectangular blur distribution.
+  ///
+  /// The blur intensity is distributed according to the gradient
+  /// defined by [values], and [stops].
+  RRectDistribution({
+    required super.values,
+    required super.stops,
+    required this.horizontalInset,
+    required this.verticalInset,
+    required this.cornerRadius,
+  }) : assert(
+          cornerRadius >= 0.0 && cornerRadius <= 1.0,
+          'cornerRadius must be in the range [0.0, 1.0]',
+        );
+
+  /// Returns a copy of this distribution with the provided properties updated.
+  ///
+  /// Any parameter left `null` retains its current value.
+  @override
+  RRectDistribution copyWith({
+    double? horizontalInset,
+    double? verticalInset,
+    double? cornerRadius,
+    List<double>? values,
+    List<double>? stops,
+  }) {
+    return RRectDistribution(
+      horizontalInset: horizontalInset ?? this.horizontalInset,
+      verticalInset: verticalInset ?? this.verticalInset,
+      cornerRadius: cornerRadius ?? this.cornerRadius,
+      values: values ?? this.values,
+      stops: stops ?? this.stops,
+    );
+  }
+
+  /// Linearly interpolates between two [RRectDistribution] objects.
+  ///
+  /// Enables seamless transitions inside implicit animations or tweens.
+  static RRectDistribution? lerp(
+    RRectDistribution? a,
+    RRectDistribution? b,
+    double t,
+  ) {
+    if (identical(a, b)) return a;
+    if (a == null) return b;
+    if (b == null) return a;
+
+    return RRectDistribution(
+      horizontalInset: lerpDouble(a.horizontalInset, b.horizontalInset, t)!,
+      verticalInset: lerpDouble(a.verticalInset, b.verticalInset, t)!,
+      cornerRadius: lerpDouble(a.cornerRadius, b.cornerRadius, t)!,
+      values: lerpDoubleList(a.values, b.values, t),
+      stops: lerpDoubleList(a.stops, b.stops, t),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is RRectDistribution &&
+        other.horizontalInset == horizontalInset &&
+        other.verticalInset == verticalInset &&
+        other.cornerRadius == cornerRadius &&
+        gradientDistributionEquals(other);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        horizontalInset,
+        verticalInset,
+        cornerRadius,
+        gradientDistributionHashCode(),
+      );
+
+  @override
+  String toString() => 'RRectDistribution('
+      'horizontalInset: $horizontalInset, '
+      'verticalInset: $verticalInset, '
+      'cornerRadius: $cornerRadius, '
+      'values: [List of ${values.length} items], '
+      'stops: [List of ${stops.length} items]'
+      ')';
+}

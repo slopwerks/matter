@@ -230,6 +230,8 @@ final pushLifecycleProvider = Provider<void>((ref) {
       fcmPushSupported &&
           fcmPushRuntime.isConfigured &&
           fcmPushRuntime.initializationError == null
+      // Keep token refreshes paired with the FCM token registered at the gateway.
+      // ignore: deprecated_member_use
       ? FirebaseMessaging.instance.onTokenRefresh.listen(
           (_) => unawaited(refresh()),
         )
