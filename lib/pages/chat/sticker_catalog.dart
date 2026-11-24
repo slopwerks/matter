@@ -77,3 +77,31 @@ List<StickerPack> stickerPacksFromRemote(List<rust.StickerPack> packs) {
     );
   }).toList();
 }
+
+/// Room and state key of a sticker pack imported from another room, or null
+/// when [pack] belongs to [roomId] itself (or is not a room pack) and so cannot
+/// be dropped from the account.
+/// True when [pack] is published by [roomId] itself, i.e. the pack a switch in
+/// that room can only disable locally.
+bool ownsRoomPack(StickerPack pack, {required String roomId}) {
+  const prefix = 'room:';
+  if (!pack.id.startsWith(prefix)) return false;
+  final rest = pack.id.substring(prefix.length);
+  final split = rest.lastIndexOf(':');
+  if (split <= 0) return false;
+  return rest.substring(0, split) == roomId;
+}
+
+({String roomId, String stateKey})? importedPackScope(
+  StickerPack pack, {
+  required String roomId,
+}) {
+  const prefix = 'room:';
+  if (!pack.id.startsWith(prefix)) return null;
+  final rest = pack.id.substring(prefix.length);
+  final split = rest.lastIndexOf(':');
+  if (split <= 0) return null;
+  final packRoomId = rest.substring(0, split);
+  if (packRoomId == roomId) return null;
+  return (roomId: packRoomId, stateKey: rest.substring(split + 1));
+}
