@@ -1112,46 +1112,51 @@ void main() {
     expect(find.byType(InteractiveViewer), findsNothing);
   });
 
-  testWidgets('tapping the empty area around the image closes the viewer', (
-    tester,
-  ) async {
-    await pumpImages(tester, [imageMessage('only')]);
-    await openImage(tester, 'only');
-    expect(find.byKey(const ValueKey('image-viewer-toolbar')), findsOneWidget);
-    await tester.tapAt(const Offset(4, 300));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(find.byKey(const ValueKey('image-viewer-toolbar')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('msg-image:image-preview:only')),
-      findsOneWidget,
-    );
-  });
-
   testWidgets(
-    'double tapping the empty area zooms without closing the viewer',
+    'tapping the empty area around the image closes immediately without double-tap delay',
     (tester) async {
       await pumpImages(tester, [imageMessage('only')]);
       await openImage(tester, 'only');
-      await tester.tapAt(const Offset(4, 300));
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.tapAt(const Offset(4, 300));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
       expect(
         find.byKey(const ValueKey('image-viewer-toolbar')),
         findsOneWidget,
       );
-      final viewer = tester.widget<InteractiveViewer>(
-        find.byType(InteractiveViewer),
-      );
+      await tester.tapAt(const Offset(4, 300));
+      // Immediately starts dismissing without waiting for kDoubleTapTimeout (300ms).
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       expect(
-        viewer.transformationController!.value.getMaxScaleOnAxis(),
-        greaterThan(1.5),
+        tester.state<NavigatorState>(find.byType(Navigator).last).canPop(),
+        isFalse,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey('image-viewer-toolbar')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('msg-image:image-preview:only')),
+        findsOneWidget,
       );
     },
   );
+
+  testWidgets('double tapping the image zooms without closing the viewer', (
+    tester,
+  ) async {
+    await pumpImages(tester, [imageMessage('only')]);
+    await openImage(tester, 'only');
+    await tester.tapAt(const Offset(400, 300));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(const Offset(400, 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('image-viewer-toolbar')), findsOneWidget);
+    final viewer = tester.widget<InteractiveViewer>(
+      find.byType(InteractiveViewer),
+    );
+    expect(
+      viewer.transformationController!.value.getMaxScaleOnAxis(),
+      greaterThan(1.5),
+    );
+  });
 
   testWidgets('tapping the image itself keeps the viewer open', (tester) async {
     await pumpImages(tester, [imageMessage('only')]);

@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// Page physics for a gallery of zoomable images.
@@ -12,6 +13,18 @@ ScrollPhysics imageViewerScrollPhysics({
     ? const NeverScrollableScrollPhysics()
     : const PageScrollPhysics();
 
+class _ScopedDoubleTapGestureRecognizer extends DoubleTapGestureRecognizer {
+  bool Function(Offset globalPosition)? shouldAllowPointer;
+
+  _ScopedDoubleTapGestureRecognizer({super.debugOwner});
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) {
+    if (!super.isPointerAllowed(event)) return false;
+    return shouldAllowPointer?.call(event.position) ?? true;
+  }
+}
+
 /// Image gestures adapted from the original viewer in commit 98469ca.
 class ZoomableImageFrame extends StatefulWidget {
   final Widget child;
@@ -19,6 +32,7 @@ class ZoomableImageFrame extends StatefulWidget {
   final ValueChanged<bool> onZoomChanged;
   final ValueChanged<bool>? onMultiTouchChanged;
   final GestureTapUpCallback? onSingleTapUp;
+  final bool Function(Offset globalPosition)? canDoubleTapAt;
 
   const ZoomableImageFrame({
     super.key,
@@ -27,6 +41,7 @@ class ZoomableImageFrame extends StatefulWidget {
     required this.onZoomChanged,
     this.onMultiTouchChanged,
     this.onSingleTapUp,
+    this.canDoubleTapAt,
   });
 
   @override
@@ -140,11 +155,31 @@ class _ZoomableImageFrameState extends State<ZoomableImageFrame>
       _activePanZooms.remove(event.pointer);
       _syncMultiTouch();
     },
-    child: GestureDetector(
+    child: RawGestureDetector(
       behavior: HitTestBehavior.translucent,
-      onTapUp: widget.onSingleTapUp,
-      onDoubleTapDown: (details) => _doubleTapPosition = details.localPosition,
-      onDoubleTap: _doubleTap,
+      gestures: {
+        if (widget.onSingleTapUp != null)
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                () => TapGestureRecognizer(debugOwner: this),
+                (instance) {
+                  instance.onTapUp = widget.onSingleTapUp;
+                },
+              ),
+        _ScopedDoubleTapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+              _ScopedDoubleTapGestureRecognizer
+            >(() => _ScopedDoubleTapGestureRecognizer(debugOwner: this), (
+              instance,
+            ) {
+              instance
+                ..shouldAllowPointer = widget.canDoubleTapAt
+                ..onDoubleTapDown = (details) {
+                  _doubleTapPosition = details.localPosition;
+                }
+                ..onDoubleTap = _doubleTap;
+            }),
+      },
       child: InteractiveViewer(
         transformationController: _transform,
         minScale: 1,

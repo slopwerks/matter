@@ -698,15 +698,22 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
     if (oldWidget.active && !widget.active) _zoomed = false;
   }
 
+  Rect? _imageBounds() {
+    final box = _imageKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  bool _canDoubleTapAt(Offset globalPosition) {
+    if (_zoomed) return true;
+    final bounds = _imageBounds();
+    return bounds == null || bounds.contains(globalPosition);
+  }
+
   void _handleSingleTapUp(TapUpDetails details) {
     if (!widget.active || _zoomed) return;
-    final box = _imageKey.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return;
-    if ((box.localToGlobal(Offset.zero) & box.size).contains(
-      details.globalPosition,
-    )) {
-      return;
-    }
+    final bounds = _imageBounds();
+    if (bounds == null || bounds.contains(details.globalPosition)) return;
     widget.onClose();
   }
 
@@ -744,6 +751,7 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
               },
               onMultiTouchChanged: widget.onMultiTouchChanged,
               onSingleTapUp: _handleSingleTapUp,
+              canDoubleTapAt: _canDoubleTapAt,
               child: SizedBox.expand(
                 child: Center(
                   child: AspectRatio(
