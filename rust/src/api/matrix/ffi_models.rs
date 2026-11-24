@@ -85,6 +85,16 @@ macro_rules! declare_models_api {
             pub height: Option<i32>,
         }
 
+        /// A room sticker pack that holds a sticker the user is looking at, so
+        /// the whole pack can be imported into the account at once.
+        #[frb]
+        #[derive(Clone, Debug)]
+        pub struct StickerPackCandidate {
+            pub room_id: String,
+            pub state_key: String,
+            pub pack: StickerPack,
+        }
+
         #[frb]
         #[derive(Clone, Debug)]
         pub struct Space {
@@ -135,7 +145,12 @@ macro_rules! declare_models_api {
 
         #[frb]
         #[derive(Clone, Debug)]
-        pub enum MemberRole { Creator, Administrator, Moderator, Member }
+        pub enum MemberRole {
+            Creator,
+            Administrator,
+            Moderator,
+            Member,
+        }
 
         #[frb]
         #[derive(Clone, Debug)]

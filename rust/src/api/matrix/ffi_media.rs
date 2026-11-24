@@ -83,6 +83,28 @@ macro_rules! declare_media_api {
             message_send::get_sticker_packs(room_id).await
         }
 
+        /// Find the room sticker pack that contains a sticker message, so the
+        /// whole pack can be imported at once.
+        #[frb]
+        pub async fn find_sticker_pack(
+            image_url: String,
+            room_id: String,
+        ) -> Result<Option<StickerPackCandidate>, String> {
+            sticker_packs::find_sticker_pack_for_message(image_url, room_id).await
+        }
+
+        /// Import a room sticker pack into the account's sticker collection.
+        #[frb]
+        pub async fn import_sticker_pack(room_id: String, state_key: String) -> Result<(), String> {
+            sticker_packs::import_sticker_pack_for_account(room_id, state_key).await
+        }
+
+        /// Drop a room sticker pack from the account's imported packs.
+        #[frb]
+        pub async fn remove_sticker_pack(room_id: String, state_key: String) -> Result<(), String> {
+            sticker_packs::remove_sticker_pack_for_account(room_id, state_key).await
+        }
+
         #[frb]
         pub async fn send_message(
             account_user_id: String,
