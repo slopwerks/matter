@@ -13,7 +13,7 @@ jobs:
   build-android-arm64:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
-      FLUTTER_VERSION: 3.47.7
+      FLUTTER_VERSION: 3.50.1
       JAVA_VERSION: "17"
       ANDROID_NDK_VERSION: 29.0.13113456
 

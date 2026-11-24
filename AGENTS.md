@@ -79,7 +79,7 @@ Bug fixes must preserve intended behavior. Do not remove, bypass, disable, or si
 
 # Environment Guide
 
-- The project uses Flutter SDK (>=3.47.7) and Dart SDK (>=3.13.0).
+- The project uses Flutter SDK (>=3.50.1) and Dart SDK (>=3.14.0).
 - The Rust toolchain is managed via `rustup`; build targets include mobile (Android/iOS) native libraries.
 - Use the `flutter` CLI as the main entry point; do not run the Flutter project with the `dart` CLI alone.
 

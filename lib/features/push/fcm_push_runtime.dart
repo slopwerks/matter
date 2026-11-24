@@ -686,6 +686,8 @@ class FcmPushRuntime {
 
   Future<void> retireToken() async {
     if (configuration != null && initializationError == null) {
+      // Matrix push gateways still address FCM tokens, not Installation IDs.
+      // ignore: deprecated_member_use
       await FirebaseMessaging.instance.deleteToken();
     }
   }
@@ -718,6 +720,8 @@ class FcmPushRuntime {
     if (permission.authorizationStatus != AuthorizationStatus.authorized) {
       throw StateError('通知权限未授予，请在系统设置中允许 Matter 通知');
     }
+    // register()/onRegistered return an FID, which Matrix push gateways cannot use.
+    // ignore: deprecated_member_use
     final token = await FirebaseMessaging.instance.getToken();
     if (token == null || token.isEmpty) {
       throw StateError('无法获取 FCM 令牌，请检查 Google Play 服务和网络');
