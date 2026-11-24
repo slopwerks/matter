@@ -348,10 +348,13 @@ class SpacePage extends ConsumerWidget {
                   FilledButton(
                     onPressed: creating ? null : submit,
                     child: creating
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Theme.of(ctx).colorScheme.onPrimary,
+                            ),
                           )
                         : const Text('创建'),
                   ),
@@ -519,10 +522,13 @@ class SpacePage extends ConsumerWidget {
                   FilledButton(
                     onPressed: joining ? null : submit,
                     child: joining
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Theme.of(ctx).colorScheme.onPrimary,
+                            ),
                           )
                         : const Text('加入'),
                   ),

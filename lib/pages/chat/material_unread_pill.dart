@@ -50,9 +50,12 @@ class MaterialUnreadPill extends StatelessWidget {
               onPressed: onJump,
               label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
               icon: loading
-                  ? const SizedBox.square(
+                  ? SizedBox.square(
                       dimension: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.onPrimary,
+                      ),
                     )
                   : Icon(
                       failed
