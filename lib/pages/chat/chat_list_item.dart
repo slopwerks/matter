@@ -128,19 +128,63 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
     }
 
     final selectedFill = components.selectedRowFill ?? colors.accentSoft;
-    final fillColor = context.isMaterial && isPendingMembership
-        ? materialRoomMembershipColors(Theme.of(context)).fill
+    final fillColor = context.isMaterial
+        ? (isPendingMembership
+              ? materialRoomMembershipColors(Theme.of(context)).fill
+              : isSelected
+              ? selectedFill
+              : null)
         : _pressed || isSelected
         ? selectedFill
         : isPendingMembership
         ? selectedFill.withValues(alpha: .45)
         : null;
+    final rowPadding = EdgeInsets.symmetric(
+      horizontal: components.rowHorizontalPadding,
+      vertical: dense ? 8 : components.rowVerticalPadding,
+    );
+    final rowShape = components.rowShape(
+      superellipse: ChatVisualSettingsScope.of(context)
+          .superellipseBorderEnabled,
+    );
+    final rowContent =
+        components.conversationLayout == ConversationRowLayout.trailingStatus
+        ? MaterialChatListContent(
+            room: room,
+            preview: preview,
+            hasDraft: hasDraft,
+            hasUnread: hasUnread,
+            dense: dense,
+            showRoomTypeIcon: showRoomTypeIcon,
+            membershipActions: isPendingMembership
+                ? _PendingRoomActions(room: room)
+                : null,
+          )
+        : NeuChatListContent(
+            room: room,
+            preview: preview,
+            hasDraft: hasDraft,
+            hasUnread: hasUnread,
+            dense: dense,
+            showRoomTypeIcon: showRoomTypeIcon,
+            unreadAccent: unreadAccent,
+            membershipActions: isPendingMembership
+                ? _PendingRoomActions(room: room)
+                : null,
+          );
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : context.isMaterial
+        ? context.tokens.motion.effectsDuration
+        : const Duration(milliseconds: 110);
 
     return NeuAction(
       radius: components.rowRadius,
       selected: isSelected,
       label: room.name,
-      onPressedChanged: (value) => setState(() => _pressed = value),
+      onPressedChanged: context.isMaterial
+          ? null
+          : (value) => setState(() => _pressed = value),
       onTap: () {
         if (isPendingMembership) return;
         if (widget.onRoomSelected case final onRoomSelected?) {
@@ -191,50 +235,28 @@ class _ChatListItemState extends ConsumerState<ChatListItem> {
       onLongPress: room.roomState == 'joined' && room.roomType != 'space'
           ? () => _showRoomListActions(context, ref, room)
           : null,
-      child: AnimatedContainer(
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : context.isMaterial
-            ? context.tokens.motion.effectsDuration
-            : const Duration(milliseconds: 110),
-        padding: EdgeInsets.symmetric(
-          horizontal: components.rowHorizontalPadding,
-          vertical: dense ? 8 : components.rowVerticalPadding,
-        ),
-        decoration: ShapeDecoration(
-          color: fillColor,
-          shape: components.rowShape(
-            superellipse: ChatVisualSettingsScope.of(context)
-                .superellipseBorderEnabled,
-          ),
-        ),
-        child:
-            components.conversationLayout ==
-                ConversationRowLayout.trailingStatus
-            ? MaterialChatListContent(
-                room: room,
-                preview: preview,
-                hasDraft: hasDraft,
-                hasUnread: hasUnread,
-                dense: dense,
-                showRoomTypeIcon: showRoomTypeIcon,
-                membershipActions: isPendingMembership
-                    ? _PendingRoomActions(room: room)
-                    : null,
-              )
-            : NeuChatListContent(
-                room: room,
-                preview: preview,
-                hasDraft: hasDraft,
-                hasUnread: hasUnread,
-                dense: dense,
-                showRoomTypeIcon: showRoomTypeIcon,
-                unreadAccent: unreadAccent,
-                membershipActions: isPendingMembership
-                    ? _PendingRoomActions(room: room)
-                    : null,
+      child: context.isMaterial
+          ? TweenAnimationBuilder<Color?>(
+              tween: ColorTween(
+                end: fillColor ?? selectedFill.withValues(alpha: 0),
               ),
-      ),
+              duration: duration,
+              builder: (context, animatedFill, child) => Ink(
+                padding: rowPadding,
+                decoration: ShapeDecoration(
+                  color: animatedFill,
+                  shape: rowShape,
+                ),
+                child: child,
+              ),
+              child: rowContent,
+            )
+          : AnimatedContainer(
+              duration: duration,
+              padding: rowPadding,
+              decoration: ShapeDecoration(color: fillColor, shape: rowShape),
+              child: rowContent,
+            ),
     );
   }
 
