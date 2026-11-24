@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/material_theme.dart';
-import '../../theme/neu_colors.dart';
 import '../../widgets/app_avatar.dart';
 import '../../widgets/neu_action.dart';
 import 'chat_timestamp.dart';
@@ -41,7 +40,6 @@ class MaterialMessagePreview extends StatelessWidget {
                 AppAvatar(
                   fallback: senderName,
                   size: materialDenseListAvatarSize,
-                  radius: NeuRadius.content,
                 ),
                 const SizedBox(width: materialListContentGap),
                 Expanded(

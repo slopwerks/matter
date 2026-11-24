@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/material_theme.dart';
+import '../../widgets/grouped_rows.dart';
 import '../../widgets/material_detail_card.dart';
 import '../../widgets/neu_action.dart';
 import '../../widgets/neu_surface.dart';
@@ -68,36 +69,52 @@ class MaterialEncryptionDevices extends StatelessWidget {
   final String emptyText;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      for (final notice in notices) ...[
-        MaterialDetailCard(title: '设备信息', child: Text(notice)),
-        const SizedBox(height: 16),
-      ],
-      if (current.isNotEmpty) ...[
-        MaterialDetailCard(
-          title: '当前设备',
-          child: Column(children: current),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final heading = materialSettingsSectionStyle(theme);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final notice in notices) ...[
+          MaterialDetailCard(title: '设备信息', child: Text(notice)),
+          const SizedBox(height: 16),
+        ],
+        if (current.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text('当前设备', style: heading),
+          ),
+          GroupedRows(dividerIndent: 52, children: current),
+          const SizedBox(height: 16),
+        ],
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('其他设备', style: heading),
+              if (others.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  '${others.length} 台设备，确认属于你后再验证。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
+        if (others.isEmpty)
+          MaterialDetailCard(
+            title: '暂无其他设备',
+            child: Text(
+              current.isEmpty ? emptyText : '只有这一台设备。在其他设备登录后，会显示在这里。',
+            ),
+          )
+        else
+          GroupedRows(dividerIndent: 52, children: others),
       ],
-      MaterialDetailCard(
-        title: '其他设备',
-        description: others.isEmpty ? null : '${others.length} 台设备，确认属于你后再验证。',
-        child: others.isEmpty
-            ? Text(current.isEmpty ? emptyText : '只有这一台设备。在其他设备登录后，会显示在这里。')
-            : Column(
-                children: [
-                  for (var index = 0; index < others.length; index++) ...[
-                    if (index > 0) const Divider(height: 1),
-                    others[index],
-                  ],
-                ],
-              ),
-      ),
-    ],
-  );
+    );
+  }
 }
 
 class MaterialEncryptionDevice extends StatelessWidget {
@@ -125,7 +142,7 @@ class MaterialEncryptionDevice extends StatelessWidget {
     label: name,
     onTap: onDetails,
     child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           Icon(current ? Icons.phone_android_rounded : Icons.devices_outlined),
