@@ -23,55 +23,48 @@ class ImageStackLayout {
   const ImageStackLayout(this.size, this.scale, this.layers);
 }
 
-/// The "交错照片" defaults in design/image-stack-playground.html. Fit the
-/// complete rotated footprint, then scale every distance together.
-ImageStackLayout imageStackLayout(int count, double maxWidth) {
-  const photo = Size(270, 180);
+/// WeChat-style downward stacked card geometry: the front card stays flush at
+/// the top edge while up to two backing layers step straight downward behind it.
+ImageStackLayout imageStackLayout(
+  int count,
+  double maxWidth, {
+  double aspectRatio = 1.5,
+}) {
+  const baseWidth = 270.0;
+  const peekStep = 8.0;
+  final clampedAspect = aspectRatio.clamp(.5, 2.0).toDouble();
+  final baseHeight = (baseWidth / clampedAspect)
+      .clamp(baseWidth * .5, 240.0)
+      .toDouble();
+  final layerCount = math.min(count, 3);
+  final rawHeight = baseHeight + peekStep * math.max(0, layerCount - 1);
+  final scale = math.min(1.0, maxWidth / baseWidth);
   final layers = <ImageStackLayer>[];
-  var bounds = Offset.zero & photo;
-  for (var depth = 0; depth < math.min(count, 3); depth++) {
-    final direction = depth.isOdd ? 1 : -1;
-    final scale = math.pow(.98, depth).toDouble();
-    final rotation = 5 * depth * direction * math.pi / 180;
-    final center = Offset(135 + 13.0 * depth * direction, 90 - 10.0 * depth);
-    final size = photo * scale;
-    final cosine = math.cos(rotation).abs();
-    final sine = math.sin(rotation).abs();
-    final halfWidth = cosine * size.width / 2 + sine * size.height / 2;
-    final halfHeight = sine * size.width / 2 + cosine * size.height / 2;
-    final paintBounds = Rect.fromCenter(
-      center: center,
-      width: halfWidth * 2,
-      height: halfHeight * 2,
+  for (var depth = 0; depth < layerCount; depth++) {
+    final layerScale = math.pow(.94, depth).toDouble();
+    final cardWidth = baseWidth * layerScale;
+    final cardHeight = baseHeight * layerScale;
+    final cardBottom = baseHeight + peekStep * depth;
+    final cardLeft = (baseWidth - cardWidth) / 2;
+    final cardTop = math.max(0.0, cardBottom - cardHeight);
+    final rect = Rect.fromLTWH(
+      cardLeft * scale,
+      cardTop * scale,
+      cardWidth * scale,
+      (cardBottom - cardTop) * scale,
     );
-    bounds = bounds.expandToInclude(paintBounds);
     layers.add(
       ImageStackLayer(
-        rect: Rect.fromCenter(
-          center: center,
-          width: size.width,
-          height: size.height,
-        ),
-        paintBounds: paintBounds,
-        rotation: rotation,
-        opacity: math.pow(.97, depth).toDouble(),
+        rect: rect,
+        paintBounds: rect,
+        rotation: 0,
+        opacity: math.pow(.92, depth).toDouble(),
       ),
     );
   }
-  final scale = math.min(1.0, maxWidth / bounds.width);
-  Rect fitted(Rect rect) => Rect.fromLTWH(
-    (rect.left - bounds.left) * scale,
-    (rect.top - bounds.top) * scale,
-    rect.width * scale,
-    rect.height * scale,
+  return ImageStackLayout(
+    Size(baseWidth * scale, rawHeight * scale),
+    scale,
+    layers,
   );
-  return ImageStackLayout(bounds.size * scale, scale, [
-    for (final layer in layers)
-      ImageStackLayer(
-        rect: fitted(layer.rect),
-        paintBounds: fitted(layer.paintBounds),
-        rotation: layer.rotation,
-        opacity: layer.opacity,
-      ),
-  ]);
 }

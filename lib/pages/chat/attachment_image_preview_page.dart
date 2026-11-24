@@ -46,6 +46,7 @@ class _AttachmentImagePreviewPageState
   final _previews = <String, Future<Uint8List>>{};
   bool _editing = false;
   bool _zoomed = false;
+  bool _multiTouch = false;
 
   AttachmentMediaItem get _current => widget.images[_index];
 
@@ -214,12 +215,16 @@ class _AttachmentImagePreviewPageState
               Expanded(
                 child: PageView.builder(
                   controller: _pages,
-                  physics: busy || _zoomed
+                  physics: busy
                       ? const NeverScrollableScrollPhysics()
-                      : const PageScrollPhysics(),
+                      : imageViewerScrollPhysics(
+                          zoomed: _zoomed,
+                          multiTouch: _multiTouch,
+                        ),
                   itemCount: widget.images.length,
                   onPageChanged: (index) => setState(() {
                     _index = index;
+                    _multiTouch = false;
                     _zoomed = false;
                     final nearby = <String>{
                       for (var page = index - 1; page <= index + 1; page++)
@@ -242,6 +247,11 @@ class _AttachmentImagePreviewPageState
                       onZoomChanged: (zoomed) {
                         if (index == _index && _zoomed != zoomed) {
                           setState(() => _zoomed = zoomed);
+                        }
+                      },
+                      onMultiTouchChanged: (multiTouch) {
+                        if (index == _index && _multiTouch != multiTouch) {
+                          setState(() => _multiTouch = multiTouch);
                         }
                       },
                       child: SizedBox.expand(
@@ -386,6 +396,7 @@ class _AttachmentImagePreviewPageState
                       sendCount: widget.draft.selected.isEmpty
                           ? 1
                           : widget.draft.selected.length,
+                      showOriginalToggle: false,
                       onFocus: widget.onCaptionFocus,
                       onSend: _send,
                     ),

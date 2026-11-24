@@ -52,12 +52,43 @@ class ImageMessageCollection extends StatefulWidget {
 }
 
 class _ImageMessageCollectionState extends State<ImageMessageCollection> {
+  late String _selectedId = widget.selected.id;
   bool _expanded = false;
   bool _transitioning = false;
+  double _dragX = 0;
+
+  @override
+  void didUpdateWidget(covariant ImageMessageCollection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selected.id != oldWidget.selected.id ||
+        !widget.messages.any((message) => message.id == _selectedId)) {
+      _selectedId = widget.selected.id;
+    }
+  }
+
+  int get _selectedIndex {
+    final index = widget.messages.indexWhere(
+      (message) => message.id == _selectedId,
+    );
+    return index >= 0 ? index : widget.messages.length - 1;
+  }
+
+  rust.ChatMessage get _activeMessage => widget.messages[_selectedIndex];
+
+  void _stepSelected(int delta) {
+    if (widget.messages.length <= 1) return;
+    final length = widget.messages.length;
+    final next = (_selectedIndex + delta % length + length) % length;
+    setState(() {
+      _selectedId = widget.messages[next].id;
+      _dragX = 0;
+    });
+  }
 
   void _toggleExpanded() {
     setState(() {
       _expanded = !_expanded;
+      _dragX = 0;
       _transitioning = !MediaQuery.disableAnimationsOf(context);
     });
   }
@@ -97,13 +128,8 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
         curve: Curves.easeOutCubic,
         tween: Tween(begin: _transitioning ? .65 : 1, end: 1),
         child: content,
-        builder: (context, opacity, child) => Opacity(
-          opacity: opacity,
-          child: Transform.translate(
-            offset: Offset(0, 6 * (1 - opacity) / .35),
-            child: child,
-          ),
-        ),
+        builder: (context, opacity, child) =>
+            Opacity(opacity: opacity, child: child),
       ),
     );
   }
@@ -119,12 +145,13 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
             constraints.maxWidth,
           );
           final mosaic = widget.album;
+          final activeIndex = _selectedIndex;
           final captionMessage = widget.album
               ? widget.messages.lastWhere(
                   (message) => message.caption?.trim().isNotEmpty == true,
                   orElse: () => widget.messages.last,
                 )
-              : widget.selected;
+              : _activeMessage;
           final caption = widget.captionBuilder(captionMessage);
           late final double width;
           late final Widget images;
@@ -154,61 +181,97 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
               ),
             );
           } else {
+            final count = widget.messages.length;
+            final layerCount = math.min(count, 3);
             final pictures = [
-              widget.selected,
-              ...widget.messages
-                  .where((message) => message.id != widget.selected.id)
-                  .toList()
-                  .reversed
-                  .take(2),
+              for (var depth = 0; depth < layerCount; depth++)
+                widget.messages[(activeIndex - depth + count) % count],
             ];
-            final layout = imageStackLayout(pictures.length, maxWidth);
+            final layout = imageStackLayout(
+              pictures.length,
+              maxWidth,
+              aspectRatio: _ratio(widget.messages.last),
+            );
             width = layout.size.width;
             final front = layout.layers.first.rect;
+            final bottomPeek = math.max(0.0, layout.size.height - front.bottom);
             final shown = pictures.map((message) => message.id).toSet();
-            images = SizedBox(
-              key: const ValueKey('image-stack'),
-              width: width,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  for (var depth = pictures.length - 1; depth > 0; depth--)
-                    Positioned.fromRect(
-                      rect: layout.layers[depth].rect,
-                      child: _stackPhoto(
-                        context,
-                        pictures[depth],
-                        layout.layers[depth],
-                        layout.scale,
-                        front: false,
+            final frontCard = _stackPhoto(
+              context,
+              pictures.first,
+              layout.layers.first,
+              layout.scale,
+              front: true,
+              caption: caption,
+              activeIndex: activeIndex,
+            );
+            final interactiveFront = count > 1
+                ? GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragStart: (_) {
+                      if (_dragX != 0) setState(() => _dragX = 0);
+                    },
+                    onHorizontalDragUpdate: (details) => setState(
+                      () => _dragX = (_dragX + details.delta.dx).clamp(
+                        -64.0,
+                        64.0,
                       ),
                     ),
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: front.left,
-                      right: width - front.right,
-                      top: front.top,
+                    onHorizontalDragEnd: (details) {
+                      final velocity = details.primaryVelocity ?? 0;
+                      if (_dragX <= -28 || velocity < -260) {
+                        _stepSelected(1);
+                      } else if (_dragX >= 28 || velocity > 260) {
+                        _stepSelected(-1);
+                      } else if (_dragX != 0) {
+                        setState(() => _dragX = 0);
+                      }
+                    },
+                    onHorizontalDragCancel: () {
+                      if (_dragX != 0 && mounted) setState(() => _dragX = 0);
+                    },
+                    child: Transform.translate(
+                      offset: Offset(_dragX * 0.35, 0),
+                      child: frontCard,
                     ),
-                    child: _stackPhoto(
-                      context,
-                      pictures.first,
-                      layout.layers.first,
-                      layout.scale,
-                      front: true,
-                      caption: caption,
-                    ),
-                  ),
-                  for (final message in widget.messages)
-                    if (!shown.contains(message.id) &&
-                        widget.anchors[message.id] != null)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: SizedBox.expand(
-                            key: widget.anchors[message.id],
-                          ),
+                  )
+                : frontCard;
+            images = Padding(
+              padding: EdgeInsets.only(bottom: bottomPeek),
+              child: SizedBox(
+                key: const ValueKey('image-stack'),
+                width: width,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (var depth = pictures.length - 1; depth > 0; depth--)
+                      Positioned(
+                        left: layout.layers[depth].rect.left,
+                        right: width - layout.layers[depth].rect.right,
+                        bottom:
+                            -(layout.layers[depth].rect.bottom - front.bottom),
+                        height: layout.layers[depth].rect.height,
+                        child: _stackPhoto(
+                          context,
+                          pictures[depth],
+                          layout.layers[depth],
+                          layout.scale,
+                          front: false,
                         ),
                       ),
-                ],
+                    interactiveFront,
+                    for (final message in widget.messages)
+                      if (!shown.contains(message.id) &&
+                          widget.anchors[message.id] != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: SizedBox.expand(
+                              key: widget.anchors[message.id],
+                            ),
+                          ),
+                        ),
+                  ],
+                ),
               ),
             );
           }
@@ -241,6 +304,7 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
     double scale, {
     required bool front,
     Widget? caption,
+    int? activeIndex,
   }) {
     final radius = BorderRadius.circular(16 * scale);
     final mediaRadius = caption == null
@@ -252,49 +316,132 @@ class _ImageMessageCollectionState extends State<ImageMessageCollection> {
         excluding: !front,
         child: Opacity(
           opacity: layer.opacity,
-          child: Transform.rotate(
-            angle: layer.rotation,
-            child: DecoratedBox(
-              key: ValueKey('image-stack-card:${message.id}'),
-              decoration: BoxDecoration(
-                borderRadius: radius,
-                boxShadow:
-                    ChatVisualSettingsScope.of(context).bubbleShadowsEnabled
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xff0c1c14).withValues(alpha: .22),
-                          offset: Offset(0, 3 * scale),
-                          blurRadius: 12 * scale,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: ClipRRect(
-                borderRadius: radius,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: layer.rect.width,
-                      height: layer.rect.height,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _tile(message, layer.rect.size, mediaRadius),
-                          if (front) widget.metadata,
-                          if (front) _toggle(context),
-                        ],
+          child: DecoratedBox(
+            key: ValueKey('image-stack-card:${message.id}'),
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              boxShadow:
+                  ChatVisualSettingsScope.of(context).bubbleShadowsEnabled
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xff0c1c14).withValues(alpha: .22),
+                        offset: Offset(0, 3 * scale),
+                        blurRadius: 12 * scale,
                       ),
+                    ]
+                  : null,
+            ),
+            child: ClipRRect(
+              borderRadius: radius,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: layer.rect.width,
+                    height: layer.rect.height,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _tile(message, layer.rect.size, mediaRadius),
+                        if (front) widget.metadata,
+                        if (front) _toggle(context),
+                        if (front && widget.messages.length > 1)
+                          _switcher(context, activeIndex!),
+                      ],
                     ),
-                    if (caption != null)
-                      ColoredBox(
-                        color: messageBubbleFill(context, isMe: widget.isMe),
-                        child: caption,
-                      ),
-                  ],
-                ),
+                  ),
+                  if (caption != null)
+                    ColoredBox(
+                      color: messageBubbleFill(context, isMe: widget.isMe),
+                      child: caption,
+                    ),
+                ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _switcher(BuildContext context, int activeIndex) {
+    final theme = Theme.of(context);
+    final material = context.isMaterial;
+    final colors = material
+        ? materialImageControlColors(theme, overPhoto: true)
+        : (
+            fill: const Color(0xff18241c).withValues(alpha: .73),
+            foreground: Colors.white,
+          );
+    final labelStyle = material
+        ? theme.textTheme.labelMedium!.copyWith(
+            color: colors.foreground,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          )
+        : TextStyle(
+            color: colors.foreground,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          );
+    Widget arrow({
+      required Key key,
+      required String tooltip,
+      required IconData icon,
+      required VoidCallback onPressed,
+    }) => SizedBox(
+      width: 28,
+      height: 28,
+      child: IconButton(
+        key: key,
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        style: IconButton.styleFrom(
+          foregroundColor: colors.foreground,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: Icon(icon, size: 16),
+      ),
+    );
+    return Positioned(
+      right: 9,
+      top: 8,
+      child: Material(
+        key: const ValueKey('image-stack-switcher'),
+        color: colors.fill,
+        shape: material
+            ? const StadiumBorder()
+            : RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          height: 28,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              arrow(
+                key: ValueKey('image-stack-prev:${widget.messages.first.id}'),
+                tooltip: '上一张',
+                icon: material
+                    ? Icons.chevron_left_rounded
+                    : CupertinoIcons.chevron_left,
+                onPressed: () => _stepSelected(-1),
+              ),
+              Text(
+                '${activeIndex + 1}/${widget.messages.length}',
+                key: const ValueKey('image-stack-page'),
+                style: labelStyle,
+              ),
+              arrow(
+                key: ValueKey('image-stack-next:${widget.messages.first.id}'),
+                tooltip: '下一张',
+                icon: material
+                    ? Icons.chevron_right_rounded
+                    : CupertinoIcons.chevron_right,
+                onPressed: () => _stepSelected(1),
+              ),
+            ],
           ),
         ),
       ),

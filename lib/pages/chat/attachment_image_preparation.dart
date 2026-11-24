@@ -22,7 +22,10 @@ Future<PreparedAttachmentImage> prepareAttachmentAssetImage({
   final sourceSize = asset.size;
   if (sourceSize.width <= 0 || sourceSize.height <= 0) {
     final original = await _readFileBytes(file, '图片');
-    final detectedMime = mimeType ?? resolveAttachmentMime(filename, null);
+    final detectedMime =
+        mimeType ??
+        resolveAttachmentMime(filename, null) ??
+        detectImageMime(original);
     if (detectedMime?.startsWith('image/') != true) {
       throw '无法识别图片格式';
     }
@@ -35,11 +38,16 @@ Future<PreparedAttachmentImage> prepareAttachmentAssetImage({
   }
 
   if (!compress || mimeType == 'image/gif' || mimeType == 'image/webp') {
-    if (mimeType?.startsWith('image/') != true) throw '无法识别图片格式';
+    final original = await _readFileBytes(file, '图片');
+    final detectedMime =
+        mimeType ??
+        resolveAttachmentMime(filename, null) ??
+        detectImageMime(original);
+    if (detectedMime?.startsWith('image/') != true) throw '无法识别图片格式';
     return PreparedAttachmentImage(
-      bytes: await _readFileBytes(file, '图片'),
+      bytes: original,
       filename: filename,
-      mimeType: mimeType!,
+      mimeType: detectedMime!,
       width: sourceSize.width.round(),
       height: sourceSize.height.round(),
     );

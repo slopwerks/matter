@@ -214,20 +214,28 @@ class AttachmentSendController {
         item.editedMimeType ??
         resolveAttachmentMime(original.filename, file.mimeType);
     if (item.isImage) {
-      final prepared = item.editedBytes == null && item.asset != null
-          ? await prepareAttachmentAssetImage(
-              asset: item.asset!,
-              file: File(file.path),
-              filename: filename,
-              mimeType: mime,
-              compress: item.compress,
-            )
-          : await prepareAttachmentBufferedImage(
-              item.editedBytes ?? await readAttachmentBytes(file),
-              filename: filename,
-              mimeType: mime!,
-              compress: item.compress,
-            );
+      final PreparedAttachmentImage prepared;
+      if (item.editedBytes == null && item.asset != null) {
+        prepared = await prepareAttachmentAssetImage(
+          asset: item.asset!,
+          file: File(file.path),
+          filename: filename,
+          mimeType: mime,
+          compress: item.compress,
+        );
+      } else {
+        final rawBytes = item.editedBytes ?? await readAttachmentBytes(file);
+        final detectedMime = mime ?? detectImageMime(rawBytes);
+        if (detectedMime?.startsWith('image/') != true) {
+          throw '无法识别图片格式';
+        }
+        prepared = await prepareAttachmentBufferedImage(
+          rawBytes,
+          filename: filename,
+          mimeType: detectedMime!,
+          compress: item.compress,
+        );
+      }
       final blurhash = await encodeImageBlurhash(prepared.bytes);
       _ensureCanSend();
       final metadata = rust.ImageMessageMetadata(

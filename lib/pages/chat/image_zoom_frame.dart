@@ -1,16 +1,47 @@
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+
+/// Page physics for a gallery of zoomable images.
+///
+/// A single finger pages through the gallery; as soon as a second finger or
+/// trackpad pan-zoom starts, the page swipe yields so the drag recognizers do
+/// not claim the gesture arena before scaling begins.
+ScrollPhysics imageViewerScrollPhysics({
+  required bool zoomed,
+  required bool multiTouch,
+}) => zoomed || multiTouch
+    ? const NeverScrollableScrollPhysics()
+    : const PageScrollPhysics();
+
+class _ScopedDoubleTapGestureRecognizer extends DoubleTapGestureRecognizer {
+  bool Function(Offset globalPosition)? shouldAllowPointer;
+
+  _ScopedDoubleTapGestureRecognizer({super.debugOwner});
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) {
+    if (!super.isPointerAllowed(event)) return false;
+    return shouldAllowPointer?.call(event.position) ?? true;
+  }
+}
 
 /// Image gestures adapted from the original viewer in commit 98469ca.
 class ZoomableImageFrame extends StatefulWidget {
   final Widget child;
   final bool active;
   final ValueChanged<bool> onZoomChanged;
+  final ValueChanged<bool>? onMultiTouchChanged;
+  final GestureTapUpCallback? onSingleTapUp;
+  final bool Function(Offset globalPosition)? canDoubleTapAt;
 
   const ZoomableImageFrame({
     super.key,
     required this.child,
     required this.active,
     required this.onZoomChanged,
+    this.onMultiTouchChanged,
+    this.onSingleTapUp,
+    this.canDoubleTapAt,
   });
 
   @override
@@ -29,6 +60,16 @@ class _ZoomableImageFrameState extends State<ZoomableImageFrame>
       .animate(_zoomController);
   Offset? _doubleTapPosition;
   bool _zoomed = false;
+  final _activePointers = <int>{};
+  final _activePanZooms = <int>{};
+  bool _multiTouch = false;
+
+  void _syncMultiTouch() {
+    final next = _activePointers.length > 1 || _activePanZooms.isNotEmpty;
+    if (next == _multiTouch) return;
+    _multiTouch = next;
+    widget.onMultiTouchChanged?.call(next);
+  }
 
   @override
   void initState() {
@@ -45,6 +86,9 @@ class _ZoomableImageFrameState extends State<ZoomableImageFrame>
     if (oldWidget.active && !widget.active) {
       _zoomController.stop();
       _transform.value = Matrix4.identity();
+      _activePointers.clear();
+      _activePanZooms.clear();
+      _syncMultiTouch();
     }
   }
 
@@ -90,17 +134,61 @@ class _ZoomableImageFrameState extends State<ZoomableImageFrame>
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onDoubleTapDown: (details) => _doubleTapPosition = details.localPosition,
-    onDoubleTap: _doubleTap,
-    child: InteractiveViewer(
-      transformationController: _transform,
-      minScale: 1,
-      maxScale: _zoomLevels.last,
-      clipBehavior: Clip.none,
-      panEnabled: _zoomed,
-      onInteractionStart: (_) => _zoomController.stop(),
-      child: widget.child,
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (event) {
+      _activePointers.add(event.pointer);
+      _syncMultiTouch();
+    },
+    onPointerUp: (event) {
+      _activePointers.remove(event.pointer);
+      _syncMultiTouch();
+    },
+    onPointerCancel: (event) {
+      _activePointers.remove(event.pointer);
+      _syncMultiTouch();
+    },
+    onPointerPanZoomStart: (event) {
+      _activePanZooms.add(event.pointer);
+      _syncMultiTouch();
+    },
+    onPointerPanZoomEnd: (event) {
+      _activePanZooms.remove(event.pointer);
+      _syncMultiTouch();
+    },
+    child: RawGestureDetector(
+      behavior: HitTestBehavior.translucent,
+      gestures: {
+        if (widget.onSingleTapUp != null)
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                () => TapGestureRecognizer(debugOwner: this),
+                (instance) {
+                  instance.onTapUp = widget.onSingleTapUp;
+                },
+              ),
+        _ScopedDoubleTapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+              _ScopedDoubleTapGestureRecognizer
+            >(() => _ScopedDoubleTapGestureRecognizer(debugOwner: this), (
+              instance,
+            ) {
+              instance
+                ..shouldAllowPointer = widget.canDoubleTapAt
+                ..onDoubleTapDown = (details) {
+                  _doubleTapPosition = details.localPosition;
+                }
+                ..onDoubleTap = _doubleTap;
+            }),
+      },
+      child: InteractiveViewer(
+        transformationController: _transform,
+        minScale: 1,
+        maxScale: _zoomLevels.last,
+        clipBehavior: Clip.none,
+        panEnabled: _zoomed,
+        onInteractionStart: (_) => _zoomController.stop(),
+        child: widget.child,
+      ),
     ),
   );
 }
@@ -125,11 +213,16 @@ class DismissibleImageGallery extends StatefulWidget {
 class _DismissibleImageGalleryState extends State<DismissibleImageGallery>
     with SingleTickerProviderStateMixin {
   double _dragY = 0;
+  final _activePointers = <int>{};
+  final _activePanZooms = <int>{};
   late final _settleController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 200),
   );
   Animation<double>? _settleAnimation;
+
+  bool get _isMultiTouch =>
+      _activePointers.length > 1 || _activePanZooms.isNotEmpty;
 
   @override
   void initState() {
@@ -147,6 +240,9 @@ class _DismissibleImageGalleryState extends State<DismissibleImageGallery>
   }
 
   void _settle() {
+    // Nothing was dragged, and a cancelled drag can arrive mid-build while the
+    // gesture detectors are rebuilt: leave the frame alone instead.
+    if (_dragY == 0) return;
     _settleAnimation = Tween<double>(begin: _dragY, end: 0).animate(
       CurvedAnimation(parent: _settleController, curve: Curves.easeOutCubic),
     );
@@ -157,27 +253,49 @@ class _DismissibleImageGalleryState extends State<DismissibleImageGallery>
   Widget build(BuildContext context) {
     final progress = (_dragY.abs() / (MediaQuery.sizeOf(context).height * .45))
         .clamp(0.0, 1.0);
-    return GestureDetector(
-      onVerticalDragStart: widget.enabled
-          ? (_) => _settleController.stop()
-          : null,
-      onVerticalDragUpdate: widget.enabled
-          ? (details) => setState(() => _dragY += details.delta.dy)
-          : null,
-      onVerticalDragEnd: widget.enabled
-          ? (details) {
-              if (_dragY.abs() > 140 ||
-                  (details.primaryVelocity ?? 0).abs() > 800) {
-                widget.onClose();
-              } else {
-                _settle();
+    final canDrag = widget.enabled && !_isMultiTouch;
+    return Listener(
+      onPointerDown: (event) {
+        _activePointers.add(event.pointer);
+        if (_isMultiTouch && _dragY != 0) _settle();
+      },
+      onPointerUp: (event) => _activePointers.remove(event.pointer),
+      onPointerCancel: (event) => _activePointers.remove(event.pointer),
+      onPointerPanZoomStart: (event) {
+        _activePanZooms.add(event.pointer);
+        if (_dragY != 0) _settle();
+      },
+      onPointerPanZoomEnd: (event) => _activePanZooms.remove(event.pointer),
+      child: GestureDetector(
+        onVerticalDragStart: canDrag ? (_) => _settleController.stop() : null,
+        onVerticalDragUpdate: canDrag
+            ? (details) {
+                if (_isMultiTouch) return;
+                setState(() => _dragY += details.delta.dy);
               }
-            }
-          : null,
-      onVerticalDragCancel: widget.enabled ? _settle : null,
-      child: Transform.translate(
-        offset: Offset(0, _dragY),
-        child: Transform.scale(scale: 1 - progress * .15, child: widget.child),
+            : null,
+        onVerticalDragEnd: canDrag
+            ? (details) {
+                if (_isMultiTouch) {
+                  _settle();
+                  return;
+                }
+                if (_dragY.abs() > 140 ||
+                    (details.primaryVelocity ?? 0).abs() > 800) {
+                  widget.onClose();
+                } else {
+                  _settle();
+                }
+              }
+            : null,
+        onVerticalDragCancel: canDrag ? _settle : null,
+        child: Transform.translate(
+          offset: Offset(0, _dragY),
+          child: Transform.scale(
+            scale: 1 - progress * .15,
+            child: widget.child,
+          ),
+        ),
       ),
     );
   }

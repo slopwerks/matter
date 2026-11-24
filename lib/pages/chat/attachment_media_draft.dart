@@ -14,7 +14,7 @@ class AttachmentMediaItem {
   String? editedFilename;
   String? editedMimeType;
   String? _originalMimeType;
-  bool _compress = true;
+  bool _compress;
   bool spoiler = false;
 
   String? get mimeType =>
@@ -29,11 +29,11 @@ class AttachmentMediaItem {
       mimeType != null && mimeType != 'image/gif' && mimeType != 'image/webp';
   bool get compress => canCompress && _compress;
 
-  AttachmentMediaItem.asset(AssetEntity source)
+  AttachmentMediaItem.asset(AssetEntity source, {this._compress = false})
     : id = 'asset:${source.id}',
       asset = source,
       file = null;
-  AttachmentMediaItem.file(XFile source)
+  AttachmentMediaItem.file(XFile source, {this._compress = false})
     : id = 'file:${source.path}|${source.name}',
       asset = null,
       file = source;
@@ -83,16 +83,27 @@ class AttachmentMediaDraft extends ChangeNotifier {
   final selected = <AttachmentMediaItem>[];
   final _items = <String, AttachmentMediaItem>{};
   bool isSending = false;
+  bool _sendOriginal = true;
   String? albumRootEventId;
+
+  bool get sendOriginal => _sendOriginal;
+  bool get hasCompressibleImages =>
+      selected.any((item) => item.isImage && item.canCompress);
 
   AttachmentMediaItem forAsset(AssetEntity asset) {
     final id = 'asset:${asset.id}';
-    return _items.putIfAbsent(id, () => AttachmentMediaItem.asset(asset));
+    return _items.putIfAbsent(
+      id,
+      () => AttachmentMediaItem.asset(asset, compress: !_sendOriginal),
+    );
   }
 
   AttachmentMediaItem forFile(XFile file) {
     final id = 'file:${file.path}|${file.name}';
-    return _items.putIfAbsent(id, () => AttachmentMediaItem.file(file));
+    return _items.putIfAbsent(
+      id,
+      () => AttachmentMediaItem.file(file, compress: !_sendOriginal),
+    );
   }
 
   int order(AttachmentMediaItem item) => selected.indexOf(item) + 1;
@@ -121,9 +132,22 @@ class AttachmentMediaDraft extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleSendOriginal() {
+    if (isSending) return;
+    _sendOriginal = !_sendOriginal;
+    for (final item in _items.values) {
+      if (item.canCompress) item._compress = !_sendOriginal;
+    }
+    notifyListeners();
+  }
+
   void toggleCompression(AttachmentMediaItem item) {
     if (isSending || !item.canCompress) return;
     item._compress = !item._compress;
+    final compressible = selected.where((i) => i.isImage && i.canCompress);
+    _sendOriginal = compressible.isEmpty
+        ? !item._compress
+        : compressible.every((i) => !i._compress);
     notifyListeners();
   }
 
