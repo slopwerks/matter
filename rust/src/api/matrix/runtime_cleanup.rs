@@ -1,6 +1,7 @@
 //! Runtime cleanup implementation.
 
 use super::*;
+use super::sticker_packs::STICKER_PACK_OVERRIDES;
 
 pub(super) async fn notification_settings_for(
     client: &Client,
@@ -74,6 +75,10 @@ pub(super) async fn clear_account_runtime_state(user_id: &str) {
     }
     {
         let mut overrides = IGNORED_USER_OVERRIDES.write().await;
+        overrides.retain(|key, _| !key.starts_with(&format!("{user_id}:")));
+    }
+    {
+        let mut overrides = STICKER_PACK_OVERRIDES.write().await;
         overrides.retain(|key, _| !key.starts_with(&format!("{user_id}:")));
     }
     {

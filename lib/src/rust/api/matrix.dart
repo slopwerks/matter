@@ -11,7 +11,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SyncNotification`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Initialize persisted logging before startup session discovery begins.
 void initializeLogStore({required String dataDir}) =>
@@ -452,6 +452,34 @@ Future<List<ChatMessage>> getMessages({required String roomId}) =>
 
 Future<List<StickerPack>> getStickerPacks({required String roomId}) =>
     RustLib.instance.api.crateApiMatrixGetStickerPacks(roomId: roomId);
+
+/// Find the room sticker pack that contains a sticker message, so the
+/// whole pack can be imported at once.
+Future<StickerPackCandidate?> findStickerPack({
+  required String imageUrl,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixFindStickerPack(
+  imageUrl: imageUrl,
+  roomId: roomId,
+);
+
+/// Import a room sticker pack into the account's sticker collection.
+Future<void> importStickerPack({
+  required String roomId,
+  required String stateKey,
+}) => RustLib.instance.api.crateApiMatrixImportStickerPack(
+  roomId: roomId,
+  stateKey: stateKey,
+);
+
+/// Drop a room sticker pack from the account's imported packs.
+Future<void> removeStickerPack({
+  required String roomId,
+  required String stateKey,
+}) => RustLib.instance.api.crateApiMatrixRemoveStickerPack(
+  roomId: roomId,
+  stateKey: stateKey,
+);
 
 Future<String> sendMessage({
   required String accountUserId,
@@ -2440,6 +2468,32 @@ class StickerPack {
           avatarUrl == other.avatarUrl &&
           source == other.source &&
           stickers == other.stickers;
+}
+
+/// A room sticker pack that holds a sticker the user is looking at, so
+/// the whole pack can be imported into the account at once.
+class StickerPackCandidate {
+  final String roomId;
+  final String stateKey;
+  final StickerPack pack;
+
+  const StickerPackCandidate({
+    required this.roomId,
+    required this.stateKey,
+    required this.pack,
+  });
+
+  @override
+  int get hashCode => roomId.hashCode ^ stateKey.hashCode ^ pack.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StickerPackCandidate &&
+          runtimeType == other.runtimeType &&
+          roomId == other.roomId &&
+          stateKey == other.stateKey &&
+          pack == other.pack;
 }
 
 /// Session data to persist across app restarts.

@@ -11,8 +11,67 @@ use matrix_sdk::{
     Client, Room,
 };
 use serde::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
 
+use super::StickerPackCandidate;
 use super::{api_err, room_display_name, uint_to_i32, Sticker, StickerPack};
+
+/// Pending sticker-pack writes per account.
+///
+/// set_account_data does not update the SDK state store, so the picker refresh
+/// that follows an import would keep serving the pre-write mapping until the
+/// account-data echo syncs (or forever, if connectivity drops first). Every
+/// entry is forgotten as soon as the store confirms it.
+#[derive(Default)]
+pub(super) struct StickerPackOverrides {
+    added: HashSet<(String, String)>,
+    removed: HashSet<(String, String)>,
+}
+
+pub(super) static STICKER_PACK_OVERRIDES: Lazy<
+    tokio::sync::RwLock<HashMap<String, StickerPackOverrides>>,
+> = Lazy::new(|| tokio::sync::RwLock::new(HashMap::new()));
+
+fn sticker_pack_override_key(client: &Client) -> Option<String> {
+    client.user_id().map(|user_id| format!("{user_id}:packs"))
+}
+
+/// Folds pending local writes into the stored mapping, dropping the entries
+/// the store has meanwhile confirmed.
+pub(super) fn apply_sticker_pack_overrides(
+    overrides: &mut StickerPackOverrides,
+    imported: &mut HashMap<String, HashSet<String>>,
+) {
+    overrides.added.retain(|(room_id, state_key)| {
+        if imported
+            .get(room_id)
+            .is_some_and(|keys| keys.contains(state_key))
+        {
+            return false;
+        }
+        imported
+            .entry(room_id.clone())
+            .or_default()
+            .insert(state_key.clone());
+        true
+    });
+    // Removals stay pending until the store drops the entry; hide it meanwhile.
+    overrides.removed.retain(|(room_id, state_key)| {
+        if !imported
+            .get(room_id)
+            .is_some_and(|keys| keys.contains(state_key))
+        {
+            return false;
+        }
+        if let Some(keys) = imported.get_mut(room_id) {
+            keys.remove(state_key);
+            if keys.is_empty() {
+                imported.remove(room_id);
+            }
+        }
+        true
+    });
+}
 
 // Ruma 0.35 removed the MSC2545 types. Keep the room format readable until
 // existing rooms migrate their state to m.room.image_pack.
@@ -223,6 +282,13 @@ pub(super) async fn get_sticker_packs(
         }
     }
 
+    if let Some(account_key) = sticker_pack_override_key(client) {
+        let mut overrides = STICKER_PACK_OVERRIDES.write().await;
+        if let Some(entry) = overrides.get_mut(&account_key) {
+            apply_sticker_pack_overrides(entry, &mut imported_room_packs);
+        }
+    }
+
     let mut packs = Vec::new();
     let mut seen_pack_ids = HashSet::new();
     for pack in load_room_sticker_packs(room, None).await? {
@@ -247,8 +313,252 @@ pub(super) async fn get_sticker_packs(
     Ok(packs)
 }
 
+/// Finds the room sticker pack that contains [image_url], preferring the room
+/// the sticker was sent in and then any other joined room.
+pub(super) async fn find_sticker_pack(
+    client: &Client,
+    image_url: &str,
+    preferred_room_id: &str,
+) -> Result<Option<StickerPackCandidate>, String> {
+    let target = image_url.trim();
+    if target.is_empty() {
+        return Ok(None);
+    }
+    let mut rooms = Vec::new();
+    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(preferred_room_id) {
+        if let Some(room) = client.get_room(&room_id) {
+            rooms.push(room);
+        }
+    }
+    for room in client.joined_rooms() {
+        if rooms.iter().any(|known| known.room_id() == room.room_id()) {
+            continue;
+        }
+        rooms.push(room);
+    }
+    for room in rooms {
+        for pack in load_room_sticker_packs(&room, None).await? {
+            if !pack
+                .stickers
+                .iter()
+                .any(|sticker| sticker.image_url == target)
+            {
+                continue;
+            }
+            let Some((room_id, state_key)) = split_pack_id(&pack.id) else {
+                continue;
+            };
+            return Ok(Some(StickerPackCandidate {
+                room_id,
+                state_key,
+                pack,
+            }));
+        }
+    }
+    Ok(None)
+}
+
+/// Splits the room:{room_id}:{state_key} identifier used by [StickerPack].
+fn split_pack_id(pack_id: &str) -> Option<(String, String)> {
+    let rest = pack_id.strip_prefix("room:")?;
+    let (room_id, state_key) = rest.rsplit_once(':')?;
+    if room_id.is_empty() || state_key.is_empty() {
+        return None;
+    }
+    Some((room_id.to_string(), state_key.to_string()))
+}
+
+/// Adds a room sticker pack to the account's imported packs (MSC2545
+/// m.image_pack.rooms), which is what makes the picker show it.
+pub(super) async fn import_sticker_pack(
+    client: &Client,
+    room_id: &str,
+    state_key: &str,
+) -> Result<(), String> {
+    let parsed = matrix_sdk::ruma::RoomId::parse(room_id)
+        .map_err(|e| api_err("media", format!("无效的房间 ID: {e}")))?;
+    let room = client
+        .get_room(&parsed)
+        .ok_or_else(|| api_err("media", format!("房间不存在: {room_id}")))?;
+    // An empty state key is published as "default" in StickerPack::id, so try
+    // both spellings while confirming the pack against room state.
+    let mut candidates = vec![state_key.to_string()];
+    if state_key == "default" {
+        candidates.push(String::new());
+    }
+    let mut resolved = None;
+    for key in candidates {
+        let keys = HashSet::from([key.clone()]);
+        if !load_room_sticker_packs(&room, Some(&keys))
+            .await?
+            .is_empty()
+        {
+            resolved = Some(key);
+            break;
+        }
+    }
+    let key = resolved.ok_or_else(|| {
+        api_err(
+            "media",
+            format!("贴纸包不存在: {} ({state_key})", room.room_id()),
+        )
+    })?;
+
+    let mut content = client
+        .account()
+        .account_data_raw("m.image_pack.rooms".into())
+        .await
+        .map_err(|e| {
+            api_err(
+                "media",
+                format!("Failed to load image-pack room mapping: {e}"),
+            )
+        })?
+        .and_then(|raw| {
+            raw.deserialize_as_unchecked::<ImagePackRoomsEventContent>()
+                .ok()
+        })
+        .unwrap_or_default();
+    content.rooms.entry(parsed.to_owned()).or_default().insert(
+        key.clone(),
+        matrix_sdk::ruma::events::image_pack::rooms::RoomImagePackMeta::new(),
+    );
+    client
+        .account()
+        .set_account_data(content)
+        .await
+        .map_err(|e| api_err("media", format!("Failed to import sticker pack: {e}")))?;
+    // Keep the import visible while the account-data echo is still missing.
+    if let Some(account_key) = sticker_pack_override_key(client) {
+        let pack = (room.room_id().to_string(), key.clone());
+        let mut overrides = STICKER_PACK_OVERRIDES.write().await;
+        let entry = overrides.entry(account_key).or_default();
+        entry.removed.remove(&pack);
+        entry.added.insert(pack);
+    }
+    super::app_log(
+        "info",
+        "media",
+        format!("Imported sticker pack {room_id} ({state_key})"),
+    );
+    Ok(())
+}
+
+/// Drops a room sticker pack from the account's imported packs, so the picker
+/// stops offering it.
+pub(super) async fn remove_sticker_pack(
+    client: &Client,
+    room_id: &str,
+    state_key: &str,
+) -> Result<(), String> {
+    let parsed = matrix_sdk::ruma::RoomId::parse(room_id)
+        .map_err(|e| api_err("media", format!("无效的房间 ID: {e}")))?;
+    // An empty state key is published as "default" in StickerPack::id, so try
+    // both spellings while dropping the mapping.
+    let mut keys = vec![state_key.to_string()];
+    if state_key == "default" {
+        keys.push(String::new());
+    }
+    let mut removed = false;
+    for event_type in ["m.image_pack.rooms", "im.ponies.emote_rooms"] {
+        let Some(mut content) = client
+            .account()
+            .account_data_raw(event_type.into())
+            .await
+            .ok()
+            .flatten()
+            .and_then(|raw| {
+                raw.deserialize_as_unchecked::<ImagePackRoomsEventContent>()
+                    .ok()
+            })
+        else {
+            continue;
+        };
+        let Some(packs) = content.rooms.get_mut(&parsed) else {
+            continue;
+        };
+        let mut changed = false;
+        for key in &keys {
+            if packs.remove(key).is_some() {
+                changed = true;
+                removed = true;
+            }
+        }
+        if !changed {
+            continue;
+        }
+        if packs.is_empty() {
+            content.rooms.remove(&parsed);
+        }
+        client
+            .account()
+            .set_account_data(content)
+            .await
+            .map_err(|e| api_err("media", format!("Failed to remove sticker pack: {e}")))?;
+    }
+    // Hide the pack immediately: the echo that clears the store entry may
+    // still be missing.
+    if let Some(account_key) = sticker_pack_override_key(client) {
+        let mut overrides = STICKER_PACK_OVERRIDES.write().await;
+        let entry = overrides.entry(account_key).or_default();
+        for key in &keys {
+            let pack = (parsed.to_string(), key.clone());
+            entry.added.remove(&pack);
+            entry.removed.insert(pack);
+        }
+    }
+    if !removed {
+        return Err(api_err(
+            "media",
+            format!("贴纸包不在个人收藏里: {room_id} ({state_key})"),
+        ));
+    }
+    super::app_log(
+        "info",
+        "media",
+        format!("Removed sticker pack {room_id} ({state_key})"),
+    );
+    Ok(())
+}
+
+/// FFI entry point: drop a room sticker pack from the account.
+pub(super) async fn remove_sticker_pack_for_account(
+    room_id: String,
+    state_key: String,
+) -> Result<(), String> {
+    let client = super::get_client()
+        .await
+        .ok_or_else(|| api_err("media", "No client created.".to_string()))?;
+    remove_sticker_pack(&client, &room_id, &state_key).await
+}
+
+/// FFI entry point: the pack behind a sticker message.
+pub(super) async fn find_sticker_pack_for_message(
+    image_url: String,
+    room_id: String,
+) -> Result<Option<StickerPackCandidate>, String> {
+    let client = super::get_client()
+        .await
+        .ok_or_else(|| api_err("media", "No client created.".to_string()))?;
+    find_sticker_pack(&client, &image_url, &room_id).await
+}
+
+/// FFI entry point: import a room sticker pack into the account.
+pub(super) async fn import_sticker_pack_for_account(
+    room_id: String,
+    state_key: String,
+) -> Result<(), String> {
+    let client = super::get_client()
+        .await
+        .ok_or_else(|| api_err("media", "No client created.".to_string()))?;
+    import_sticker_pack(&client, &room_id, &state_key).await
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use super::{apply_sticker_pack_overrides, StickerPackOverrides};
     use matrix_sdk::{
         ruma::{room_id, serde::Raw},
         test_utils::mocks::MatrixMockServer,
@@ -360,5 +670,138 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["new", "old"]
         );
+    }
+
+    #[tokio::test]
+    async fn finds_the_pack_that_holds_a_sticker_url() {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let room_id = room_id!("!stickers:localhost");
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(room_id).add_state_event(pack_event(
+                    "m.room.image_pack",
+                    "",
+                    json!({"images": {"cat": {"url": "mxc://localhost/cat"}}}),
+                )),
+            )
+            .await;
+        let found = super::find_sticker_pack(&client, "mxc://localhost/cat", "!other:localhost")
+            .await
+            .unwrap()
+            .expect("pack holding the sticker");
+        assert_eq!(found.room_id, "!stickers:localhost");
+        assert_eq!(found.state_key, "default");
+        assert_eq!(found.pack.stickers.len(), 1);
+
+        let missing = super::find_sticker_pack(&client, "mxc://localhost/dog", "!other:localhost")
+            .await
+            .unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn a_pending_import_survives_a_stale_store() {
+        let mut overrides = StickerPackOverrides::default();
+        overrides
+            .added
+            .insert(("!room:localhost".to_string(), "cats".to_string()));
+        let mut imported = HashMap::new();
+
+        apply_sticker_pack_overrides(&mut overrides, &mut imported);
+
+        assert_eq!(
+            imported.get("!room:localhost"),
+            Some(&HashSet::from(["cats".to_string()]))
+        );
+        // Still pending: no echo has confirmed it yet.
+        assert!(overrides
+            .added
+            .contains(&("!room:localhost".to_string(), "cats".to_string())));
+    }
+
+    #[test]
+    fn a_confirmed_import_drops_its_override() {
+        let mut overrides = StickerPackOverrides::default();
+        overrides
+            .added
+            .insert(("!room:localhost".to_string(), "cats".to_string()));
+        let mut imported = HashMap::from([(
+            "!room:localhost".to_string(),
+            HashSet::from(["cats".to_string()]),
+        )]);
+
+        apply_sticker_pack_overrides(&mut overrides, &mut imported);
+
+        assert_eq!(
+            imported.get("!room:localhost"),
+            Some(&HashSet::from(["cats".to_string()]))
+        );
+        assert!(overrides.added.is_empty());
+    }
+
+    #[test]
+    fn a_pending_removal_hides_the_stored_pack() {
+        let mut overrides = StickerPackOverrides::default();
+        overrides
+            .removed
+            .insert(("!room:localhost".to_string(), "cats".to_string()));
+        let mut imported = HashMap::from([(
+            "!room:localhost".to_string(),
+            HashSet::from(["cats".to_string(), "dogs".to_string()]),
+        )]);
+
+        apply_sticker_pack_overrides(&mut overrides, &mut imported);
+
+        assert_eq!(
+            imported.get("!room:localhost"),
+            Some(&HashSet::from(["dogs".to_string()]))
+        );
+        // Still pending: the store has not dropped it yet.
+        assert_eq!(overrides.removed.len(), 1);
+    }
+
+    #[test]
+    fn a_confirmed_removal_drops_its_override() {
+        let mut overrides = StickerPackOverrides::default();
+        overrides
+            .removed
+            .insert(("!room:localhost".to_string(), "cats".to_string()));
+        let mut imported = HashMap::new();
+
+        apply_sticker_pack_overrides(&mut overrides, &mut imported);
+
+        assert!(imported.is_empty());
+        assert!(overrides.removed.is_empty());
+    }
+
+    #[test]
+    fn a_removal_with_nothing_left_drops_the_room_entry() {
+        let mut overrides = StickerPackOverrides::default();
+        overrides
+            .removed
+            .insert(("!room:localhost".to_string(), "cats".to_string()));
+        let mut imported = HashMap::from([(
+            "!room:localhost".to_string(),
+            HashSet::from(["cats".to_string()]),
+        )]);
+
+        apply_sticker_pack_overrides(&mut overrides, &mut imported);
+
+        assert!(imported.is_empty());
+    }
+
+    #[test]
+    fn splits_pack_ids() {
+        assert_eq!(
+            super::split_pack_id("room:!a:b:shared"),
+            Some(("!a:b".to_string(), "shared".to_string()))
+        );
+        assert_eq!(
+            super::split_pack_id("room:!a:b"),
+            Some(("!a".to_string(), "b".to_string()))
+        );
+        assert_eq!(super::split_pack_id("user:!a:b:shared"), None);
     }
 }
