@@ -57,6 +57,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
   late final String? _account;
   late int _index;
   bool _zoomed = false;
+  bool _multiTouch = false;
   bool _loadingOlder = false;
   late bool _hasMore;
   final _mediaById = <String, ImageViewerMedia>{};
@@ -562,7 +563,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
             Positioned.fill(
               top: toolbarHeight,
               child: DismissibleImageGallery(
-                enabled: !_zoomed,
+                enabled: !_zoomed && !_multiTouch,
                 onClose: () => Navigator.of(context).pop(),
                 child: NotificationListener<OverscrollNotification>(
                   onNotification: (notification) {
@@ -576,9 +577,10 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                   },
                   child: PageView.builder(
                     controller: _pages,
-                    physics: _zoomed
-                        ? const NeverScrollableScrollPhysics()
-                        : const PageScrollPhysics(),
+                    physics: imageViewerScrollPhysics(
+                      zoomed: _zoomed,
+                      multiTouch: _multiTouch,
+                    ),
                     itemCount: _sources.length,
                     findChildIndexCallback: (key) {
                       final index = _sources.indexWhere(
@@ -590,6 +592,7 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                       setState(() {
                         _index = index;
                         _zoomed = false;
+                        _multiTouch = false;
                       });
                       _rememberViewed();
                     },
@@ -600,9 +603,15 @@ class _ChatImageViewerState extends ConsumerState<ChatImageViewer> {
                         media: pageMedia,
                         active: index == _index,
                         onDispose: () => _releaseMedia(pageMedia),
+                        onClose: () => Navigator.of(context).pop(),
                         onZoomChanged: (zoomed) {
                           if (index == _index && _zoomed != zoomed) {
                             setState(() => _zoomed = zoomed);
+                          }
+                        },
+                        onMultiTouchChanged: (multiTouch) {
+                          if (index == _index && _multiTouch != multiTouch) {
+                            setState(() => _multiTouch = multiTouch);
                           }
                         },
                       );
@@ -661,14 +670,18 @@ class _ImageViewerPage extends StatefulWidget {
   final ImageViewerMedia media;
   final bool active;
   final ValueChanged<bool> onZoomChanged;
+  final ValueChanged<bool> onMultiTouchChanged;
   final VoidCallback onDispose;
+  final VoidCallback onClose;
 
   const _ImageViewerPage({
     super.key,
     required this.media,
     required this.active,
     required this.onZoomChanged,
+    required this.onMultiTouchChanged,
     required this.onDispose,
+    required this.onClose,
   });
 
   @override
@@ -676,6 +689,27 @@ class _ImageViewerPage extends StatefulWidget {
 }
 
 class _ImageViewerPageState extends State<_ImageViewerPage> {
+  final GlobalKey _imageKey = GlobalKey();
+  bool _zoomed = false;
+
+  @override
+  void didUpdateWidget(covariant _ImageViewerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active && !widget.active) _zoomed = false;
+  }
+
+  void _handleSingleTapUp(TapUpDetails details) {
+    if (!widget.active || _zoomed) return;
+    final box = _imageKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    if ((box.localToGlobal(Offset.zero) & box.size).contains(
+      details.globalPosition,
+    )) {
+      return;
+    }
+    widget.onClose();
+  }
+
   @override
   void dispose() {
     widget.onDispose();
@@ -704,10 +738,16 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
           Positioned.fill(
             child: ZoomableImageFrame(
               active: widget.active,
-              onZoomChanged: widget.onZoomChanged,
+              onZoomChanged: (zoomed) {
+                _zoomed = zoomed;
+                widget.onZoomChanged(zoomed);
+              },
+              onMultiTouchChanged: widget.onMultiTouchChanged,
+              onSingleTapUp: _handleSingleTapUp,
               child: SizedBox.expand(
                 child: Center(
                   child: AspectRatio(
+                    key: _imageKey,
                     aspectRatio: source.aspectRatio,
                     child: HeroMode(
                       enabled: widget.active,
