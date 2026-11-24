@@ -167,7 +167,6 @@ class TimelineMessagePresenter {
               ? CrossAxisAlignment.end
               : CrossAxisAlignment.start,
           children: [
-            collapseButton,
             for (var index = 0; index < imageRun.messages.length; index++)
               anchor(
                 imageRun.messages[index],
@@ -185,6 +184,10 @@ class TimelineMessagePresenter {
                       : null,
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: collapseButton,
+            ),
           ],
         ),
         captionBuilder: (image) {

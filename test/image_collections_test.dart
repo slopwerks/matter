@@ -229,29 +229,35 @@ void main() {
     expect(runs.every((run) => !run.album), isTrue);
   });
 
-  test('alternating photo layout matches the HTML default geometry', () {
-    final layout = imageStackLayout(3, 520);
-    // Reference values from the playground's geometry() at its default 3:2 ratio.
-    expect(layout.size.width, closeTo(321.17741336174504, .000001));
-    expect(layout.size.height, closeTo(217.6370237665914, .000001));
-    expect(layout.layers.first.rect.left, closeTo(33.69371829386361, .000001));
-    expect(layout.layers.first.rect.top, closeTo(37.6370237665914, .000001));
-    expect(layout.layers.first.rect.size, const Size(270, 180));
-    expect(layout.layers[1].rotation * 180 / math.pi, closeTo(5, .000001));
-    expect(layout.layers[2].rotation * 180 / math.pi, closeTo(-10, .000001));
-    expect(layout.layers[1].rect.width, closeTo(264.6, .000001));
-    expect(layout.layers[2].rect.width, closeTo(259.308, .000001));
-    expect(layout.layers.map((layer) => layer.opacity), [1, .97, .9409]);
-  });
+  test(
+    'downward stack layout anchors the front card at top-left without tilt',
+    () {
+      final layout = imageStackLayout(3, 520);
+      expect(layout.size.width, closeTo(270.0, .000001));
+      expect(layout.size.height, closeTo(196.0, .000001));
+      expect(layout.layers.first.rect.left, closeTo(0.0, .000001));
+      expect(layout.layers.first.rect.top, closeTo(0.0, .000001));
+      expect(layout.layers.first.rect.size, const Size(270, 180));
+      expect(layout.layers[1].rotation, 0);
+      expect(layout.layers[2].rotation, 0);
+      expect(layout.layers[1].rect.bottom, closeTo(188.0, .000001));
+      expect(layout.layers[2].rect.bottom, closeTo(196.0, .000001));
+      expect(layout.layers[1].rect.width, closeTo(270 * .94, .000001));
+      expect(layout.layers[2].rect.width, closeTo(270 * .94 * .94, .000001));
+      expect(layout.layers.map((layer) => layer.opacity), [1, .92, .92 * .92]);
+    },
+  );
 
   test(
-    'the entire rotated stack fits narrow widths and scales as one unit',
+    'the entire downward stack fits narrow widths and scales as one unit',
     () {
       for (final width in [180.0, 240.0, 320.0, 520.0]) {
         for (final count in [2, 3, 8]) {
           final layout = imageStackLayout(count, width);
           expect(layout.layers.length, math.min(count, 3));
           expect(layout.size.width, lessThanOrEqualTo(width + .000001));
+          expect(layout.layers.first.rect.left, closeTo(0.0, .000001));
+          expect(layout.layers.first.rect.top, closeTo(0.0, .000001));
           for (final layer in layout.layers) {
             expect(layer.paintBounds.left, greaterThanOrEqualTo(-.000001));
             expect(layer.paintBounds.top, greaterThanOrEqualTo(-.000001));
@@ -425,19 +431,16 @@ void main() {
         expect(find.text('0'), findsNothing);
         expect(find.text('4'), findsOneWidget);
         final front = tester.getRect(find.byKey(const ValueKey('test-tile:4')));
-        final frontCenter = tester.getCenter(
-          find.byKey(const ValueKey('test-tile:4')),
-        );
-        final middleCenter = tester.getCenter(
+        final middle = tester.getRect(
           find.byKey(const ValueKey('test-tile:3')),
         );
-        final backCenter = tester.getCenter(
-          find.byKey(const ValueKey('test-tile:2')),
-        );
-        expect(middleCenter.dx, greaterThan(frontCenter.dx));
-        expect(backCenter.dx, lessThan(frontCenter.dx));
-        expect(middleCenter.dy, lessThan(frontCenter.dy));
-        expect(backCenter.dy, lessThan(middleCenter.dy));
+        final back = tester.getRect(find.byKey(const ValueKey('test-tile:2')));
+        expect(front.left, closeTo(0, .001));
+        expect(front.top, closeTo(0, .001));
+        expect(middle.center.dx, closeTo(front.center.dx, .001));
+        expect(back.center.dx, closeTo(front.center.dx, .001));
+        expect(middle.bottom, greaterThan(front.bottom));
+        expect(back.bottom, greaterThan(middle.bottom));
         expect(
           tester.getRect(find.text('12:00')).bottom,
           lessThanOrEqualTo(front.bottom),
@@ -449,6 +452,52 @@ void main() {
         final count = find.byKey(const ValueKey('image-stack-count'));
         expect(tester.widget<Text>(count).data, '5');
         expect(front.contains(tester.getRect(count).center), isTrue);
+        // Switch left/right with buttons and swipe while keeping stack height steady.
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('image-stack-page')))
+              .data,
+          '5/5',
+        );
+        await tester.tap(find.byKey(const ValueKey('image-stack-prev:0')));
+        await tester.pump();
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('image-stack-page')))
+              .data,
+          '4/5',
+        );
+        expect(find.byKey(const ValueKey('test-tile:3')), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('image-stack-next:0')));
+        await tester.pump();
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('image-stack-page')))
+              .data,
+          '5/5',
+        );
+        await tester.drag(
+          find.byKey(const ValueKey('image-stack')),
+          const Offset(-80, 0),
+        );
+        await tester.pump();
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('image-stack-page')))
+              .data,
+          '1/5',
+        );
+        await tester.drag(
+          find.byKey(const ValueKey('image-stack')),
+          const Offset(80, 0),
+        );
+        await tester.pump();
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('image-stack-page')))
+              .data,
+          '5/5',
+        );
         await tester.tap(find.byTooltip('展开全部5张图片'));
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('image-mosaic')), findsNothing);
@@ -654,8 +703,10 @@ void main() {
       final third = tester.getRect(
         find.byKey(const ValueKey('image-bubble:three')),
       );
+      expect(first.top, closeTo(photoRect.top, .001));
       expect(first.bottom, lessThanOrEqualTo(second.top));
       expect(second.bottom, lessThanOrEqualTo(third.top));
+      await tester.ensureVisible(find.byTooltip('收起图片，共3张'));
       await tester.tap(find.byTooltip('收起图片，共3张'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
