@@ -5407,4 +5407,99 @@ void main() {
     await tester.pump();
     expect(find.text('Name B'), findsWidgets);
   });
+
+  testWidgets(
+    'compact Material shell forwards bottom viewInsets to embedded chat',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      const roomId = '!keyboard:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+          roomMembersProvider(roomId).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          '@alice:example.org';
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        _message(r'$m1', content: 'hello'),
+      ];
+
+      final position = ValueNotifier(0.0);
+      final navigator = GlobalKey<NavigatorState>();
+      addTearDown(position.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true),
+            navigatorObservers: [chatRouteObserver],
+            home: MaterialAdaptiveShell(
+              window: MaterialWindowClass.compact,
+              index: 0,
+              onNavigate: (_) {},
+              position: position,
+              profile: const SizedBox(),
+              railAccount: const SizedBox(),
+              railActions: (_) => const SizedBox(),
+              railSpaces: const SizedBox(),
+              unreadCount: 0,
+              chatOpen: true,
+              pages: [
+                MaterialConversationLayout(
+                  navigator: navigator,
+                  routesOpen: false,
+                  active: true,
+                  onRoutesChanged: (_) {},
+                  window: MaterialWindowClass.compact,
+                  list: const Scaffold(body: Text('list')),
+                  roomId: roomId,
+                  onCloseSupporting: () {},
+                  detail: const ChatDetailPage(
+                    roomId: roomId,
+                    roomName: 'Room',
+                  ),
+                ),
+                const Scaffold(body: Text('spaces')),
+                const Scaffold(body: Text('contacts')),
+                const Scaffold(body: Text('settings')),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.sentiment_satisfied_alt_rounded));
+      await tester.pumpAndSettle();
+      expect(find.byType(EmojiPickerPanel), findsOneWidget);
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
+
+      final chatContext = tester.element(find.byType(ChatDetailPage));
+      expect(MediaQuery.viewInsetsOf(chatContext).bottom, 320);
+      expect(find.byType(EmojiPickerPanel), findsNothing);
+      final surfaceBottom = tester
+          .getBottomLeft(find.byKey(const ValueKey('message-input-surface')))
+          .dy;
+      expect(surfaceBottom, lessThanOrEqualTo(480));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
 }

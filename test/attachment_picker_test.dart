@@ -7,6 +7,7 @@ import 'package:matter/pages/chat/attachment_picker.dart';
 import 'package:matter/pages/chat/chat_image_editor_page.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/theme/material_theme.dart';
 import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/widgets/neu_decoration.dart';
 import 'package:matter/widgets/neu_surface.dart';
@@ -447,6 +448,63 @@ void main() {
     expect(tester.getSize(firstOption).width, compactWidth);
     expect(find.widgetWithText(TextField, '选项 2'), findsOneWidget);
   });
+
+  testWidgets(
+    'Material attachment tab bar keeps destinations inside bar under extendBodyBehindAppBar',
+    (tester) async {
+      await _mockPhotoManagerEmpty();
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 48, bottom: 34);
+      tester.view.viewPadding = const FakeViewPadding(top: 48, bottom: 34);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: buildMaterialTheme(Brightness.dark),
+            home: Scaffold(
+              extendBodyBehindAppBar: true,
+              appBar: AppBar(title: const Text('Room')),
+              body: Align(
+                alignment: Alignment.bottomCenter,
+                child: AttachmentPicker(
+                  height: 300,
+                  maxHeight: 500,
+                  roomId: '!room:example.org',
+                  accountUserId: '@alice:example.org',
+                  onRefresh: (_) async {},
+                  resolveSendPresentation: () => MessageSendPresentation.quiet,
+                  onMessageSent: (_, _) {},
+                  onMessageQueued: (_, _) {},
+                  totalMembers: 2,
+                  onHeightChanged: (_) {},
+                  onClose: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final barRect = tester.getRect(
+        find.byKey(const ValueKey('attachment-tab-bar')),
+      );
+      expect(barRect.height, 64);
+      for (final label in const ['图片', '文件', '投票', '地址']) {
+        final labelRect = tester.getRect(find.text(label));
+        expect(labelRect.top, greaterThanOrEqualTo(barRect.top));
+        expect(labelRect.bottom, lessThanOrEqualTo(barRect.bottom));
+      }
+      final photoRect = tester.getRect(
+        find.byIcon(Icons.photo_library_rounded),
+      );
+      expect(photoRect.top, greaterThanOrEqualTo(barRect.top));
+      expect(photoRect.bottom, lessThanOrEqualTo(barRect.bottom));
+    },
+  );
 }
 
 class _AttachmentPickerHarness extends StatelessWidget {

@@ -2,9 +2,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/attachment_picker.dart';
+import 'package:matter/pages/chat/composer/composer_text_field.dart';
 import 'package:matter/pages/chat/composer_picker_panel.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/theme/material_theme.dart';
 import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/widgets/glass.dart';
 
@@ -166,6 +168,53 @@ void main() {
     expect(find.byType(AttachmentPicker), findsOneWidget);
     expect(find.byType(ComposerPickerPanel), findsNothing);
   });
+
+  testWidgets(
+    'Material capsule aligns single-line editor vertically and trims redundant side inset',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: buildMaterialTheme(Brightness.dark),
+            home: const _MessageInputHarness(
+              initialPanelMode: InputPanelMode.none,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final surfaceRect = tester.getRect(
+        find.byKey(const ValueKey('message-input-surface')),
+      );
+      final editorRect = tester.getRect(find.byType(ComposerTextField));
+      final plusIconRect = tester.getRect(find.byIcon(Icons.add_rounded));
+      final emojiIconRect = tester.getRect(
+        find.byIcon(Icons.sentiment_satisfied_alt_rounded),
+      );
+      final field = tester.widget<TextField>(find.byType(TextField));
+      final padding = field.decoration!.contentPadding! as EdgeInsets;
+
+      expect(surfaceRect.height, 56);
+      expect(editorRect.height, 48);
+      expect(
+        (editorRect.center.dy - plusIconRect.center.dy).abs(),
+        lessThanOrEqualTo(0.5),
+      );
+      expect(
+        (editorRect.center.dy - emojiIconRect.center.dy).abs(),
+        lessThanOrEqualTo(0.5),
+      );
+      expect(padding.horizontal, lessThanOrEqualTo(8));
+      expect(editorRect.width, greaterThanOrEqualTo(170));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 }
 
 class _MessageInputHarness extends StatefulWidget {

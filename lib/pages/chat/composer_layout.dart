@@ -171,15 +171,15 @@ class ComposerLayout extends StatelessWidget {
           children: [
             if (showMore) _alignedTool(context, moreButton),
             _alignedTool(context, attachmentButton),
-            SizedBox(width: context.isMaterial ? 2 : 6),
+            if (!context.isMaterial) const SizedBox(width: 6),
             Expanded(child: editor),
-            SizedBox(width: context.isMaterial ? 2 : 6),
+            if (!context.isMaterial) const SizedBox(width: 6),
             SizedBox(
-              width: context.isMaterial ? 92 : 94,
               height: context.isMaterial || showMore
                   ? kMinInteractiveDimension
                   : 44,
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [emojiButton, sendButton],
               ),

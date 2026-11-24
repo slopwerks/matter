@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/theme/material_theme.dart';
 import 'package:matter/widgets/floating_app_bar.dart';
 import 'package:matter/widgets/glass.dart';
+import 'package:matter/widgets/material_root_header.dart';
 
 void main() {
   for (final brightness in Brightness.values) {
@@ -99,4 +100,76 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'compact root header clips decoration strictly to bottom corners',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24);
+      await tester.binding.setSurfaceSize(const Size(360, 220));
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final scheme = applyMaterialBackground(
+        materialColorScheme(brightness: Brightness.dark),
+        MaterialBackground.pure,
+      );
+      final theme = buildMaterialTheme(Brightness.dark, colorScheme: scheme);
+      final boundaryKey = GlobalKey();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: RepaintBoundary(
+            key: boundaryKey,
+            child: ColoredBox(
+              color: theme.colorScheme.surface,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  MaterialRootHeader(
+                    title: 'Chat',
+                    compact: true,
+                    search: const SearchBar(hintText: 'Search'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary;
+      final pixels = await tester.runAsync(() async {
+        final image = await boundary.toImage();
+        try {
+          return await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        } finally {
+          image.dispose();
+        }
+      });
+      Color sample(int x, int y) {
+        final offset = (y * 360 + x) * 4;
+        return Color.fromARGB(
+          pixels!.getUint8(offset + 3),
+          pixels.getUint8(offset),
+          pixels.getUint8(offset + 1),
+          pixels.getUint8(offset + 2),
+        );
+      }
+
+      final headerRect = tester.getRect(find.byType(MaterialRootHeader));
+      expect(headerRect.height, 24 + 56 + 68);
+      final cornerY = headerRect.bottom.round() - 2;
+      expect(sample(2, cornerY), Colors.black);
+      expect(sample(357, cornerY), Colors.black);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }
