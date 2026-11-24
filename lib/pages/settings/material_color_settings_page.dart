@@ -211,6 +211,22 @@ class MaterialColorSettingsPage extends ConsumerWidget {
                 ),
                 if (brightness == Brightness.light) const SizedBox(height: 24),
               ],
+              const SizedBox(height: 24),
+              _Section(
+                title: '界面效果',
+                icon: Icons.blur_on_rounded,
+                child: GroupedRows(
+                  children: [
+                    SwitchListTile(
+                      key: const ValueKey('material-dock-blur-switch'),
+                      title: const Text('底栏毛玻璃效果'),
+                      subtitle: const Text('底部导航栏使用半透明背景模糊；关闭后使用纯色背景'),
+                      value: settings.dockBlurEnabled,
+                      onChanged: notifier.setDockBlurEnabled,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

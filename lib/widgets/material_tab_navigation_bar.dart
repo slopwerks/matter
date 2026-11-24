@@ -18,6 +18,7 @@ class DockSurface extends StatelessWidget {
     super.key,
     this.radius = NeuRadius.nav,
     this.lift,
+    this.blurEnabled = true,
     required this.child,
   });
 
@@ -28,10 +29,16 @@ class DockSurface extends StatelessWidget {
   /// only the content inside leaves the capsule its original size, which looks
   /// like the icons growing rather than the dock giving.
   final ValueListenable<double>? lift;
+  final bool blurEnabled;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    final fillColor = Theme.of(context).colorScheme.surfaceContainer;
+    final tinted = ColoredBox(
+      color: blurEnabled ? fillColor.withValues(alpha: .82) : fillColor,
+      child: child,
+    );
     final surface = DecoratedBox(
       decoration: ShapeDecoration(
         shape: RoundedRectangleBorder(
@@ -41,12 +48,14 @@ class DockSurface extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          // Blur first, tint second: the other order paints an opaque colour
-          // over the backdrop filter and the blur never shows.
-          child: ColoredBox(color: context.neu.glassFill, child: child),
-        ),
+        child: blurEnabled
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                // Blur first, tint second: the other order paints an opaque
+                // colour over the backdrop filter and the blur never shows.
+                child: tinted,
+              )
+            : tinted,
       ),
     );
     final lift = this.lift;
@@ -250,6 +259,7 @@ class MaterialTabNavigationBar extends StatefulWidget {
     required this.selectedIndex,
     required this.onDestinationSelected,
     required this.destinations,
+    this.badges = const {},
     this.lift,
   });
 
@@ -259,6 +269,7 @@ class MaterialTabNavigationBar extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final List<NavigationDestination> destinations;
+  final Map<int, int> badges;
 
   /// Mirrors the press (0 at rest, 1 held) so the platter this bar sits on can
   /// scale with it. The platter is above this widget, so the value has to be
@@ -500,6 +511,7 @@ class _MaterialTabNavigationBarState extends State<MaterialTabNavigationBar>
                                   child: _DockItem(
                                     destination: widget.destinations[index],
                                     selected: index == widget.selectedIndex,
+                                    badgeCount: widget.badges[index] ?? 0,
                                     lens: lens.shift(
                                       Offset(
                                         -_barPadding -
@@ -537,6 +549,7 @@ class _DockItem extends StatelessWidget {
   const _DockItem({
     required this.destination,
     required this.selected,
+    required this.badgeCount,
     required this.lens,
     required this.magnification,
     required this.labelStyle,
@@ -546,6 +559,7 @@ class _DockItem extends StatelessWidget {
 
   final NavigationDestination destination;
   final bool selected;
+  final int badgeCount;
   final RRect lens;
   final double magnification;
   final TextStyle? labelStyle;
@@ -553,46 +567,87 @@ class _DockItem extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    container: true,
-    button: true,
-    selected: selected,
-    label: destination.label,
-    onTap: onTap,
-    child: DockLensContents(
-      lens: lens,
-      color: scheme.primary,
-      magnification: magnification,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconTheme.merge(
-              data: IconThemeData(
-                size: _iconSize,
-                color: scheme.onSurfaceVariant,
+  Widget build(BuildContext context) {
+    final semanticLabel = badgeCount > 0
+        ? '${destination.label}，$badgeCount 条未读'
+        : destination.label;
+    final labelTextStyle = labelStyle?.copyWith(
+      fontSize: _labelSize,
+      fontWeight: FontWeight.w500,
+      color: scheme.onSurfaceVariant,
+    );
+    return Semantics(
+      container: true,
+      button: true,
+      selected: selected,
+      label: semanticLabel,
+      onTap: onTap,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          DockLensContents(
+            lens: lens,
+            color: scheme.primary,
+            magnification: magnification,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconTheme.merge(
+                    data: IconThemeData(
+                      size: _iconSize,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    // Both passes paint the same glyph. Only the covered
+                    // pixels change colour, without swapping the entire icon
+                    // mid-drag.
+                    child: destination.selectedIcon ?? destination.icon,
+                  ),
+                  const SizedBox(height: _labelGap),
+                  Text(
+                    destination.label,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: labelTextStyle,
+                  ),
+                ],
               ),
-              // Both passes paint the same glyph. Only the covered pixels
-              // change colour, without swapping the entire icon mid-drag.
-              child: destination.selectedIcon ?? destination.icon,
             ),
-            const SizedBox(height: _labelGap),
-            Text(
-              destination.label,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: labelStyle?.copyWith(
-                fontSize: _labelSize,
-                fontWeight: FontWeight.w500,
-                color: scheme.onSurfaceVariant,
+          ),
+          // Paint the unread badge outside DockLensContents so the lens's
+          // srcIn color filter does not recolor the badge container and text.
+          if (badgeCount > 0)
+            IgnorePointer(
+              child: ExcludeSemantics(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Badge.count(
+                        count: badgeCount,
+                        child: const SizedBox.square(dimension: _iconSize),
+                      ),
+                      const SizedBox(height: _labelGap),
+                      Opacity(
+                        opacity: 0,
+                        child: Text(
+                          destination.label,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: labelTextStyle,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
+        ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _LensPainter extends CustomPainter {

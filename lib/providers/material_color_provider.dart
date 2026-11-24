@@ -15,6 +15,7 @@ class MaterialColorSettings {
     this.darkBackground = MaterialBackground.tonal,
     this.colorStyle = DynamicSchemeVariant.tonalSpot,
     this.customColors = const [],
+    this.dockBlurEnabled = true,
   });
 
   final bool followSystem;
@@ -23,6 +24,7 @@ class MaterialColorSettings {
   final MaterialBackground darkBackground;
   final DynamicSchemeVariant colorStyle;
   final List<Color> customColors;
+  final bool dockBlurEnabled;
 
   MaterialColorSettings copyWith({
     bool? followSystem,
@@ -31,6 +33,7 @@ class MaterialColorSettings {
     MaterialBackground? darkBackground,
     DynamicSchemeVariant? colorStyle,
     List<Color>? customColors,
+    bool? dockBlurEnabled,
   }) => MaterialColorSettings(
     followSystem: followSystem ?? this.followSystem,
     seedColor: seedColor ?? this.seedColor,
@@ -38,6 +41,7 @@ class MaterialColorSettings {
     darkBackground: darkBackground ?? this.darkBackground,
     colorStyle: colorStyle ?? this.colorStyle,
     customColors: customColors ?? this.customColors,
+    dockBlurEnabled: dockBlurEnabled ?? this.dockBlurEnabled,
   );
 }
 
@@ -82,6 +86,7 @@ class MaterialColorSettingsNotifier extends Notifier<MaterialColorSettings> {
       darkBackground: background('darkBackground'),
       colorStyle: variant('colorStyle'),
       customColors: customColors,
+      dockBlurEnabled: data['dockBlurEnabled'] as bool? ?? true,
     );
   }
 
@@ -147,6 +152,13 @@ class MaterialColorSettingsNotifier extends Notifier<MaterialColorSettings> {
     await _persist();
   }
 
+  Future<void> setDockBlurEnabled(bool value) async {
+    await _restored;
+    if (!ref.mounted) return;
+    state = state.copyWith(dockBlurEnabled: value);
+    await _persist();
+  }
+
   Future<void> _persist() async {
     final data = jsonEncode({
       'followSystem': state.followSystem,
@@ -155,6 +167,7 @@ class MaterialColorSettingsNotifier extends Notifier<MaterialColorSettings> {
       'darkBackground': state.darkBackground.name,
       'colorStyle': state.colorStyle.name,
       'customColors': state.customColors.map((c) => c.toARGB32()).toList(),
+      'dockBlurEnabled': state.dockBlurEnabled,
     });
     await (await _prefs).setString(_prefsKey, data);
   }
