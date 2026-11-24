@@ -200,6 +200,9 @@ class TimelineMessageActions {
     bool? isPinned;
     var pinStateLoading = canPin;
     var menuOpen = true;
+    // Picking an item removes the menu entry, which kills [overlayContext];
+    // keep a context that outlives the menu for the async follow-up work.
+    final messengerContext = Overlay.of(context, rootOverlay: true).context;
 
     late OverlayEntry entry;
     void close() {
@@ -327,6 +330,10 @@ class TimelineMessageActions {
         onPlusOne: message.msgType == MessageType.text
             ? () => unawaited(resendMessage(overlayContext, ref, message))
             : null,
+        onAddStickerPack:
+            message.msgType == MessageType.sticker && message.imageUrl != null
+            ? () => unawaited(addStickerPack(messengerContext, ref, message))
+            : null,
         onReact: (emoji) => toggleTimelineReaction(
           overlayContext,
           ref,
@@ -419,6 +426,46 @@ class TimelineMessageActions {
           duration: const Duration(seconds: 2),
         ),
       );
+    }
+  }
+
+  /// Adds the sticker pack behind a sticker message to the account, which is
+  /// what makes the pack show up in the picker everywhere.
+  Future<void> addStickerPack(
+    BuildContext messengerContext,
+    WidgetRef ref,
+    ChatMessage message,
+  ) async {
+    final imageUrl = message.imageUrl;
+    if (imageUrl == null) return;
+    final container = ProviderScope.containerOf(
+      messengerContext,
+      listen: false,
+    );
+    try {
+      final candidate = await findStickerPack(
+        imageUrl: imageUrl,
+        roomId: roomId,
+      );
+      if (!messengerContext.mounted) return;
+      if (candidate == null) {
+        neuToast(messengerContext, '没找到这张贴纸所属的贴纸包');
+        return;
+      }
+      if (candidate.roomId == roomId) {
+        neuToast(messengerContext, '这个贴纸包就在本房间，无需添加');
+        return;
+      }
+      await importStickerPack(
+        roomId: candidate.roomId,
+        stateKey: candidate.stateKey,
+      );
+      if (!messengerContext.mounted) return;
+      neuToast(messengerContext, '已添加贴纸包「${candidate.pack.title}」');
+      container.invalidate(stickerPacksProvider(roomId));
+    } catch (error) {
+      if (!messengerContext.mounted) return;
+      neuToast(messengerContext, '添加贴纸包失败: $error');
     }
   }
 
