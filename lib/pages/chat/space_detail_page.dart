@@ -86,8 +86,9 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
       );
       if (mounted && _accountActive()) neuToast(context, '已设为主空间');
     } catch (error) {
-      if (mounted && _accountActive())
+      if (mounted && _accountActive()) {
         neuToast(context, _actionFailureMessage(error));
+      }
     }
   }
 
