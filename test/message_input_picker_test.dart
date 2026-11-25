@@ -1,4 +1,8 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/pages/chat/desktop_composer_picker.dart';
+import 'package:matter/pages/chat/desktop_emoji_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/attachment_picker.dart';
@@ -12,7 +16,20 @@ import 'package:matter/widgets/glass.dart';
 
 import 'helpers/neu_test_theme.dart';
 
+class _TypingApi implements RustLibApi {
+  @override
+  Future<void> crateApiMatrixSendTypingNotice({
+    required String accountUserId,
+    required String roomId,
+    required bool typing,
+  }) async {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  setUp(() => RustLib.initMock(api: _TypingApi()));
+  tearDown(RustLib.dispose);
   testWidgets(
     'picker button reopens the previously selected sticker tab',
     (tester) async {
@@ -26,11 +43,22 @@ void main() {
       );
       await tester.pump();
 
+      final isDesktop =
+          Theme.of(tester.element(find.byType(MessageInput))).platform ==
+          TargetPlatform.linux;
+      if (isDesktop) {
+        await tester.tap(find.byTooltip('表情与贴纸'));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.text('贴纸'));
       await tester.pumpAndSettle();
       expect(find.byType(StickerPackPanel), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.keyboard_rounded));
+      await tester.tap(
+        isDesktop
+            ? find.byTooltip('表情与贴纸')
+            : find.byIcon(Icons.keyboard_rounded),
+      );
       await tester.pump();
       expect(find.byIcon(Icons.interests_rounded), findsOneWidget);
       expect(find.byIcon(Icons.sticky_note_2_rounded), findsNothing);
@@ -44,6 +72,65 @@ void main() {
     variant: TargetPlatformVariant({
       TargetPlatform.android,
       TargetPlatform.linux,
+    }),
+  );
+
+  testWidgets(
+    'desktop popup overlays composer, inserts emoji and dismisses with Escape',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: neuTestTheme(),
+            home: const _MessageInputHarness(
+              initialPanelMode: InputPanelMode.none,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final before = tester.getRect(find.byType(MessageInput));
+      await tester.tap(find.byTooltip('表情与贴纸'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DesktopComposerPicker), findsOneWidget);
+      expect(find.byType(ComposerPickerPanel), findsNothing);
+      expect(tester.getRect(find.byType(MessageInput)), before);
+      expect(
+        find.byKey(const ValueKey('desktop-composer-popup')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byType(DesktopEmojiPicker),
+              matching: find.text('👍'),
+            )
+            .first,
+      );
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        '👍',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('desktop-composer-popup')),
+        findsNothing,
+      );
+      await tester.tap(find.byTooltip('表情与贴纸'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(750, 30));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('desktop-composer-popup')),
+        findsNothing,
+      );
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
     }),
   );
 

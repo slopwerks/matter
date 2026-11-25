@@ -323,3 +323,25 @@ final materialMarkdownEditorDecoration = materialAttachmentCaptionDecoration
       hintText: '用 Markdown 编写消息…',
       contentPadding: const EdgeInsets.all(20),
     );
+
+({Color fill, ShapeBorder shape, double elevation, ButtonStyle tab})
+desktopComposerPickerStyle(BuildContext context, {required bool selected}) {
+  final theme = Theme.of(context);
+  final colors = context.neu;
+  return (
+    fill: context.isMaterial
+        ? theme.colorScheme.surfaceContainerLow
+        : colors.surfaceStrong,
+    shape: context.isMaterial
+        ? materialListItemShape
+        : const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(NeuRadius.content)),
+          ),
+    elevation: 8,
+    tab: TextButton.styleFrom(
+      foregroundColor: selected ? colors.accent : colors.textSecondary,
+      textStyle: theme.textTheme.labelLarge,
+      shape: const RoundedRectangleBorder(),
+    ),
+  );
+}

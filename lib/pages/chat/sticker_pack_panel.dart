@@ -13,6 +13,7 @@ class StickerPackPanel extends ConsumerStatefulWidget {
   final void Function(StickerItem sticker, Rect? sourceRect) onStickerSelected;
   final Future<void> Function() onPackNavigation;
   final ScrollController scrollController;
+  final bool packStripAtBottom;
 
   const StickerPackPanel({
     super.key,
@@ -20,6 +21,7 @@ class StickerPackPanel extends ConsumerStatefulWidget {
     required this.onStickerSelected,
     required this.onPackNavigation,
     required this.scrollController,
+    this.packStripAtBottom = false,
   });
 
   @override
@@ -331,6 +333,9 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     }
 
     return Column(
+      verticalDirection: widget.packStripAtBottom
+          ? VerticalDirection.up
+          : VerticalDirection.down,
       children: [
         SizedBox(
           height: 58,
@@ -349,7 +354,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                 final pack = packs[index];
                 return _PackThumb(
                   label: pack.title,
-                  sticker: pack.stickers.first,
+                  sticker: pack.stickers.isEmpty ? null : pack.stickers.first,
                   fallback: pack.accent,
                   selected: index == _activePackIndex,
                   onTap: () => _jumpToPack(index),
@@ -478,7 +483,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
 
 class _PackThumb extends StatelessWidget {
   final String label;
-  final StickerItem sticker;
+  final StickerItem? sticker;
   final String fallback;
   final bool selected;
   final VoidCallback onTap;
@@ -518,11 +523,13 @@ class _PackThumb extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(NeuRadius.tag),
-              child: RemoteStickerPreview(
-                sticker: sticker,
-                fallback: fallback,
-                cacheDimension: 96,
-              ),
+              child: sticker == null
+                  ? Center(child: Text(fallback))
+                  : RemoteStickerPreview(
+                      sticker: sticker!,
+                      fallback: fallback,
+                      cacheDimension: 96,
+                    ),
             ),
           ),
         ),

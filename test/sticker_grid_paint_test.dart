@@ -303,11 +303,11 @@ void main() {
           await tester.pump(const Duration(milliseconds: 20));
         }
 
-        // Wide pane must lay out more than 5 columns so stickers stay compact.
+        // Desktop popup keeps a compact five-column grid independent of pane width.
         final grid = tester.widget<SliverGrid>(find.byType(SliverGrid));
         final delegate =
             grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
-        expect(delegate.crossAxisCount, greaterThan(5));
+        expect(delegate.crossAxisCount, 5);
 
         final counts = <String, int>{};
         final prev = debugOnRebuildDirtyWidget;
