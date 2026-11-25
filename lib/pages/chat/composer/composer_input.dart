@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
@@ -42,7 +43,9 @@ class MessageInput extends ConsumerStatefulWidget {
   final double pickerMaxHeight;
   final bool animatePickerHeight;
   final ValueChanged<InputPanelMode> onPanelModeChanged;
+  final ValueChanged<bool>? onAttachmentInputFocusChanged;
   final ValueChanged<double> onPickerHeightChanged;
+  final ValueChanged<double>? onChromeHeightChanged;
   final MessageSendPresentation Function() resolveSendPresentation;
   final void Function(
     String stableMessageId,
@@ -66,7 +69,9 @@ class MessageInput extends ConsumerStatefulWidget {
     required this.pickerMaxHeight,
     required this.animatePickerHeight,
     required this.onPanelModeChanged,
+    this.onAttachmentInputFocusChanged,
     required this.onPickerHeightChanged,
+    this.onChromeHeightChanged,
     required this.resolveSendPresentation,
     required this.onMessageQueued,
     required this.onMessageSent,
@@ -94,6 +99,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
   ComposerPickerTab _pickerTab = ComposerPickerTab.emoji;
   int _pickerInstance = 0;
   InputPanelMode _lastPickerPanelMode = InputPanelMode.emoji;
+  double _renderedPickerHeight = 0;
+  bool _attachmentInputFocused = false;
 
   @override
   void initState() {
@@ -159,7 +166,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
       keyboardMouse: () => _keyboardMouse,
       sourceLoading: () => _draftController.isSourceLoading,
       hidePanel: () {
-        _focusNode.unfocus();
+        _unfocusOwnedInputs();
+        SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
         widget.onPanelModeChanged(InputPanelMode.none);
       },
       showKeyboard: _showKeyboard,
@@ -206,9 +214,19 @@ class MessageInputState extends ConsumerState<MessageInput> {
         widget.panelMode == InputPanelMode.attachment) {
       _lastPickerPanelMode = widget.panelMode;
     }
+    if (widget.panelMode != InputPanelMode.attachment &&
+        _attachmentInputFocused) {
+      _attachmentInputFocused = false;
+      final onFocusChanged = widget.onAttachmentInputFocusChanged;
+      if (onFocusChanged != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_attachmentInputFocused) onFocusChanged(false);
+        });
+      }
+    }
     if (oldWidget.panelMode != widget.panelMode &&
         widget.panelMode == InputPanelMode.none) {
-      _focusNode.unfocus();
+      _unfocusOwnedInputs();
       SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
     } else if (oldWidget.panelMode != widget.panelMode &&
         widget.panelMode == InputPanelMode.keyboard &&
@@ -219,6 +237,37 @@ class MessageInputState extends ConsumerState<MessageInput> {
         SystemChannels.textInput.invokeMethod<void>('TextInput.show');
       });
     }
+  }
+
+  bool _ownsPrimaryFocus() {
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null) return false;
+    if (primary == _focusNode) return true;
+    final primaryContext = primary.context;
+    if (primaryContext == null || !mounted) return false;
+    var owned = false;
+    primaryContext.visitAncestorElements((element) {
+      if (identical(element, context)) {
+        owned = true;
+        return false;
+      }
+      return true;
+    });
+    return owned;
+  }
+
+  void _unfocusOwnedInputs() {
+    if (_ownsPrimaryFocus()) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    } else {
+      _focusNode.unfocus();
+    }
+  }
+
+  void _handleAttachmentFocusChanged(bool focused) {
+    if (!mounted || _attachmentInputFocused == focused) return;
+    setState(() => _attachmentInputFocused = focused);
+    widget.onAttachmentInputFocusChanged?.call(focused);
   }
 
   @override
@@ -318,7 +367,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
       _pickerInstance++;
     }
     setState(() => _pickerTab = nextTab);
-    _focusNode.unfocus();
+    _unfocusOwnedInputs();
     SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -398,11 +447,13 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
   void _toggleAttachmentPanel() {
     if (widget.panelMode == InputPanelMode.attachment) {
+      _unfocusOwnedInputs();
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
       widget.onPanelModeChanged(InputPanelMode.none);
       return;
     }
 
-    _focusNode.unfocus();
+    _unfocusOwnedInputs();
     SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -465,7 +516,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
         : _lastPickerPanelMode;
 
     final attachmentKeyboard =
-        visiblePickerMode == InputPanelMode.attachment &&
+        widget.panelMode == InputPanelMode.attachment &&
+        _attachmentInputFocused &&
         MediaQuery.viewInsetsOf(context).bottom > 0;
     final panelContentHeight = attachmentKeyboard
         ? widget.pickerHeight
@@ -517,150 +569,163 @@ class MessageInputState extends ConsumerState<MessageInput> {
       top: false,
       child: ColoredBox(
         color: Colors.transparent,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (context.isMaterial && !MediaQuery.disableAnimationsOf(context))
-              ComposerQuoteTransition(key: ValueKey(_draftKey), banner: quote)
-            else
-              ?quote,
-            if (autocompleteMatch != null &&
-                (autocompleteOptions.isNotEmpty || autocompleteLoading))
-              Flexible(
-                fit: FlexFit.loose,
-                child: ComposerAutocompletePopup(
-                  options: autocompleteOptions,
-                  loading: autocompleteLoading,
-                  viewportItemCount: MediaQuery.sizeOf(context).width < 600
-                      ? 4
-                      : 8,
-                  selectedIndex: _keyboard.index,
-                  scrollController: _keyboard.scroll,
-                  onHover: _keyboard.hover,
-                  onSelected: (option) {
-                    final match = _keyboard.match;
-                    if (match != null) _keyboard.select(match, option);
-                  },
+        child: _ComposerChromeMeasure(
+          onChromeHeightChanged: widget.onChromeHeightChanged,
+          pickerHeight: () => _renderedPickerHeight,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (context.isMaterial &&
+                  !MediaQuery.disableAnimationsOf(context))
+                ComposerQuoteTransition(key: ValueKey(_draftKey), banner: quote)
+              else
+                ?quote,
+              if (autocompleteMatch != null &&
+                  (autocompleteOptions.isNotEmpty || autocompleteLoading))
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: ComposerAutocompletePopup(
+                    options: autocompleteOptions,
+                    loading: autocompleteLoading,
+                    viewportItemCount: MediaQuery.sizeOf(context).width < 600
+                        ? 4
+                        : 8,
+                    selectedIndex: _keyboard.index,
+                    scrollController: _keyboard.scroll,
+                    onHover: _keyboard.hover,
+                    onSelected: (option) {
+                      final match = _keyboard.match;
+                      if (match != null) _keyboard.select(match, option);
+                    },
+                  ),
                 ),
-              ),
-            ComposerSurface(
-              expanded: expanded,
-              compact: desktop,
-              attachments: context.isMaterial ? attachments : null,
-              child: ComposerActionsBar(
+              ComposerSurface(
                 expanded: expanded,
                 compact: desktop,
-                showMore: _isDesktop || desktop,
-                inlineImages: inlineImages,
-                emojiIcon: widget.panelMode == InputPanelMode.emoji
-                    ? Icons.keyboard_rounded
-                    : (_pickerTab == ComposerPickerTab.sticker
-                          ? Icons.interests_rounded
-                          : Icons.sentiment_satisfied_alt_rounded),
-                emojiSelected: widget.panelMode == InputPanelMode.emoji,
-                attachmentSelected:
-                    widget.panelMode == InputPanelMode.attachment,
-                sendBusy: sendBusy,
-                hasText: _hasText,
-                hasImages: hasImages,
-                onToggleEmoji: widget.panelMode == InputPanelMode.emoji
-                    ? _showKeyboard
-                    : _togglePicker,
-                onToggleAttachment: _toggleAttachmentPicker,
-                onShowTools: _tools.showToolsMenu,
-                onSend: _sendMessage,
-                attachments: context.isMaterial ? null : attachments,
-                editor: ComposerTextField(
-                  key: _textFieldKey,
-                  controller: _controller,
-                  focusNode: _focusNode,
+                attachments: context.isMaterial ? attachments : null,
+                child: ComposerActionsBar(
                   expanded: expanded,
                   compact: desktop,
-                  readOnly: editingSourceLoading,
-                  onPaste: (_isDesktop || desktop)
-                      ? () {
-                          ContextMenuController.removeAny();
-                          unawaited(
-                            _pasteClipboard(SelectionChangedCause.toolbar),
-                          );
-                        }
-                      : null,
-                  onTap: () =>
-                      widget.onPanelModeChanged(InputPanelMode.keyboard),
-                ),
-              ),
-            ),
-            AnimatedContainer(
-              duration: widget.animatePickerHeight
-                  ? const Duration(milliseconds: 180)
-                  : Duration.zero,
-              curve: Curves.easeOutCubic,
-              width: double.infinity,
-              height: widget.pickerHeight,
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.topCenter,
-                  minHeight: panelContentHeight,
-                  maxHeight: panelContentHeight,
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: panelContentHeight,
-                    child:
-                        widget.pickerHeight <= 0 &&
-                            widget.panelMode != InputPanelMode.attachment
-                        ? const SizedBox.shrink()
-                        : switch (visiblePickerMode) {
-                            InputPanelMode.emoji => ComposerPickerPanel(
-                              key: ValueKey(
-                                'composer_picker_${widget.roomId}_$_pickerInstance',
-                              ),
-                              height: widget.pickerBaseHeight,
-                              maxHeight: widget.pickerMaxHeight,
-                              roomId: widget.roomId,
-                              tab: _pickerTab,
-                              onTabChanged: (tab) =>
-                                  setState(() => _pickerTab = tab),
-                              onEmojiSelected: _insertEmoji,
-                              onStickerSelected: (sticker, sourceRect) {
-                                _sender.sendSticker(sticker, sourceRect);
-                              },
-                              onHeightChanged: widget.onPickerHeightChanged,
-                            ),
-                            InputPanelMode.attachment => AttachmentPicker(
-                              key: ValueKey(
-                                'attachment_picker_${_draftKey.userId}_${widget.roomId}',
-                              ),
-                              roomId: widget.roomId,
-                              accountUserId: _draftKey.userId,
-                              onRefresh: (roomId) =>
-                                  refreshMessages(ref, roomId),
-                              resolveSendPresentation:
-                                  widget.resolveSendPresentation,
-                              onMessageSent: widget.onMessageSent,
-                              onMessageQueued: widget.onMessageQueued,
-                              totalMembers: widget.totalMembers,
-                              height: attachmentKeyboard
-                                  ? widget.pickerHeight
-                                  : widget.pickerBaseHeight,
-                              maxHeight: attachmentKeyboard
-                                  ? widget.pickerHeight
-                                  : widget.pickerMaxHeight,
-                              onHeightChanged: (height) {
-                                if (!attachmentKeyboard) {
-                                  widget.onPickerHeightChanged(height);
-                                }
-                              },
-                              onClose: () => widget.onPanelModeChanged(
-                                InputPanelMode.none,
-                              ),
-                            ),
-                            _ => const SizedBox.shrink(),
-                          },
+                  showMore: _isDesktop || desktop,
+                  inlineImages: inlineImages,
+                  emojiIcon: widget.panelMode == InputPanelMode.emoji
+                      ? Icons.keyboard_rounded
+                      : (_pickerTab == ComposerPickerTab.sticker
+                            ? Icons.interests_rounded
+                            : Icons.sentiment_satisfied_alt_rounded),
+                  emojiSelected: widget.panelMode == InputPanelMode.emoji,
+                  attachmentSelected:
+                      widget.panelMode == InputPanelMode.attachment,
+                  sendBusy: sendBusy,
+                  hasText: _hasText,
+                  hasImages: hasImages,
+                  onToggleEmoji: widget.panelMode == InputPanelMode.emoji
+                      ? _showKeyboard
+                      : _togglePicker,
+                  onToggleAttachment: _toggleAttachmentPicker,
+                  onShowTools: _tools.showToolsMenu,
+                  onSend: _sendMessage,
+                  attachments: context.isMaterial ? null : attachments,
+                  editor: ComposerTextField(
+                    key: _textFieldKey,
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    expanded: expanded,
+                    compact: desktop,
+                    readOnly: editingSourceLoading,
+                    onPaste: (_isDesktop || desktop)
+                        ? () {
+                            ContextMenuController.removeAny();
+                            unawaited(
+                              _pasteClipboard(SelectionChangedCause.toolbar),
+                            );
+                          }
+                        : null,
+                    onTap: () =>
+                        widget.onPanelModeChanged(InputPanelMode.keyboard),
                   ),
                 ),
               ),
-            ),
-          ],
+              _ComposerPickerMeasure(
+                onHeightLayout: (height) => _renderedPickerHeight = height,
+                child: AnimatedContainer(
+                  duration: widget.animatePickerHeight
+                      ? const Duration(milliseconds: 180)
+                      : Duration.zero,
+                  curve: Curves.easeOutCubic,
+                  width: double.infinity,
+                  height: widget.pickerHeight,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.topCenter,
+                      minHeight: panelContentHeight,
+                      maxHeight: panelContentHeight,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: panelContentHeight,
+                        child:
+                            widget.pickerHeight <= 0 &&
+                                widget.panelMode != InputPanelMode.attachment
+                            ? const SizedBox.shrink()
+                            : switch (visiblePickerMode) {
+                                InputPanelMode.emoji => ComposerPickerPanel(
+                                  key: ValueKey(
+                                    'composer_picker_${widget.roomId}_$_pickerInstance',
+                                  ),
+                                  height: widget.pickerBaseHeight,
+                                  maxHeight: widget.pickerMaxHeight,
+                                  roomId: widget.roomId,
+                                  tab: _pickerTab,
+                                  onTabChanged: (tab) =>
+                                      setState(() => _pickerTab = tab),
+                                  onEmojiSelected: _insertEmoji,
+                                  onStickerSelected: (sticker, sourceRect) {
+                                    _sender.sendSticker(sticker, sourceRect);
+                                  },
+                                  onHeightChanged: widget.onPickerHeightChanged,
+                                ),
+                                InputPanelMode.attachment => Focus(
+                                  canRequestFocus: false,
+                                  skipTraversal: true,
+                                  onFocusChange: _handleAttachmentFocusChanged,
+                                  child: AttachmentPicker(
+                                    key: ValueKey(
+                                      'attachment_picker_${_draftKey.userId}_${widget.roomId}',
+                                    ),
+                                    roomId: widget.roomId,
+                                    accountUserId: _draftKey.userId,
+                                    onRefresh: (roomId) =>
+                                        refreshMessages(ref, roomId),
+                                    resolveSendPresentation:
+                                        widget.resolveSendPresentation,
+                                    onMessageSent: widget.onMessageSent,
+                                    onMessageQueued: widget.onMessageQueued,
+                                    totalMembers: widget.totalMembers,
+                                    height: attachmentKeyboard
+                                        ? widget.pickerHeight
+                                        : widget.pickerBaseHeight,
+                                    maxHeight: attachmentKeyboard
+                                        ? widget.pickerHeight
+                                        : widget.pickerMaxHeight,
+                                    onHeightChanged: (height) {
+                                      if (!attachmentKeyboard) {
+                                        widget.onPickerHeightChanged(height);
+                                      }
+                                    },
+                                    onClose: () => widget.onPanelModeChanged(
+                                      InputPanelMode.none,
+                                    ),
+                                  ),
+                                ),
+                                _ => const SizedBox.shrink(),
+                              },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -678,5 +743,91 @@ class MessageInputState extends ConsumerState<MessageInput> {
         ],
       ),
     );
+  }
+}
+
+class _ComposerPickerMeasure extends SingleChildRenderObjectWidget {
+  const _ComposerPickerMeasure({
+    required this.onHeightLayout,
+    required super.child,
+  });
+
+  final ValueChanged<double> onHeightLayout;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderComposerPickerMeasure(onHeightLayout);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderComposerPickerMeasure renderObject,
+  ) {
+    renderObject.onHeightLayout = onHeightLayout;
+  }
+}
+
+class _RenderComposerPickerMeasure extends RenderProxyBox {
+  _RenderComposerPickerMeasure(this.onHeightLayout);
+
+  ValueChanged<double> onHeightLayout;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    onHeightLayout(child?.size.height ?? 0.0);
+  }
+}
+
+class _ComposerChromeMeasure extends SingleChildRenderObjectWidget {
+  const _ComposerChromeMeasure({
+    required this.onChromeHeightChanged,
+    required this.pickerHeight,
+    required super.child,
+  });
+
+  final ValueChanged<double>? onChromeHeightChanged;
+  final double Function() pickerHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderComposerChromeMeasure(onChromeHeightChanged, pickerHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderComposerChromeMeasure renderObject,
+  ) {
+    renderObject
+      ..onChromeHeightChanged = onChromeHeightChanged
+      ..pickerHeight = pickerHeight;
+  }
+}
+
+class _RenderComposerChromeMeasure extends RenderProxyBox {
+  _RenderComposerChromeMeasure(this.onChromeHeightChanged, this.pickerHeight);
+
+  ValueChanged<double>? onChromeHeightChanged;
+  double Function() pickerHeight;
+  double? _lastChromeHeight;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final callback = onChromeHeightChanged;
+    if (callback == null) return;
+    final totalHeight = child?.size.height ?? 0.0;
+    final chromeHeight = (totalHeight - pickerHeight()).clamp(
+      0.0,
+      double.infinity,
+    );
+    if (_lastChromeHeight != null &&
+        (chromeHeight - _lastChromeHeight!).abs() < 0.5) {
+      return;
+    }
+    _lastChromeHeight = chromeHeight;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      onChromeHeightChanged?.call(chromeHeight);
+    });
   }
 }

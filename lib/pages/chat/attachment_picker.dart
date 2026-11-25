@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -467,8 +468,14 @@ class AttachmentPickerState extends State<AttachmentPicker> {
 
   void _selectTab(AttachmentTab tab) {
     if (tab == AttachmentTab.file) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
       unawaited(_pickFiles());
       return;
+    }
+    if (tab != _tab) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
     }
     setState(() {
       _visitedTabs.add(tab);

@@ -617,6 +617,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       return widget.embedded
           ? content
           : Scaffold(
+              resizeToAvoidBottomInset: false,
               floatingActionButton: widget.showFloatingActionButton
                   ? FloatingActionButton(
                       tooltip: '新聊天',
@@ -630,6 +631,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     final topInset = MediaQuery.viewPaddingOf(context).top;
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           Positioned.fill(

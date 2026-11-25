@@ -279,6 +279,7 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
     final current = ref.watch(activeUserIdProvider);
     final query = _controller.text.trim();
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: buildFloatingAppBar(
         title: Text(widget.spaceAddress ? '加入空间' : '查找房间'),
       ),
@@ -312,7 +313,14 @@ class _RoomDirectoryPageState extends ConsumerState<RoomDirectoryPage> {
                   ),
                   Expanded(
                     child: ListView.builder(
-                      padding: EdgeInsets.symmetric(horizontal: spacing.lg),
+                      padding: EdgeInsets.fromLTRB(
+                        spacing.lg,
+                        0,
+                        spacing.lg,
+                        spacing.lg +
+                            MediaQuery.paddingOf(context).bottom +
+                            MediaQuery.viewInsetsOf(context).bottom,
+                      ),
                       itemCount: _rooms.length + 2,
                       itemBuilder: (context, index) {
                         if (index == 0) {

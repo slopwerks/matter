@@ -52,6 +52,7 @@ class _MaterialSpaceContentState extends State<MaterialSpaceContent> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       floatingActionButton: widget.onAdd == null
           ? null
           : FloatingActionButton(
@@ -97,7 +98,11 @@ class _MaterialSpaceContentState extends State<MaterialSpaceContent> {
                     gutter,
                     context.tokens.spacing.lg,
                     gutter,
-                    96 + MediaQuery.paddingOf(context).bottom,
+                    math.max(
+                      96 + MediaQuery.paddingOf(context).bottom,
+                      MediaQuery.viewInsetsOf(context).bottom +
+                          context.tokens.spacing.lg,
+                    ),
                   ),
                   sliver: SliverMainAxisGroup(
                     slivers: [

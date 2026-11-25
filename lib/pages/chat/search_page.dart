@@ -311,6 +311,7 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage>
           );
 
     final scaffold = Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: context.isMaterial ? null : colors.base,
       extendBodyBehindAppBar: context.isMaterial,
       appBar: context.isMaterial
@@ -831,7 +832,9 @@ class _MessageSearchResultsState extends ConsumerState<_MessageSearchResults> {
           NeuSpacing.lg,
           widget.topInset + NeuSpacing.sm,
           NeuSpacing.lg,
-          NeuSpacing.xl,
+          NeuSpacing.xl +
+              MediaQuery.paddingOf(context).bottom +
+              MediaQuery.viewInsetsOf(context).bottom,
         ),
         itemCount:
             results.length +
@@ -1243,7 +1246,9 @@ class _RoomSearchResults extends ConsumerWidget {
                 NeuSpacing.lg,
                 topInset + NeuSpacing.sm,
                 NeuSpacing.lg,
-                NeuSpacing.xl,
+                NeuSpacing.xl +
+                    MediaQuery.paddingOf(context).bottom +
+                    MediaQuery.viewInsetsOf(context).bottom,
               ),
               itemCount: results.length + (context.isMaterial ? 1 : 0),
               separatorBuilder: (_, index) => context.isMaterial && index == 0

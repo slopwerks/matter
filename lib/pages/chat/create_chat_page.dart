@@ -192,6 +192,7 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
     final colors = context.neu;
     final viewPaddingTop = MediaQuery.viewPaddingOf(context).top;
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: colors.base,
       extendBodyBehindAppBar: context.isMaterial,
       appBar: context.isMaterial
@@ -206,7 +207,9 @@ class _CreateChatPageState extends ConsumerState<CreateChatPage> {
                   NeuSpacing.lg,
                   viewPaddingTop + kToolbarHeight + NeuSpacing.sm,
                   NeuSpacing.lg,
-                  NeuSpacing.xl,
+                  NeuSpacing.xl +
+                      MediaQuery.paddingOf(context).bottom +
+                      MediaQuery.viewInsetsOf(context).bottom,
                 ),
                 children: [
                   if (context.isMaterial)
