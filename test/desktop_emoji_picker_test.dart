@@ -4,10 +4,60 @@ import 'dart:ui';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:matter/pages/chat/desktop_emoji_picker.dart';
+import 'package:matter/pages/chat/desktop_picker_preview.dart';
 import 'package:matter/pages/chat/emoji_data.dart';
 import 'package:matter/theme/material_theme.dart';
 
 void main() {
+  testWidgets(
+    'left-button hold previews emoji after scrolling without moving mouse',
+    (tester) async {
+      var selections = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildMaterialTheme(Brightness.light),
+          home: Scaffold(
+            body: SizedBox(
+              width: 380,
+              height: 460,
+              child: DesktopPickerHoverScope(
+                identity: 0,
+                child: DesktopEmojiPicker(onSelected: (_) => selections++),
+              ),
+            ),
+          ),
+        ),
+      );
+      final scrollFinder = find.byKey(const ValueKey('desktop-emoji-scroll'));
+      final scroll = tester.widget<CustomScrollView>(scrollFinder).controller!;
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(790, 590));
+      await mouse.moveTo(const Offset(50, 120));
+      scroll.jumpTo(320);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('U+'), findsNothing);
+      await mouse.down(const Offset(50, 120));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.textContaining('U+'), findsOneWidget);
+      await mouse.up();
+      await tester.pump();
+      expect(find.textContaining('U+'), findsNothing);
+      expect(selections, 0);
+      // Repeated holds and pointer cancellation must not leave the preview stuck.
+      await mouse.down(const Offset(50, 120));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.textContaining('U+'), findsOneWidget);
+      await mouse.cancel();
+      await tester.pump();
+      expect(find.textContaining('U+'), findsNothing);
+      await mouse.down(const Offset(50, 120));
+      await mouse.up();
+      await tester.pump();
+      expect(selections, 1);
+      await mouse.removePointer();
+    },
+  );
   testWidgets('search matches names and hover previews show name and Unicode', (
     tester,
   ) async {

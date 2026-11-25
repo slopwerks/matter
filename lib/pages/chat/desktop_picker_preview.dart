@@ -104,11 +104,13 @@ class DesktopPickerPreview extends StatefulWidget {
     required this.name,
     required this.details,
     required this.child,
+    this.enableHoldPreview = false,
   });
 
   final Widget preview;
   final String name;
   final String details;
+  final bool enableHoldPreview;
   final Widget child;
 
   @override
@@ -122,6 +124,7 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
   Timer? _wait;
   Offset? _settlePosition;
   int _dismissGeneration = 0;
+  bool _holding = false;
 
   @override
   void didChangeDependencies() {
@@ -136,6 +139,7 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
   }
 
   void _dismiss() {
+    _holding = false;
     final generation = ++_dismissGeneration;
     _wait?.cancel();
     _wait = null;
@@ -152,6 +156,7 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
   }
 
   void _hover(Offset position) {
+    if (_holding) return;
     if (_gate?.blocked == true) return;
     if (_settlePosition != null &&
         (position - _settlePosition!).distance <= 4) {
@@ -240,6 +245,7 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
       key: _anchor,
       onHover: (event) => _hover(event.position),
       onExit: (event) {
+        if (_holding) return;
         // Overlay/layout changes can synthesize exits without leaving the cell.
         final box = _anchor.currentContext?.findRenderObject() as RenderBox?;
         if (box != null &&
@@ -252,7 +258,20 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
         }
         _dismiss();
       },
-      child: widget.child,
+      child: widget.enableHoldPreview
+          ? GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPressStart: (_) {
+                _wait?.cancel();
+                _dismissGeneration++;
+                _holding = true;
+                _overlay.show();
+              },
+              onLongPressEnd: (_) => _dismiss(),
+              onLongPressCancel: _dismiss,
+              child: widget.child,
+            )
+          : widget.child,
     ),
   );
 }

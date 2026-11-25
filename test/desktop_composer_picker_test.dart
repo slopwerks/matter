@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:matter/pages/chat/composer_picker_panel.dart';
 import 'package:matter/pages/chat/desktop_composer_picker.dart';
 import 'package:matter/pages/chat/desktop_picker_preview.dart';
+import 'package:matter/pages/chat/sticker_preview.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
@@ -268,6 +269,23 @@ void main() {
           scroll.jumpTo(0);
           await tester.pumpAndSettle();
           expect(selectedPack().properties.selected, isFalse);
+          // A fresh left-button hold must work after scrolling without hover.
+          final holdMouse = await tester.createGesture(
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          final holdPosition = Offset(popup.left + 35, popup.top + 190);
+          await holdMouse.addPointer(location: holdPosition);
+          scroll.jumpTo(160);
+          await tester.pumpAndSettle();
+          await holdMouse.down(holdPosition);
+          await tester.pump(const Duration(milliseconds: 600));
+          expect(find.byType(StickerHoldPreviewOverlay), findsOneWidget);
+          await holdMouse.up();
+          await tester.pump();
+          expect(find.byType(StickerHoldPreviewOverlay), findsNothing);
+          await holdMouse.removePointer();
+          scroll.jumpTo(0);
+          await tester.pumpAndSettle();
           final search = find.descendant(
             of: find.byKey(const ValueKey('desktop-picker-search')),
             matching: find.byType(TextField),

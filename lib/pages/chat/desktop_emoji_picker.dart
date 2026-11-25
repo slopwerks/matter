@@ -36,6 +36,7 @@ class _DesktopEmojiPickerState extends State<DesktopEmojiPicker> {
   };
 
   Widget _cell(String emoji) => DesktopPickerPreview(
+    enableHoldPreview: true,
     preview: Text(emoji, style: const TextStyle(fontSize: 72)),
     name: _names[emoji] ?? emoji,
     details: emoji.runes
