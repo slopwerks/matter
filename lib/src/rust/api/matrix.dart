@@ -11,7 +11,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SyncNotification`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Initialize persisted logging before startup session discovery begins.
 void initializeLogStore({required String dataDir}) =>
@@ -456,6 +456,50 @@ Future<List<StickerPack>> getStickerPacks({
 }) => RustLib.instance.api.crateApiMatrixGetStickerPacks(
   accountUserId: accountUserId,
   roomId: roomId,
+);
+
+Future<bool> canEditStickerPacks({
+  required String accountUserId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixCanEditStickerPacks(
+  accountUserId: accountUserId,
+  roomId: roomId,
+);
+
+Future<StickerPackSnapshot> getStickerPackSnapshot({
+  required String accountUserId,
+  required StickerPackKey key,
+}) => RustLib.instance.api.crateApiMatrixGetStickerPackSnapshot(
+  accountUserId: accountUserId,
+  key: key,
+);
+
+Future<void> writeStickerPack({
+  required String accountUserId,
+  required StickerPackKey key,
+  String? stableVersion,
+  String? legacyVersion,
+  String? contentJson,
+}) => RustLib.instance.api.crateApiMatrixWriteStickerPack(
+  accountUserId: accountUserId,
+  key: key,
+  stableVersion: stableVersion,
+  legacyVersion: legacyVersion,
+  contentJson: contentJson,
+);
+
+Future<String> uploadStickerPackImage({
+  required String accountUserId,
+  required String roomId,
+  required List<int> data,
+  required String mimeType,
+  required bool confirmedPublicUpload,
+}) => RustLib.instance.api.crateApiMatrixUploadStickerPackImage(
+  accountUserId: accountUserId,
+  roomId: roomId,
+  data: data,
+  mimeType: mimeType,
+  confirmedPublicUpload: confirmedPublicUpload,
 );
 
 /// Find the room sticker pack that contains a sticker message, so the
@@ -2512,6 +2556,31 @@ class StickerPackKey {
           runtimeType == other.runtimeType &&
           roomId == other.roomId &&
           stateKey == other.stateKey;
+}
+
+class StickerPackSnapshot {
+  final String? stableVersion;
+  final String? legacyVersion;
+  final String? contentJson;
+
+  const StickerPackSnapshot({
+    this.stableVersion,
+    this.legacyVersion,
+    this.contentJson,
+  });
+
+  @override
+  int get hashCode =>
+      stableVersion.hashCode ^ legacyVersion.hashCode ^ contentJson.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StickerPackSnapshot &&
+          runtimeType == other.runtimeType &&
+          stableVersion == other.stableVersion &&
+          legacyVersion == other.legacyVersion &&
+          contentJson == other.contentJson;
 }
 
 /// Session data to persist across app restarts.

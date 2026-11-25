@@ -86,6 +86,64 @@ macro_rules! declare_media_api {
             message_send::get_sticker_packs(account_user_id, room_id).await
         }
 
+        #[frb]
+        pub async fn can_edit_sticker_packs(
+            account_user_id: String,
+            room_id: String,
+        ) -> Result<bool, String> {
+            let (_lease, room) = sticker_editor::room(&account_user_id, &room_id).await?;
+            sticker_editor::can_write(&room, sticker_editor::STABLE).await
+        }
+
+        #[frb]
+        pub async fn get_sticker_pack_snapshot(
+            account_user_id: String,
+            key: StickerPackKey,
+        ) -> Result<StickerPackSnapshot, String> {
+            run_bounded(async move {
+                let (_lease, room) = sticker_editor::room(&account_user_id, &key.room_id).await?;
+                sticker_editor::snapshot(&room, &key.state_key).await
+            })
+            .await
+        }
+
+        #[frb]
+        pub async fn write_sticker_pack(
+            account_user_id: String,
+            key: StickerPackKey,
+            stable_version: Option<String>,
+            legacy_version: Option<String>,
+            content_json: Option<String>,
+        ) -> Result<(), String> {
+            run_bounded(async move {
+                let (_lease, room) = sticker_editor::room(&account_user_id, &key.room_id).await?;
+                sticker_editor::write(
+                    &room,
+                    &key.state_key,
+                    stable_version,
+                    legacy_version,
+                    content_json,
+                )
+                .await
+            })
+            .await
+        }
+
+        #[frb]
+        pub async fn upload_sticker_pack_image(
+            account_user_id: String,
+            room_id: String,
+            data: Vec<u8>,
+            mime_type: String,
+            confirmed_public_upload: bool,
+        ) -> Result<String, String> {
+            run_bounded(async move {
+                let (_lease, room) = sticker_editor::room(&account_user_id, &room_id).await?;
+                sticker_editor::upload(&room, data, mime_type, confirmed_public_upload).await
+            })
+            .await
+        }
+
         /// Find the room sticker pack that contains a sticker message, so the
         /// whole pack can be imported at once.
         #[frb]

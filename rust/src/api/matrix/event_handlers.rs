@@ -174,15 +174,13 @@ pub(super) fn install_live_update_event_handlers(client: &Client, identity: Clie
               room: Room| {
             let identity = power_identity.clone();
             async move {
-                if room.is_space() {
-                    notify_sync_event_for_client(
-                        &identity,
-                        SyncEvent::RoomMembersChanged {
-                            room_id: room.room_id().to_string(),
-                        },
-                    )
-                    .await;
-                }
+                notify_sync_event_for_client(
+                    &identity,
+                    SyncEvent::RoomMembersChanged {
+                        room_id: room.room_id().to_string(),
+                    },
+                )
+                .await;
             }
         },
     );

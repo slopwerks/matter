@@ -108,6 +108,7 @@ mod session_expiry_tests;
 #[path = "tests/space_child_tests.rs"]
 mod space_child_tests;
 mod sticker_collection;
+mod sticker_editor;
 mod sticker_packs;
 pub mod storage;
 #[cfg(test)]

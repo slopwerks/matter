@@ -97,6 +97,14 @@ macro_rules! declare_models_api {
 
         #[frb]
         #[derive(Clone, Debug)]
+        pub struct StickerPackSnapshot {
+            pub stable_version: Option<String>,
+            pub legacy_version: Option<String>,
+            pub content_json: Option<String>,
+        }
+
+        #[frb]
+        #[derive(Clone, Debug)]
         pub struct Space {
             pub id: String,
             pub name: String,

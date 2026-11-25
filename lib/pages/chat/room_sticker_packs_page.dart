@@ -10,6 +10,7 @@ import '../../widgets/grouped_rows.dart';
 import '../../widgets/material_list_detail.dart';
 import '../../widgets/sheets.dart';
 import 'sticker_catalog.dart';
+import 'sticker_pack_editor.dart';
 import 'sticker_preview.dart';
 
 void openRoomStickerPacks(BuildContext context, String roomId) {
@@ -71,8 +72,37 @@ class _RoomStickerPacksState extends ConsumerState<RoomStickerPacksPage> {
   Widget build(BuildContext context) {
     final account = ref.watch(activeUserIdProvider);
     final catalog = stickerPacksProvider(widget.roomId);
+    final canEdit =
+        ref
+            .watch(stickerPackEditPermissionProvider(widget.roomId))
+            .asData
+            ?.value ==
+        true;
+    void edit([StickerPack? pack]) {
+      MaterialListDetail.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => StickerPackEditor(
+            account: account!,
+            roomId: widget.roomId,
+            stateKey: pack?.stateKey,
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      appBar: buildFloatingAppBar(title: const Text('贴纸包')),
+      appBar: buildFloatingAppBar(
+        title: const Text('贴纸包'),
+        actions: [
+          if (canEdit && account != null)
+            IconButton(
+              onPressed: () => edit(),
+              icon: const Icon(Icons.add),
+              tooltip: '创建贴纸包',
+            ),
+        ],
+      ),
       body: ref
           .watch(catalog)
           .when(
@@ -114,6 +144,12 @@ class _RoomStickerPacksState extends ConsumerState<RoomStickerPacksPage> {
                     final pack = packs[index - 1];
                     return GroupedRows(
                       children: [
+                        if (canEdit)
+                          ListTile(
+                            leading: const Icon(Icons.edit_outlined),
+                            title: const Text('编辑贴纸包'),
+                            onTap: () => edit(pack),
+                          ),
                         ListTile(
                           title: Text(pack.title),
                           subtitle: Text('${pack.stickers.length} 张贴纸'),

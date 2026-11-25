@@ -2123,6 +2123,13 @@ Future<void> refreshMessages(WidgetRef ref, String roomId) {
   return refreshMessagesFromNetwork(ref, roomId);
 }
 
+final stickerPackEditPermissionProvider = FutureProvider.autoDispose
+    .family<bool, String>((ref, roomId) async {
+      final account = ref.watch(activeUserIdProvider);
+      if (account == null || !ref.watch(sessionReadyProvider)) return false;
+      return rust.canEditStickerPacks(accountUserId: account, roomId: roomId);
+    });
+
 final stickerPacksProvider =
     FutureProvider.family<List<rust.StickerPack>, String>((ref, roomId) async {
       final user = ref.watch(activeUserIdProvider);
@@ -2986,6 +2993,7 @@ final syncStreamProvider =
             // now that the connection has produced a sync cycle.
             _recoverIgnoredListError(ref);
           case rust.SyncEvent_FullRefreshRequired():
+            ref.invalidate(stickerPackEditPermissionProvider);
             ref.invalidate(stickerPacksProvider);
             // A sync restart may have dropped member/knock events: refresh
             // those lists too. And the event loss means the current room's
@@ -3031,6 +3039,7 @@ final syncStreamProvider =
               );
             }
           case rust.SyncEvent_RoomMembersChanged(:final roomId):
+            ref.invalidate(stickerPackEditPermissionProvider(roomId));
             // Member state changed: refresh this room's member and knock
             // lists (each provider refetches only when watched — the chat
             // page for members, the management page for knocks). Debounced
