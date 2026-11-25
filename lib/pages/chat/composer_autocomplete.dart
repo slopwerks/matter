@@ -43,6 +43,19 @@ final _wordCharacter = RegExp(r'[\p{L}\p{N}_]', unicode: true);
 final _tokenJoiner = RegExp(r'[.=+\-/:]');
 final _asciiEmojiName = RegExp(r'^[a-z0-9_+-]+$');
 
+/// Named text faces share the :shortcode trigger with emoji and image packs.
+const kComposerEmoticons = <String, String>{
+  'shrug': r'¯\_(ツ)_/¯',
+  'tableflip': '(╯°□°）╯︵ ┻━┻',
+  'unflip': '┬─┬ ノ( ゜-゜ノ)',
+  'lenny': '( ͡° ͜ʖ ͡°)',
+  'disapprove': 'ಠ_ಠ',
+  'happy': '(^_^)',
+  'sad': '(T_T)',
+  'wave': '( ・ω・)ノ',
+  'hug': '(づ｡◕‿‿◕｡)づ',
+};
+
 ComposerAutocompleteMatch? composerAutocompleteMatch(TextEditingValue value) {
   final selection = value.selection;
   if (!selection.isValid || !selection.isCollapsed) return null;

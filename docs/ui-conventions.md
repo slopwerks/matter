@@ -323,6 +323,14 @@ a theme transition instead of switching the whole palette halfway through.
 
 ## Desktop and tablet composers
 
+Inline autocomplete floats above the composer without changing its measured
+height or the timeline viewport. The popup follows the composer bounds and
+caps its height at the available space above it. `@` and `#` retain their
+identity completions; `:keyword` combines emoji, named text emoticons and
+available Matrix image-pack stickers. Text candidates insert at the active
+token. Sticker candidates explicitly say selection sends them, use the shared
+sticker send path, and remove only the active token, preserving other draft text.
+
 Material uses one floating `surfaceContainerHigh` capsule at every pane width:
 28 dp corners, a 56 dp default height and a 720 dp maximum surface width, with
 16 dp side and 12 dp bottom margins. Its editor has no nested filled field.

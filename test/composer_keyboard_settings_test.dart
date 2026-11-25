@@ -9,6 +9,7 @@ import 'package:matter/pages/chat/message_input.dart';
 import 'package:matter/pages/chat/composer/composer_autocomplete_popup.dart';
 import 'package:matter/pages/settings/composer_keyboard_settings_page.dart';
 import 'package:matter/providers/auth_provider.dart';
+import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/providers/composer_keyboard_settings_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
@@ -21,6 +22,23 @@ import 'helpers/neu_test_theme.dart';
 class _FakeRustApi implements RustLibApi {
   Completer<String>? pendingSend;
   int sendCalls = 0;
+  int stickerCalls = 0;
+
+  @override
+  Future<String?> crateApiMatrixMxcToHttpFull({required String mxcUrl}) async =>
+      null;
+
+  @override
+  Future<void> crateApiMatrixSendSticker({
+    required String roomId,
+    required String imageUrl,
+    required String body,
+    String? mimeType,
+    int? width,
+    int? height,
+  }) async {
+    stickerCalls++;
+  }
 
   @override
   Future<String> crateApiMatrixSendMessage({
@@ -103,8 +121,82 @@ void main() {
   setUp(() {
     api.pendingSend = null;
     api.sendCalls = 0;
+    api.stickerCalls = 0;
     SharedPreferences.setMockInitialValues({});
   });
+
+  for (final material in [false, true]) {
+    testWidgets(
+      'autocomplete floats without resizing composer (material=$material)',
+      (tester) async {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        await tester.pumpWidget(_input(container, material: material));
+        await tester.enterText(find.byType(TextField), 'hello');
+        await tester.pumpAndSettle();
+        final before = tester.getRect(find.byType(MessageInput));
+        await tester.enterText(find.byType(TextField), ':shrug');
+        await tester.pumpAndSettle();
+        expect(tester.getRect(find.byType(MessageInput)), before);
+        final panel = tester.getRect(
+          find.byKey(const ValueKey('composer-autocomplete-panel')),
+        );
+        expect(panel.bottom, lessThanOrEqualTo(before.top));
+        expect(panel.top, greaterThanOrEqualTo(0));
+        await tester.tap(find.text(':shrug:').last);
+        await tester.pump();
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          r'¯\_(ツ)_/¯',
+        );
+        expect(find.byType(ComposerAutocompletePopup), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'selecting a sticker sends it and preserves the rest of the draft',
+    (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          stickerPacksProvider('!keyboard:example.org').overrideWith(
+            (ref) async => const [
+              rust.StickerPack(
+                id: 'cats',
+                title: 'Cats',
+                source: 'user',
+                stickers: [
+                  rust.Sticker(
+                    id: 'wave',
+                    body: 'Cat wave',
+                    shortcode: 'cat_wave',
+                    imageUrl: 'mxc://example.org/wave',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(_input(container));
+      await tester.enterText(find.byType(TextField), 'hello :cat_wa');
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(api.stickerCalls, 1);
+      expect(api.sendCalls, 0);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'hello ',
+      );
+      expect(find.byType(ComposerAutocompletePopup), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
 
   testWidgets('keyboard scrolling keeps scaled Material candidates visible', (
     tester,

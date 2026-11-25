@@ -10,6 +10,41 @@ import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/theme/neu_theme.dart';
 
 void main() {
+  test(
+    'colon candidates include emoji, named text faces and Matrix stickers',
+    () {
+      final options = composerAutocompleteOptions(
+        const ComposerAutocompleteMatch(
+          kind: ComposerAutocompleteKind.emoji,
+          start: 0,
+          end: 3,
+          query: 'wave',
+        ),
+        stickerPacks: const [
+          rust.StickerPack(
+            id: 'room:!cats:example.org:cats',
+            title: 'Cats',
+            source: 'room',
+            stickers: [
+              rust.Sticker(
+                id: 'wave',
+                body: 'Cat wave',
+                shortcode: 'cat_wave',
+                imageUrl: 'mxc://example.org/wave',
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(options.any((option) => option.emoji == '👋'), isTrue);
+      expect(options.any((option) => option.insertion == '( ・ω・)ノ'), isTrue);
+      final sticker = options.singleWhere((option) => option.sticker != null);
+      expect(sticker.title, ':cat_wave:');
+      expect(sticker.sticker!.imageUrl, 'mxc://example.org/wave');
+      expect(sticker.insertion, isEmpty);
+    },
+  );
+
   testWidgets('Material candidates fit long identities at large text sizes', (
     tester,
   ) async {

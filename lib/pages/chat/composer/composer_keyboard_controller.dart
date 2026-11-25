@@ -8,6 +8,7 @@ import '../../../providers/chat_provider.dart';
 import '../../../providers/composer_keyboard_settings_provider.dart';
 import '../../../src/rust/api/matrix.dart' as rust;
 import '../composer_autocomplete.dart';
+import '../sticker_catalog.dart';
 import 'composer_autocomplete_popup.dart';
 
 /// Keyboard shortcuts and autocomplete selection for the inline editor.
@@ -24,6 +25,7 @@ class ComposerKeyboardController {
     required this.onChanged,
     required this.onPaste,
     required this.onSend,
+    required this.onStickerSelected,
   });
 
   final WidgetRef ref;
@@ -36,6 +38,7 @@ class ComposerKeyboardController {
   final VoidCallback onChanged;
   final Future<void> Function(SelectionChangedCause) onPaste;
   final Future<void> Function() onSend;
+  final ValueChanged<StickerItem> onStickerSelected;
   final scroll = ScrollController();
   ComposerAutocompleteMatch? match;
   int index = 0;
@@ -158,6 +161,7 @@ class ComposerKeyboardController {
     ComposerAutocompleteMatch current, {
     List<rust.Contact>? members,
     List<rust.ChatRoom>? rooms,
+    List<rust.StickerPack>? stickerPacks,
   }) => composerAutocompleteOptions(
     current,
     members:
@@ -170,6 +174,12 @@ class ComposerKeyboardController {
         rooms ??
         (current.kind == ComposerAutocompleteKind.room
             ? ref.read(chatRoomsProvider).asData?.value
+            : null) ??
+        const [],
+    stickerPacks:
+        stickerPacks ??
+        (current.kind == ComposerAutocompleteKind.emoji
+            ? ref.read(stickerPacksProvider(roomId)).asData?.value
             : null) ??
         const [],
   );
@@ -185,6 +195,7 @@ class ComposerKeyboardController {
       option.insertion,
     );
     focus.requestFocus();
+    if (option.sticker case final sticker?) onStickerSelected(sticker);
   }
 
   void hover(int next) {
