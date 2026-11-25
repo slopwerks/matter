@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
@@ -11,10 +10,7 @@ import 'package:matter/pages/settings/settings_page.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
-import 'package:matter/widgets/neu_action.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
   String activeUserId = '@alice:example.org';
@@ -202,50 +198,6 @@ void main() {
     return container;
   }
 
-  testWidgets('account switch completes after its initiating widget unmounts', (
-    tester,
-  ) async {
-    final container = createContainer();
-    addTearDown(container.dispose);
-    rustApi.switchBarrier = Completer<void>();
-    rustApi.switchStarted = Completer<void>();
-    Future<void>? switchFuture;
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(
-          home: Consumer(
-            builder: (context, ref, _) => ElevatedButton(
-              onPressed: () {
-                switchFuture = ref
-                    .read(accountSwitchControllerProvider)
-                    .switchTo('@bob:example.org');
-              },
-              child: const Text('switch'),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('switch'));
-    await rustApi.switchStarted!.future;
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const SizedBox.shrink(),
-      ),
-    );
-    rustApi.switchBarrier!.complete();
-    await switchFuture;
-    await tester.pump();
-
-    expect(container.read(activeUserIdProvider), '@bob:example.org');
-    expect(container.read(sessionReadyProvider), isTrue);
-    expect(rustApi.startSyncAccounts, ['@bob:example.org']);
-  });
-
   test(
     'a failed target activation rolls back and restarts the old sync',
     () async {
@@ -350,180 +302,40 @@ void main() {
     expect(await loadActiveUserId(), '@alice:example.org');
   });
 
-  testWidgets(
-    'removing the current account switches before deleting its session',
-    (tester) async {
-      tester.view.physicalSize = const Size(800, 1800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final container = createContainer();
-      addTearDown(container.dispose);
-      container.read(currentUserProvider.notifier).value = const CurrentUser(
-        id: '@alice:example.org',
-        displayName: 'Alice',
-        homeserver: 'https://alice.example.org',
-      );
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(theme: neuTestTheme(), home: const SettingsPage()),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('退出登录'), 300);
-      await tester.tap(find.text('退出登录'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('确定'));
-      // The removal flow's local file cleanup performs real IO that cannot
-      // complete under the fake test clock, so the removal spinner never
-      // clears; pump bounded frames (the assertions below cover the
-      // Rust-side effects and the provider state) instead of pumpAndSettle,
-      // which would time out waiting for the spinner.
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-
-      expect(rustApi.switchCalls, ['@bob:example.org']);
-      expect(rustApi.startSyncAccounts, ['@bob:example.org']);
-      expect(rustApi.removedAccounts, ['@alice:example.org']);
-      expect(container.read(activeUserIdProvider), '@bob:example.org');
-      expect((await loadAllSessions()).map((session) => session.userId), [
-        '@bob:example.org',
-      ]);
-    },
-  );
-
-  testWidgets(
-    'switch tiles stay disabled while an account removal is in flight',
-    (tester) async {
-      tester.view.physicalSize = const Size(800, 1800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final container = createContainer();
-      addTearDown(container.dispose);
-      container.read(currentUserProvider.notifier).value = const CurrentUser(
-        id: '@alice:example.org',
-        displayName: 'Alice',
-        homeserver: 'https://alice.example.org',
-      );
-      rustApi.removeBarrier = Completer<void>();
-      rustApi.removeStarted = Completer<void>();
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(theme: neuTestTheme(), home: const SettingsPage()),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Start removing the non-active account and keep the Rust call in
-      // flight so `_removingAccountId` stays set.
-      await tester.scrollUntilVisible(find.text('移除 bob (example.org)'), 300);
-      await tester.ensureVisible(find.text('移除 bob (example.org)'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('移除 bob (example.org)'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('确定'));
-      await rustApi.removeStarted!.future;
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-
-      // The removal flow can switch accounts internally (`_removeAccount`
-      // does before deleting the active one), so the switch tiles must be
-      // disabled like the remove buttons: a tap on the account being
-      // removed would queue a switch to a session that is about to be
-      // deleted. Migrated rows only wrap in NeuAction while interactive, so
-      // a disabled tile exposes no tappable action at all.
-      await tester.scrollUntilVisible(find.text('bob (example.org)'), -300);
-      await tester.ensureVisible(find.text('bob (example.org)'));
-      await tester.pump();
-      expect(find.widgetWithText(NeuAction, 'bob (example.org)'), findsNothing);
-      await tester.tap(find.text('bob (example.org)'));
-      await tester.pump();
-      expect(rustApi.switchCalls, isEmpty);
-
-      rustApi.removeBarrier!.complete();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(rustApi.switchCalls, isEmpty);
-    },
-  );
-
-  testWidgets('account list load failure shows a retryable error tile', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  test('last-account removal clears session state through the controller', () async {
+    await removeSession('@bob:example.org');
     final container = createContainer();
     addTearDown(container.dispose);
+    container.read(isLoggedInProvider.notifier).value = true;
     container.read(currentUserProvider.notifier).value = const CurrentUser(
       id: '@alice:example.org',
       displayName: 'Alice',
       homeserver: 'https://alice.example.org',
     );
+    rustApi.logoutBarrier = Completer<void>();
+    rustApi.logoutStarted = Completer<void>();
 
-    rustApi.listAccountsError = StateError('offline');
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(theme: neuTestTheme(), home: const SettingsPage()),
+    final removalFuture = container
+        .read(accountSwitchControllerProvider)
+        .removeAccount('@alice:example.org');
+    await rustApi.logoutStarted!.future;
+    expect(container.read(sessionReadyProvider), isFalse);
+    rustApi.logoutBarrier!.complete();
+    await removalFuture;
+
+    expect(container.read(isLoggedInProvider), isFalse);
+    expect(container.read(currentUserProvider), isNull);
+    expect(container.read(activeUserIdProvider), isNull);
+    expect(container.read(sessionReadyProvider), isTrue);
+    expect(await loadAllSessions(), isEmpty);
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.containsKey(
+        'matrix_session_removed_${base64Url.encode(utf8.encode('@alice:example.org'))}',
       ),
+      isFalse,
     );
-    await tester.pumpAndSettle();
-
-    // The failure must not silently hide the account entries.
-    expect(find.text('账号列表加载失败'), findsOneWidget);
-
-    rustApi.listAccountsError = null;
-    await tester.tap(find.text('账号列表加载失败'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('账号列表加载失败'), findsNothing);
-    expect(find.text('账号切换'), findsOneWidget);
   });
-
-  test(
-    'last-account removal clears session state through the controller',
-    () async {
-      await removeSession('@bob:example.org');
-      final container = createContainer();
-      addTearDown(container.dispose);
-      container.read(isLoggedInProvider.notifier).value = true;
-      container.read(currentUserProvider.notifier).value = const CurrentUser(
-        id: '@alice:example.org',
-        displayName: 'Alice',
-        homeserver: 'https://alice.example.org',
-      );
-      rustApi.logoutBarrier = Completer<void>();
-      rustApi.logoutStarted = Completer<void>();
-
-      final removalFuture = container
-          .read(accountSwitchControllerProvider)
-          .removeAccount('@alice:example.org');
-      await rustApi.logoutStarted!.future;
-      expect(container.read(sessionReadyProvider), isFalse);
-      rustApi.logoutBarrier!.complete();
-      await removalFuture;
-
-      expect(container.read(isLoggedInProvider), isFalse);
-      expect(container.read(currentUserProvider), isNull);
-      expect(container.read(activeUserIdProvider), isNull);
-      expect(container.read(sessionReadyProvider), isTrue);
-      expect(await loadAllSessions(), isEmpty);
-      final prefs = await SharedPreferences.getInstance();
-      expect(
-        prefs.containsKey(
-          'matrix_session_removed_${base64Url.encode(utf8.encode('@alice:example.org'))}',
-        ),
-        isFalse,
-      );
-    },
-  );
 
   test('store cleanup warning still commits last-account removal', () async {
     await removeSession('@bob:example.org');

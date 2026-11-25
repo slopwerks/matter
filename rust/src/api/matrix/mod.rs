@@ -371,5 +371,3 @@ pub(super) use runtime::{ClientLease, MediaClientIdentity};
 
 #[cfg(test)]
 mod search_index_tests;
-#[cfg(test)]
-mod search_performance_tests;

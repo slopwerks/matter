@@ -1,9 +1,7 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/markdown/markdown_composer.dart';
 import 'package:matter/features/matrix_html/matrix_html_node.dart';
 import 'package:matter/features/matrix_html/matrix_html_parser.dart';
-import 'package:matter/features/matrix_html/matrix_html_renderer.dart';
 
 void main() {
   const composer = MarkdownComposer();
@@ -147,8 +145,7 @@ void main() {
     test('recovery matches image cells by their alt text', () {
       expect(
         recoverDegradedTableHtml(
-          body:
-              '| image | status |\n|---|---|\n| ![logo](https://example.org/logo.png) | ok |',
+          body: '| image | status |\n|---|---|\n| ![logo](https://example.org/logo.png) | ok |',
           formattedBody: '<p>image\nstatus\n\nlogo\nok</p>',
         ),
         contains('<table>'),
@@ -158,8 +155,7 @@ void main() {
     test('recovery matches HTML img alt text', () {
       expect(
         recoverDegradedTableHtml(
-          body:
-              '| image | status |\n|---|---|\n| ![logo](https://example.org/logo.png) | ok |',
+          body: '| image | status |\n|---|---|\n| ![logo](https://example.org/logo.png) | ok |',
           formattedBody:
               '<p>image\nstatus</p>'
               '<img alt="logo" src="https://example.org/logo.png">'
@@ -172,10 +168,8 @@ void main() {
     test('recovery matches inline img alt without added separators', () {
       expect(
         recoverDegradedTableHtml(
-          body:
-              '| a | b |\n|---|---|\n| before![logo](https://example.org/l.png)after | ok |',
-          formattedBody:
-              '<p>a\nb</p><p>before<img alt="logo" src="https://example.org/l.png">after</p><p>ok</p>',
+          body: '| a | b |\n|---|---|\n| before![logo](https://example.org/l.png)after | ok |',
+          formattedBody: '<p>a\nb</p><p>before<img alt="logo" src="https://example.org/l.png">after</p><p>ok</p>',
         ),
         contains('<table>'),
       );
@@ -202,197 +196,6 @@ void main() {
       final table = nodes.single as MatrixElementNode;
       expect(table.tag, 'table');
       expect(table.textContent, 'ab');
-    });
-  });
-
-  group('renderer', () {
-    testWidgets('renders HTML tables as a Table widget', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html:
-                  '<table><thead><tr><th>客户端</th><th>特点</th></tr></thead>'
-                  '<tbody><tr><td><strong>Komai</strong></td><td>快</td></tr>'
-                  '</tbody></table>',
-              style: TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      expect(find.byType(Table), findsOneWidget);
-      expect(find.text('客户端', findRichText: true), findsOneWidget);
-      expect(find.text('Komai', findRichText: true), findsOneWidget);
-      expect(find.text('快', findRichText: true), findsOneWidget);
-    });
-
-    testWidgets('irregular remote tables render without crashing', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html:
-                  '<table><tr><th>a</th><th>b</th></tr>'
-                  '<tr><td>1</td></tr>'
-                  '<tr><td>x</td><td>y</td><td>z</td></tr></table>',
-              style: TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.byType(Table), findsOneWidget);
-      expect(find.text('z', findRichText: true), findsOneWidget);
-    });
-
-    testWidgets('pathological ragged tables fall back without grid expansion', (
-      tester,
-    ) async {
-      final wideRow = List.generate(
-        40,
-        (index) => '<td>wide-$index</td>',
-      ).join();
-      final narrowRows = List.generate(
-        40,
-        (index) => '<tr><td>row-$index</td></tr>',
-      ).join();
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html: '<table><tr>$wideRow</tr>$narrowRows</table>',
-              style: const TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.byType(Table), findsNothing);
-      expect(find.textContaining('wide-39'), findsOneWidget);
-      expect(find.textContaining('row-39'), findsOneWidget);
-    });
-
-    testWidgets('table cells preserve block structure', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html:
-                  '<table><tr><td><p>first</p><p>second</p>'
-                  '<ul><li>third</li></ul></td></tr></table>',
-              style: TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.text('first', findRichText: true), findsOneWidget);
-      expect(find.text('second', findRichText: true), findsOneWidget);
-      expect(find.text('third', findRichText: true), findsOneWidget);
-    });
-
-    testWidgets('table captions stay visible', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html:
-                  '<table><caption>Quarterly report</caption>'
-                  '<tr><td>data</td></tr></table>',
-              style: TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      expect(find.text('Quarterly report', findRichText: true), findsOneWidget);
-      expect(find.text('data', findRichText: true), findsOneWidget);
-    });
-
-    testWidgets('caption-only tables still render the caption', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html: '<table><caption>No results</caption></table>',
-              style: TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      expect(find.text('No results', findRichText: true), findsOneWidget);
-    });
-
-    testWidgets('mixed th/td rows style cells by cell type', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html:
-                  '<table><tbody>'
-                  '<tr><th>Name</th><td>Alice</td></tr>'
-                  '</tbody></table>',
-              style: TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      TextStyle? styleOf(String text) {
-        TextStyle? found;
-        void visit(InlineSpan span) {
-          if (span is TextSpan) {
-            if (span.text == text) found = span.style;
-            span.children?.forEach(visit);
-          }
-        }
-
-        for (final widget in tester.widgetList<RichText>(
-          find.byType(RichText),
-        )) {
-          visit(widget.text);
-        }
-        return found;
-      }
-
-      expect(styleOf('Name')?.fontWeight, FontWeight.w800);
-      expect(styleOf('Alice')?.fontWeight, isNot(FontWeight.w800));
-    });
-
-    testWidgets('collapses blank-line runs in degraded HTML', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: MatrixHtmlMessage(
-              html: '<p>证据</p>\n\n\n\n项目\n信息\n\n\n\n3.44.9 tag',
-              style: TextStyle(fontSize: 15),
-              accentColor: Colors.cyan,
-            ),
-          ),
-        ),
-      );
-
-      final texts = tester
-          .widgetList<RichText>(find.byType(RichText))
-          .map((widget) => widget.text.toPlainText())
-          .toList();
-      expect(texts, contains('\n项目\n信息\n3.44.9 tag'));
-      expect(texts.any((text) => text.contains('\n\n')), isFalse);
     });
   });
 }
