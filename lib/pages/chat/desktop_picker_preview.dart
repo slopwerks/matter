@@ -19,19 +19,20 @@ class DesktopPickerPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = desktopComposerPickerStyle(context, selected: false);
+    final style = desktopPickerPreviewStyle(context);
     return Tooltip(
       waitDuration: const Duration(milliseconds: 450),
       exitDuration: const Duration(milliseconds: 100),
       preferBelow: false,
       ignorePointer: true,
       excludeFromSemantics: true,
-      decoration: ShapeDecoration(color: style.fill, shape: style.shape),
+      decoration: style.decoration,
+      padding: style.padding,
       richMessage: WidgetSpan(
         child: SizedBox(
           width: 180,
           child: DefaultTextStyle(
-            style: Theme.of(context).textTheme.bodySmall!,
+            style: style.details,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -42,6 +43,7 @@ class DesktopPickerPreview extends StatelessWidget {
                 ),
                 Text(
                   name,
+                  style: style.name,
                   textAlign: TextAlign.center,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,

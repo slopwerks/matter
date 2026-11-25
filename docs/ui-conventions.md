@@ -367,7 +367,11 @@ keeping the bottom corner arcs concentric. Desktop search sits immediately
 below the tabs, above the content. It filters the available Matrix image packs
 by display name/scoped ID and image shortcode/body, rather than querying a
 nonexistent global sticker directory. Emoji and sticker cells show delayed,
-non-interactive hover cards with enlarged previews and name metadata. The active pack uses an
+non-interactive hover cards with enlarged previews and name metadata.
+Hover-card chrome follows the active skin: Material uses a higher semantic
+surface, subtle outline and downward shadow; Neu uses a soft convex gradient,
+top-left highlight and bottom-right shadow. Name and metadata have separate
+foreground roles. The active pack uses an
 accent outline, and long-press previews use the floating rounded panel.
 Video viewer counters use `labelMedium`; speed and menu controls share the
 viewer pills, and volume uses the viewer's high-contrast slider colours.

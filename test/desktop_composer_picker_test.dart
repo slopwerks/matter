@@ -276,6 +276,21 @@ void main() {
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pumpAndSettle();
           expect(find.text('Sticker 0\nPack 2\n2'), findsOneWidget);
+          if (const bool.fromEnvironment('RENDER_PICKER')) {
+            await tester.runAsync(() async {
+              final image =
+                  await (boundary.currentContext!.findRenderObject()
+                          as RenderRepaintBoundary)
+                      .toImage();
+              final bytes = await image.toByteData(
+                format: ui.ImageByteFormat.png,
+              );
+              File('/tmp/matter-picker-popover-$material-$dark.png')
+                  .writeAsBytesSync(bytes!.buffer.asUint8List());
+              image.dispose();
+            });
+          }
+
           await mouse.moveTo(const Offset(10, 10));
           await tester.pumpAndSettle();
           await mouse.removePointer();

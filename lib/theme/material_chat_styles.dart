@@ -370,3 +370,72 @@ desktopComposerPickerStyle(BuildContext context, {required bool selected}) {
     ),
   );
 }
+
+({
+  BoxDecoration decoration,
+  TextStyle name,
+  TextStyle details,
+  EdgeInsets padding,
+})
+desktopPickerPreviewStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = context.neu;
+  final material = context.isMaterial;
+  final fill = material
+      ? theme.colorScheme.surfaceContainerHigh
+      : colors.surfaceStrong;
+  return (
+    decoration: BoxDecoration(
+      color: fill,
+      borderRadius: BorderRadius.circular(material ? 16 : NeuRadius.content),
+      border: Border.all(
+        color: material
+            ? theme.colorScheme.outlineVariant.withValues(alpha: .5)
+            : colors.hairline,
+      ),
+      gradient: material
+          ? null
+          : LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [neuShift(fill, .025), fill, neuShift(fill, -.015)],
+            ),
+      boxShadow: material
+          ? [
+              BoxShadow(
+                color: theme.colorScheme.shadow.withValues(alpha: .18),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+              BoxShadow(
+                color: theme.colorScheme.shadow.withValues(alpha: .10),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ]
+          : [
+              BoxShadow(
+                color: colors.shadowLight.withValues(
+                  alpha: colors.highlightAlpha,
+                ),
+                blurRadius: 10,
+                offset: const Offset(-3, -3),
+              ),
+              BoxShadow(
+                color: colors.shadowDark.withValues(alpha: .8),
+                blurRadius: 18,
+                offset: const Offset(5, 7),
+              ),
+            ],
+    ),
+    name: theme.textTheme.labelLarge!.copyWith(
+      color: material ? theme.colorScheme.onSurface : colors.text,
+    ),
+    details: theme.textTheme.bodySmall!.copyWith(
+      color: material
+          ? theme.colorScheme.onSurfaceVariant
+          : colors.textSecondary,
+    ),
+    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+  );
+}
