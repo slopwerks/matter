@@ -8,6 +8,7 @@ import '../../theme/neu_colors.dart';
 import '../../theme/material_theme.dart';
 import 'sticker_catalog.dart';
 import 'sticker_preview.dart';
+import 'desktop_picker_preview.dart';
 
 class StickerPackPanel extends ConsumerStatefulWidget {
   final String roomId;
@@ -15,6 +16,7 @@ class StickerPackPanel extends ConsumerStatefulWidget {
   final Future<void> Function() onPackNavigation;
   final ScrollController scrollController;
   final bool packStripAtBottom;
+  final String query;
 
   const StickerPackPanel({
     super.key,
@@ -23,6 +25,7 @@ class StickerPackPanel extends ConsumerStatefulWidget {
     required this.onPackNavigation,
     required this.scrollController,
     this.packStripAtBottom = false,
+    this.query = '',
   });
 
   @override
@@ -285,12 +288,36 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   }
 
   @override
+  void didUpdateWidget(covariant StickerPackPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.query != oldWidget.query) {
+      _jumpGeneration++;
+      _isJumpingToPack = false;
+      _activePackIndex = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (widget.scrollController.hasClients) {
+          widget.scrollController.jumpTo(0);
+        }
+        if (_packStripController.hasClients) _packStripController.jumpTo(0);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final packsAsync = ref.watch(stickerPacksProvider(widget.roomId));
 
     return packsAsync.when(
       data: (remotePacks) {
-        final packs = stickerPacksFromRemote(remotePacks);
+        final packs = searchStickerPacks(
+          stickerPacksFromRemote(remotePacks),
+          widget.query,
+        );
+        _activePackIndex = _activePackIndex.clamp(
+          0,
+          packs.isEmpty ? 0 : packs.length - 1,
+        );
         _packs = packs;
         _syncPackKeys(packs.length);
         _syncVisibleStickers(packs);
@@ -330,7 +357,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     if (packs.isEmpty) {
       return Center(
         child: Text(
-          '当前房间没有可用贴纸包',
+          widget.query.trim().isEmpty ? '当前房间没有可用贴纸包' : '没有匹配的贴纸包或贴纸',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
@@ -442,7 +469,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                               ) {
                                 final sticker = packs[i].stickers[index];
                                 final stickerKey = _stickerKeyFor(sticker);
-                                return _StickerCard(
+                                final card = _StickerCard(
                                   key: stickerKey,
                                   sticker: sticker,
                                   onTap: () {
@@ -464,6 +491,20 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                                   onLongPressEnd: (_) => _hideHoldPreview(),
                                   onLongPressCancel: _hideHoldPreview,
                                 );
+                                return widget.packStripAtBottom
+                                    ? DesktopPickerPreview(
+                                        preview: RemoteStickerPreview(
+                                          sticker: sticker,
+                                          cacheDimension: 256,
+                                        ),
+                                        name: sticker.shortcode == null
+                                            ? sticker.body
+                                            : ':${sticker.shortcode}:',
+                                        details:
+                                            '${sticker.body}\n${packs[i].title}\n${packs[i].id}',
+                                        child: card,
+                                      )
+                                    : card;
                               }, childCount: packs[i].stickers.length),
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(

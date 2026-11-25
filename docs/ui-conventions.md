@@ -363,7 +363,11 @@ The desktop popup does not reserve timeline space; outside clicks and Escape
 close it. Its tab indicator sits on the tab bar's bottom edge. Both desktop
 footer strips start at the left and share 44 dp group buttons, 4 dp gaps and
 6 dp outer insets. Group-button radius is the popup radius minus that inset,
-keeping the bottom corner arcs concentric. The active pack uses an
+keeping the bottom corner arcs concentric. Desktop search sits immediately
+below the tabs, above the content. It filters the available Matrix image packs
+by display name/scoped ID and image shortcode/body, rather than querying a
+nonexistent global sticker directory. Emoji and sticker cells show delayed,
+non-interactive hover cards with enlarged previews and name metadata. The active pack uses an
 accent outline, and long-press previews use the floating rounded panel.
 Video viewer counters use `labelMedium`; speed and menu controls share the
 viewer pills, and volume uses the viewer's high-contrast slider colours.

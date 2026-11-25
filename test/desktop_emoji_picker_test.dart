@@ -1,10 +1,46 @@
 import 'package:flutter_test/flutter_test.dart';
+
+import 'dart:ui';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:matter/pages/chat/desktop_emoji_picker.dart';
 import 'package:matter/pages/chat/emoji_data.dart';
 import 'package:matter/theme/material_theme.dart';
 
 void main() {
+  testWidgets('search matches names and hover previews show name and Unicode', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildMaterialTheme(Brightness.light),
+        home: Scaffold(
+          body: SizedBox(
+            width: 380,
+            height: 460,
+            child: DesktopEmojiPicker(
+              query: 'Grinning Face',
+              onSelected: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('😀'), findsOneWidget);
+    expect(find.text('🔥'), findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(790, 590));
+    await mouse.moveTo(tester.getCenter(find.text('😀')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(find.text('Grinning Face'), findsOneWidget);
+    expect(find.text('U+1F600'), findsOneWidget);
+    await mouse.moveTo(const Offset(790, 590));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('U+1F600'), findsNothing);
+    await mouse.removePointer();
+  });
   testWidgets('short category strip stays left aligned on a wide desktop', (
     tester,
   ) async {

@@ -7,6 +7,7 @@ import '../../theme/material_theme.dart';
 import 'composer_picker_panel.dart';
 import 'desktop_emoji_picker.dart';
 import 'sticker_catalog.dart';
+import '../../widgets/app_search_field.dart';
 
 /// Desktop-only anchored overlay; it never reserves space below the composer.
 class DesktopComposerPicker extends StatefulWidget {
@@ -37,6 +38,8 @@ class DesktopComposerPicker extends StatefulWidget {
 
 class _DesktopComposerPickerState extends State<DesktopComposerPicker> {
   final _stickers = ScrollController();
+  final _search = TextEditingController();
+  String _query = '';
   late bool _stickersOpened = widget.tab == ComposerPickerTab.sticker;
 
   @override
@@ -48,6 +51,7 @@ class _DesktopComposerPickerState extends State<DesktopComposerPicker> {
   @override
   void dispose() {
     _stickers.dispose();
+    _search.dispose();
     super.dispose();
   }
 
@@ -175,16 +179,41 @@ class _DesktopComposerPickerState extends State<DesktopComposerPicker> {
                       ],
                     ),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                    child: AppSearchField(
+                      key: const ValueKey('desktop-picker-search'),
+                      controller: _search,
+                      hint: widget.tab == ComposerPickerTab.emoji
+                          ? '搜索表情'
+                          : '搜索贴纸包、名称或 :shortcode:',
+                      onChanged: (value) => setState(() => _query = value),
+                      trailing: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: '清除搜索',
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: () {
+                                _search.clear();
+                                setState(() => _query = '');
+                              },
+                            ),
+                    ),
+                  ),
                   Expanded(
                     child: IndexedStack(
                       index: widget.tab.index,
                       children: [
-                        DesktopEmojiPicker(onSelected: widget.onEmojiSelected),
+                        DesktopEmojiPicker(
+                          onSelected: widget.onEmojiSelected,
+                          query: _query,
+                        ),
                         if (_stickersOpened)
                           StickerPackPanel(
                             roomId: widget.roomId,
                             scrollController: _stickers,
                             packStripAtBottom: true,
+                            query: _query,
                             onPackNavigation: () async {},
                             onStickerSelected: widget.onStickerSelected,
                           )

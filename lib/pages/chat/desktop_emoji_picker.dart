@@ -2,10 +2,21 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../theme/material_theme.dart';
 import 'emoji_data.dart';
+import 'emoji_keywords.dart';
+import 'desktop_picker_preview.dart';
+
+import 'package:pro_image_editor/plugins/emoji_picker_flutter/emoji_picker_flutter.dart'
+    as emoji_metadata;
 
 /// Continuous categories with a footer that tracks the leading visible section.
 class DesktopEmojiPicker extends StatefulWidget {
-  const DesktopEmojiPicker({super.key, required this.onSelected});
+  const DesktopEmojiPicker({
+    super.key,
+    required this.onSelected,
+    this.query = '',
+  });
+
+  final String query;
 
   final ValueChanged<String> onSelected;
 
@@ -19,6 +30,35 @@ class _DesktopEmojiPickerState extends State<DesktopEmojiPicker> {
   final _icons = List.generate(kEmojiCategories.length, (_) => GlobalKey());
   List<double> _offsets = const [];
   int _active = 0;
+  static final _names = {
+    for (final category in emoji_metadata.defaultEmojiSet)
+      for (final emoji in category.emoji) emoji.emoji: emoji.name,
+  };
+
+  Widget _cell(String emoji) => DesktopPickerPreview(
+    preview: Text(emoji, style: const TextStyle(fontSize: 72)),
+    name: _names[emoji] ?? emoji,
+    details: emoji.runes
+        .map(
+          (rune) => 'U+${rune.toRadixString(16).toUpperCase().padLeft(4, '0')}',
+        )
+        .join(' '),
+    child: InkWell(
+      customBorder: materialEmojiPickerStyle(Theme.of(context)).cellShape,
+      onTap: () => widget.onSelected(emoji),
+      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 24))),
+    ),
+  );
+
+  @override
+  void didUpdateWidget(covariant DesktopEmojiPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.query != widget.query) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scroll.hasClients) _scroll.jumpTo(0);
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -27,7 +67,7 @@ class _DesktopEmojiPickerState extends State<DesktopEmojiPicker> {
   }
 
   void _trackSection() {
-    if (_offsets.isEmpty) return;
+    if (_offsets.isEmpty || widget.query.trim().isNotEmpty) return;
     var index = 0;
     for (var i = 1; i < _offsets.length; i++) {
       if (_offsets[i] > _scroll.offset + 24) break;
@@ -58,6 +98,33 @@ class _DesktopEmojiPickerState extends State<DesktopEmojiPicker> {
   @override
   Widget build(BuildContext context) {
     final style = materialEmojiPickerStyle(Theme.of(context));
+    final query = widget.query.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      final matches = kEmojiCategories
+          .expand((category) => category.emojis)
+          .toSet()
+          .where(
+            (emoji) =>
+                emoji.contains(query) ||
+                (_names[emoji]?.toLowerCase().contains(query) ?? false) ||
+                (kEmojiKeywords[emoji]?.any(
+                      (keyword) => keyword.toLowerCase().contains(query),
+                    ) ??
+                    false),
+          )
+          .toList();
+      return matches.isEmpty
+          ? const Center(child: Text('没有匹配的表情'))
+          : GridView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.all(8),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 44,
+              ),
+              itemCount: matches.length,
+              itemBuilder: (context, index) => _cell(matches[index]),
+            );
+    }
     return Column(
       children: [
         Expanded(
@@ -112,16 +179,7 @@ class _DesktopEmojiPickerState extends State<DesktopEmojiPicker> {
                             index,
                           ) {
                             final emoji = category.emojis[index];
-                            return InkWell(
-                              customBorder: style.cellShape,
-                              onTap: () => widget.onSelected(emoji),
-                              child: Center(
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 24),
-                                ),
-                              ),
-                            );
+                            return _cell(emoji);
                           }, childCount: category.emojis.length),
                         ),
                       ),

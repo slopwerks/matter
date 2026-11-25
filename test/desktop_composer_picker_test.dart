@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:matter/pages/chat/composer_picker_panel.dart';
 import 'package:matter/pages/chat/desktop_composer_picker.dart';
+import 'package:matter/pages/chat/desktop_picker_preview.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
@@ -44,6 +45,13 @@ void main() {
               'Twemoji Mozilla Fallback':
                   'assets/fonts/Twemoji.Mozilla.fallback.ttf',
             };
+            await tester.runAsync(
+              () =>
+                  (FontLoader('MaterialIcons')..addFont(
+                        rootBundle.load('fonts/MaterialIcons-Regular.otf'),
+                      ))
+                      .load(),
+            );
             for (final entry in fonts.entries) {
               final loader = FontLoader(entry.key)
                 ..addFont(
@@ -243,6 +251,40 @@ void main() {
           scroll.jumpTo(0);
           await tester.pumpAndSettle();
           expect(selectedPack().properties.selected, isFalse);
+          final search = find.descendant(
+            of: find.byKey(const ValueKey('desktop-picker-search')),
+            matching: find.byType(TextField),
+          );
+          expect(
+            tester.getRect(search).top,
+            greaterThan(
+              tester
+                  .getRect(find.byKey(const ValueKey('desktop-picker-tabs')))
+                  .bottom,
+            ),
+          );
+          await tester.enterText(search, 'Pack 2');
+          await tester.pumpAndSettle();
+          expect(find.byTooltip('Pack 0'), findsNothing);
+          expect(find.byTooltip('Pack 2'), findsOneWidget);
+          final preview = find.byType(DesktopPickerPreview).first;
+          final mouse = await tester.createGesture(
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          await mouse.addPointer(location: const Offset(10, 10));
+          await mouse.moveTo(tester.getCenter(preview));
+          await tester.pump(const Duration(milliseconds: 600));
+          await tester.pumpAndSettle();
+          expect(find.text('Sticker 0\nPack 2\n2'), findsOneWidget);
+          await mouse.moveTo(const Offset(10, 10));
+          await tester.pumpAndSettle();
+          await mouse.removePointer();
+          await tester.enterText(search, 'no-such-pack');
+          await tester.pumpAndSettle();
+          expect(find.text('没有匹配的贴纸包或贴纸'), findsOneWidget);
+          await tester.tap(find.byTooltip('清除搜索'));
+          await tester.pumpAndSettle();
+          expect(find.byTooltip('Pack 0'), findsOneWidget);
           expect(tester.takeException(), isNull);
         },
       );
