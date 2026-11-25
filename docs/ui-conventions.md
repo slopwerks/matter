@@ -52,8 +52,9 @@ titles a page, so the page-title token is 24/w600
   `appBarTheme.titleTextStyle`, so call sites pass a bare `Text`.
 - Self-drawn title rows (`CascadeTitle` in the chat, space and hidden-rooms
   pages) use `headlineSmall` too.
-- Material root pages use `MaterialRootHeader`: compact headers use
-  `headlineLarge` at 34/w700 with a 42 dp line height. Wide list panes use
+- Material root pages use `MaterialRootHeader`: compact headers use a 56 dp
+  toolbar, 28 dp bottom corners, a 28/w700 title, and a 68 dp search slot
+  (`56 dp` `SearchBar` + `12 dp` bottom padding). Wide list panes use
   an 84 dp toolbar and a 28/w700 title. Subpage app bars use 24/w600.
 - Chinese line heights are tightened to 1.35–1.5. M3's 1.5 leaves list rows
   loose.

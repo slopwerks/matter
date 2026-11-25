@@ -33,7 +33,14 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   final Map<String, GlobalKey> _stickerKeys = {};
   final Map<String, StickerItem> _visibleStickers = {};
   int _activePackIndex = 0;
+  int _gridColumns = 5;
   bool _isJumpingToPack = false;
+
+  int _gridColumnsForWidth(double width) {
+    if (width < 450) return 5;
+    return (width / 84).floor().clamp(5, 10);
+  }
+
   int _jumpGeneration = 0;
   List<StickerPack> _packs = const [];
   OverlayEntry? _holdPreviewOverlay;
@@ -128,7 +135,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   double _estimatedPackOffset(int index) {
     if (!widget.scrollController.hasClients || _packs.length <= 1) return 0;
     double packWeight(StickerPack pack) =>
-        1 + (pack.stickers.length / 5).ceilToDouble();
+        1 + (pack.stickers.length / _gridColumns).ceilToDouble();
     final before = _packs.take(index).fold<double>(0, (sum, pack) {
       return sum + packWeight(pack);
     });
@@ -353,98 +360,115 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
         ),
         Divider(height: 1, color: colors.hairline),
         Expanded(
-          child: KeyedSubtree(
-            key: _scrollViewportKey,
-            child: NotificationListener<OverscrollIndicatorNotification>(
-              onNotification: (notification) {
-                notification.disallowIndicator();
-                return false;
-              },
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _handleScrollNotification,
-                child: CustomScrollView(
-                  controller: widget.scrollController,
-                  physics: const BouncingScrollPhysics(),
-                  slivers: [
-                    const SliverPadding(padding: EdgeInsets.only(top: 8)),
-                    for (var i = 0; i < packs.length; i++) ...[
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          key: _headerKeys[i],
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: i == _activePackIndex
-                                      ? colors.accent
-                                      : colors.textTertiary.withValues(
-                                          alpha: 0.65,
-                                        ),
-                                  shape: BoxShape.circle,
-                                ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = _gridColumnsForWidth(constraints.maxWidth);
+              _gridColumns = columns;
+              return KeyedSubtree(
+                key: _scrollViewportKey,
+                child: NotificationListener<OverscrollIndicatorNotification>(
+                  onNotification: (notification) {
+                    notification.disallowIndicator();
+                    return false;
+                  },
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _handleScrollNotification,
+                    child: CustomScrollView(
+                      controller: widget.scrollController,
+                      physics: const BouncingScrollPhysics(),
+                      slivers: [
+                        const SliverPadding(padding: EdgeInsets.only(top: 8)),
+                        for (var i = 0; i < packs.length; i++) ...[
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              key: _headerKeys[i],
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: i == _activePackIndex
+                                          ? colors.accent
+                                          : colors.textTertiary.withValues(
+                                              alpha: 0.65,
+                                            ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      packs[i].title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: i == _activePackIndex
+                                                ? colors.text
+                                                : colors.textSecondary,
+                                          ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  packs[i].title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        color: i == _activePackIndex
-                                            ? colors.text
-                                            : colors.textSecondary,
-                                      ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                            sliver: SliverGrid(
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
+                                final sticker = packs[i].stickers[index];
+                                final stickerKey = _stickerKeyFor(sticker);
+                                return _StickerCard(
+                                  key: stickerKey,
+                                  sticker: sticker,
+                                  onTap: () {
+                                    _hideHoldPreview();
+                                    final sourceRect = _globalRectFor(
+                                      stickerKey,
+                                    );
+                                    widget.onStickerSelected(
+                                      sticker,
+                                      sourceRect,
+                                    );
+                                  },
+                                  onLongPressStart: (_) =>
+                                      _showHoldPreview(sticker),
+                                  onLongPressMoveUpdate: (details) =>
+                                      _updateHoldPreviewAt(
+                                        details.globalPosition,
+                                      ),
+                                  onLongPressEnd: (_) => _hideHoldPreview(),
+                                  onLongPressCancel: _hideHoldPreview,
+                                );
+                              }, childCount: packs[i].stickers.length),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: columns,
+                                    crossAxisSpacing: 4,
+                                    mainAxisSpacing: 4,
+                                    childAspectRatio: 1,
+                                  ),
+                            ),
+                          ),
+                        ],
+                        const SliverPadding(
+                          padding: EdgeInsets.only(bottom: 10),
                         ),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                        sliver: SliverGrid(
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final sticker = packs[i].stickers[index];
-                            final stickerKey = _stickerKeyFor(sticker);
-                            return _StickerCard(
-                              key: stickerKey,
-                              sticker: sticker,
-                              onTap: () {
-                                _hideHoldPreview();
-                                final sourceRect = _globalRectFor(stickerKey);
-                                widget.onStickerSelected(sticker, sourceRect);
-                              },
-                              onLongPressStart: (_) =>
-                                  _showHoldPreview(sticker),
-                              onLongPressMoveUpdate: (details) =>
-                                  _updateHoldPreviewAt(details.globalPosition),
-                              onLongPressEnd: (_) => _hideHoldPreview(),
-                              onLongPressCancel: _hideHoldPreview,
-                            );
-                          }, childCount: packs[i].stickers.length),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 5,
-                                crossAxisSpacing: 4,
-                                mainAxisSpacing: 4,
-                                childAspectRatio: 1,
-                              ),
-                        ),
-                      ),
-                    ],
-                    const SliverPadding(padding: EdgeInsets.only(bottom: 10)),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ],
@@ -494,7 +518,11 @@ class _PackThumb extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(NeuRadius.tag),
-              child: RemoteStickerPreview(sticker: sticker, fallback: fallback),
+              child: RemoteStickerPreview(
+                sticker: sticker,
+                fallback: fallback,
+                cacheDimension: 96,
+              ),
             ),
           ),
         ),
@@ -541,7 +569,7 @@ class _StickerCard extends StatelessWidget {
           padding: const EdgeInsets.all(4),
           child: AspectRatio(
             aspectRatio: sticker.aspectRatio,
-            child: RemoteStickerPreview(sticker: sticker),
+            child: RemoteStickerPreview(sticker: sticker, cacheDimension: 240),
           ),
         ),
       ),

@@ -43,9 +43,10 @@ class MaterialSearchHeader extends StatelessWidget {
         title: title,
         compact: compact,
         searchExpansion: expansion,
-        search: expansion == 0
-            ? null
-            : _InteractiveHalf(active: expansion >= .5, child: field!),
+        search: _InteractiveHalf(
+          active: expansion >= .5,
+          child: expansion == 0 ? const SizedBox.shrink() : field!,
+        ),
         actions: [
           if (expansion < 1)
             ClipRect(

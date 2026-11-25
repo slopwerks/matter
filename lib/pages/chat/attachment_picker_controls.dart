@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_surface.dart';
@@ -40,25 +41,35 @@ class AttachmentTabBar extends StatelessWidget {
         child: SizedBox(
           key: const ValueKey('attachment-tab-bar'),
           height: attachmentDockHeight - attachmentDockGap,
-          child: NavigationBar(
-            height: attachmentDockHeight - attachmentDockGap,
-            selectedIndex: tab.index,
-            onDestinationSelected: onTabChanged == null
-                ? null
-                : (index) => onTabChanged!(AttachmentTab.values[index]),
-            destinations: [
-              for (final item in items)
-                NavigationDestination(
-                  enabled: onTabChanged != null,
-                  icon: item.tab == AttachmentTab.file && isFileBusy
-                      ? const SizedBox.square(
-                          dimension: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(item.icon),
-                  label: item.label,
-                ),
-            ],
+          child: MediaQuery.removePadding(
+            context: context,
+            removeLeft: true,
+            removeTop: true,
+            removeRight: true,
+            removeBottom: true,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(materialSurfaceRadius),
+              child: NavigationBar(
+                height: attachmentDockHeight - attachmentDockGap,
+                selectedIndex: tab.index,
+                onDestinationSelected: onTabChanged == null
+                    ? null
+                    : (index) => onTabChanged!(AttachmentTab.values[index]),
+                destinations: [
+                  for (final item in items)
+                    NavigationDestination(
+                      enabled: onTabChanged != null,
+                      icon: item.tab == AttachmentTab.file && isFileBusy
+                          ? const SizedBox.square(
+                              dimension: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(item.icon),
+                      label: item.label,
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       );

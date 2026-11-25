@@ -201,6 +201,7 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
     final hideBottomBar =
         (chatOpen && index == 0) || _detailTabs.contains(index);
     final scaffold = Scaffold(
+      resizeToAvoidBottomInset: false,
       extendBody: true,
       floatingActionButton: _detailTabs.contains(index)
           ? null

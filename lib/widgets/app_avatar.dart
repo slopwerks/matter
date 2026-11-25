@@ -39,10 +39,29 @@ class AppAvatar extends ConsumerStatefulWidget {
 class _AppAvatarState extends ConsumerState<AppAvatar> {
   String? _resolvedUrl;
   int? _targetPixelSize;
+  int _resolveGeneration = 0;
 
   @override
   void initState() {
     super.initState();
+  }
+
+  void _syncResolution() {
+    final url = widget.url;
+    if (url == null || url.isEmpty) {
+      _resolvedUrl = null;
+      return;
+    }
+    if (!url.startsWith('mxc://')) {
+      _resolvedUrl = url;
+      return;
+    }
+    final cached = cachedResolvedMxcUrl(ref, url, width: 96, height: 96);
+    if (cached != null && cached.isNotEmpty) {
+      _resolvedUrl = cached;
+      return;
+    }
+    unawaited(_resolveAsync(url, ++_resolveGeneration));
   }
 
   @override
@@ -51,38 +70,31 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
     final nextPixelSize = _avatarPixelSize(context, widget.size);
     if (_targetPixelSize != nextPixelSize || _resolvedUrl == null) {
       _targetPixelSize = nextPixelSize;
-      _resolvedUrl = null;
-      _maybeResolve();
+      _syncResolution();
     }
   }
 
   @override
   void didUpdateWidget(covariant AppAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Retry if URL changed, or if previous resolution failed (still null)
-    if (widget.url != oldWidget.url ||
-        widget.size != oldWidget.size ||
-        _resolvedUrl == null) {
-      _resolvedUrl = null;
-      _maybeResolve();
+    if (widget.size != oldWidget.size) {
+      _targetPixelSize = _avatarPixelSize(context, widget.size);
+    }
+    if (widget.url != oldWidget.url || _resolvedUrl == null) {
+      if (widget.url != oldWidget.url) {
+        _resolvedUrl = null;
+      }
+      _syncResolution();
     }
   }
 
-  Future<void> _maybeResolve() async {
-    final url = widget.url;
-    if (url == null || url.isEmpty) return;
-    if (url.startsWith('mxc://')) {
-      final resolved = await resolveMxcUrlAvatar(ref, url);
-      if (mounted && resolved != null) {
-        setState(() => _resolvedUrl = resolved);
-      }
-      // If null, _resolvedUrl stays null → shows fallback; retried on next rebuild
-    } else {
-      if (mounted) {
-        setState(() => _resolvedUrl = url);
-      } else {
-        _resolvedUrl = url;
-      }
+  Future<void> _resolveAsync(String url, int generation) async {
+    final resolved = await resolveMxcUrlAvatar(ref, url);
+    if (!mounted || generation != _resolveGeneration || widget.url != url) {
+      return;
+    }
+    if (resolved != null && resolved != _resolvedUrl) {
+      setState(() => _resolvedUrl = resolved);
     }
   }
 
@@ -113,12 +125,14 @@ class _AppAvatarState extends ConsumerState<AppAvatar> {
       ),
       clipBehavior: Clip.antiAlias,
       child: _AuthenticatedImage(
-        key: ValueKey('avatar-image:$url:${widget.size}'),
+        key: ValueKey('avatar-image:$url'),
         url: url,
         token: token,
         userId: userId,
         homeserver: homeserver,
         fallback: _buildFallback(context),
+        loadingPlaceholder: _buildFallback(context),
+        useOldImageOnUrlChange: true,
         width: widget.size,
         height: widget.size,
         cacheWidth: _targetPixelSize,
@@ -219,9 +233,19 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
   bool _decodeFailed = false;
   bool _successNotified = false;
   ui.Image? _lastReadyImage;
+  Object? _cachedImageSignature;
+  Widget? _cachedImageWidget;
+
+  ImageProvider _effectiveImageProvider(ImageProvider provider) =>
+      ResizeImage.resizeIfNeeded(
+        widget.cacheWidth,
+        widget.cacheHeight,
+        provider,
+      );
 
   void _rememberFrame(ImageProvider provider, int generation) {
-    final stream = provider.resolve(createLocalImageConfiguration(context));
+    final stream = _effectiveImageProvider(provider)
+        .resolve(createLocalImageConfiguration(context));
     late ImageStreamListener listener;
     listener = ImageStreamListener(
       (info, _) {
@@ -362,7 +386,32 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
       userId: widget.userId,
       homeserver: widget.homeserver,
     );
-    return CachedNetworkImage(
+    final colors = context.neu;
+    final signature = (
+      _generation,
+      _retry,
+      widget.url,
+      widget.token,
+      widget.userId,
+      widget.homeserver,
+      widget.fit,
+      widget.width,
+      widget.height,
+      widget.cacheWidth,
+      widget.cacheHeight,
+      widget.useOldImageOnUrlChange,
+      colors.accent,
+      colors.textTertiary,
+      Theme.of(context).brightness,
+    );
+    if (_successNotified &&
+        !_failed &&
+        _cachedImageWidget != null &&
+        _cachedImageSignature == signature) {
+      return _cachedImageWidget!;
+    }
+    _cachedImageSignature = signature;
+    _cachedImageWidget = CachedNetworkImage(
       key: ValueKey((_generation, _retry)),
       imageUrl: widget.url,
       cacheKey: cacheKey,
@@ -384,10 +433,11 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
         final source = widget;
         final generation = _generation;
         return Image(
-          image: imageProvider,
+          image: _effectiveImageProvider(imageProvider),
           fit: widget.fit ?? BoxFit.cover,
           width: widget.width,
           height: widget.height,
+          gaplessPlayback: true,
           frameBuilder: (context, child, frame, synchronous) {
             if (frame == null && !synchronous) {
               return _retainedImage() ?? widget.loadingPlaceholder ?? child;
@@ -492,6 +542,7 @@ class _AuthenticatedImageState extends ConsumerState<_AuthenticatedImage> {
               );
       },
     );
+    return _cachedImageWidget!;
   }
 }
 

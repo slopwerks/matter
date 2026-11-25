@@ -249,11 +249,15 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   bool _olderLoadBlockedWithUnknownList = false;
   String _derivedMessagesFingerprint = '';
   InputPanelMode _inputPanelMode = InputPanelMode.none;
-  double? _inputChromeHeight;
+  double? _composerChromeHeight;
+  double _typingChromeHeight = 0;
   double _panelBaselineHeight = 0;
+  double _transitionPickerBaselineHeight = 0;
+  double _lastTransitionKeyboardHeight = 0;
   double _expandedPickerHeight = 0;
   bool _isPickerResizing = false;
   Timer? _pickerResizeTimer;
+  Timer? _keyboardTransitionSettleTimer;
   Timer? _sentNoticeTimer;
   Timer? _forwardNoticeTimer;
   bool _showLatestMessageControl = false;
@@ -312,6 +316,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   final Map<String, int> _remoteToLocalSortTimestamp = {};
   bool _keepPickerDuringKeyboardOpen = false;
   bool _keyboardWasVisible = false;
+  bool _attachmentInputFocused = false;
 
   static const double _olderLoadTriggerMinDistance = 1200.0;
   static const double _olderLoadTriggerViewportMultiplier = 2.0;
@@ -344,11 +349,36 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         _inputPanelMode == InputPanelMode.attachment;
     final opensPicker =
         mode == InputPanelMode.emoji || mode == InputPanelMode.attachment;
+    final hasSoftKeyboard = switch (Theme.of(context).platform) {
+      TargetPlatform.linux ||
+      TargetPlatform.macOS ||
+      TargetPlatform.windows => false,
+      _ => true,
+    };
+    final currentBaseHeight = _panelBaselineHeight > 0
+        ? _panelBaselineHeight
+        : ComposerPickerPanel.baseHeight;
+    final transitionToKeyboard =
+        hasSoftKeyboard && pickerIsOpen && mode == InputPanelMode.keyboard;
+    if (!transitionToKeyboard) {
+      _keyboardTransitionSettleTimer?.cancel();
+      _keyboardTransitionSettleTimer = null;
+      _lastTransitionKeyboardHeight = 0;
+    }
     setState(() {
-      _keepPickerDuringKeyboardOpen =
-          pickerIsOpen && mode == InputPanelMode.keyboard;
+      _keepPickerDuringKeyboardOpen = transitionToKeyboard;
+      _transitionPickerBaselineHeight = transitionToKeyboard
+          ? currentBaseHeight
+          : 0;
+      if (transitionToKeyboard) {
+        _lastTransitionKeyboardHeight = 0;
+      }
       if (mode == InputPanelMode.none) {
         _keepPickerDuringKeyboardOpen = false;
+        _transitionPickerBaselineHeight = 0;
+      }
+      if (mode != InputPanelMode.attachment) {
+        _attachmentInputFocused = false;
       }
       if (!opensPicker || (pickerIsOpen && _inputPanelMode != mode)) {
         _expandedPickerHeight = 0;
@@ -1244,6 +1274,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     });
     _setSubscriptionsDesired(false);
     _pickerResizeTimer?.cancel();
+    _keyboardTransitionSettleTimer?.cancel();
     _sentNoticeTimer?.cancel();
     _forwardNoticeTimer?.cancel();
     _jumpHighlight.dispose();
@@ -2990,7 +3021,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     );
     _syncLocalImagePreviews(localOutgoingMessages);
     final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
-    if (keyboardHeight > 0 && keyboardHeight > _panelBaselineHeight) {
+    if (keyboardHeight > 0 &&
+        !_keepPickerDuringKeyboardOpen &&
+        keyboardHeight > _panelBaselineHeight) {
       _panelBaselineHeight = keyboardHeight;
     }
     final keyboardVisible = keyboardHeight > 0;
@@ -3009,9 +3042,11 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         _inputPanelMode == InputPanelMode.emoji ||
         _inputPanelMode == InputPanelMode.attachment ||
         _keepPickerDuringKeyboardOpen;
-    final pickerBaseHeight = _panelBaselineHeight > 0
-        ? _panelBaselineHeight
-        : ComposerPickerPanel.baseHeight;
+    final pickerBaseHeight = _keepPickerDuringKeyboardOpen
+        ? math.max(_transitionPickerBaselineHeight, keyboardHeight)
+        : (_panelBaselineHeight > 0
+              ? _panelBaselineHeight
+              : ComposerPickerPanel.baseHeight);
     final pickerFullHeight = keepsStablePicker
         ? math.max(pickerBaseHeight, _expandedPickerHeight)
         : pickerBaseHeight;
@@ -3060,9 +3095,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         : _measuredHeaderHeight != null
         ? _measuredHeaderHeight! + _headerBottomGap
         : mediaQuery.padding.top + _headerChromeHeight;
-    final inputChromeHeight =
-        _inputChromeHeight ??
-        _baseInputChromeHeight + mediaQuery.padding.bottom;
+    final baseInputChromeHeight =
+        (_composerChromeHeight ?? _baseInputChromeHeight) + _typingChromeHeight;
+    final inputChromeHeight = baseInputChromeHeight + mediaQuery.padding.bottom;
     final pickerMaxHeight = math.max(
       pickerBaseHeight,
       mediaQuery.size.height -
@@ -3070,14 +3105,16 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           mediaQuery.padding.bottom -
           _headerChromeHeight -
           audioHeight -
-          inputChromeHeight -
+          baseInputChromeHeight -
           8,
     );
+    final attachmentKeyboard =
+        _inputPanelMode == InputPanelMode.attachment &&
+        _attachmentInputFocused &&
+        keyboardVisible;
     final pickerHeight = keepsStablePicker
         ? math.max(
-            _inputPanelMode == InputPanelMode.attachment && keyboardVisible
-                ? attachmentCaptionClearance
-                : 0.0,
+            attachmentKeyboard ? attachmentCaptionClearance : 0.0,
             pickerFullHeight - keyboardHeight,
           )
         : 0.0;
@@ -3086,7 +3123,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         ? keyboardHeight
         : 0.0;
     final panelReservedHeight = keepsStablePicker
-        ? pickerFullHeight
+        ? math.max(pickerFullHeight, keyboardHeight + pickerHeight)
         : (_inputPanelMode == InputPanelMode.keyboard ? keyboardHeight : 0.0);
     final messageBottomPadding = inputChromeHeight + panelReservedHeight;
     final animatePanelChange = !keyboardVisible && !_isPickerResizing;
@@ -3104,12 +3141,41 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     // layer as well, so messages scroll under it the same way instead of
     // being clipped at its bottom edge.
 
-    if (_keepPickerDuringKeyboardOpen &&
-        keyboardHeight >= pickerFullHeight - 1) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_keepPickerDuringKeyboardOpen) return;
-        setState(() => _keepPickerDuringKeyboardOpen = false);
-      });
+    if (_keepPickerDuringKeyboardOpen) {
+      if (keyboardHeight >= pickerFullHeight - 1) {
+        _keyboardTransitionSettleTimer?.cancel();
+        _keyboardTransitionSettleTimer = null;
+        _lastTransitionKeyboardHeight = 0;
+        if (keyboardHeight > _panelBaselineHeight) {
+          _panelBaselineHeight = keyboardHeight;
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_keepPickerDuringKeyboardOpen) return;
+          setState(() {
+            _keepPickerDuringKeyboardOpen = false;
+            _transitionPickerBaselineHeight = 0;
+          });
+        });
+      } else if (keyboardVisible &&
+          (_lastTransitionKeyboardHeight - keyboardHeight).abs() >= 0.5) {
+        _lastTransitionKeyboardHeight = keyboardHeight;
+        _keyboardTransitionSettleTimer?.cancel();
+        _keyboardTransitionSettleTimer = Timer(
+          const Duration(milliseconds: 160),
+          () {
+            if (!mounted || !_keepPickerDuringKeyboardOpen) return;
+            setState(() {
+              final settled = MediaQuery.viewInsetsOf(context).bottom;
+              if (settled > _panelBaselineHeight) {
+                _panelBaselineHeight = settled;
+              }
+              _keepPickerDuringKeyboardOpen = false;
+              _transitionPickerBaselineHeight = 0;
+              _lastTransitionKeyboardHeight = 0;
+            });
+          },
+        );
+      }
     }
 
     // Live unread state (override-aware, matching the room list), not the
@@ -3209,7 +3275,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                     if ((!messageCachePrimed &&
                             messages.isEmpty &&
                             localOutgoingMessages.isEmpty) ||
-                        _inputChromeHeight == null ||
+                        _composerChromeHeight == null ||
                         (membersAsync.isLoading && !membersAsync.hasValue)) {
                       return Center(
                         child: CircularProgressIndicator(
@@ -3556,7 +3622,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               AnimatedPositioned(
                 right: 16,
                 bottom: messageBottomPadding + 12,
-                duration: const Duration(milliseconds: 180),
+                duration: animatePanelChange
+                    ? const Duration(milliseconds: 180)
+                    : Duration.zero,
                 curve: Curves.easeOutCubic,
                 child: LatestMessageControl(
                   unreadControl: showUnreadPill
@@ -3614,56 +3682,63 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                 bottom: bottomOffset,
                 duration: Duration.zero,
                 curve: Curves.easeOutCubic,
-                child: _MeasuredSize(
-                  onChanged: (size) {
-                    final chromeHeight = math.max(
-                      0.0,
-                      size.height - pickerHeight,
-                    );
-                    if (_inputChromeHeight == null) {
-                      setState(() => _inputChromeHeight = chromeHeight);
-                      return;
-                    }
-                    if ((inputChromeHeight - chromeHeight).abs() < 0.5) {
-                      return;
-                    }
-                    setState(() => _inputChromeHeight = chromeHeight);
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildTypingIndicator(),
-                      // The input panel belongs to the account the page was
-                      // opened under. After a switch-away the timeline is
-                      // cleared (messageCacheOwner mismatch) and subscriptions
-                      // are torn down, but the panel itself would remain
-                      // usable — typing or sending then would act as the new
-                      // account. Hide it until the switch-back listener
-                      // re-activates the page.
-                      if (_subscriptionsAccount == null ||
-                          activeUserId == _subscriptionsAccount)
-                        MessageInput(
-                          key: _messageInputKey,
-                          roomId: widget.roomId,
-                          totalMembers: totalMembers,
-                          panelMode: _inputPanelMode,
-                          pickerHeight: pickerHeight,
-                          pickerFullHeight: pickerFullHeight,
-                          pickerBaseHeight: pickerBaseHeight,
-                          pickerMaxHeight: pickerMaxHeight,
-                          animatePickerHeight: animatePanelChange,
-                          onPanelModeChanged: _setInputPanelMode,
-                          onPickerHeightChanged: (height) =>
-                              _handlePickerHeightChanged(
-                                height,
-                                pickerBaseHeight,
-                              ),
-                          resolveSendPresentation: _resolveSendPresentation,
-                          onMessageQueued: _handleMessageQueued,
-                          onMessageSent: _handleMessageSent,
-                        ),
-                    ],
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _MeasuredSize(
+                      onChanged: (size) {
+                        if (!mounted ||
+                            (_typingChromeHeight - size.height).abs() < 0.5) {
+                          return;
+                        }
+                        setState(() => _typingChromeHeight = size.height);
+                      },
+                      child: _buildTypingIndicator(),
+                    ),
+                    // The input panel belongs to the account the page was
+                    // opened under. After a switch-away the timeline is
+                    // cleared (messageCacheOwner mismatch) and subscriptions
+                    // are torn down, but the panel itself would remain
+                    // usable — typing or sending then would act as the new
+                    // account. Hide it until the switch-back listener
+                    // re-activates the page.
+                    if (_subscriptionsAccount == null ||
+                        activeUserId == _subscriptionsAccount)
+                      MessageInput(
+                        key: _messageInputKey,
+                        roomId: widget.roomId,
+                        totalMembers: totalMembers,
+                        panelMode: _inputPanelMode,
+                        pickerHeight: pickerHeight,
+                        pickerFullHeight: pickerFullHeight,
+                        pickerBaseHeight: pickerBaseHeight,
+                        pickerMaxHeight: pickerMaxHeight,
+                        animatePickerHeight: animatePanelChange,
+                        onPanelModeChanged: _setInputPanelMode,
+                        onAttachmentInputFocusChanged: (focused) {
+                          if (!mounted || _attachmentInputFocused == focused) {
+                            return;
+                          }
+                          setState(() => _attachmentInputFocused = focused);
+                        },
+                        onPickerHeightChanged: (height) =>
+                            _handlePickerHeightChanged(
+                              height,
+                              pickerBaseHeight,
+                            ),
+                        onChromeHeightChanged: (height) {
+                          if (!mounted) return;
+                          if (_composerChromeHeight != null &&
+                              (_composerChromeHeight! - height).abs() < 0.5) {
+                            return;
+                          }
+                          setState(() => _composerChromeHeight = height);
+                        },
+                        resolveSendPresentation: _resolveSendPresentation,
+                        onMessageQueued: _handleMessageQueued,
+                        onMessageSent: _handleMessageSent,
+                      ),
+                  ],
                 ),
               ),
               Positioned.fill(

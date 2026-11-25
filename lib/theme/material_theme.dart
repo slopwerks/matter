@@ -161,17 +161,16 @@ materialRootHeaderStyle(ThemeData theme, {required bool compact}) => (
   searchFill: compact
       ? theme.colorScheme.surface
       : theme.colorScheme.surfaceContainerHigh,
-  title: compact
-      ? theme.textTheme.headlineLarge?.copyWith(
-          color: theme.colorScheme.onPrimaryContainer,
-        )
-      : theme.textTheme.headlineMedium?.copyWith(
-          fontSize: 28,
-          fontWeight: FontWeight.w700,
-        ),
+  title: theme.textTheme.headlineMedium?.copyWith(
+    fontSize: 28,
+    fontWeight: FontWeight.w700,
+    color: compact ? theme.colorScheme.onPrimaryContainer : null,
+  ),
   shape: compact
       ? const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(40)),
+          borderRadius: BorderRadius.vertical(
+            bottom: Radius.circular(materialSurfaceRadius),
+          ),
         )
       : null,
 );

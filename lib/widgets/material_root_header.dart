@@ -27,8 +27,8 @@ class MaterialRootHeader extends StatelessWidget
   final double searchExpansion;
   final List<Widget> actions;
 
-  double get _toolbarHeight => compact ? 76 : 84;
-  static const searchExtent = 74.0;
+  double get _toolbarHeight => compact ? kToolbarHeight : 84;
+  static const searchExtent = 68.0;
 
   @override
   Size get preferredSize => Size.fromHeight(
@@ -40,53 +40,61 @@ class MaterialRootHeader extends StatelessWidget
     final theme = Theme.of(context);
     final style = materialRootHeaderStyle(theme, compact: compact);
     final profile = compact ? MaterialAdaptiveShell.profileOf(context) : null;
-    return SizedBox(
-      height: preferredSize.height + MediaQuery.paddingOf(context).top,
-      child: AppBar(
-        automaticallyImplyLeading: false,
-        toolbarHeight: _toolbarHeight,
-        backgroundColor: style.fill,
-        foregroundColor: style.foreground,
-        titleTextStyle: style.title,
-        shape: style.shape,
-        clipBehavior: Clip.antiAlias,
-        title: CascadeTitle(text: title, style: style.title!),
-        actions: [...actions, ?profile, const SizedBox(width: 12)],
-        flexibleSpace: compact
-            ? MaterialHeaderDecoration(color: style.decoration)
-            : null,
-        bottom: search == null
-            ? null
-            : PreferredSize(
-                preferredSize: Size.fromHeight(searchExtent * searchExpansion),
-                child: ClipRect(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    heightFactor: searchExpansion,
-                    child: Opacity(
-                      opacity: searchExpansion,
-                      child: Transform.scale(
-                        scale: .8 + .2 * searchExpansion,
-                        alignment: AlignmentDirectional.topEnd,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-                          child: Theme(
-                            data: theme.copyWith(
-                              searchBarTheme: theme.searchBarTheme.copyWith(
-                                backgroundColor: WidgetStatePropertyAll(
-                                  style.searchFill,
-                                ),
+    final keyedProfile = profile == null
+        ? null
+        : KeyedSubtree(
+            key: const ValueKey('root-header-profile'),
+            child: profile,
+          );
+    final header = AppBar(
+      automaticallyImplyLeading: false,
+      toolbarHeight: _toolbarHeight,
+      backgroundColor: style.fill,
+      foregroundColor: style.foreground,
+      titleTextStyle: style.title,
+      clipBehavior: Clip.antiAlias,
+      title: CascadeTitle(text: title, style: style.title!),
+      actions: [...actions, ?keyedProfile, const SizedBox(width: 12)],
+      flexibleSpace: compact
+          ? MaterialHeaderDecoration(color: style.decoration)
+          : null,
+      bottom: search == null
+          ? null
+          : PreferredSize(
+              preferredSize: Size.fromHeight(searchExtent * searchExpansion),
+              child: ClipRect(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  heightFactor: searchExpansion,
+                  child: Opacity(
+                    opacity: searchExpansion,
+                    child: Transform.scale(
+                      scale: .8 + .2 * searchExpansion,
+                      alignment: AlignmentDirectional.topEnd,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Theme(
+                          data: theme.copyWith(
+                            searchBarTheme: theme.searchBarTheme.copyWith(
+                              backgroundColor: WidgetStatePropertyAll(
+                                style.searchFill,
                               ),
                             ),
-                            child: search!,
                           ),
+                          child: search!,
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-      ),
+            ),
+    );
+    return SizedBox(
+      height: preferredSize.height + MediaQuery.paddingOf(context).top,
+      child: style.shape == null
+          ? header
+          : ClipPath.shape(shape: style.shape!, child: header),
     );
   }
 }

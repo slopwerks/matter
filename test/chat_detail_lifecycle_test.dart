@@ -1,9 +1,17 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matter/pages/chat/attachment_caption_composer.dart'
+    show attachmentCaptionClearance;
+import 'package:matter/pages/chat/attachment_picker.dart';
 import 'package:matter/pages/chat/chat_detail_page.dart';
+import 'package:matter/pages/chat/material_space_content.dart';
+import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/pages/contacts/contacts_page.dart';
+import 'package:matter/pages/settings/settings_page.dart';
 import 'package:matter/pages/chat/unread_messages_banner.dart';
 import 'package:matter/pages/chat/material_unread_pill.dart';
 import 'package:matter/pages/chat/emoji_picker_panel.dart';
@@ -5407,4 +5415,685 @@ void main() {
     await tester.pump();
     expect(find.text('Name B'), findsWidgets);
   });
+
+  testWidgets(
+    'compact Material shell forwards bottom viewInsets to embedded chat',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      const roomId = '!keyboard:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+          roomMembersProvider(roomId).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          '@alice:example.org';
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        _message(r'$m1', content: 'hello'),
+      ];
+
+      final position = ValueNotifier(0.0);
+      final navigator = GlobalKey<NavigatorState>();
+      addTearDown(position.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true),
+            navigatorObservers: [chatRouteObserver],
+            home: MaterialAdaptiveShell(
+              window: MaterialWindowClass.compact,
+              index: 0,
+              onNavigate: (_) {},
+              position: position,
+              profile: const SizedBox(),
+              railAccount: const SizedBox(),
+              railActions: (_) => const SizedBox(),
+              railSpaces: const SizedBox(),
+              unreadCount: 0,
+              chatOpen: true,
+              pages: [
+                MaterialConversationLayout(
+                  navigator: navigator,
+                  routesOpen: false,
+                  active: true,
+                  onRoutesChanged: (_) {},
+                  window: MaterialWindowClass.compact,
+                  list: const Scaffold(body: Text('list')),
+                  roomId: roomId,
+                  onCloseSupporting: () {},
+                  detail: const ChatDetailPage(
+                    roomId: roomId,
+                    roomName: 'Room',
+                  ),
+                ),
+                const Scaffold(body: Text('spaces')),
+                const Scaffold(body: Text('contacts')),
+                const Scaffold(body: Text('settings')),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.sentiment_satisfied_alt_rounded));
+      await tester.pumpAndSettle();
+      expect(find.byType(EmojiPickerPanel), findsOneWidget);
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
+
+      final chatContext = tester.element(find.byType(ChatDetailPage));
+      expect(MediaQuery.viewInsetsOf(chatContext).bottom, 320);
+      expect(find.byType(EmojiPickerPanel), findsNothing);
+      final surfaceBottom = tester
+          .getBottomLeft(find.byKey(const ValueKey('message-input-surface')))
+          .dy;
+      expect(surfaceBottom, lessThanOrEqualTo(480));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'Android chat timeline avoids first-frame safe-area overshoot on IME open',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewInsets = FakeViewPadding.zero;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetViewInsets);
+
+      const roomId = '!ime-safe-area:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+          roomMembersProvider(roomId).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          '@alice:example.org';
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        for (var i = 0; i < 20; i++)
+          _message('\$m$i', content: 'msg $i', timestamp: '${1000 + i * 10}'),
+      ];
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true)
+                .copyWith(platform: TargetPlatform.android),
+            home: const ChatDetailPage(roomId: roomId, roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final bubbleFinder = find.byKey(const ValueKey(r'text-bubble:$m19'));
+      final appBarInit = tester.getRect(find.byType(AppBar));
+      final bubbleInit = tester.getRect(bubbleFinder);
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+
+      // While the IME is still under the 24dp bottom nav bar, neither the
+      // composer nor the timeline should jump prematurely on Frame 1.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 20);
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 4);
+      await tester.pump();
+      expect(tester.getRect(bubbleFinder).bottom, bubbleInit.bottom);
+      await tester.pump();
+      expect(tester.getRect(bubbleFinder).bottom, bubbleInit.bottom);
+
+      // Jumping to full keyboard height must match the settled position on
+      // Frame 1 without an extra 24px upward overshoot and bounce-back.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+      await tester.pump();
+      final frame1Bottom = tester.getRect(bubbleFinder).bottom;
+      expect(tester.getRect(find.byType(AppBar)), appBarInit);
+
+      await tester.pump();
+      final frame2Bottom = tester.getRect(bubbleFinder).bottom;
+      expect(frame1Bottom, frame2Bottom);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'Android emoji-to-keyboard keeps picker baseline stable during IME rise',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewInsets = FakeViewPadding.zero;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetViewInsets);
+
+      const roomId = '!emoji-ime-android:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+          roomMembersProvider(roomId).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          '@alice:example.org';
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        for (var i = 0; i < 10; i++)
+          _message('\$m$i', content: 'msg $i', timestamp: '${1000 + i * 10}'),
+      ];
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true)
+                .copyWith(platform: TargetPlatform.android),
+            home: const ChatDetailPage(roomId: roomId, roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.sentiment_satisfied_alt_rounded));
+      await tester.pumpAndSettle();
+      final surfaceFinder = find.byKey(const ValueKey('message-input-surface'));
+      final emojiOpenTop = tester.getRect(surfaceFinder).top;
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+
+      for (final inset in [80.0, 200.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+        await tester.pump(const Duration(milliseconds: 16));
+        final input = tester.widget<MessageInput>(find.byType(MessageInput));
+        expect(input.pickerFullHeight, greaterThanOrEqualTo(316));
+        expect(tester.getRect(surfaceFinder).top, emojiOpenTop + 24);
+      }
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
+      expect(find.byType(EmojiPickerPanel), findsNothing);
+      expect(tester.getRect(surfaceFinder).bottom, 468);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+
+      // Verify a compact keyboard shorter than 316 also avoids collapsing at
+      // intermediate frames and settles cleanly after animation completes.
+      tester.view.viewInsets = FakeViewPadding.zero;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      const shortRoomId = '!emoji-ime-short:example.org';
+      final shortContainer = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+          roomMembersProvider(shortRoomId).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(shortContainer.dispose);
+      shortContainer.read(sessionReadyProvider.notifier).value = true;
+      shortContainer.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      shortContainer
+              .read(messageCacheOwnerProvider(shortRoomId).notifier)
+              .value =
+          '@alice:example.org';
+      shortContainer
+              .read(messageCachePrimedProvider(shortRoomId).notifier)
+              .value =
+          true;
+      shortContainer.read(messageCacheProvider(shortRoomId).notifier).value = [
+        _message('\$s0', content: 'short'),
+      ];
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: shortContainer,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true)
+                .copyWith(platform: TargetPlatform.android),
+            home: const ChatDetailPage(roomId: shortRoomId, roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.sentiment_satisfied_alt_rounded));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 80);
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        tester.widget<MessageInput>(find.byType(MessageInput)).pickerFullHeight,
+        316,
+      );
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(find.byType(EmojiPickerPanel), findsNothing);
+      expect(tester.getRect(surfaceFinder).bottom, 508);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'Material inline search pages keep viewport and FAB fixed on IME open',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewInsets = FakeViewPadding.zero;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetViewInsets);
+
+      // Space content
+      {
+        final position = ValueNotifier(0.0);
+        addTearDown(position.dispose);
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(sessionReadyProvider.notifier).value = true;
+        container.read(activeUserIdProvider.notifier).value =
+            '@alice:example.org';
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: neuTestTheme(material: true)
+                  .copyWith(platform: TargetPlatform.android),
+              home: MaterialAdaptiveShell(
+                window: MaterialWindowClass.compact,
+                index: 1,
+                onNavigate: (_) {},
+                position: position,
+                profile: const SizedBox(),
+                railAccount: const SizedBox(),
+                railActions: (_) => const SizedBox(),
+                railSpaces: const SizedBox(),
+                unreadCount: 0,
+                chatOpen: false,
+                floatingActionButton: FloatingActionButton(
+                  onPressed: () {},
+                  child: const Icon(Icons.add),
+                ),
+                pages: [
+                  const Scaffold(body: Text('chats')),
+                  MaterialSpaceContent(
+                    title: '空间',
+                    spaces: const AsyncValue.data([]),
+                    rooms: const AsyncValue.data([]),
+                    onCreate: () {},
+                    onJoin: () {},
+                  ),
+                  const ContactsPage(),
+                  const SettingsPage(),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final fabBefore = tester.getRect(find.byType(FloatingActionButton));
+        final scrollBefore = tester.getRect(
+          find.byType(CustomScrollView).first,
+        );
+        await tester.tap(find.byType(TextField).first);
+        await tester.pumpAndSettle();
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+        tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+        await tester.pump();
+        final fabAfter = tester.getRect(find.byType(FloatingActionButton));
+        expect(fabAfter.top, greaterThan(600));
+        expect((fabAfter.top - fabBefore.top).abs(), lessThanOrEqualTo(24));
+        expect(
+          tester.getRect(find.byType(CustomScrollView).first).bottom,
+          scrollBefore.bottom,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
+
+      // Contacts & Settings
+      for (final tabIndex in [2, 3]) {
+        tester.view.viewInsets = FakeViewPadding.zero;
+        tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+        final position = ValueNotifier(0.0);
+        addTearDown(position.dispose);
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(sessionReadyProvider.notifier).value = true;
+        container.read(activeUserIdProvider.notifier).value =
+            '@alice:example.org';
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: neuTestTheme(material: true)
+                  .copyWith(platform: TargetPlatform.android),
+              home: MaterialAdaptiveShell(
+                window: MaterialWindowClass.compact,
+                index: tabIndex,
+                onNavigate: (_) {},
+                position: position,
+                profile: const SizedBox(),
+                railAccount: const SizedBox(),
+                railActions: (_) => const SizedBox(),
+                railSpaces: const SizedBox(),
+                unreadCount: 0,
+                chatOpen: false,
+                pages: [
+                  const Scaffold(body: Text('chats')),
+                  const Scaffold(body: Text('spaces')),
+                  const ContactsPage(),
+                  const SettingsPage(),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final bodyFinder = tabIndex == 2
+            ? find.byType(CustomScrollView).first
+            : find.byType(ListView).first;
+        final beforeBottom = tester.getRect(bodyFinder).bottom;
+        await tester.tap(find.byType(TextField).first);
+        await tester.pumpAndSettle();
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+        tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+        await tester.pump();
+        expect(tester.getRect(bodyFinder).bottom, beforeBottom);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
+
+      // ChatSearchPage
+      {
+        tester.view.viewInsets = FakeViewPadding.zero;
+        tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+        final container = ProviderContainer(
+          overrides: [chatRoomsProvider.overrideWith((ref) async => const [])],
+        );
+        addTearDown(container.dispose);
+        container.read(sessionReadyProvider.notifier).value = true;
+        container.read(activeUserIdProvider.notifier).value =
+            '@alice:example.org';
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: neuTestTheme(material: true)
+                  .copyWith(platform: TargetPlatform.android),
+              home: const ChatSearchPage(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final before = tester.getRect(find.byType(TabBarView));
+        tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+        tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+        await tester.pump();
+        expect(tester.getRect(find.byType(TabBarView)), before);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
+    },
+  );
+
+  testWidgets(
+    'Android keyboard-to-attachment transition does not stack 144dp bar over IME',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewInsets = FakeViewPadding.zero;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetViewInsets);
+
+      const roomId = '!keyboard-to-attachment:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+          roomMembersProvider(roomId).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          '@alice:example.org';
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        for (var i = 0; i < 15; i++)
+          _message('\$m$i', content: 'msg $i', timestamp: '${1000 + i * 10}'),
+      ];
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true)
+                .copyWith(platform: TargetPlatform.android),
+            home: const ChatDetailPage(roomId: roomId, roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+      await tester.pumpAndSettle();
+
+      final surfaceFinder = find.byKey(const ValueKey('message-input-surface'));
+      final bubbleFinder = find.byKey(const ValueKey(r'text-bubble:$m14'));
+      final openKeyboardSurfaceTop = tester.getRect(surfaceFinder).top;
+
+      await tester.tap(find.byIcon(Icons.add_rounded));
+      await tester.pump();
+      await tester.pump();
+
+      for (final inset in [320.0, 200.0, 80.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        await tester.pump();
+        final input = tester.widget<MessageInput>(find.byType(MessageInput));
+        expect(input.panelMode, InputPanelMode.attachment);
+        expect(input.pickerHeight, 320.0 - inset);
+        expect(tester.getRect(surfaceFinder).top, openKeyboardSurfaceTop);
+        expect(
+          tester.getRect(bubbleFinder).bottom,
+          lessThanOrEqualTo(tester.getRect(surfaceFinder).top),
+        );
+      }
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(AttachmentPicker)).height, 320);
+      expect(
+        tester.getRect(bubbleFinder).bottom,
+        lessThanOrEqualTo(tester.getRect(surfaceFinder).top),
+      );
+
+      // Attachment -> keyboard transition also hands off without jumping.
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        tester.widget<MessageInput>(find.byType(MessageInput)).pickerHeight,
+        120,
+      );
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
+      expect(find.byType(AttachmentPicker), findsNothing);
+      expect(tester.getRect(surfaceFinder).bottom, 468);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'Android attachment text input clears timeline above IME and tab switch hides IME',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.viewInsets = FakeViewPadding.zero;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetViewInsets);
+
+      final textInputMethods = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.textInput, (call) async {
+            textInputMethods.add(call.method);
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.textInput, null),
+      );
+
+      const roomId = '!attachment-ime-clearance:example.org';
+      final container = ProviderContainer(
+        overrides: [
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+          roomMembersProvider(roomId).overrideWith((ref) async => []),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+      container.read(messageCacheOwnerProvider(roomId).notifier).value =
+          '@alice:example.org';
+      container.read(messageCachePrimedProvider(roomId).notifier).value = true;
+      container.read(messageCacheProvider(roomId).notifier).value = [
+        for (var i = 0; i < 15; i++)
+          _message('\$m$i', content: 'msg $i', timestamp: '${1000 + i * 10}'),
+      ];
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true)
+                .copyWith(platform: TargetPlatform.android),
+            home: const ChatDetailPage(roomId: roomId, roomName: 'Room'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.add_rounded));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('投票'));
+      await tester.pumpAndSettle();
+
+      final questionField = find.widgetWithText(TextField, '问题');
+      await tester.tap(questionField);
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 0);
+      await tester.pumpAndSettle();
+
+      final inputAfterFocus = tester.widget<MessageInput>(
+        find.byType(MessageInput),
+      );
+      expect(inputAfterFocus.pickerHeight, attachmentCaptionClearance);
+      expect(
+        tester.getSize(find.byType(AttachmentPicker)).height,
+        attachmentCaptionClearance,
+      );
+
+      final surfaceRect = tester.getRect(
+        find.byKey(const ValueKey('message-input-surface')),
+      );
+      final latestBubbleRect = tester.getRect(
+        find.byKey(const ValueKey(r'text-bubble:$m14')),
+      );
+      expect(latestBubbleRect.bottom, lessThanOrEqualTo(surfaceRect.top));
+
+      textInputMethods.clear();
+      await tester.tap(find.byIcon(Icons.photo_library_rounded));
+      await tester.pumpAndSettle();
+
+      expect(textInputMethods, contains('TextInput.hide'));
+      expect(
+        tester.widget<MessageInput>(find.byType(MessageInput)).pickerHeight,
+        0,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
 }

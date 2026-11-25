@@ -31,9 +31,12 @@ class ComposerTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    final material = context.isMaterial;
     return Container(
       constraints: BoxConstraints(
-        minHeight: expanded ? (compact ? 80 : 96) : 44,
+        minHeight: expanded
+            ? (compact ? 80 : 96)
+            : (material ? kMinInteractiveDimension : 44),
         maxHeight: expanded
             ? (MediaQuery.sizeOf(context).height * .3).clamp(
                 compact ? 80.0 : 96.0,
@@ -41,7 +44,7 @@ class ComposerTextField extends StatelessWidget {
               )
             : 120,
       ),
-      decoration: expanded || context.isMaterial
+      decoration: expanded || material
           ? null
           : NeuDecoration(
               colors: colors,
@@ -56,6 +59,9 @@ class ComposerTextField extends StatelessWidget {
         controller: controller,
         focusNode: focusNode,
         readOnly: readOnly,
+        textAlignVertical: expanded
+            ? TextAlignVertical.top
+            : TextAlignVertical.center,
         contextMenuBuilder: (context, editable) =>
             markdownSelectionContextMenuBuilder(
               context,
@@ -68,24 +74,24 @@ class ComposerTextField extends StatelessWidget {
           hintText: '消息',
           hintStyle: Theme.of(context).textTheme.bodyLarge
               ?.copyWith(color: colors.textTertiary),
-          filled: expanded || context.isMaterial ? false : null,
+          filled: expanded || material ? false : null,
           contentPadding: EdgeInsets.symmetric(
-            horizontal: expanded ? 8 : 14,
-            vertical: expanded ? 6 : 11,
+            horizontal: expanded ? 8 : (material ? 2 : 14),
+            vertical: expanded ? 6 : (material ? 12 : 11),
           ),
-          border: context.isMaterial && !expanded
+          border: material && !expanded
               ? const OutlineInputBorder(
                   borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,
-          enabledBorder: context.isMaterial && !expanded
+          enabledBorder: material && !expanded
               ? const OutlineInputBorder(
                   borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,
                 )
               : InputBorder.none,
-          focusedBorder: context.isMaterial && !expanded
+          focusedBorder: material && !expanded
               ? const OutlineInputBorder(
                   borderRadius: materialComposerRadius,
                   borderSide: BorderSide.none,

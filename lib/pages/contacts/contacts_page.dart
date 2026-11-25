@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:lpinyin/lpinyin.dart';
@@ -365,8 +367,12 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
               SliverPadding(
                 padding: EdgeInsets.only(
                   bottom: context.isMaterial
-                      ? NeuSpacing.floatingDockClearance +
-                            MediaQuery.paddingOf(context).bottom
+                      ? math.max(
+                          NeuSpacing.floatingDockClearance +
+                              MediaQuery.paddingOf(context).bottom,
+                          MediaQuery.viewInsetsOf(context).bottom +
+                              NeuSpacing.lg,
+                        )
                       : NeuSpacing.navClearance,
                 ),
               ),
@@ -411,6 +417,7 @@ class _ContactsPageState extends ConsumerState<ContactsPage> {
       ],
     );
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: context.neu.base,
       body: context.isMaterial
           ? MaterialSearchDirectory(

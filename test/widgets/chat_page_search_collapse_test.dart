@@ -1,14 +1,35 @@
-import 'package:material_ui/material_ui.dart';
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:matter/app.dart';
 import 'package:matter/pages/chat/chat_page.dart';
 import 'package:matter/pages/chat/search_page.dart';
+import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
-import 'package:matter/widgets/mobile_tab_view.dart';
-import 'package:matter/widgets/glass.dart';
 import 'package:matter/src/rust/api/matrix.dart';
+import 'package:matter/src/rust/frb_generated.dart';
+import 'package:matter/widgets/glass.dart';
+import 'package:matter/widgets/mobile_tab_view.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/neu_test_theme.dart';
+
+class _FilterMemoryFakeApi implements RustLibApi {
+  final sync = StreamController<SyncEvent>.broadcast();
+
+  @override
+  Future<List<AccountInfo>> crateApiMatrixListAccounts() async => [];
+  @override
+  Stream<SyncEvent> crateApiMatrixWatchSyncEvents() => sync.stream;
+  @override
+  Stream<TypingNotification> crateApiMatrixWatchTypingNotifications() =>
+      const Stream.empty();
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected: ${invocation.memberName}');
+}
 
 void main() {
   ChatRoom room(String id, String name) => ChatRoom(
@@ -256,4 +277,122 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'Material filter switches preserve collapsed header and scroll memory',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final api = _FilterMemoryFakeApi();
+      RustLib.initMock(api: api);
+      addTearDown(() async {
+        await api.sync.close();
+        RustLib.dispose();
+      });
+
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final rooms = [
+        for (var i = 0; i < 20; i++)
+          ChatRoom(
+            id: '!room$i:example.org',
+            name: 'Room $i',
+            lastMessage: 'msg',
+            lastMessageTime: '${1000 - i}',
+            lastEventId: '\$e$i',
+            unreadCount: i == 0 ? 1 : 0,
+            isMarkedUnread: false,
+            roomType: i.isEven ? 'dm' : 'group',
+            isEncrypted: false,
+            isMuted: false,
+            roomState: 'joined',
+          ),
+      ];
+      final container = ProviderContainer(
+        overrides: [
+          allChatRoomsProvider.overrideWith((ref) async => rooms),
+          spacesProvider.overrideWith((ref) async => const []),
+          ungroupedRoomsProvider.overrideWith((ref) async => rooms),
+          contactsProvider.overrideWith((ref) async => const []),
+          ignoredUserIdsProvider.overrideWith((ref) async => <String>{}),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(sessionReadyProvider.notifier).value = true;
+      container.read(activeUserIdProvider.notifier).value =
+          '@alice:example.org';
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: neuTestTheme(material: true),
+            home: const MatterApp(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Scroll down on 全部 to collapse the search bar.
+      await tester.drag(find.byType(ListView), const Offset(0, -320));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('header-search-entry')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('open-chat-search')), findsNothing);
+      final roomScrollable = find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      );
+      final scrolledOffset = tester
+          .state<ScrollableState>(roomScrollable)
+          .position
+          .pixels;
+      expect(scrolledOffset, greaterThan(0));
+
+      // Switch to 未读 (only 1 room, unscrollable): forehead stays collapsed.
+      await tester.tap(find.text('未读'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('header-search-entry')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('open-chat-search')), findsNothing);
+
+      // Switch to 私聊: forehead still stays collapsed.
+      await tester.tap(find.text('私聊'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('header-search-entry')).hitTestable(),
+        findsOneWidget,
+      );
+
+      // Switch back to 全部: restores previous scroll offset and collapsed state.
+      await tester.tap(find.text('全部'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<ScrollableState>(roomScrollable).position.pixels,
+        closeTo(scrolledOffset, 1.0),
+      );
+      expect(
+        find.byKey(const ValueKey('header-search-entry')).hitTestable(),
+        findsOneWidget,
+      );
+
+      // Pulling back to the top expands the search bar again.
+      await tester.drag(find.byType(ListView), const Offset(0, 500));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('open-chat-search')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('header-search-entry')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
 }

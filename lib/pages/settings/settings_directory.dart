@@ -63,6 +63,7 @@ extension _MaterialSettingsDirectory on _SettingsPageState {
       }
     }
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: MaterialSearchDirectory(
         title: '设置',
         hint: '搜索设置或开关',
@@ -89,8 +90,11 @@ extension _MaterialSettingsDirectory on _SettingsPageState {
             NeuSpacing.lg,
             NeuSpacing.lg,
             NeuSpacing.lg,
-            NeuSpacing.floatingDockClearance +
-                MediaQuery.paddingOf(context).bottom,
+            math.max(
+              NeuSpacing.floatingDockClearance +
+                  MediaQuery.paddingOf(context).bottom,
+              MediaQuery.viewInsetsOf(context).bottom + NeuSpacing.lg,
+            ),
           ),
           children: [
             if (query.isEmpty) ...[
