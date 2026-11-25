@@ -98,8 +98,14 @@ macro_rules! declare_room_state_api {
             account_user_id: String,
             space_id: String,
             room_id: String,
+            new_room: Option<bool>,
         ) -> Result<(), String> {
-            spaces::add_room_to_space(account_user_id, space_id, room_id).await
+            spaces::add_room_to_space(account_user_id, space_id, room_id, new_room.unwrap_or(false)).await
+        }
+
+        #[frb]
+        pub async fn set_canonical_space(account_user_id: String, space_id: String, room_id: String) -> Result<(), String> {
+            space_inheritance::set_canonical_space(account_user_id, space_id, room_id).await
         }
 
         #[frb]

@@ -2123,10 +2123,18 @@ Future<void> refreshMessages(WidgetRef ref, String roomId) {
   return refreshMessagesFromNetwork(ref, roomId);
 }
 
+final stickerPackEditPermissionProvider = FutureProvider.autoDispose
+    .family<bool, String>((ref, roomId) async {
+      final account = ref.watch(activeUserIdProvider);
+      if (account == null || !ref.watch(sessionReadyProvider)) return false;
+      return rust.canEditStickerPacks(accountUserId: account, roomId: roomId);
+    });
+
 final stickerPacksProvider =
     FutureProvider.family<List<rust.StickerPack>, String>((ref, roomId) async {
-      if (!ref.watch(sessionReadyProvider)) return [];
-      return rust.getStickerPacks(roomId: roomId);
+      final user = ref.watch(activeUserIdProvider);
+      if (!ref.watch(sessionReadyProvider) || user == null) return [];
+      return rust.getStickerPacks(accountUserId: user, roomId: roomId);
     });
 
 /// Convert mxc:// URI to HTTP URL for display.
@@ -2985,6 +2993,8 @@ final syncStreamProvider =
             // now that the connection has produced a sync cycle.
             _recoverIgnoredListError(ref);
           case rust.SyncEvent_FullRefreshRequired():
+            ref.invalidate(stickerPackEditPermissionProvider);
+            ref.invalidate(stickerPacksProvider);
             // A sync restart may have dropped member/knock events: refresh
             // those lists too. And the event loss means the current room's
             // newly displayed messages never got their per-message
@@ -3029,6 +3039,7 @@ final syncStreamProvider =
               );
             }
           case rust.SyncEvent_RoomMembersChanged(:final roomId):
+            ref.invalidate(stickerPackEditPermissionProvider(roomId));
             // Member state changed: refresh this room's member and knock
             // lists (each provider refetches only when watched — the chat
             // page for members, the management page for knocks). Debounced
@@ -3049,6 +3060,8 @@ final syncStreamProvider =
             scheduleRoomRefresh();
           case rust.SyncEvent_IgnoredUsersChanged():
             revalidateIgnoredUsers();
+          case rust.SyncEvent_StickerPacksChanged():
+            ref.invalidate(stickerPacksProvider);
         }
       });
 

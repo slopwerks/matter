@@ -3,7 +3,12 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/disabled_sticker_packs_provider.dart';
+import '../../src/rust/api/matrix.dart'
+    show setStickerPacksCollected, StickerPackKey;
+import '../../widgets/sheets.dart';
 import '../../theme/neu_colors.dart';
 import 'sticker_catalog.dart';
 import 'sticker_preview.dart';
@@ -280,10 +285,23 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   @override
   Widget build(BuildContext context) {
     final packsAsync = ref.watch(stickerPacksProvider(widget.roomId));
+    final account = ref.watch(activeUserIdProvider);
+    final disabledPacks = account == null
+        ? null
+        : ref
+              .watch(
+                disabledStickerPacksProvider((
+                  account: account,
+                  roomId: widget.roomId,
+                )),
+              )
+              .value;
 
     return packsAsync.when(
       data: (remotePacks) {
-        final packs = stickerPacksFromRemote(remotePacks);
+        final packs = stickerPacksFromRemote(remotePacks)
+            .where((pack) => disabledPacks?.contains(pack.key) != true)
+            .toList();
         _packs = packs;
         _syncPackKeys(packs.length);
         _syncVisibleStickers(packs);
@@ -318,7 +336,38 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     );
   }
 
+  Future<void> _removePack(
+    BuildContext context,
+    StickerPack pack,
+    String account,
+  ) async {
+    final scope = importedPackScope(pack, roomId: widget.roomId);
+    if (scope == null) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final messengerContext = Overlay.of(context, rootOverlay: true).context;
+    try {
+      await setStickerPacksCollected(
+        accountUserId: account,
+        packs: [StickerPackKey(roomId: scope.roomId, stateKey: scope.stateKey)],
+        collected: false,
+      );
+      if (!messengerContext.mounted ||
+          container.read(activeUserIdProvider) != account) {
+        return;
+      }
+      neuToast(messengerContext, '已移除贴纸包「${pack.title}」');
+      container.invalidate(stickerPacksProvider);
+    } catch (error) {
+      if (!messengerContext.mounted ||
+          container.read(activeUserIdProvider) != account) {
+        return;
+      }
+      neuToast(messengerContext, '移除贴纸包失败: $error');
+    }
+  }
+
   Widget _buildPackStream(List<StickerPack> packs) {
+    final account = ref.watch(activeUserIdProvider);
     final colors = context.neu;
     if (packs.isEmpty) {
       return Center(
@@ -414,6 +463,25 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                                           ),
                                     ),
                                   ),
+                                  if (account != null &&
+                                      importedPackScope(
+                                            packs[i],
+                                            roomId: widget.roomId,
+                                          ) !=
+                                          null)
+                                    GestureDetector(
+                                      onTap: () => unawaited(
+                                        _removePack(context, packs[i], account),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(left: 8),
+                                        child: Icon(
+                                          Icons.remove_circle_outline,
+                                          size: 16,
+                                          color: colors.textTertiary,
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),

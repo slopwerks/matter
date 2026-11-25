@@ -334,6 +334,7 @@ class ComposerSendController {
     );
     try {
       await rust.sendSticker(
+        accountUserId: draftKey.userId,
         roomId: draftKey.roomId,
         imageUrl: imageUrl,
         body: sticker.body,

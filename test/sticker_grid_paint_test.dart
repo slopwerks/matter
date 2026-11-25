@@ -135,6 +135,9 @@ void main() {
     final boundary = GlobalKey();
     final pack = rust.StickerPack(
       id: 'pack',
+      roomId: 'room',
+      stateKey: '',
+      collected: false,
       title: 'Pack',
       source: 'room',
       stickers: [
@@ -245,6 +248,9 @@ void main() {
       );
       final pack = rust.StickerPack(
         id: 'pack1',
+        roomId: '!r:e',
+        stateKey: '',
+        collected: false,
         title: 'Pack 1',
         source: 'room',
         stickers: [

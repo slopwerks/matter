@@ -288,6 +288,7 @@ pub(super) async fn add_room_to_space(
     account_user_id: String,
     space_id: String,
     room_id: String,
+    new_room: bool,
 ) -> Result<(), String> {
     let generation = SYNC_GENERATION.load(Ordering::SeqCst);
 
@@ -345,11 +346,29 @@ pub(super) async fn add_room_to_space(
             .map_err(|e| api_err("spaces", format!("将房间加入空间失败: {e}")))?;
         notify_sync_event_for_generation(generation, SyncEvent::SyncCompleted);
 
+        if new_room && !can_set_parent {
+            return Err("已加入空间，但没有权限设置主空间".to_owned());
+        }
         if can_set_parent {
+            use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
+            let parents = child_room.get_state_events_static::<SpaceParentEventContent>().await
+                .map_err(|err| format!("已加入空间，但读取父空间失败：{err}"))?;
+            let mut has_canonical = false;
+            for raw in parents {
+                if let Ok(matrix_sdk::deserialized_responses::SyncOrStrippedState::Sync(
+                    matrix_sdk::ruma::events::SyncStateEvent::Original(event),
+                )) = raw.deserialize() {
+                    if event.content.via.is_empty() { continue; }
+                    if event.state_key == space_room_id { return Ok(()); }
+                    has_canonical |= event.content.canonical;
+                }
+            }
+            let mut parent = SpaceParentEventContent::new(via);
+            parent.canonical = new_room && !has_canonical;
             child_room
                 .send_state_event_for_key(
                     &space_room_id,
-                    matrix_sdk::ruma::events::space::parent::SpaceParentEventContent::new(via),
+                    parent,
                 )
                 .await
                 .map_err(|e| {

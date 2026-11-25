@@ -1,7 +1,13 @@
 import '../../src/rust/api/matrix.dart' as rust;
 
 class StickerPack {
+  rust.StickerPackKey get key =>
+      rust.StickerPackKey(roomId: roomId, stateKey: stateKey);
+
   final String id;
+  final String roomId;
+  final String stateKey;
+  final bool collected;
   final String title;
   final String accent;
   final String source;
@@ -10,6 +16,9 @@ class StickerPack {
 
   const StickerPack({
     required this.id,
+    required this.roomId,
+    required this.stateKey,
+    required this.collected,
     required this.title,
     required this.accent,
     required this.source,
@@ -58,6 +67,9 @@ List<StickerPack> stickerPacksFromRemote(List<rust.StickerPack> packs) {
     };
     return StickerPack(
       id: pack.id,
+      roomId: pack.roomId,
+      stateKey: pack.stateKey,
+      collected: pack.collected,
       title: pack.title,
       accent: accent,
       source: pack.source,
@@ -76,4 +88,17 @@ List<StickerPack> stickerPacksFromRemote(List<rust.StickerPack> packs) {
       }).toList(),
     );
   }).toList();
+}
+
+bool ownsRoomPack(StickerPack pack, {required String roomId}) =>
+    pack.source == 'room' && pack.roomId == roomId;
+
+({String roomId, String stateKey})? importedPackScope(
+  StickerPack pack, {
+  required String roomId,
+}) {
+  if (!pack.collected || pack.source != 'room' || pack.roomId == roomId) {
+    return null;
+  }
+  return (roomId: pack.roomId, stateKey: pack.stateKey);
 }

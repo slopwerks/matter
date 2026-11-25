@@ -109,6 +109,10 @@ pub(super) fn live_room_subscription(
     let mut subscription =
         matrix_sdk::ruma::api::client::sync::sync_events::v5::request::RoomSubscription::default();
     subscription.timeline_limit = UInt::from(50u32);
-    subscription.required_state = vec![(StateEventType::RoomPinnedEvents, String::new())];
+    subscription.required_state = vec![
+        (StateEventType::RoomPinnedEvents, String::new()),
+        ("m.room.image_pack".into(), "*".to_owned()),
+        ("im.ponies.room_emotes".into(), "*".to_owned()),
+    ];
     subscription
 }

@@ -83,6 +83,7 @@ macro_rules! declare_lifecycle_api {
             RoomMembersChanged { room_id: String },
             /// The account's ignored-user list changed.
             IgnoredUsersChanged,
+            StickerPacksChanged,
         }
 
         #[frb]
