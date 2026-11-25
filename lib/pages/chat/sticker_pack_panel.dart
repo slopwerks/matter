@@ -17,6 +17,7 @@ class StickerPackPanel extends ConsumerStatefulWidget {
   final ScrollController scrollController;
   final bool packStripAtBottom;
   final String query;
+  final bool active;
 
   const StickerPackPanel({
     super.key,
@@ -26,6 +27,7 @@ class StickerPackPanel extends ConsumerStatefulWidget {
     required this.scrollController,
     this.packStripAtBottom = false,
     this.query = '',
+    this.active = true,
   });
 
   @override
@@ -219,6 +221,11 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification ||
+        notification is ScrollUpdateNotification ||
+        notification is OverscrollNotification) {
+      _hideHoldPreview();
+    }
     if (notification is ScrollUpdateNotification) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _updateActivePackByViewport();
@@ -228,6 +235,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   }
 
   void _showHoldPreview(StickerItem sticker) {
+    if (!widget.active) return;
     _holdPreviewSticker = sticker;
     final overlay = Overlay.of(context);
     _holdPreviewOverlay ??= OverlayEntry(
@@ -290,6 +298,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   @override
   void didUpdateWidget(covariant StickerPackPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.active || widget.query != oldWidget.query) _hideHoldPreview();
     if (widget.query != oldWidget.query) {
       _jumpGeneration++;
       _isJumpingToPack = false;
@@ -311,49 +320,57 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
         ? ref.watch(allChatRoomsProvider).asData?.value
         : null;
     final roomNames = <String, String>{
-      if (rooms != null) for (final room in rooms) room.id: room.name,
+      if (rooms != null)
+        for (final room in rooms) room.id: room.name,
     };
 
-    return packsAsync.when(
-      data: (remotePacks) {
-        final packs = searchStickerPacks(
-          stickerPacksFromRemote(remotePacks),
-          widget.query,
-        );
-        _activePackIndex = _activePackIndex.clamp(
-          0,
-          packs.isEmpty ? 0 : packs.length - 1,
-        );
-        _packs = packs;
-        _syncPackKeys(packs.length);
-        _syncVisibleStickers(packs);
-        return _buildPackStream(packs, roomNames);
-      },
-      loading: () => Center(
-        child: CircularProgressIndicator(
-          color: context.neu.accent,
-          strokeWidth: 2,
-        ),
-      ),
-      error: (error, _) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
-            child: Text(
-              '加载贴纸包失败',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+    return Listener(
+      // Own release handling above lazy cells: their recognizers may be disposed
+      // while the panel-owned overlay is still visible.
+      onPointerUp: (_) => _hideHoldPreview(),
+      onPointerCancel: (_) => _hideHoldPreview(),
+      onPointerSignal: (_) => _hideHoldPreview(),
+      child: packsAsync.when(
+        data: (remotePacks) {
+          final packs = searchStickerPacks(
+            stickerPacksFromRemote(remotePacks),
+            widget.query,
+          );
+          _activePackIndex = _activePackIndex.clamp(
+            0,
+            packs.isEmpty ? 0 : packs.length - 1,
+          );
+          _packs = packs;
+          _syncPackKeys(packs.length);
+          _syncVisibleStickers(packs);
+          return _buildPackStream(packs, roomNames);
+        },
+        loading: () => Center(
+          child: CircularProgressIndicator(
+            color: context.neu.accent,
+            strokeWidth: 2,
           ),
-          Expanded(
-            child: Center(
+        ),
+        error: (error, _) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
               child: Text(
-                '当前无法读取可用贴纸包',
-                style: Theme.of(context).textTheme.bodyMedium,
+                '加载贴纸包失败',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Center(
+                child: Text(
+                  '当前无法读取可用贴纸包',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

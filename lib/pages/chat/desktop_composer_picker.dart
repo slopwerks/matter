@@ -218,6 +218,7 @@ class _DesktopComposerPickerState extends State<DesktopComposerPicker> {
                               roomId: widget.roomId,
                               scrollController: _stickers,
                               packStripAtBottom: true,
+                              active: widget.tab == ComposerPickerTab.sticker,
                               query: _query,
                               onPackNavigation: () async {},
                               onStickerSelected: widget.onStickerSelected,

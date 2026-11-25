@@ -280,12 +280,57 @@ void main() {
           await holdMouse.down(holdPosition);
           await tester.pump(const Duration(milliseconds: 600));
           expect(find.byType(StickerHoldPreviewOverlay), findsOneWidget);
+          // Recycling the pressed cell can dispose its gesture recognizer.
+          scroll.jumpTo(scroll.position.maxScrollExtent);
+          await tester.pumpAndSettle();
+          expect(find.byType(StickerHoldPreviewOverlay), findsNothing);
           await holdMouse.up();
           await tester.pump();
           expect(find.byType(StickerHoldPreviewOverlay), findsNothing);
           await holdMouse.removePointer();
+          scroll.jumpTo(160);
+          await tester.pumpAndSettle();
+          final cancelMouse = await tester.createGesture(
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          await cancelMouse.down(holdPosition);
+          await tester.pump(const Duration(milliseconds: 600));
+          expect(find.byType(StickerHoldPreviewOverlay), findsOneWidget);
+          await cancelMouse.cancel();
+          await tester.pump();
+          expect(find.byType(StickerHoldPreviewOverlay), findsNothing);
+          await cancelMouse.removePointer();
+
+          final tabMouse = await tester.createGesture(
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          await tabMouse.down(holdPosition);
+          await tester.pump(const Duration(milliseconds: 600));
+          expect(find.byType(StickerHoldPreviewOverlay), findsOneWidget);
+          await tester.tap(
+            find.byKey(const ValueKey('desktop-picker-tab-emoji')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(StickerHoldPreviewOverlay), findsNothing);
+          await tabMouse.up();
+          await tabMouse.removePointer();
+          await tester.tap(
+            find.byKey(const ValueKey('desktop-picker-tab-sticker')),
+          );
+          await tester.pumpAndSettle();
           scroll.jumpTo(0);
           await tester.pumpAndSettle();
+          final outsideMouse = await tester.createGesture(
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          await outsideMouse.down(holdPosition);
+          await tester.pump(const Duration(milliseconds: 600));
+          expect(find.byType(StickerHoldPreviewOverlay), findsOneWidget);
+          await outsideMouse.moveTo(const Offset(2, 2));
+          await outsideMouse.up();
+          await tester.pump(const Duration(seconds: 1));
+          expect(find.byType(StickerHoldPreviewOverlay), findsNothing);
+          await outsideMouse.removePointer();
           final search = find.descendant(
             of: find.byKey(const ValueKey('desktop-picker-search')),
             matching: find.byType(TextField),

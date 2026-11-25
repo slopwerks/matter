@@ -259,17 +259,21 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
         _dismiss();
       },
       child: widget.enableHoldPreview
-          ? GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onLongPressStart: (_) {
-                _wait?.cancel();
-                _dismissGeneration++;
-                _holding = true;
-                _overlay.show();
-              },
-              onLongPressEnd: (_) => _dismiss(),
-              onLongPressCancel: _dismiss,
-              child: widget.child,
+          ? Listener(
+              onPointerUp: (_) => _dismiss(),
+              onPointerCancel: (_) => _dismiss(),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPressStart: (_) {
+                  _wait?.cancel();
+                  _dismissGeneration++;
+                  _holding = true;
+                  _overlay.show();
+                },
+                onLongPressEnd: (_) => _dismiss(),
+                onLongPressCancel: _dismiss,
+                child: widget.child,
+              ),
             )
           : widget.child,
     ),
