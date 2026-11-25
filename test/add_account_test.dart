@@ -294,6 +294,8 @@ void main() {
             )
             .last,
       );
+      await tester.ensureVisible(find.text('添加账号'));
+      await tester.pumpAndSettle();
     }
     await tester.tap(find.text('添加账号'));
     await tester.pumpAndSettle();
