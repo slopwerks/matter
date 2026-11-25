@@ -360,7 +360,10 @@ compact emoji grid and outlined sticker thumbnails in both themes. Desktop
 platforms use a composer-anchored popup with emoji/sticker tabs at the top,
 continuous sections and a bottom category/pack strip that follows scrolling.
 The desktop popup does not reserve timeline space; outside clicks and Escape
-close it. The active pack uses an
+close it. Its tab indicator sits on the tab bar's bottom edge. Both desktop
+footer strips start at the left and share 44 dp group buttons, 4 dp gaps and
+6 dp outer insets. Group-button radius is the popup radius minus that inset,
+keeping the bottom corner arcs concentric. The active pack uses an
 accent outline, and long-press previews use the floating rounded panel.
 Video viewer counters use `labelMedium`; speed and menu controls share the
 viewer pills, and volume uses the viewer's high-contrast slider colours.

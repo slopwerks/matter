@@ -324,6 +324,31 @@ final materialMarkdownEditorDecoration = materialAttachmentCaptionDecoration
       contentPadding: const EdgeInsets.all(20),
     );
 
+const desktopPickerGroupInset = 6.0;
+const desktopPickerGroupSize = 44.0;
+const desktopPickerGroupGap = 4.0;
+const desktopPickerFooterHeight =
+    desktopPickerGroupSize + desktopPickerGroupInset * 2;
+
+double desktopPickerGroupRadius(BuildContext context) =>
+    (context.isMaterial ? materialSurfaceRadius : NeuRadius.content) -
+    desktopPickerGroupInset;
+
+ButtonStyle desktopPickerGroupButtonStyle(
+  BuildContext context, {
+  required bool selected,
+}) => IconButton.styleFrom(
+  fixedSize: const Size.square(desktopPickerGroupSize),
+  minimumSize: const Size.square(desktopPickerGroupSize),
+  maximumSize: const Size.square(desktopPickerGroupSize),
+  padding: EdgeInsets.zero,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  backgroundColor: selected ? context.neu.accentSoft : Colors.transparent,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(desktopPickerGroupRadius(context)),
+  ),
+);
+
 ({Color fill, ShapeBorder shape, double elevation, ButtonStyle tab})
 desktopComposerPickerStyle(BuildContext context, {required bool selected}) {
   final theme = Theme.of(context);

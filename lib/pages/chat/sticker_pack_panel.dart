@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import 'sticker_catalog.dart';
 import 'sticker_preview.dart';
 
@@ -158,9 +159,13 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   Future<void> _revealPackThumbnail(int index) async {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || !_packStripController.hasClients) return;
-    const itemStride = 48.0;
-    const horizontalPadding = 10.0;
-    const itemWidth = 40.0;
+    final itemStride = widget.packStripAtBottom
+        ? desktopPickerGroupSize + desktopPickerGroupGap
+        : 48.0;
+    final horizontalPadding = widget.packStripAtBottom
+        ? desktopPickerGroupInset
+        : 10.0;
+    final itemWidth = widget.packStripAtBottom ? desktopPickerGroupSize : 40.0;
     final position = _packStripController.position;
     final itemStart = horizontalPadding + index * itemStride;
     final itemEnd = itemStart + itemWidth;
@@ -338,7 +343,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
           : VerticalDirection.down,
       children: [
         SizedBox(
-          height: 58,
+          height: widget.packStripAtBottom ? desktopPickerFooterHeight : 58,
           child: NotificationListener<OverscrollIndicatorNotification>(
             onNotification: (notification) {
               notification.disallowIndicator();
@@ -346,13 +351,18 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
             },
             child: ListView.separated(
               controller: _packStripController,
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+              padding: widget.packStripAtBottom
+                  ? const EdgeInsets.all(desktopPickerGroupInset)
+                  : const EdgeInsets.fromLTRB(10, 10, 10, 8),
               scrollDirection: Axis.horizontal,
               itemCount: packs.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              separatorBuilder: (_, _) => SizedBox(
+                width: widget.packStripAtBottom ? desktopPickerGroupGap : 8,
+              ),
               itemBuilder: (context, index) {
                 final pack = packs[index];
                 return _PackThumb(
+                  desktop: widget.packStripAtBottom,
                   label: pack.title,
                   sticker: pack.stickers.isEmpty ? null : pack.stickers.first,
                   fallback: pack.accent,
@@ -483,12 +493,14 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
 
 class _PackThumb extends StatelessWidget {
   final String label;
+  final bool desktop;
   final StickerItem? sticker;
   final String fallback;
   final bool selected;
   final VoidCallback onTap;
 
   const _PackThumb({
+    required this.desktop,
     required this.label,
     required this.sticker,
     required this.fallback,
@@ -499,6 +511,28 @@ class _PackThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    if (desktop) {
+      return Semantics(
+        selected: selected,
+        button: true,
+        child: IconButton(
+          tooltip: label,
+          onPressed: onTap,
+          isSelected: selected,
+          style: desktopPickerGroupButtonStyle(context, selected: selected),
+          icon: Padding(
+            padding: const EdgeInsets.all(6),
+            child: sticker == null
+                ? Center(child: Text(fallback))
+                : RemoteStickerPreview(
+                    sticker: sticker!,
+                    fallback: fallback,
+                    cacheDimension: 96,
+                  ),
+          ),
+        ),
+      );
+    }
     return Tooltip(
       message: label,
       child: Semantics(

@@ -128,6 +128,55 @@ void main() {
           expect(popup.right, lessThanOrEqualTo(800));
           expect(popup.bottom, lessThanOrEqualTo(600));
           expect(popup.top, greaterThanOrEqualTo(0));
+          void expectIndicator(ComposerPickerTab tab) {
+            final tabs = tester.getRect(
+              find.byKey(const ValueKey('desktop-picker-tabs')),
+            );
+            final line = tester.getRect(
+              find.byKey(const ValueKey('desktop-picker-indicator')),
+            );
+            expect(line.bottom, tabs.bottom);
+            expect(
+              line.center.dx,
+              closeTo(
+                tabs.left + tabs.width * (tab.index == 0 ? .25 : .75),
+                .01,
+              ),
+            );
+          }
+
+          void expectConcentric(IconButton button, Rect rect) {
+            final panelShape =
+                tester
+                        .widget<Material>(
+                          find.byKey(const ValueKey('desktop-composer-popup')),
+                        )
+                        .shape!
+                    as RoundedRectangleBorder;
+            final iconShape =
+                button.style!.shape!.resolve({})! as RoundedRectangleBorder;
+            final outer = panelShape.borderRadius
+                .resolve(TextDirection.ltr)
+                .bottomLeft
+                .x;
+            final inner = iconShape.borderRadius
+                .resolve(TextDirection.ltr)
+                .bottomLeft
+                .x;
+            expect(rect.left - popup.left, 6);
+            expect(popup.bottom - rect.bottom, 6);
+            expect(rect.left + inner, popup.left + outer);
+            expect(rect.bottom - inner, popup.bottom - outer);
+          }
+
+          expectIndicator(ComposerPickerTab.emoji);
+          final firstEmoji = find.byKey(
+            const ValueKey('desktop-emoji-category-0'),
+          );
+          expectConcentric(
+            tester.widget<IconButton>(firstEmoji),
+            tester.getRect(firstEmoji),
+          );
           if (const bool.fromEnvironment('RENDER_PICKER')) {
             await tester.runAsync(() async {
               final image =
@@ -152,6 +201,14 @@ void main() {
             );
             await tester.pump(const Duration(milliseconds: 30));
           }
+          expectIndicator(ComposerPickerTab.sticker);
+          final firstPack = find.byWidgetPredicate(
+            (widget) => widget is IconButton && widget.tooltip == 'Pack 0',
+          );
+          expectConcentric(
+            tester.widget<IconButton>(firstPack),
+            tester.getRect(firstPack),
+          );
           final footer = find.byType(ListView);
           final scroll = tester
               .widget<CustomScrollView>(find.byType(CustomScrollView).last)

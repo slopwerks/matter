@@ -5,6 +5,28 @@ import 'package:matter/pages/chat/emoji_data.dart';
 import 'package:matter/theme/material_theme.dart';
 
 void main() {
+  testWidgets('short category strip stays left aligned on a wide desktop', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildMaterialTheme(Brightness.light),
+        home: Scaffold(
+          body: SizedBox(
+            width: 780,
+            height: 460,
+            child: DesktopEmojiPicker(onSelected: (_) {}),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey('desktop-emoji-category-0')))
+          .left,
+      6,
+    );
+  });
   testWidgets(
     'category footer follows scrolling and navigates distant sections',
     (tester) async {

@@ -142,36 +142,52 @@ class _DesktopEmojiPickerState extends State<DesktopEmojiPicker> {
         ),
         const Divider(height: 1),
         SizedBox(
-          height: 48,
-          child: SingleChildScrollView(
-            controller: _strip,
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (var i = 0; i < kEmojiCategories.length; i++)
-                  Semantics(
-                    key: _icons[i],
-                    selected: i == _active,
-                    button: true,
-                    child: IconButton(
-                      key: ValueKey('desktop-emoji-category-$i'),
-                      tooltip: kEmojiCategories[i].label,
-                      isSelected: i == _active,
-                      style: IconButton.styleFrom(
-                        backgroundColor: i == _active ? style.selected : null,
+          height: desktopPickerFooterHeight,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SingleChildScrollView(
+              controller: _strip,
+              padding: const EdgeInsets.all(desktopPickerGroupInset),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < kEmojiCategories.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        right: i == kEmojiCategories.length - 1
+                            ? 0
+                            : desktopPickerGroupGap,
                       ),
-                      onPressed: () => _scroll.animateTo(
-                        _offsets[i].clamp(0, _scroll.position.maxScrollExtent),
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOutCubic,
-                      ),
-                      icon: Text(
-                        kEmojiCategories[i].icon,
-                        style: const TextStyle(fontSize: 20),
+                      child: Semantics(
+                        key: _icons[i],
+                        selected: i == _active,
+                        button: true,
+                        child: IconButton(
+                          key: ValueKey('desktop-emoji-category-$i'),
+                          tooltip: kEmojiCategories[i].label,
+                          isSelected: i == _active,
+                          style: desktopPickerGroupButtonStyle(
+                            context,
+                            selected: i == _active,
+                          ),
+                          onPressed: () => _scroll.animateTo(
+                            _offsets[i].clamp(
+                              0,
+                              _scroll.position.maxScrollExtent,
+                            ),
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOutCubic,
+                          ),
+                          icon: Text(
+                            kEmojiCategories[i].icon,
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

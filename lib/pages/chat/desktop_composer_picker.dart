@@ -102,44 +102,79 @@ class _DesktopComposerPickerState extends State<DesktopComposerPicker> {
               child: Column(
                 children: [
                   SizedBox(
+                    key: const ValueKey('desktop-picker-tabs'),
                     height: 48,
-                    child: Row(
+                    child: Stack(
                       children: [
-                        for (final tab in ComposerPickerTab.values)
-                          Expanded(
-                            child: TextButton(
-                              key: ValueKey('desktop-picker-tab-${tab.name}'),
-                              style: desktopComposerPickerStyle(
-                                context,
-                                selected: widget.tab == tab,
-                              ).tab,
-                              onPressed: () => widget.onTabChanged(tab),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    tab == ComposerPickerTab.emoji
-                                        ? '表情'
-                                        : '贴纸',
+                        Row(
+                          children: [
+                            for (final tab in ComposerPickerTab.values)
+                              Expanded(
+                                child: SizedBox(
+                                  height: double.infinity,
+                                  child: TextButton(
+                                    key: ValueKey(
+                                      'desktop-picker-tab-${tab.name}',
+                                    ),
+                                    style: desktopComposerPickerStyle(
+                                      context,
+                                      selected: widget.tab == tab,
+                                    ).tab,
+                                    onPressed: () => widget.onTabChanged(tab),
+                                    child: Text(
+                                      tab == ComposerPickerTab.emoji
+                                          ? '表情'
+                                          : '贴纸',
+                                    ),
                                   ),
-                                  if (widget.tab == tab)
-                                    SizedBox(
-                                      height: 2,
-                                      child: Divider(
-                                        thickness: 2,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Divider(height: 1),
+                        ),
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AnimatedAlign(
+                              alignment: widget.tab == ComposerPickerTab.emoji
+                                  ? Alignment.bottomLeft
+                                  : Alignment.bottomRight,
+                              duration: MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 160),
+                              curve: Curves.easeOutCubic,
+                              child: FractionallySizedBox(
+                                widthFactor: .5,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: Container(
+                                    key: const ValueKey(
+                                      'desktop-picker-indicator',
+                                    ),
+                                    height: 3,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(3),
                                       ),
                                     ),
-                                ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
+                        ),
                       ],
                     ),
                   ),
-                  const Divider(height: 1),
                   Expanded(
                     child: IndexedStack(
                       index: widget.tab.index,
