@@ -51,6 +51,24 @@ class StickerItem {
   }
 }
 
+String stickerPackSourceLabel(StickerPack pack, Map<String, String> roomNames) {
+  if (pack.source == 'room') {
+    // Match known IDs rather than splitting on ':' (servers can include ports).
+    String? sourceRoomId;
+    for (final roomId in roomNames.keys) {
+      if (pack.id.startsWith('room:$roomId:') &&
+          (sourceRoomId == null || roomId.length > sourceRoomId.length)) {
+        sourceRoomId = roomId;
+      }
+    }
+    final name = roomNames[sourceRoomId]?.trim();
+    if (name != null && name.isNotEmpty && name != sourceRoomId) {
+      return '房间：$name';
+    }
+  }
+  return pack.id;
+}
+
 List<StickerPack> stickerPacksFromRemote(List<rust.StickerPack> packs) {
   return packs.map((pack) {
     final accent = switch (pack.source) {

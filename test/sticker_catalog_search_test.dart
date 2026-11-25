@@ -24,6 +24,37 @@ void main() {
       ],
     ),
   ]);
+  test('room source displays its known name with an ID fallback', () {
+    final pack = packs.first;
+    expect(
+      stickerPackSourceLabel(pack, {'!cats:example.org': '猫猫交流'}),
+      '房间：猫猫交流',
+    );
+    expect(stickerPackSourceLabel(pack, {}), pack.id);
+    expect(stickerPackSourceLabel(pack, {'!cats:example.org': '  '}), pack.id);
+    expect(
+      stickerPackSourceLabel(pack, {'!cats:example.org': '!cats:example.org'}),
+      pack.id,
+    );
+    expect(
+      stickerPackSourceLabel(pack, {'!cat:example.org': 'Other room'}),
+      pack.id,
+    );
+    const portPack = StickerPack(
+      id: 'room:!cats:example.org:8448:animals:cats',
+      title: 'Cats',
+      accent: '房',
+      source: 'room',
+      stickers: [],
+    );
+    expect(
+      stickerPackSourceLabel(portPack, {
+        '!cats:example.org': 'Other room',
+        '!cats:example.org:8448': 'Cats room',
+      }),
+      '房间：Cats room',
+    );
+  });
   test('Matrix image-map shortcode survives conversion and is searchable', () {
     expect(packs.first.stickers.first.shortcode, 'cat_wave');
     expect(

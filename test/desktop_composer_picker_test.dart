@@ -68,7 +68,7 @@ void main() {
           final packs = [
             for (var i = 0; i < 6; i++)
               rust.StickerPack(
-                id: '$i',
+                id: 'room:!stickers:example.org:$i',
                 title: 'Pack $i',
                 source: 'room',
                 stickers: [
@@ -90,6 +90,23 @@ void main() {
             ProviderScope(
               overrides: [
                 stickerPacksProvider('room').overrideWith((ref) async => packs),
+                allChatRoomsProvider.overrideWith(
+                  (ref) async => [
+                    const rust.ChatRoom(
+                      id: '!stickers:example.org',
+                      name: '贴纸交流',
+                      lastMessage: '',
+                      lastMessageTime: '',
+                      lastEventId: '',
+                      unreadCount: 0,
+                      isMarkedUnread: false,
+                      roomType: 'group',
+                      isEncrypted: false,
+                      isMuted: false,
+                      roomState: 'joined',
+                    ),
+                  ],
+                ),
               ],
               child: RepaintBoundary(
                 key: boundary,
@@ -276,7 +293,7 @@ void main() {
           await mouse.moveTo(tester.getCenter(preview));
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pumpAndSettle();
-          expect(find.text('Sticker 0\nPack 2\n2'), findsOneWidget);
+          expect(find.text('Sticker 0\nPack 2\n房间：贴纸交流'), findsOneWidget);
           final previewRect = tester.getRect(preview);
           final visibleCard = tester.element(find.text(':0:'));
           for (var i = 0; i < 30; i++) {
@@ -285,7 +302,7 @@ void main() {
             );
             await tester.pump(const Duration(milliseconds: 16));
             expect(
-              find.text('Sticker 0\nPack 2\n2'),
+              find.text('Sticker 0\nPack 2\n房间：贴纸交流'),
               findsOneWidget,
               reason: 'move $i',
             );

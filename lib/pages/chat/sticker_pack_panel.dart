@@ -307,6 +307,12 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   @override
   Widget build(BuildContext context) {
     final packsAsync = ref.watch(stickerPacksProvider(widget.roomId));
+    final rooms = widget.packStripAtBottom
+        ? ref.watch(allChatRoomsProvider).asData?.value
+        : null;
+    final roomNames = <String, String>{
+      if (rooms != null) for (final room in rooms) room.id: room.name,
+    };
 
     return packsAsync.when(
       data: (remotePacks) {
@@ -321,7 +327,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
         _packs = packs;
         _syncPackKeys(packs.length);
         _syncVisibleStickers(packs);
-        return _buildPackStream(packs);
+        return _buildPackStream(packs, roomNames);
       },
       loading: () => Center(
         child: CircularProgressIndicator(
@@ -352,7 +358,10 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     );
   }
 
-  Widget _buildPackStream(List<StickerPack> packs) {
+  Widget _buildPackStream(
+    List<StickerPack> packs,
+    Map<String, String> roomNames,
+  ) {
     final colors = context.neu;
     if (packs.isEmpty) {
       return Center(
@@ -501,7 +510,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                                             ? sticker.body
                                             : ':${sticker.shortcode}:',
                                         details:
-                                            '${sticker.body}\n${packs[i].title}\n${packs[i].id}',
+                                            '${sticker.body}\n${packs[i].title}\n${stickerPackSourceLabel(packs[i], roomNames)}',
                                         child: card,
                                       )
                                     : card;
