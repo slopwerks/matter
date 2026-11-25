@@ -267,6 +267,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byTooltip('Pack 0'), findsNothing);
           expect(find.byTooltip('Pack 2'), findsOneWidget);
+          await tester.pump(const Duration(milliseconds: 250));
           final preview = find.byType(DesktopPickerPreview).first;
           final mouse = await tester.createGesture(
             kind: ui.PointerDeviceKind.mouse,

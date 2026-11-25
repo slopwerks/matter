@@ -7,6 +7,7 @@ import '../../theme/material_theme.dart';
 import 'composer_picker_panel.dart';
 import 'desktop_emoji_picker.dart';
 import 'sticker_catalog.dart';
+import 'desktop_picker_preview.dart';
 import '../../widgets/app_search_field.dart';
 
 /// Desktop-only anchored overlay; it never reserves space below the composer.
@@ -97,77 +98,82 @@ class _DesktopComposerPickerState extends State<DesktopComposerPicker> {
               }
               return KeyEventResult.ignored;
             },
-            child: Material(
-              key: const ValueKey('desktop-composer-popup'),
-              color: style.fill,
-              shape: style.shape,
-              elevation: style.elevation,
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  SizedBox(
-                    key: const ValueKey('desktop-picker-tabs'),
-                    height: 48,
-                    child: Stack(
-                      children: [
-                        Row(
-                          children: [
-                            for (final tab in ComposerPickerTab.values)
-                              Expanded(
-                                child: SizedBox(
-                                  height: double.infinity,
-                                  child: TextButton(
-                                    key: ValueKey(
-                                      'desktop-picker-tab-${tab.name}',
-                                    ),
-                                    style: desktopComposerPickerStyle(
-                                      context,
-                                      selected: widget.tab == tab,
-                                    ).tab,
-                                    onPressed: () => widget.onTabChanged(tab),
-                                    child: Text(
-                                      tab == ComposerPickerTab.emoji
-                                          ? '表情'
-                                          : '贴纸',
+            child: DesktopPickerHoverScope(
+              identity: (widget.tab, _query),
+              child: Material(
+                key: const ValueKey('desktop-composer-popup'),
+                color: style.fill,
+                shape: style.shape,
+                elevation: style.elevation,
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      key: const ValueKey('desktop-picker-tabs'),
+                      height: 48,
+                      child: Stack(
+                        children: [
+                          Row(
+                            children: [
+                              for (final tab in ComposerPickerTab.values)
+                                Expanded(
+                                  child: SizedBox(
+                                    height: double.infinity,
+                                    child: TextButton(
+                                      key: ValueKey(
+                                        'desktop-picker-tab-${tab.name}',
+                                      ),
+                                      style: desktopComposerPickerStyle(
+                                        context,
+                                        selected: widget.tab == tab,
+                                      ).tab,
+                                      onPressed: () => widget.onTabChanged(tab),
+                                      child: Text(
+                                        tab == ComposerPickerTab.emoji
+                                            ? '表情'
+                                            : '贴纸',
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                          ],
-                        ),
-                        const Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: Divider(height: 1),
-                        ),
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: AnimatedAlign(
-                              alignment: widget.tab == ComposerPickerTab.emoji
-                                  ? Alignment.bottomLeft
-                                  : Alignment.bottomRight,
-                              duration: MediaQuery.disableAnimationsOf(context)
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 160),
-                              curve: Curves.easeOutCubic,
-                              child: FractionallySizedBox(
-                                widthFactor: .5,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Container(
-                                    key: const ValueKey(
-                                      'desktop-picker-indicator',
+                            ],
+                          ),
+                          const Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Divider(height: 1),
+                          ),
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: AnimatedAlign(
+                                alignment: widget.tab == ComposerPickerTab.emoji
+                                    ? Alignment.bottomLeft
+                                    : Alignment.bottomRight,
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 160),
+                                curve: Curves.easeOutCubic,
+                                child: FractionallySizedBox(
+                                  widthFactor: .5,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
                                     ),
-                                    height: 3,
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary,
-                                      borderRadius: const BorderRadius.vertical(
-                                        top: Radius.circular(3),
+                                    child: Container(
+                                      key: const ValueKey(
+                                        'desktop-picker-indicator',
+                                      ),
+                                      height: 3,
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                              top: Radius.circular(3),
+                                            ),
                                       ),
                                     ),
                                   ),
@@ -175,54 +181,54 @@ class _DesktopComposerPickerState extends State<DesktopComposerPicker> {
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-                    child: AppSearchField(
-                      key: const ValueKey('desktop-picker-search'),
-                      controller: _search,
-                      hint: widget.tab == ComposerPickerTab.emoji
-                          ? '搜索表情'
-                          : '搜索贴纸包、名称或 :shortcode:',
-                      onChanged: (value) => setState(() => _query = value),
-                      trailing: _query.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: '清除搜索',
-                              icon: const Icon(Icons.close_rounded),
-                              onPressed: () {
-                                _search.clear();
-                                setState(() => _query = '');
-                              },
-                            ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      child: AppSearchField(
+                        key: const ValueKey('desktop-picker-search'),
+                        controller: _search,
+                        hint: widget.tab == ComposerPickerTab.emoji
+                            ? '搜索表情'
+                            : '搜索贴纸包、名称或 :shortcode:',
+                        onChanged: (value) => setState(() => _query = value),
+                        trailing: _query.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: '清除搜索',
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () {
+                                  _search.clear();
+                                  setState(() => _query = '');
+                                },
+                              ),
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: IndexedStack(
-                      index: widget.tab.index,
-                      children: [
-                        DesktopEmojiPicker(
-                          onSelected: widget.onEmojiSelected,
-                          query: _query,
-                        ),
-                        if (_stickersOpened)
-                          StickerPackPanel(
-                            roomId: widget.roomId,
-                            scrollController: _stickers,
-                            packStripAtBottom: true,
+                    Expanded(
+                      child: IndexedStack(
+                        index: widget.tab.index,
+                        children: [
+                          DesktopEmojiPicker(
+                            onSelected: widget.onEmojiSelected,
                             query: _query,
-                            onPackNavigation: () async {},
-                            onStickerSelected: widget.onStickerSelected,
-                          )
-                        else
-                          const SizedBox.shrink(),
-                      ],
+                          ),
+                          if (_stickersOpened)
+                            StickerPackPanel(
+                              roomId: widget.roomId,
+                              scrollController: _stickers,
+                              packStripAtBottom: true,
+                              query: _query,
+                              onPackNavigation: () async {},
+                              onStickerSelected: widget.onStickerSelected,
+                            )
+                          else
+                            const SizedBox.shrink(),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

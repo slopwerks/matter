@@ -371,7 +371,12 @@ non-interactive hover cards with enlarged previews and name metadata.
 Hover-card chrome follows the active skin: Material uses a higher semantic
 surface, subtle outline and downward shadow; Neu uses a soft convex gradient,
 top-left highlight and bottom-right shadow. Name and metadata have separate
-foreground roles. The active pack uses an
+foreground roles. Hover previews require 500 ms of pointer stability within
+4 dp. Scrolling (including inertial/programmatic scrolling), pointer presses,
+search changes and tab switches dismiss previews and pending timers. After
+scrolling ends, a 250 ms cooldown and fresh physical mouse movement are required;
+layout-driven mouse-enter events never arm previews. The overlay belongs to the
+cell lifecycle and ignores pointer input. The active pack uses an
 accent outline, and long-press previews use the floating rounded panel.
 Video viewer counters use `labelMedium`; speed and menu controls share the
 viewer pills, and volume uses the viewer's high-contrast slider colours.
