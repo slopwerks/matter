@@ -1,10 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../providers/chat_visual_settings_provider.dart';
 import '../theme/neu_colors.dart';
 import 'glass.dart';
 import 'neu_field.dart';
 import 'neu_surface.dart';
+import 'neu_toast.dart';
 
 /// 统一的磨砂玻璃底部弹层容器。
 Future<T?> showNeuSheet<T>({
@@ -388,41 +388,7 @@ Future<String?> showNeuPrompt(
   );
 }
 
-/// 统一的原型提示:超椭圆浮层 SnackBar,新拟物配色。
+/// 统一的轻提示:内容宽度、忽略点击的浮层,不遮挡输入框。
 void neuToast(BuildContext context, String message) {
-  if (context.isMaterial) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-    return;
-  }
-  final colors = context.neu;
-  final superellipseEnabled =
-      ChatVisualSettingsScope.maybeOf(context)?.superellipseBorderEnabled ??
-      true;
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: colors.text),
-        ),
-        backgroundColor: colors.surfaceStrong,
-        elevation: 0,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        duration: const Duration(milliseconds: 1500),
-        shape: superellipseEnabled
-            ? RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(NeuRadius.surface),
-                side: BorderSide(color: colors.hairline),
-              )
-            : RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(NeuRadius.surface),
-                side: BorderSide(color: colors.hairline),
-              ),
-      ),
-    );
+  showNeuToast(context, message);
 }
