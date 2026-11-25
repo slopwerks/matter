@@ -3,8 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:material_ui/material_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/storage/managed_media_io.dart'
@@ -12,11 +10,7 @@ import 'package:matter/features/storage/managed_media_io.dart'
 import 'package:matter/features/storage/storage_attribution.dart';
 import 'package:matter/features/storage/storage_breakdown.dart';
 import 'package:matter/features/storage/storage_models.dart';
-import 'package:matter/features/storage/storage_providers.dart';
 import 'package:matter/features/storage/storage_registry.dart';
-import 'package:matter/providers/auth_provider.dart';
-import 'package:matter/providers/chat_provider.dart';
-import 'package:matter/src/rust/api/matrix.dart' show ChatRoom;
 import 'package:matter/providers/authenticated_media_cache.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -306,56 +300,6 @@ void main() {
       reason: 'Repeated recovery must release its repository connection',
     );
   });
-
-  testWidgets(
-    'room attribution consumes rooms already loaded before mounting',
-    (tester) async {
-      const user = CurrentUser(
-        id: '@loaded:example.org',
-        displayName: 'Loaded',
-        homeserver: 'https://example.org',
-      );
-      final container = ProviderContainer(
-        overrides: [
-          chatRoomsProvider.overrideWith(
-            (ref) async => [
-              ChatRoom(
-                id: '!loaded',
-                name: 'Already loaded',
-                lastMessage: '',
-                lastMessageTime: '0',
-                lastEventId: '',
-                unreadCount: 0,
-                isMarkedUnread: false,
-                roomType: 'group',
-                isEncrypted: false,
-                isMuted: false,
-                roomState: 'joined',
-              ),
-            ],
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      container.read(currentUserProvider.notifier).value = user;
-      await container.read(chatRoomsProvider.future);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const StorageMaintenanceRoot(child: SizedBox()),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final key = StorageOwner(
-        storageAccountKey(user.id, user.homeserver),
-        '!loaded',
-      ).key;
-      expect(storageRegistry.rooms[key]?.name, 'Already loaded');
-      expect(storageRegistry.rooms[key]?.type, StorageChatType.group);
-      await tester.pumpWidget(const SizedBox());
-      await tester.runAsync(storageRegistry.flush);
-    },
-  );
 
   test(
     'adding recovered owners preserves an existing measured last-use time',

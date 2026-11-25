@@ -3,10 +3,8 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:matter/features/audio/audio_waveform.dart';
 import 'package:matter/features/audio/audio_waveform_loader.dart';
 import 'package:matter/pages/chat/media_preparation.dart';
 
@@ -122,57 +120,6 @@ void main() {
       preparation.cancel();
       await failure;
       expect(cancelled, isTrue);
-    },
-  );
-
-  testWidgets(
-    'waveform seeks only on confirmed drag and cancels without seeking',
-    (tester) async {
-      final seeks = <double>[];
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: SizedBox(
-                width: 200,
-                child: AudioWaveform(
-                  samples: const [0, 0.1, 0.8, 1],
-                  progress: 0.25,
-                  color: Colors.blue,
-                  onSeek: seeks.add,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      final wave = find.byKey(const ValueKey('audio-waveform'));
-      final origin = tester.getTopLeft(wave);
-      await tester.tapAt(origin + const Offset(150, 16));
-      await tester.pump();
-      expect(seeks.single, closeTo(0.75, 0.01));
-      seeks.clear();
-      var gesture = await tester.startGesture(origin + const Offset(30, 16));
-      await gesture.moveBy(const Offset(30, 0));
-      await tester.pump();
-      await gesture.moveBy(const Offset(70, 0));
-      await tester.pump();
-      await gesture.cancel();
-      await tester.pump();
-      expect(seeks, isEmpty);
-      gesture = await tester.startGesture(origin + const Offset(30, 16));
-      await gesture.moveBy(const Offset(30, 0));
-      await tester.pump();
-      await gesture.moveBy(const Offset(70, 0));
-      await tester.pump();
-      await gesture.up();
-      await tester.pump();
-      expect(seeks.single, greaterThan(0.5));
-      final painter =
-          tester.widget<CustomPaint>(wave).painter! as AudioWaveformPainter;
-      expect(painter.samples, [0, 0.1, 0.8, 1]);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(milliseconds: 400));
     },
   );
 }

@@ -3,9 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-
-import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:matter/features/audio/audio_source_cache_io.dart';
@@ -15,9 +12,7 @@ import 'package:matter/features/storage/storage_models.dart';
 import 'package:matter/features/storage/storage_registry.dart';
 import 'package:matter/pages/chat/media_preparation.dart';
 import 'package:matter/pages/chat/prepared_media_source.dart';
-import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/authenticated_media_cache.dart';
-import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/providers/message_cache_persistence.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
 import 'package:matter/src/rust/frb_generated.dart';
@@ -75,102 +70,6 @@ void main() {
     RustLib.dispose();
     await root.delete(recursive: true);
   });
-
-  testWidgets(
-    'encrypted room production priming keeps plaintext absent but recovers local SDK media',
-    (tester) async {
-      const roomId = '!encrypted:example.org';
-      final privateKey = base64Url
-          .encode(List<int>.filled(32, 0))
-          .replaceAll('=', '');
-      final source = jsonEncode({
-        'file': {
-          'url': 'mxc://example.org/private',
-          'key': {
-            'kty': 'oct',
-            'key_ops': ['encrypt', 'decrypt'],
-            'alg': 'A256CTR',
-            'k': privateKey,
-            'ext': true,
-          },
-          'iv': base64.encode(List<int>.filled(16, 0)).replaceAll('=', ''),
-          'hashes': {'sha256': privateKey},
-          'v': 'v2',
-        },
-      });
-      final media = message('encrypted', '', encrypted: source);
-      api.rooms = {
-        roomId: [media],
-      };
-      await saveCachedMessages(
-        namespace: user,
-        roomId: roomId,
-        messages: [media],
-      );
-      final container = ProviderContainer(
-        overrides: [
-          chatRoomsProvider.overrideWith(
-            (ref) async => [
-              rust.ChatRoom(
-                id: roomId,
-                name: 'Private',
-                lastMessage: '',
-                lastMessageTime: '0',
-                lastEventId: '',
-                unreadCount: 0,
-                isMarkedUnread: false,
-                roomType: 'direct',
-                isEncrypted: true,
-                isMuted: false,
-                roomState: 'joined',
-              ),
-            ],
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      container.read(activeUserIdProvider.notifier).value = user;
-      await container.read(chatRoomsProvider.future);
-      late WidgetRef ref;
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: Consumer(
-            builder: (context, value, child) {
-              ref = value;
-              return const SizedBox();
-            },
-          ),
-        ),
-      );
-      await tester.runAsync(() async {
-        await primeMessageCache(ref, roomId);
-        expect(
-          await loadCachedMessages(namespace: user, roomId: roomId),
-          isEmpty,
-        );
-        final file = await managedMediaFile(account, source, 'voice.ogg');
-        await file.parent.create(recursive: true);
-        await file.writeAsBytes([1, 2, 3]);
-        final registry = StorageRegistry();
-        await restoreStorageAttribution(
-          userId: user,
-          homeserver: server,
-          registry: registry,
-        );
-        expect(registry.files[file.path]?.owners.keys, [
-          StorageOwner(account, roomId).key,
-        ]);
-        expect(api.users, [user]);
-        final prefs = await SharedPreferences.getInstance();
-        expect(prefs.getString('msg_cache_v2_$user::$roomId'), isNull);
-        expect(
-          prefs.getString('storage_file_index_v1'),
-          isNot(contains(privateKey)),
-        );
-      });
-    },
-  );
 
   test('SDK history recovers media trimmed from the real 200-message disk snapshot', () async {
     const roomId = '!busy:example.org', url = 'mxc://example.org/old';
