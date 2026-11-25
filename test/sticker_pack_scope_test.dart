@@ -1,29 +1,42 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/pages/chat/sticker_catalog.dart';
 
-StickerPack _pack(String id) => StickerPack(
-  id: id,
-  title: 'Pack',
-  accent: '✦',
-  source: 'room',
-  stickers: const [],
-);
+StickerPack _pack(String roomId, String stateKey, {String source = 'room'}) =>
+    StickerPack(
+      id: 'opaque',
+      roomId: roomId,
+      stateKey: stateKey,
+      collected: true,
+      title: 'Pack',
+      accent: '✦',
+      source: source,
+      stickers: const [],
+    );
 
 void main() {
   test('a pack from another room is removable', () {
     final scope = importedPackScope(
-      _pack('room:!src:example.org:shared'),
+      _pack('!src:example.org', 'shared:cats'),
       roomId: '!here:example.org',
     );
     expect(scope, isNotNull);
     expect(scope!.roomId, '!src:example.org');
-    expect(scope.stateKey, 'shared');
+    expect(scope.stateKey, 'shared:cats');
+    for (final key in ['', 'default', ' ']) {
+      expect(
+        importedPackScope(
+          _pack('!src:example.org', key),
+          roomId: '!here:example.org',
+        )?.stateKey,
+        key,
+      );
+    }
   });
 
   test('the pack of the open room stays put', () {
     expect(
       importedPackScope(
-        _pack('room:!here:example.org:default'),
+        _pack('!here:example.org', ''),
         roomId: '!here:example.org',
       ),
       isNull,
@@ -32,7 +45,7 @@ void main() {
 
   test('non room packs are not removable this way', () {
     expect(
-      importedPackScope(_pack('user:@bob:example.org:mine'), roomId: '!a:b'),
+      importedPackScope(_pack('', 'mine', source: 'user'), roomId: '!a:b'),
       isNull,
     );
   });
@@ -40,20 +53,23 @@ void main() {
   test('only the open room owns its pack', () {
     expect(
       ownsRoomPack(
-        _pack('room:!here:example.org:default'),
+        _pack('!here:example.org', 'default'),
         roomId: '!here:example.org',
       ),
       isTrue,
     );
     expect(
       ownsRoomPack(
-        _pack('room:!src:example.org:shared'),
+        _pack('!src:example.org', 'shared'),
         roomId: '!here:example.org',
       ),
       isFalse,
     );
     expect(
-      ownsRoomPack(_pack('user:abc'), roomId: '!here:example.org'),
+      ownsRoomPack(
+        _pack('', 'abc', source: 'user'),
+        roomId: '!here:example.org',
+      ),
       isFalse,
     );
   });

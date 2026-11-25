@@ -59,6 +59,45 @@ pub(super) fn install_verification_event_handler(client: &Client, identity: Clie
 }
 
 pub(super) fn install_live_update_event_handlers(client: &Client, identity: ClientIdentity) {
+    use matrix_sdk::ruma::{
+        events::{AnyGlobalAccountDataEvent, AnySyncStateEvent},
+        serde::Raw,
+    };
+
+    let pack_identity = identity.clone();
+    client.add_event_handler(move |raw: Raw<AnySyncStateEvent>| {
+        let identity = pack_identity.clone();
+        async move {
+            if matches!(
+                raw.get_field::<String>("type").ok().flatten().as_deref(),
+                Some("m.room.image_pack" | "im.ponies.room_emotes")
+            ) {
+                notify_sync_event_for_client(&identity, SyncEvent::StickerPacksChanged).await;
+            }
+        }
+    });
+    let collection_identity = identity.clone();
+    client.add_event_handler(move |raw: Raw<AnyGlobalAccountDataEvent>| {
+        let identity = collection_identity.clone();
+        async move {
+            let Ok(Some(kind)) = raw.get_field::<String>("type") else {
+                return;
+            };
+            if !matches!(
+                kind.as_str(),
+                sticker_collection::STABLE | sticker_collection::LEGACY
+            ) {
+                return;
+            }
+            let Some(generation) = active_generation_for_client(&identity).await else {
+                return;
+            };
+            if let Ok(Some(content)) = raw.get_field("content") {
+                sticker_collection::confirm_echo(&identity.user_id, &kind, content).await;
+            }
+            notify_sync_event_for_generation(generation, SyncEvent::StickerPacksChanged);
+        }
+    });
     let message_identity = identity.clone();
     client.add_event_handler(move |event: AnySyncMessageLikeEvent, room: Room| {
         let identity = message_identity.clone();
@@ -129,11 +168,20 @@ pub(super) fn install_live_update_event_handlers(client: &Client, identity: Clie
 
     let power_identity = identity.clone();
     client.add_event_handler(
-        move |_event: SyncStateEvent<matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent>, room: Room| {
+        move |_event: SyncStateEvent<
+            matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent,
+        >,
+              room: Room| {
             let identity = power_identity.clone();
             async move {
                 if room.is_space() {
-                    notify_sync_event_for_client(&identity, SyncEvent::RoomMembersChanged { room_id: room.room_id().to_string() }).await;
+                    notify_sync_event_for_client(
+                        &identity,
+                        SyncEvent::RoomMembersChanged {
+                            room_id: room.room_id().to_string(),
+                        },
+                    )
+                    .await;
                 }
             }
         },

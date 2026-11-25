@@ -2125,8 +2125,9 @@ Future<void> refreshMessages(WidgetRef ref, String roomId) {
 
 final stickerPacksProvider =
     FutureProvider.family<List<rust.StickerPack>, String>((ref, roomId) async {
-      if (!ref.watch(sessionReadyProvider)) return [];
-      return rust.getStickerPacks(roomId: roomId);
+      final user = ref.watch(activeUserIdProvider);
+      if (!ref.watch(sessionReadyProvider) || user == null) return [];
+      return rust.getStickerPacks(accountUserId: user, roomId: roomId);
     });
 
 /// Convert mxc:// URI to HTTP URL for display.
@@ -2985,6 +2986,7 @@ final syncStreamProvider =
             // now that the connection has produced a sync cycle.
             _recoverIgnoredListError(ref);
           case rust.SyncEvent_FullRefreshRequired():
+            ref.invalidate(stickerPacksProvider);
             // A sync restart may have dropped member/knock events: refresh
             // those lists too. And the event loss means the current room's
             // newly displayed messages never got their per-message
@@ -3049,6 +3051,8 @@ final syncStreamProvider =
             scheduleRoomRefresh();
           case rust.SyncEvent_IgnoredUsersChanged():
             revalidateIgnoredUsers();
+          case rust.SyncEvent_StickerPacksChanged():
+            ref.invalidate(stickerPacksProvider);
         }
       });
 

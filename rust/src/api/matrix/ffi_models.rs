@@ -65,6 +65,9 @@ macro_rules! declare_models_api {
         #[derive(Clone, Debug)]
         pub struct StickerPack {
             pub id: String,
+            pub room_id: String,
+            pub state_key: String,
+            pub collected: bool,
             pub title: String,
             pub avatar_url: Option<String>,
             /// "room" or "user"
@@ -85,14 +88,11 @@ macro_rules! declare_models_api {
             pub height: Option<i32>,
         }
 
-        /// A room sticker pack that holds a sticker the user is looking at, so
-        /// the whole pack can be imported into the account at once.
         #[frb]
         #[derive(Clone, Debug)]
-        pub struct StickerPackCandidate {
+        pub struct StickerPackKey {
             pub room_id: String,
             pub state_key: String,
-            pub pack: StickerPack,
         }
 
         #[frb]

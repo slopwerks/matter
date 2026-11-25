@@ -332,7 +332,14 @@ class TimelineMessageActions {
             : null,
         onAddStickerPack:
             message.msgType == MessageType.sticker && message.imageUrl != null
-            ? () => unawaited(addStickerPack(messengerContext, ref, message))
+            ? () => unawaited(
+                addStickerPack(
+                  messengerContext,
+                  container,
+                  message,
+                  menuAccount,
+                ),
+              )
             : null,
         onReact: (emoji) => toggleTimelineReaction(
           overlayContext,
@@ -433,38 +440,75 @@ class TimelineMessageActions {
   /// what makes the pack show up in the picker everywhere.
   Future<void> addStickerPack(
     BuildContext messengerContext,
-    WidgetRef ref,
+    ProviderContainer container,
     ChatMessage message,
+    String account,
   ) async {
     final imageUrl = message.imageUrl;
     if (imageUrl == null) return;
-    final container = ProviderScope.containerOf(
-      messengerContext,
-      listen: false,
-    );
+    if (container.read(activeUserIdProvider) != account) return;
     try {
-      final candidate = await findStickerPack(
+      final candidates = await findStickerPack(
+        accountUserId: account,
         imageUrl: imageUrl,
         roomId: roomId,
       );
-      if (!messengerContext.mounted) return;
-      if (candidate == null) {
+      if (!messengerContext.mounted ||
+          container.read(activeUserIdProvider) != account) {
+        return;
+      }
+      if (candidates.isEmpty) {
         neuToast(messengerContext, '没找到这张贴纸所属的贴纸包');
         return;
       }
-      if (candidate.roomId == roomId) {
-        neuToast(messengerContext, '这个贴纸包就在本房间，无需添加');
+      final candidate = candidates.length == 1
+          ? candidates.single
+          : await showDialog<StickerPack>(
+              context: messengerContext,
+              builder: (context) => SimpleDialog(
+                title: const Text('选择贴纸包'),
+                children: [
+                  for (final pack in candidates)
+                    ListTile(
+                      title: Text(pack.title),
+                      subtitle: Text(
+                        '${pack.roomId} · ${pack.stateKey}${pack.collected ? ' · 已收藏' : ''}',
+                      ),
+                      onTap: () => Navigator.pop(context, pack),
+                    ),
+                ],
+              ),
+            );
+      if (candidate == null ||
+          !messengerContext.mounted ||
+          container.read(activeUserIdProvider) != account) {
         return;
       }
-      await importStickerPack(
-        roomId: candidate.roomId,
-        stateKey: candidate.stateKey,
+      if (candidate.collected) {
+        neuToast(messengerContext, '已收藏贴纸包「${candidate.title}」');
+        return;
+      }
+      await setStickerPacksCollected(
+        accountUserId: account,
+        packs: [
+          StickerPackKey(
+            roomId: candidate.roomId,
+            stateKey: candidate.stateKey,
+          ),
+        ],
+        collected: true,
       );
-      if (!messengerContext.mounted) return;
-      neuToast(messengerContext, '已添加贴纸包「${candidate.pack.title}」');
-      container.invalidate(stickerPacksProvider(roomId));
+      if (!messengerContext.mounted ||
+          container.read(activeUserIdProvider) != account) {
+        return;
+      }
+      neuToast(messengerContext, '已收藏贴纸包「${candidate.title}」');
+      container.invalidate(stickerPacksProvider);
     } catch (error) {
-      if (!messengerContext.mounted) return;
+      if (!messengerContext.mounted ||
+          container.read(activeUserIdProvider) != account) {
+        return;
+      }
       neuToast(messengerContext, '添加贴纸包失败: $error');
     }
   }

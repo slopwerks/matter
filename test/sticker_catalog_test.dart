@@ -37,6 +37,9 @@ void main() {
       final remote = [
         rust.StickerPack(
           id: 'pack-1',
+          roomId: '!here:e',
+          stateKey: '',
+          collected: true,
           title: 'Pack One',
           source: 'room',
           stickers: [
@@ -64,6 +67,9 @@ void main() {
       final remote = [
         rust.StickerPack(
           id: 'pack-2',
+          roomId: '',
+          stateKey: '',
+          collected: false,
           title: 'My Pack',
           source: 'user',
           stickers: const [],
@@ -78,6 +84,9 @@ void main() {
       final remote = [
         rust.StickerPack(
           id: 'pack-3',
+          roomId: '',
+          stateKey: '',
+          collected: false,
           title: 'Other Pack',
           source: 'unknown',
           stickers: const [],

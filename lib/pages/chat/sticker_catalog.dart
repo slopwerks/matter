@@ -2,6 +2,9 @@ import '../../src/rust/api/matrix.dart' as rust;
 
 class StickerPack {
   final String id;
+  final String roomId;
+  final String stateKey;
+  final bool collected;
   final String title;
   final String accent;
   final String source;
@@ -10,6 +13,9 @@ class StickerPack {
 
   const StickerPack({
     required this.id,
+    required this.roomId,
+    required this.stateKey,
+    required this.collected,
     required this.title,
     required this.accent,
     required this.source,
@@ -58,6 +64,9 @@ List<StickerPack> stickerPacksFromRemote(List<rust.StickerPack> packs) {
     };
     return StickerPack(
       id: pack.id,
+      roomId: pack.roomId,
+      stateKey: pack.stateKey,
+      collected: pack.collected,
       title: pack.title,
       accent: accent,
       source: pack.source,
@@ -78,30 +87,15 @@ List<StickerPack> stickerPacksFromRemote(List<rust.StickerPack> packs) {
   }).toList();
 }
 
-/// Room and state key of a sticker pack imported from another room, or null
-/// when [pack] belongs to [roomId] itself (or is not a room pack) and so cannot
-/// be dropped from the account.
-/// True when [pack] is published by [roomId] itself, i.e. the pack a switch in
-/// that room can only disable locally.
-bool ownsRoomPack(StickerPack pack, {required String roomId}) {
-  const prefix = 'room:';
-  if (!pack.id.startsWith(prefix)) return false;
-  final rest = pack.id.substring(prefix.length);
-  final split = rest.lastIndexOf(':');
-  if (split <= 0) return false;
-  return rest.substring(0, split) == roomId;
-}
+bool ownsRoomPack(StickerPack pack, {required String roomId}) =>
+    pack.source == 'room' && pack.roomId == roomId;
 
 ({String roomId, String stateKey})? importedPackScope(
   StickerPack pack, {
   required String roomId,
 }) {
-  const prefix = 'room:';
-  if (!pack.id.startsWith(prefix)) return null;
-  final rest = pack.id.substring(prefix.length);
-  final split = rest.lastIndexOf(':');
-  if (split <= 0) return null;
-  final packRoomId = rest.substring(0, split);
-  if (packRoomId == roomId) return null;
-  return (roomId: packRoomId, stateKey: rest.substring(split + 1));
+  if (!pack.collected || pack.source != 'room' || pack.roomId == roomId) {
+    return null;
+  }
+  return (roomId: pack.roomId, stateKey: pack.stateKey);
 }

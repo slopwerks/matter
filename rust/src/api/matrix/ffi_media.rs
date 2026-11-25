@@ -79,30 +79,36 @@ macro_rules! declare_media_api {
         }
 
         #[frb]
-        pub async fn get_sticker_packs(room_id: String) -> Result<Vec<StickerPack>, String> {
-            message_send::get_sticker_packs(room_id).await
+        pub async fn get_sticker_packs(
+            account_user_id: String,
+            room_id: String,
+        ) -> Result<Vec<StickerPack>, String> {
+            message_send::get_sticker_packs(account_user_id, room_id).await
         }
 
         /// Find the room sticker pack that contains a sticker message, so the
         /// whole pack can be imported at once.
         #[frb]
         pub async fn find_sticker_pack(
+            account_user_id: String,
             image_url: String,
             room_id: String,
-        ) -> Result<Option<StickerPackCandidate>, String> {
-            sticker_packs::find_sticker_pack_for_message(image_url, room_id).await
+        ) -> Result<Vec<StickerPack>, String> {
+            let client = get_client()
+                .await
+                .ok_or_else(|| api_err("media", "未登录".into()))?;
+            ensure_account_matches(&client, &account_user_id)?;
+            sticker_packs::find_sticker_pack(&client, &image_url, &room_id).await
         }
 
         /// Import a room sticker pack into the account's sticker collection.
         #[frb]
-        pub async fn import_sticker_pack(room_id: String, state_key: String) -> Result<(), String> {
-            sticker_packs::import_sticker_pack_for_account(room_id, state_key).await
-        }
-
-        /// Drop a room sticker pack from the account's imported packs.
-        #[frb]
-        pub async fn remove_sticker_pack(room_id: String, state_key: String) -> Result<(), String> {
-            sticker_packs::remove_sticker_pack_for_account(room_id, state_key).await
+        pub async fn set_sticker_packs_collected(
+            account_user_id: String,
+            packs: Vec<StickerPackKey>,
+            collected: bool,
+        ) -> Result<(), String> {
+            sticker_collection::set_collected(account_user_id, packs, collected).await
         }
 
         #[frb]
@@ -281,6 +287,7 @@ macro_rules! declare_media_api {
 
         #[frb]
         pub async fn send_sticker(
+            account_user_id: String,
             room_id: String,
             image_url: String,
             body: String,
@@ -288,7 +295,16 @@ macro_rules! declare_media_api {
             width: Option<i32>,
             height: Option<i32>,
         ) -> Result<(), String> {
-            stickers::send_sticker(room_id, image_url, body, mime_type, width, height).await
+            stickers::send_sticker(
+                account_user_id,
+                room_id,
+                image_url,
+                body,
+                mime_type,
+                width,
+                height,
+            )
+            .await
         }
     };
 }

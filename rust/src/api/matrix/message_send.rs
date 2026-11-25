@@ -13,11 +13,15 @@ pub(super) async fn get_messages(room_id: String) -> Result<Vec<ChatMessage>, St
     run_bounded(async move { sdk_timeline::get_messages(&client, &room).await }).await
 }
 
-pub(super) async fn get_sticker_packs(room_id: String) -> Result<Vec<StickerPack>, String> {
+pub(super) async fn get_sticker_packs(
+    account_user_id: String,
+    room_id: String,
+) -> Result<Vec<StickerPack>, String> {
     let client = get_client()
         .await
         .ok_or_else(|| api_err("media", "No client created.".to_string()))?;
 
+    ensure_account_matches(&client, &account_user_id)?;
     let parsed_room_id = matrix_sdk::ruma::RoomId::parse(room_id.clone())
         .map_err(|e| api_err("media", format!("无效的房间 ID: {e}")))?;
     let room = client

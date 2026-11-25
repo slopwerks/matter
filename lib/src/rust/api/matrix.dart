@@ -450,35 +450,35 @@ Future<List<ChatRoom>> getChatRooms({
 Future<List<ChatMessage>> getMessages({required String roomId}) =>
     RustLib.instance.api.crateApiMatrixGetMessages(roomId: roomId);
 
-Future<List<StickerPack>> getStickerPacks({required String roomId}) =>
-    RustLib.instance.api.crateApiMatrixGetStickerPacks(roomId: roomId);
+Future<List<StickerPack>> getStickerPacks({
+  required String accountUserId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixGetStickerPacks(
+  accountUserId: accountUserId,
+  roomId: roomId,
+);
 
 /// Find the room sticker pack that contains a sticker message, so the
 /// whole pack can be imported at once.
-Future<StickerPackCandidate?> findStickerPack({
+Future<List<StickerPack>> findStickerPack({
+  required String accountUserId,
   required String imageUrl,
   required String roomId,
 }) => RustLib.instance.api.crateApiMatrixFindStickerPack(
+  accountUserId: accountUserId,
   imageUrl: imageUrl,
   roomId: roomId,
 );
 
 /// Import a room sticker pack into the account's sticker collection.
-Future<void> importStickerPack({
-  required String roomId,
-  required String stateKey,
-}) => RustLib.instance.api.crateApiMatrixImportStickerPack(
-  roomId: roomId,
-  stateKey: stateKey,
-);
-
-/// Drop a room sticker pack from the account's imported packs.
-Future<void> removeStickerPack({
-  required String roomId,
-  required String stateKey,
-}) => RustLib.instance.api.crateApiMatrixRemoveStickerPack(
-  roomId: roomId,
-  stateKey: stateKey,
+Future<void> setStickerPacksCollected({
+  required String accountUserId,
+  required List<StickerPackKey> packs,
+  required bool collected,
+}) => RustLib.instance.api.crateApiMatrixSetStickerPacksCollected(
+  accountUserId: accountUserId,
+  packs: packs,
+  collected: collected,
 );
 
 Future<String> sendMessage({
@@ -648,6 +648,7 @@ Future<void> endPoll({
 );
 
 Future<void> sendSticker({
+  required String accountUserId,
   required String roomId,
   required String imageUrl,
   required String body,
@@ -655,6 +656,7 @@ Future<void> sendSticker({
   int? width,
   int? height,
 }) => RustLib.instance.api.crateApiMatrixSendSticker(
+  accountUserId: accountUserId,
   roomId: roomId,
   imageUrl: imageUrl,
   body: body,
@@ -2435,6 +2437,9 @@ class Sticker {
 
 class StickerPack {
   final String id;
+  final String roomId;
+  final String stateKey;
+  final bool collected;
   final String title;
   final String? avatarUrl;
 
@@ -2444,6 +2449,9 @@ class StickerPack {
 
   const StickerPack({
     required this.id,
+    required this.roomId,
+    required this.stateKey,
+    required this.collected,
     required this.title,
     this.avatarUrl,
     required this.source,
@@ -2453,6 +2461,9 @@ class StickerPack {
   @override
   int get hashCode =>
       id.hashCode ^
+      roomId.hashCode ^
+      stateKey.hashCode ^
+      collected.hashCode ^
       title.hashCode ^
       avatarUrl.hashCode ^
       source.hashCode ^
@@ -2464,36 +2475,31 @@ class StickerPack {
       other is StickerPack &&
           runtimeType == other.runtimeType &&
           id == other.id &&
+          roomId == other.roomId &&
+          stateKey == other.stateKey &&
+          collected == other.collected &&
           title == other.title &&
           avatarUrl == other.avatarUrl &&
           source == other.source &&
           stickers == other.stickers;
 }
 
-/// A room sticker pack that holds a sticker the user is looking at, so
-/// the whole pack can be imported into the account at once.
-class StickerPackCandidate {
+class StickerPackKey {
   final String roomId;
   final String stateKey;
-  final StickerPack pack;
 
-  const StickerPackCandidate({
-    required this.roomId,
-    required this.stateKey,
-    required this.pack,
-  });
+  const StickerPackKey({required this.roomId, required this.stateKey});
 
   @override
-  int get hashCode => roomId.hashCode ^ stateKey.hashCode ^ pack.hashCode;
+  int get hashCode => roomId.hashCode ^ stateKey.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is StickerPackCandidate &&
+      other is StickerPackKey &&
           runtimeType == other.runtimeType &&
           roomId == other.roomId &&
-          stateKey == other.stateKey &&
-          pack == other.pack;
+          stateKey == other.stateKey;
 }
 
 /// Session data to persist across app restarts.
@@ -2565,6 +2571,7 @@ sealed class SyncEvent with _$SyncEvent {
 
   /// The account's ignored-user list changed.
   const factory SyncEvent.ignoredUsersChanged() = SyncEvent_IgnoredUsersChanged;
+  const factory SyncEvent.stickerPacksChanged() = SyncEvent_StickerPacksChanged;
 }
 
 /// Ephemeral "who is typing right now" update for a room, pushed to Dart.

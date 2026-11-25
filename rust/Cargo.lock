@@ -3782,6 +3782,7 @@ dependencies = [
  "tokio",
  "url",
  "webpki-roots",
+ "wiremock",
 ]
 
 [[package]]

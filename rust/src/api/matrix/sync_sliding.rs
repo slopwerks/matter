@@ -37,6 +37,8 @@ pub(super) async fn try_start_sliding_sync(
                         maximum_number_of_rooms_to_fetch: Some(500),
                     })
                     .required_state(vec![
+                        ("m.room.image_pack".into(), "*".to_owned()),
+                        ("im.ponies.room_emotes".into(), "*".to_owned()),
                         (RoomStateType::RoomName, "".to_owned()),
                         (RoomStateType::RoomAvatar, "".to_owned()),
                         (RoomStateType::RoomCanonicalAlias, "".to_owned()),
