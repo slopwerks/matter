@@ -6,6 +6,8 @@ import 'package:matter/pages/chat/emoji_data.dart';
 import 'package:matter/pages/chat/latest_message_control.dart';
 import 'package:matter/pages/chat/markdown_composer_page.dart';
 import 'package:matter/pages/chat/message_input.dart';
+import 'package:matter/pages/chat/room_sticker_packs_page.dart';
+import 'package:matter/pages/chat/sticker_preview.dart';
 import 'package:matter/providers/auth_provider.dart';
 import 'package:matter/providers/chat_provider.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
@@ -19,6 +21,65 @@ const _room = '!acceptance:example.org';
 const _key = (roomId: _room, userId: '@alice:example.org');
 
 class _Api implements RustLibApi {
+  final writes = <List<rust.StickerPackKey>>[];
+  final sentStickers = <(String, String, String)>[];
+
+  @override
+  Future<List<rust.StickerPack>> crateApiMatrixGetStickerPacks({
+    required String accountUserId,
+    required String roomId,
+  }) async => [
+    for (final key in ['', 'a:b'])
+      if (roomId == '!source:e' ||
+          writes.expand((batch) => batch).any((item) => item.stateKey == key))
+        rust.StickerPack(
+          id: 'pack/$key',
+          roomId: '!source:e',
+          stateKey: key,
+          collected: writes
+              .expand((batch) => batch)
+              .any((item) => item.stateKey == key),
+          title: 'Cats $key',
+          source: 'room',
+          stickers: const [
+            rust.Sticker(
+              id: 'cat',
+              shortcode: 'cat',
+              body: 'cat',
+              imageUrl: 'mxc://example.org/cat',
+            ),
+          ],
+        ),
+  ];
+
+  @override
+  Future<String?> crateApiMatrixMxcToHttpFull({required String mxcUrl}) async =>
+      null;
+
+  @override
+  Future<void> crateApiMatrixSetStickerPacksCollected({
+    required String accountUserId,
+    required List<rust.StickerPackKey> packs,
+    required bool collected,
+  }) async {
+    expect(accountUserId, _key.userId);
+    expect(collected, isTrue);
+    writes.add(packs);
+  }
+
+  @override
+  Future<void> crateApiMatrixSendSticker({
+    required String accountUserId,
+    required String roomId,
+    required String imageUrl,
+    required String body,
+    String? mimeType,
+    int? width,
+    int? height,
+  }) async {
+    sentStickers.add((accountUserId, roomId, imageUrl));
+  }
+
   final sent = <rust.FormattedMessageInput>[];
   final typing = <bool>[];
 
@@ -65,6 +126,68 @@ void main() {
     RustLib.initMock(api: api);
   });
   tearDown(RustLib.dispose);
+
+  testWidgets('collect from room state, then send from another room', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [chatRoomsProvider.overrideWith((ref) async => [])],
+    );
+    addTearDown(container.dispose);
+    container.read(activeUserIdProvider.notifier).value = _key.userId;
+    container.read(sessionReadyProvider.notifier).value = true;
+    expect(await container.read(stickerPacksProvider(_room).future), isEmpty);
+    Future<void> show(Widget home) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: buildMaterialTheme(Brightness.light),
+            home: home,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await show(const Scaffold(body: RoomStickerPacksTile(roomId: '!source:e')));
+    await tester.tap(find.text('贴纸包'));
+    await tester.pumpAndSettle();
+    final switches = find.byType(SwitchListTile);
+    await tester.tap(switches.first);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(switches.first).value, isFalse);
+    await tester.tap(find.text('收藏全部贴纸包'));
+    await tester.pumpAndSettle();
+    expect(api.writes.single, const [
+      rust.StickerPackKey(roomId: '!source:e', stateKey: ''),
+      rust.StickerPackKey(roomId: '!source:e', stateKey: 'a:b'),
+    ]);
+    expect(find.text('已全部收藏'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await show(const _Host());
+    await tester.tap(find.byIcon(Icons.sentiment_satisfied_alt_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('贴纸'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget is RemoteStickerPreview && widget.cacheDimension == 240,
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    expect(api.sentStickers.single, (
+      _key.userId,
+      _room,
+      'mxc://example.org/cat',
+    ));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
+  });
 
   for (final material in [false, true]) {
     for (final brightness in Brightness.values) {

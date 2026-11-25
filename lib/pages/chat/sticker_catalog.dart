@@ -1,6 +1,9 @@
 import '../../src/rust/api/matrix.dart' as rust;
 
 class StickerPack {
+  rust.StickerPackKey get key =>
+      rust.StickerPackKey(roomId: roomId, stateKey: stateKey);
+
   final String id;
   final String roomId;
   final String stateKey;

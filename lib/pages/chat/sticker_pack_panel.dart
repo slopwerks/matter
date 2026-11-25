@@ -287,13 +287,20 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     final packsAsync = ref.watch(stickerPacksProvider(widget.roomId));
     final account = ref.watch(activeUserIdProvider);
     final disabledPacks = account == null
-        ? const <String>{}
-        : ref.watch(disabledStickerPacksProvider((account: account)));
+        ? null
+        : ref
+              .watch(
+                disabledStickerPacksProvider((
+                  account: account,
+                  roomId: widget.roomId,
+                )),
+              )
+              .value;
 
     return packsAsync.when(
       data: (remotePacks) {
         final packs = stickerPacksFromRemote(remotePacks)
-            .where((pack) => !disabledPacks.contains(pack.id))
+            .where((pack) => disabledPacks?.contains(pack.key) != true)
             .toList();
         _packs = packs;
         _syncPackKeys(packs.length);

@@ -31,6 +31,7 @@ import 'action_failure_message.dart';
 import 'chat_detail_page.dart';
 import 'material_room_member_rows.dart';
 import 'room_directory_page.dart';
+import 'room_sticker_packs_page.dart';
 
 part 'material_space_detail.dart';
 part 'material_space_info.dart';
@@ -526,6 +527,13 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                     title: '设置',
                     child: Column(
                       children: [
+                        _ActionSettingRow(
+                          icon: Icons.collections_outlined,
+                          label: '贴纸包',
+                          value: '预览与收藏',
+                          onTap: () => openRoomStickerPacks(context, details.id),
+                        ),
+                        const SizedBox(height: 10),
                         _ActionSettingRow(
                           icon: Icons.edit_rounded,
                           label: '编辑空间',

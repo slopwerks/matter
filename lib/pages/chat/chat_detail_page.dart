@@ -54,6 +54,7 @@ import 'message_input.dart';
 import 'pinned_messages_page.dart';
 import 'pinned_messages_stack.dart';
 import 'room_management_page.dart';
+import 'room_sticker_packs_page.dart';
 import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
 import 'search_page.dart';
@@ -4150,6 +4151,14 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 openManagement();
+              },
+            ),
+            NeuSheetItem(
+              icon: Icons.collections_outlined,
+              label: '贴纸包',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                openRoomStickerPacks(context, roomId);
               },
             ),
             // Room members preview

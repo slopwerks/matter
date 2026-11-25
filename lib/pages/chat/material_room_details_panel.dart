@@ -12,6 +12,7 @@ import '../../widgets/floating_app_bar.dart';
 import '../../widgets/grouped_rows.dart';
 import '../../widgets/material_detail_card.dart';
 import 'material_room_member_rows.dart';
+import 'room_sticker_packs_page.dart';
 
 enum RoomPanelAction { manage, search, pins }
 
@@ -117,6 +118,8 @@ class MaterialRoomDetailsPanel extends ConsumerWidget {
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: onManage,
                       ),
+                      const Divider(),
+                      RoomStickerPacksTile(roomId: roomId),
                       const Divider(),
                       Text('房间 ID', style: theme.textTheme.labelMedium),
                       const SizedBox(height: 4),
