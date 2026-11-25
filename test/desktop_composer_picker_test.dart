@@ -70,6 +70,9 @@ void main() {
             for (var i = 0; i < 6; i++)
               rust.StickerPack(
                 id: 'room:!stickers:example.org:$i',
+                roomId: '!stickers:example.org',
+                stateKey: '$i',
+                collected: false,
                 title: 'Pack $i',
                 source: 'room',
                 stickers: [

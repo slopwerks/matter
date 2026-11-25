@@ -1,9 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use super::{api_err, room_display_name, sticker_collection, uint_to_i32, Sticker, StickerPack};
 use matrix_sdk::{
     deserialized_responses::SyncOrStrippedState,
     ruma::events::{
-        image_pack::rooms::ImagePackRoomsEventContent,
         macros::EventContent,
         room::image_pack::{ImagePackImage, ImagePackMeta, PackUsage, RoomImagePackEventContent},
         SyncStateEvent,
@@ -11,8 +11,6 @@ use matrix_sdk::{
     Client, Room,
 };
 use serde::{Deserialize, Serialize};
-
-use super::{api_err, room_display_name, uint_to_i32, Sticker, StickerPack};
 
 // Ruma 0.35 removed the MSC2545 types. Keep the room format readable until
 // existing rooms migrate their state to m.room.image_pack.
@@ -94,14 +92,11 @@ fn room_image_pack_to_sticker_pack(
         .as_ref()
         .map(ToString::to_string)
         .or_else(|| room.avatar_url().map(|url| url.to_string()));
-    let normalized_state_key = if state_key.trim().is_empty() {
-        "default".to_string()
-    } else {
-        state_key
-    };
-
     Some(StickerPack {
-        id: format!("room:{}:{normalized_state_key}", room.room_id()),
+        id: serde_json::json!([room.room_id(), state_key]).to_string(),
+        room_id: room.room_id().to_string(),
+        state_key,
+        collected: false,
         title,
         avatar_url,
         source: "room".to_string(),
@@ -109,7 +104,7 @@ fn room_image_pack_to_sticker_pack(
     })
 }
 
-async fn load_room_sticker_packs(
+pub(super) async fn load_room_sticker_packs(
     room: &Room,
     enabled_state_keys: Option<&HashSet<String>>,
 ) -> Result<Vec<StickerPack>, String> {
@@ -142,6 +137,7 @@ async fn load_room_sticker_packs(
         if enabled_state_keys.is_some_and(|keys| !keys.contains(&event.state_key)) {
             continue;
         }
+        seen_state_keys.insert(event.state_key.clone());
         let content = event.content;
         let stickers = if usage_allows_sticker(&content.pack.usage) {
             content
@@ -155,7 +151,6 @@ async fn load_room_sticker_packs(
         if let Some(pack) =
             room_image_pack_to_sticker_pack(room, event.state_key.clone(), content.pack, stickers)
         {
-            seen_state_keys.insert(event.state_key);
             packs.push(pack);
         }
     }
@@ -195,60 +190,66 @@ pub(super) async fn get_sticker_packs(
     client: &Client,
     room: &Room,
 ) -> Result<Vec<StickerPack>, String> {
-    let mut imported_room_packs: HashMap<String, HashSet<String>> = HashMap::new();
-    // Both account-data formats have the same content shape. Read them from
-    // the local store, just like the room state; no server-side migration needed.
-    for event_type in ["m.image_pack.rooms", "im.ponies.emote_rooms"] {
-        let content = client
-            .account()
-            .account_data_raw(event_type.into())
-            .await
-            .map_err(|e| {
-                api_err(
-                    "media",
-                    format!("Failed to load image-pack room mapping: {e}"),
-                )
-            })?
-            .and_then(|raw| {
-                raw.deserialize_as_unchecked::<ImagePackRoomsEventContent>()
-                    .ok()
-            });
-        if let Some(content) = content {
-            for (room_id, packs) in content.rooms {
-                imported_room_packs
-                    .entry(room_id.to_string())
-                    .or_default()
-                    .extend(packs.into_keys());
+    let imported_room_packs = sticker_collection::effective(client).await?;
+    let mut ranked = Vec::new();
+    let mut sources = HashSet::new();
+    let ancestors = super::space_inheritance::ancestors(client, room).await?;
+    for (distance, source) in std::iter::once(room).chain(&ancestors).enumerate() {
+        sources.insert(source.room_id().to_owned());
+        for mut pack in load_room_sticker_packs(source, None).await? {
+            pack.collected = imported_room_packs
+                .get(&pack.room_id)
+                .is_some_and(|keys| keys.contains(&pack.state_key));
+            ranked.push((if pack.collected { 0 } else { distance + 1 }, pack));
+        }
+    }
+    for (room_id, keys) in imported_room_packs {
+        let parsed = matrix_sdk::ruma::RoomId::parse(room_id).map_err(|error| error.to_string())?;
+        if sources.contains(&parsed) {
+            continue;
+        }
+        if let Some(source) = client
+            .get_room(&parsed)
+            .filter(|room| room.state() == matrix_sdk::RoomState::Joined)
+        {
+            for mut pack in load_room_sticker_packs(&source, Some(&keys)).await? {
+                pack.collected = true;
+                ranked.push((0, pack));
             }
         }
     }
+    ranked.sort_by_cached_key(|(rank, pack)| (*rank, pack.title.to_lowercase(), pack.id.clone()));
+    Ok(ranked.into_iter().map(|(_, pack)| pack).collect())
+}
 
-    let mut packs = Vec::new();
-    let mut seen_pack_ids = HashSet::new();
-    for pack in load_room_sticker_packs(room, None).await? {
-        if seen_pack_ids.insert(pack.id.clone()) {
-            packs.push(pack);
-        }
-    }
-    for (source_room_id, enabled_state_keys) in imported_room_packs {
-        let Ok(parsed_source_room_id) = matrix_sdk::ruma::RoomId::parse(&source_room_id) else {
-            continue;
-        };
-        let Some(source_room) = client.get_room(&parsed_source_room_id) else {
-            continue;
-        };
-        for pack in load_room_sticker_packs(&source_room, Some(&enabled_state_keys)).await? {
-            if seen_pack_ids.insert(pack.id.clone()) {
-                packs.push(pack);
+pub(super) async fn find_sticker_pack(
+    client: &Client,
+    image_url: &str,
+    preferred_room_id: &str,
+) -> Result<Vec<StickerPack>, String> {
+    let collected = sticker_collection::effective(client).await?;
+    let mut matches = Vec::new();
+    for room in client.joined_rooms() {
+        for mut pack in load_room_sticker_packs(&room, None).await? {
+            if pack
+                .stickers
+                .iter()
+                .any(|sticker| sticker.image_url == image_url)
+            {
+                pack.collected = collected
+                    .get(&pack.room_id)
+                    .is_some_and(|keys| keys.contains(&pack.state_key));
+                matches.push(pack);
             }
         }
     }
-    packs.sort_by_key(|pack| pack.title.to_lowercase());
-    Ok(packs)
+    matches.sort_by_cached_key(|pack| (pack.room_id != preferred_room_id, pack.id.clone()));
+    Ok(matches)
 }
 
 #[cfg(test)]
 mod tests {
+
     use matrix_sdk::{
         ruma::{room_id, serde::Raw},
         test_utils::mocks::MatrixMockServer,
@@ -264,12 +265,116 @@ mod tests {
         Raw::from_json_string(
             json!({
                 "type": event_type, "state_key": state_key, "content": content,
-                "event_id": format!("${event_type}-{state_key}:localhost"),
+                "event_id": format!("${event_type}-{}:localhost", state_key.replace(':', "_")),
                 "sender": "@alice:localhost", "origin_server_ts": 1,
             })
             .to_string(),
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn resolves_only_verified_space_links_after_sync() {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let target = room_id!("!target:localhost");
+        let first = room_id!("!a:localhost");
+        let second = room_id!("!b:localhost");
+        let via = json!({"via":["localhost"]});
+        let primary = json!({"via":["localhost"], "canonical":true});
+        let parent = |id: &str, content| pack_event("m.space.parent", id, content);
+        let child = |id: &str, content| pack_event("m.space.child", id, content);
+        let space = || {
+            pack_event(
+                "m.room.create",
+                "",
+                json!({"creator":"@alice:localhost", "type":"m.space"}),
+            )
+        };
+        let pack = |key| {
+            pack_event(
+                "m.room.image_pack",
+                key,
+                json!({"images":{"cat":{"url":"mxc://localhost/cat"}}}),
+            )
+        };
+        let room = server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(target)
+                    .add_state_event(parent(first.as_str(), via.clone()))
+                    .add_state_event(parent(second.as_str(), via.clone()))
+                    .add_state_event(pack("z-local")),
+            )
+            .await;
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(first)
+                    .add_state_event(space())
+                    .add_state_event(child(target.as_str(), via.clone()))
+                    .add_state_event(pack("a-near")),
+            )
+            .await;
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(second)
+                    .add_state_event(space())
+                    .add_state_event(child(target.as_str(), json!({"via":[]})))
+                    .add_state_event(pack("b-far")),
+            )
+            .await;
+        let titles = || async {
+            super::get_sticker_packs(&client, &room)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|pack| pack.title)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(titles().await, ["z-local", "a-near"]);
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(second).add_state_event(child(target.as_str(), via.clone())),
+            )
+            .await;
+        assert_eq!(titles().await, ["z-local"]);
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(target)
+                    .add_state_event(parent(second.as_str(), primary.clone())),
+            )
+            .await;
+        assert_eq!(titles().await, ["z-local", "b-far"]);
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(target).add_state_event(parent(first.as_str(), primary)),
+            )
+            .await;
+        assert_eq!(titles().await, ["z-local", "a-near"]);
+        for (id, other) in [(first, second), (second, first)] {
+            server
+                .sync_room(
+                    &client,
+                    JoinedRoomBuilder::new(id)
+                        .add_state_event(child(other.as_str(), via.clone()))
+                        .add_state_event(parent(other.as_str(), via.clone())),
+                )
+                .await;
+        }
+        assert_eq!(titles().await, ["z-local", "a-near", "b-far"]);
+        server.mock_sync().ok_and_run(&client, |sync| {
+            sync.add_global_account_data(Raw::from_json_string(json!({"type":"m.image_pack.rooms", "content":{"rooms":{second.as_str():{"b-far":{}}}}}).to_string()).unwrap());
+        }).await;
+        assert_eq!(titles().await, ["b-far", "z-local", "a-near"]);
+        server
+            .sync_room(&client, matrix_sdk_test::LeftRoomBuilder::new(second))
+            .await;
+        assert_eq!(titles().await, ["z-local", "a-near"]);
     }
 
     #[tokio::test]
@@ -360,5 +465,57 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["new", "old"]
         );
+    }
+
+    #[tokio::test]
+    async fn finds_the_pack_that_holds_a_sticker_url() {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let room_id = room_id!("!stickers:localhost");
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(room_id).add_state_event(pack_event(
+                    "m.room.image_pack",
+                    "",
+                    json!({"images": {"cat": {"url": "mxc://localhost/cat"}}}),
+                )),
+            )
+            .await;
+        let found = super::find_sticker_pack(&client, "mxc://localhost/cat", "!other:localhost")
+            .await
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        let found = &found[0];
+        assert_eq!(found.room_id, "!stickers:localhost");
+        assert_eq!(found.state_key, "");
+        assert_eq!(found.stickers.len(), 1);
+
+        let other = room_id!("!other:localhost");
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(other).add_state_event(pack_event(
+                    "m.room.image_pack",
+                    "a:b",
+                    json!({"images":{"cat":{"url":"mxc://localhost/cat"}}}),
+                )),
+            )
+            .await;
+        server.mock_sync().ok_and_run(&client, |sync| {
+            sync.add_global_account_data(Raw::from_json_string(json!({"type":"m.image_pack.rooms", "content":{"rooms":{other.as_str():{"a:b":{}}}}}).to_string()).unwrap());
+        }).await;
+        let matches = super::find_sticker_pack(&client, "mxc://localhost/cat", other.as_str())
+            .await
+            .unwrap();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].state_key, "a:b");
+        assert!(matches[0].collected);
+        assert!(!matches[1].collected);
+
+        let missing = super::find_sticker_pack(&client, "mxc://localhost/dog", "!other:localhost")
+            .await
+            .unwrap();
+        assert!(missing.is_empty());
     }
 }

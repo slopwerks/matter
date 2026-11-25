@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../../../features/markdown/markdown_text_editing_controller.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/chat_provider.dart';
+import '../../../providers/disabled_sticker_packs_provider.dart';
 import '../../../providers/composer_keyboard_settings_provider.dart';
 import '../../../providers/composer_attachment_provider.dart';
 import '../../../providers/interaction_mode_provider.dart';
@@ -516,6 +517,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
       roomsAsync = ref.watch(chatRoomsProvider);
     } else if (autocompleteMatch?.kind == ComposerAutocompleteKind.emoji) {
       stickerPacksAsync = ref.watch(stickerPacksProvider(widget.roomId));
+      final account = ref.watch(activeUserIdProvider);
+      if (account != null) {
+        ref.watch(
+          disabledStickerPacksProvider((
+            account: account,
+            roomId: widget.roomId,
+          )),
+        );
+      }
     }
     final autocompleteOptions = autocompleteMatch == null
         ? const <ComposerAutocompleteOption>[]

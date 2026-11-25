@@ -6,6 +6,9 @@ void main() {
   final packs = stickerPacksFromRemote([
     const rust.StickerPack(
       id: 'room:!cats:example.org:animals',
+      roomId: '!cats:example.org',
+      stateKey: 'animals',
+      collected: true,
       title: 'Cats',
       source: 'room',
       stickers: [
@@ -42,6 +45,9 @@ void main() {
     );
     const portPack = StickerPack(
       id: 'room:!cats:example.org:8448:animals:cats',
+      roomId: '!cats:example.org:8448',
+      stateKey: 'animals:cats',
+      collected: false,
       title: 'Cats',
       accent: '房',
       source: 'room',
@@ -61,6 +67,10 @@ void main() {
       searchStickerPacks(packs, ':CAT_WAVE:').single.stickers.single.body,
       '挥手',
     );
+    final filtered = searchStickerPacks(packs, ':CAT_WAVE:').single;
+    expect(filtered.roomId, '!cats:example.org');
+    expect(filtered.stateKey, 'animals');
+    expect(filtered.collected, isTrue);
     expect(
       searchStickerPacks(packs, '挥手').single.stickers.single.shortcode,
       'cat_wave',

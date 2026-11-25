@@ -65,6 +65,9 @@ macro_rules! declare_models_api {
         #[derive(Clone, Debug)]
         pub struct StickerPack {
             pub id: String,
+            pub room_id: String,
+            pub state_key: String,
+            pub collected: bool,
             pub title: String,
             pub avatar_url: Option<String>,
             /// "room" or "user"
@@ -83,6 +86,21 @@ macro_rules! declare_models_api {
             pub mime_type: Option<String>,
             pub width: Option<i32>,
             pub height: Option<i32>,
+        }
+
+        #[frb]
+        #[derive(Clone, Debug)]
+        pub struct StickerPackKey {
+            pub room_id: String,
+            pub state_key: String,
+        }
+
+        #[frb]
+        #[derive(Clone, Debug)]
+        pub struct StickerPackSnapshot {
+            pub stable_version: Option<String>,
+            pub legacy_version: Option<String>,
+            pub content_json: Option<String>,
         }
 
         #[frb]
@@ -135,7 +153,12 @@ macro_rules! declare_models_api {
 
         #[frb]
         #[derive(Clone, Debug)]
-        pub enum MemberRole { Creator, Administrator, Moderator, Member }
+        pub enum MemberRole {
+            Creator,
+            Administrator,
+            Moderator,
+            Member,
+        }
 
         #[frb]
         #[derive(Clone, Debug)]

@@ -1,7 +1,13 @@
 import '../../src/rust/api/matrix.dart' as rust;
 
 class StickerPack {
+  rust.StickerPackKey get key =>
+      rust.StickerPackKey(roomId: roomId, stateKey: stateKey);
+
   final String id;
+  final String roomId;
+  final String stateKey;
+  final bool collected;
   final String title;
   final String accent;
   final String source;
@@ -10,6 +16,9 @@ class StickerPack {
 
   const StickerPack({
     required this.id,
+    required this.roomId,
+    required this.stateKey,
+    required this.collected,
     required this.title,
     required this.accent,
     required this.source,
@@ -53,16 +62,8 @@ class StickerItem {
 
 String stickerPackSourceLabel(StickerPack pack, Map<String, String> roomNames) {
   if (pack.source == 'room') {
-    // Match known IDs rather than splitting on ':' (servers can include ports).
-    String? sourceRoomId;
-    for (final roomId in roomNames.keys) {
-      if (pack.id.startsWith('room:$roomId:') &&
-          (sourceRoomId == null || roomId.length > sourceRoomId.length)) {
-        sourceRoomId = roomId;
-      }
-    }
-    final name = roomNames[sourceRoomId]?.trim();
-    if (name != null && name.isNotEmpty && name != sourceRoomId) {
+    final name = roomNames[pack.roomId]?.trim();
+    if (name != null && name.isNotEmpty && name != pack.roomId) {
       return '房间：$name';
     }
   }
@@ -78,6 +79,9 @@ List<StickerPack> stickerPacksFromRemote(List<rust.StickerPack> packs) {
     };
     return StickerPack(
       id: pack.id,
+      roomId: pack.roomId,
+      stateKey: pack.stateKey,
+      collected: pack.collected,
       title: pack.title,
       accent: accent,
       source: pack.source,
@@ -125,6 +129,9 @@ List<StickerPack> searchStickerPacks(List<StickerPack> packs, String query) {
       matches.add(
         StickerPack(
           id: pack.id,
+          roomId: pack.roomId,
+          stateKey: pack.stateKey,
+          collected: pack.collected,
           title: pack.title,
           accent: pack.accent,
           source: pack.source,
@@ -135,4 +142,17 @@ List<StickerPack> searchStickerPacks(List<StickerPack> packs, String query) {
     }
   }
   return matches;
+}
+
+bool ownsRoomPack(StickerPack pack, {required String roomId}) =>
+    pack.source == 'room' && pack.roomId == roomId;
+
+({String roomId, String stateKey})? importedPackScope(
+  StickerPack pack, {
+  required String roomId,
+}) {
+  if (!pack.collected || pack.source != 'room' || pack.roomId == roomId) {
+    return null;
+  }
+  return (roomId: pack.roomId, stateKey: pack.stateKey);
 }

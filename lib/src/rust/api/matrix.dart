@@ -11,7 +11,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'matrix.freezed.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SyncNotification`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Initialize persisted logging before startup session discovery begins.
 void initializeLogStore({required String dataDir}) =>
@@ -450,8 +450,80 @@ Future<List<ChatRoom>> getChatRooms({
 Future<List<ChatMessage>> getMessages({required String roomId}) =>
     RustLib.instance.api.crateApiMatrixGetMessages(roomId: roomId);
 
-Future<List<StickerPack>> getStickerPacks({required String roomId}) =>
-    RustLib.instance.api.crateApiMatrixGetStickerPacks(roomId: roomId);
+Future<List<StickerPack>> getStickerPacks({
+  required String accountUserId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixGetStickerPacks(
+  accountUserId: accountUserId,
+  roomId: roomId,
+);
+
+Future<bool> canEditStickerPacks({
+  required String accountUserId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixCanEditStickerPacks(
+  accountUserId: accountUserId,
+  roomId: roomId,
+);
+
+Future<StickerPackSnapshot> getStickerPackSnapshot({
+  required String accountUserId,
+  required StickerPackKey key,
+}) => RustLib.instance.api.crateApiMatrixGetStickerPackSnapshot(
+  accountUserId: accountUserId,
+  key: key,
+);
+
+Future<void> writeStickerPack({
+  required String accountUserId,
+  required StickerPackKey key,
+  String? stableVersion,
+  String? legacyVersion,
+  String? contentJson,
+}) => RustLib.instance.api.crateApiMatrixWriteStickerPack(
+  accountUserId: accountUserId,
+  key: key,
+  stableVersion: stableVersion,
+  legacyVersion: legacyVersion,
+  contentJson: contentJson,
+);
+
+Future<String> uploadStickerPackImage({
+  required String accountUserId,
+  required String roomId,
+  required List<int> data,
+  required String mimeType,
+  required bool confirmedPublicUpload,
+}) => RustLib.instance.api.crateApiMatrixUploadStickerPackImage(
+  accountUserId: accountUserId,
+  roomId: roomId,
+  data: data,
+  mimeType: mimeType,
+  confirmedPublicUpload: confirmedPublicUpload,
+);
+
+/// Find the room sticker pack that contains a sticker message, so the
+/// whole pack can be imported at once.
+Future<List<StickerPack>> findStickerPack({
+  required String accountUserId,
+  required String imageUrl,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixFindStickerPack(
+  accountUserId: accountUserId,
+  imageUrl: imageUrl,
+  roomId: roomId,
+);
+
+/// Import a room sticker pack into the account's sticker collection.
+Future<void> setStickerPacksCollected({
+  required String accountUserId,
+  required List<StickerPackKey> packs,
+  required bool collected,
+}) => RustLib.instance.api.crateApiMatrixSetStickerPacksCollected(
+  accountUserId: accountUserId,
+  packs: packs,
+  collected: collected,
+);
 
 Future<String> sendMessage({
   required String accountUserId,
@@ -620,6 +692,7 @@ Future<void> endPoll({
 );
 
 Future<void> sendSticker({
+  required String accountUserId,
   required String roomId,
   required String imageUrl,
   required String body,
@@ -627,6 +700,7 @@ Future<void> sendSticker({
   int? width,
   int? height,
 }) => RustLib.instance.api.crateApiMatrixSendSticker(
+  accountUserId: accountUserId,
   roomId: roomId,
   imageUrl: imageUrl,
   body: body,
@@ -939,7 +1013,19 @@ Future<void> addRoomToSpace({
   required String accountUserId,
   required String spaceId,
   required String roomId,
+  bool? newRoom,
 }) => RustLib.instance.api.crateApiMatrixAddRoomToSpace(
+  accountUserId: accountUserId,
+  spaceId: spaceId,
+  roomId: roomId,
+  newRoom: newRoom,
+);
+
+Future<void> setCanonicalSpace({
+  required String accountUserId,
+  required String spaceId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixSetCanonicalSpace(
   accountUserId: accountUserId,
   spaceId: spaceId,
   roomId: roomId,
@@ -2407,6 +2493,9 @@ class Sticker {
 
 class StickerPack {
   final String id;
+  final String roomId;
+  final String stateKey;
+  final bool collected;
   final String title;
   final String? avatarUrl;
 
@@ -2416,6 +2505,9 @@ class StickerPack {
 
   const StickerPack({
     required this.id,
+    required this.roomId,
+    required this.stateKey,
+    required this.collected,
     required this.title,
     this.avatarUrl,
     required this.source,
@@ -2425,6 +2517,9 @@ class StickerPack {
   @override
   int get hashCode =>
       id.hashCode ^
+      roomId.hashCode ^
+      stateKey.hashCode ^
+      collected.hashCode ^
       title.hashCode ^
       avatarUrl.hashCode ^
       source.hashCode ^
@@ -2436,10 +2531,56 @@ class StickerPack {
       other is StickerPack &&
           runtimeType == other.runtimeType &&
           id == other.id &&
+          roomId == other.roomId &&
+          stateKey == other.stateKey &&
+          collected == other.collected &&
           title == other.title &&
           avatarUrl == other.avatarUrl &&
           source == other.source &&
           stickers == other.stickers;
+}
+
+class StickerPackKey {
+  final String roomId;
+  final String stateKey;
+
+  const StickerPackKey({required this.roomId, required this.stateKey});
+
+  @override
+  int get hashCode => roomId.hashCode ^ stateKey.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StickerPackKey &&
+          runtimeType == other.runtimeType &&
+          roomId == other.roomId &&
+          stateKey == other.stateKey;
+}
+
+class StickerPackSnapshot {
+  final String? stableVersion;
+  final String? legacyVersion;
+  final String? contentJson;
+
+  const StickerPackSnapshot({
+    this.stableVersion,
+    this.legacyVersion,
+    this.contentJson,
+  });
+
+  @override
+  int get hashCode =>
+      stableVersion.hashCode ^ legacyVersion.hashCode ^ contentJson.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StickerPackSnapshot &&
+          runtimeType == other.runtimeType &&
+          stableVersion == other.stableVersion &&
+          legacyVersion == other.legacyVersion &&
+          contentJson == other.contentJson;
 }
 
 /// Session data to persist across app restarts.
@@ -2511,6 +2652,7 @@ sealed class SyncEvent with _$SyncEvent {
 
   /// The account's ignored-user list changed.
   const factory SyncEvent.ignoredUsersChanged() = SyncEvent_IgnoredUsersChanged;
+  const factory SyncEvent.stickerPacksChanged() = SyncEvent_StickerPacksChanged;
 }
 
 /// Ephemeral "who is typing right now" update for a room, pushed to Dart.

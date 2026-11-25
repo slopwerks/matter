@@ -158,6 +158,7 @@ class _SpaceAbout extends StatelessWidget {
         ),
         GroupedRows(
           children: [
+            RoomStickerPacksTile(roomId: details.id),
             ListTile(
               leading: const Icon(Icons.person_add_outlined),
               title: const Text('邀请成员'),

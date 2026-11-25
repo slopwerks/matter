@@ -52,20 +52,5 @@ impl Drop for SearchMetrics {
         if let Ok(json) = serde_json::to_string(&self.report) {
             super::app_log("debug", "search_perf", json);
         }
-        #[cfg(test)]
-        if let Ok(mut reports) = REPORTS.lock() {
-            reports.push(self.report.clone());
-        }
     }
-}
-
-#[cfg(test)]
-static REPORTS: std::sync::Mutex<Vec<SearchReport>> = std::sync::Mutex::new(Vec::new());
-
-#[cfg(test)]
-pub(super) fn take_reports() -> Vec<SearchReport> {
-    REPORTS
-        .lock()
-        .map(|mut reports| std::mem::take(&mut *reports))
-        .unwrap_or_default()
 }

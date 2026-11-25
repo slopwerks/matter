@@ -27,6 +27,7 @@ import '../settings/avatar_crop_editor_page.dart';
 import '../settings/timeline_event_settings_page.dart';
 import 'pinned_messages_page.dart';
 import 'material_room_member_rows.dart';
+import 'room_sticker_packs_page.dart';
 import 'room_metadata_patch.dart';
 import 'room_state_edit_tracker.dart';
 
@@ -1994,6 +1995,7 @@ class _RoomManagementPageState extends ConsumerState<RoomManagementPage> {
                           ),
                         ],
                         const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                        SliverToBoxAdapter(child: RoomStickerPacksTile(roomId: widget.roomId)),
                         SliverToBoxAdapter(
                           child: _section(
                             title: '通知与消息',

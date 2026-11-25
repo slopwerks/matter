@@ -345,6 +345,7 @@ extension _MaterialSpaceDetail on _SpaceDetailPageState {
             SizedBox(
               width: width,
               child: _SpaceChildTile(
+                onSetPrimary: () => _setPrimarySpace(room),
                 room: room,
                 onRemove: room.roomType == 'space'
                     ? null

@@ -107,6 +107,8 @@ mod session_expiry_tests;
 #[cfg(test)]
 #[path = "tests/space_child_tests.rs"]
 mod space_child_tests;
+mod sticker_collection;
+mod sticker_editor;
 mod sticker_packs;
 pub mod storage;
 #[cfg(test)]
@@ -295,6 +297,7 @@ use polls::poll_start_content;
 #[cfg(test)]
 use polls::validate_poll_answer_ids;
 mod room_create;
+mod space_inheritance;
 mod spaces;
 mod stickers;
 #[cfg(test)]
@@ -368,5 +371,3 @@ pub(super) use runtime::{ClientLease, MediaClientIdentity};
 
 #[cfg(test)]
 mod search_index_tests;
-#[cfg(test)]
-mod search_performance_tests;

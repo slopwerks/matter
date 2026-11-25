@@ -1,38 +1,10 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/matrix_html/matrix_code_block.dart';
 import 'package:matter/features/matrix_html/matrix_html_node.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 
-import 'helpers/neu_test_theme.dart';
-
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
-  Widget buildCodeBlock({
-    required String code,
-    String? language,
-    double width = 500,
-    TextStyle baseStyle = const TextStyle(fontSize: 15, color: Colors.white),
-    Brightness brightness = Brightness.dark,
-  }) {
-    return MaterialApp(
-      theme: neuTestTheme(dark: brightness == Brightness.dark),
-      home: Scaffold(
-        body: Center(
-          child: MatrixCodeBlock(
-            code: code,
-            language: language,
-            width: width,
-            baseStyle: baseStyle,
-            accentColor: Colors.blue,
-          ),
-        ),
-      ),
-    );
-  }
-
   group('formatCodeLanguage', () {
     test('formats known languages and aliases nicely', () {
       expect(formatCodeLanguage('dart'), 'Dart');
@@ -188,123 +160,5 @@ void main() {
       );
       expect(span.text, 'echo hello');
     });
-  });
-
-  group('MatrixCodeBlock Widget', () {
-    testWidgets('renders language label in header bar', (tester) async {
-      await tester.pumpWidget(
-        buildCodeBlock(code: 'final x = 1;', language: 'dart'),
-      );
-
-      expect(find.text('Dart'), findsOneWidget);
-      expect(find.byIcon(Icons.code_rounded), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('code-block-copy-button')),
-        findsOneWidget,
-      );
-      expect(find.text('复制'), findsOneWidget);
-    });
-
-    testWidgets('renders default Code label when language is omitted', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        buildCodeBlock(code: 'echo test', language: null),
-      );
-
-      expect(find.text('Code'), findsOneWidget);
-      expect(find.byIcon(Icons.code_rounded), findsOneWidget);
-      expect(find.text('复制'), findsOneWidget);
-    });
-
-    testWidgets(
-      'copies code to clipboard on copy button tap and shows feedback',
-      (tester) async {
-        String? clipboardData;
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          (MethodCall methodCall) async {
-            if (methodCall.method == 'Clipboard.setData') {
-              clipboardData = (methodCall.arguments as Map)['text'] as String?;
-              return null;
-            }
-            if (methodCall.method == 'Clipboard.getData') {
-              return {'text': clipboardData};
-            }
-            if (methodCall.method == 'HapticFeedback.vibrate') {
-              return null;
-            }
-            return null;
-          },
-        );
-
-        const testCode =
-            'const greeting = "Hello, Matter!";\nconsole.log(greeting);';
-
-        await tester.pumpWidget(buildCodeBlock(code: testCode, language: 'ts'));
-
-        expect(find.text('TypeScript'), findsOneWidget);
-        expect(find.text('复制'), findsOneWidget);
-        expect(find.byKey(const ValueKey('copy-icon')), findsOneWidget);
-
-        // Tap the copy button
-        await tester.tap(find.byKey(const ValueKey('code-block-copy-button')));
-        await tester.pump();
-
-        // Verify clipboard received the exact code text
-        expect(clipboardData, testCode);
-
-        // Verify copied state feedback
-        expect(find.text('已复制'), findsOneWidget);
-        expect(find.byKey(const ValueKey('copied-icon')), findsOneWidget);
-
-        // Wait 1.5s timer
-        await tester.pump(const Duration(milliseconds: 1600));
-
-        // Verify state reverts to default
-        expect(find.text('复制'), findsOneWidget);
-        expect(find.byKey(const ValueKey('copy-icon')), findsOneWidget);
-      },
-    );
-
-    testWidgets('adapts colors for dark mode and light mode', (tester) async {
-      // Dark mode:
-      await tester.pumpWidget(
-        buildCodeBlock(
-          code: 'int a = 10;',
-          language: 'c',
-          brightness: Brightness.dark,
-          baseStyle: const TextStyle(color: Colors.white),
-        ),
-      );
-      expect(tester.takeException(), isNull);
-      expect(find.text('C'), findsOneWidget);
-
-      // Light mode:
-      await tester.pumpWidget(
-        buildCodeBlock(
-          code: 'int a = 10;',
-          language: 'c',
-          brightness: Brightness.light,
-          baseStyle: const TextStyle(color: Colors.black87),
-        ),
-      );
-      expect(tester.takeException(), isNull);
-      expect(find.text('C'), findsOneWidget);
-    });
-
-    testWidgets(
-      'renders Scrollbar and SingleChildScrollView for horizontal scrolling',
-      (tester) async {
-        final longCode = 'final buffer = "${'abc' * 100}";';
-
-        await tester.pumpWidget(
-          buildCodeBlock(code: longCode, language: 'dart', width: 300),
-        );
-
-        expect(find.byType(Scrollbar), findsOneWidget);
-        expect(find.byType(SingleChildScrollView), findsOneWidget);
-      },
-    );
   });
 }

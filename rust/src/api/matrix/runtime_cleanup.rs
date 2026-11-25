@@ -76,6 +76,7 @@ pub(super) async fn clear_account_runtime_state(user_id: &str) {
         let mut overrides = IGNORED_USER_OVERRIDES.write().await;
         overrides.retain(|key, _| !key.starts_with(&format!("{user_id}:")));
     }
+    sticker_collection::clear_account(user_id).await;
     {
         let mut backfills = SEARCH_CACHE_BACKFILL_PROGRESS.lock().await;
         backfills.retain(|key, _| !key.starts_with(&format!("{user_id}\n")));

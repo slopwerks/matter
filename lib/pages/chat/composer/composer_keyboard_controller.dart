@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/chat_provider.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../providers/disabled_sticker_packs_provider.dart';
 import '../../../providers/composer_keyboard_settings_provider.dart';
 import '../../../src/rust/api/matrix.dart' as rust;
 import '../composer_autocomplete.dart';
@@ -162,27 +164,51 @@ class ComposerKeyboardController {
     List<rust.Contact>? members,
     List<rust.ChatRoom>? rooms,
     List<rust.StickerPack>? stickerPacks,
-  }) => composerAutocompleteOptions(
-    current,
-    members:
-        members ??
-        (current.kind == ComposerAutocompleteKind.mention
-            ? ref.read(roomMembersProvider(roomId)).asData?.value
-            : null) ??
-        const [],
-    rooms:
-        rooms ??
-        (current.kind == ComposerAutocompleteKind.room
-            ? ref.read(chatRoomsProvider).asData?.value
-            : null) ??
-        const [],
-    stickerPacks:
-        stickerPacks ??
-        (current.kind == ComposerAutocompleteKind.emoji
-            ? ref.read(stickerPacksProvider(roomId)).asData?.value
-            : null) ??
-        const [],
-  );
+  }) {
+    final account = ref.read(activeUserIdProvider);
+    final disabled = account == null
+        ? null
+        : ref
+              .read(
+                disabledStickerPacksProvider((
+                  account: account,
+                  roomId: roomId,
+                )),
+              )
+              .value;
+    return composerAutocompleteOptions(
+      current,
+      members:
+          members ??
+          (current.kind == ComposerAutocompleteKind.mention
+              ? ref.read(roomMembersProvider(roomId)).asData?.value
+              : null) ??
+          const [],
+      rooms:
+          rooms ??
+          (current.kind == ComposerAutocompleteKind.room
+              ? ref.read(chatRoomsProvider).asData?.value
+              : null) ??
+          const [],
+      stickerPacks:
+          (stickerPacks ??
+                  (current.kind == ComposerAutocompleteKind.emoji
+                      ? ref.read(stickerPacksProvider(roomId)).asData?.value
+                      : null) ??
+                  const <rust.StickerPack>[])
+              .where(
+                (pack) =>
+                    disabled?.contains(
+                      rust.StickerPackKey(
+                        roomId: pack.roomId,
+                        stateKey: pack.stateKey,
+                      ),
+                    ) !=
+                    true,
+              )
+              .toList(),
+    );
+  }
 
   void select(
     ComposerAutocompleteMatch current,

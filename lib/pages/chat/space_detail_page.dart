@@ -31,6 +31,7 @@ import 'action_failure_message.dart';
 import 'chat_detail_page.dart';
 import 'material_room_member_rows.dart';
 import 'room_directory_page.dart';
+import 'room_sticker_packs_page.dart';
 
 part 'material_space_detail.dart';
 part 'material_space_info.dart';
@@ -73,6 +74,24 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
   }
 
   bool _markingSpaceRead = false;
+
+  Future<void> _setPrimarySpace(ChatRoom room) async {
+    final account = _openedUserId;
+    if (account == null || !_accountActive()) return;
+    try {
+      await setCanonicalSpace(
+        accountUserId: account,
+        spaceId: widget.space.id,
+        roomId: room.id,
+      );
+      if (mounted && _accountActive()) neuToast(context, '已设为主空间');
+    } catch (error) {
+      if (mounted && _accountActive()) {
+        neuToast(context, _actionFailureMessage(error));
+      }
+    }
+  }
+
   bool _creatingRoom = false;
   bool _inviting = false;
 
@@ -186,6 +205,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
         accountUserId: account,
         spaceId: spaceId,
         roomId: roomId,
+        newRoom: true,
       );
       if (mounted && _accountActive()) neuToast(context, '房间已创建并加入空间');
     } catch (error) {
@@ -441,6 +461,7 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                           children: [
                             for (final room in rooms)
                               _SpaceChildTile(
+                                onSetPrimary: () => _setPrimarySpace(room),
                                 room: room,
                                 onRemove: room.roomType == 'space'
                                     ? null
@@ -526,6 +547,14 @@ class _SpaceDetailPageState extends ConsumerState<SpaceDetailPage> {
                     title: '设置',
                     child: Column(
                       children: [
+                        _ActionSettingRow(
+                          icon: Icons.collections_outlined,
+                          label: '贴纸包',
+                          value: '预览与收藏',
+                          onTap: () =>
+                              openRoomStickerPacks(context, details.id),
+                        ),
+                        const SizedBox(height: 10),
                         _ActionSettingRow(
                           icon: Icons.edit_rounded,
                           label: '编辑空间',
@@ -1359,7 +1388,12 @@ class _SpaceChildTile extends ConsumerWidget {
   final ChatRoom room;
   final VoidCallback? onRemove;
 
-  const _SpaceChildTile({required this.room, this.onRemove});
+  final VoidCallback onSetPrimary;
+  const _SpaceChildTile({
+    required this.room,
+    required this.onSetPrimary,
+    this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1461,26 +1495,17 @@ class _SpaceChildTile extends ConsumerWidget {
               ),
             ),
         ],
-        if (onRemove != null && material)
-          PopupMenuButton<String>(
-            tooltip: '房间操作',
-            icon: const Icon(Icons.more_horiz),
-            onSelected: (_) => onRemove!(),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'remove', child: Text('从空间移除')),
-            ],
-          )
-        else if (onRemove != null)
-          IconButton(
-            onPressed: onRemove,
-            icon: Icon(
-              Icons.remove_circle_outline_rounded,
-              color: context.neu.error,
-            ),
-            tooltip: '从空间移除',
-          )
-        else
-          Icon(Icons.chevron_right_rounded, color: context.neu.textTertiary),
+        PopupMenuButton<String>(
+          tooltip: '房间操作',
+          icon: const Icon(Icons.more_horiz),
+          onSelected: (action) =>
+              action == 'primary' ? onSetPrimary() : onRemove!(),
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'primary', child: Text('设为主空间')),
+            if (onRemove != null)
+              const PopupMenuItem(value: 'remove', child: Text('从空间移除')),
+          ],
+        ),
       ],
     );
 

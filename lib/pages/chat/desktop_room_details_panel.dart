@@ -11,6 +11,7 @@ import '../../widgets/neu_surface.dart';
 import 'material_room_details_panel.dart';
 import 'room_metadata_patch.dart';
 import 'room_management_page.dart';
+import 'room_sticker_packs_page.dart';
 
 class DesktopRoomDetailsPanel extends ConsumerWidget {
   final String roomId;
@@ -44,7 +45,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
 
     final colors = context.neu;
     final membersAsync = ref.watch(roomMembersProvider(roomId));
-    return ColoredBox(
+    return Material(
       color: colors.surface,
       child: Column(
         children: [
@@ -77,6 +78,7 @@ class DesktopRoomDetailsPanel extends ConsumerWidget {
             ),
           ),
           Divider(color: colors.hairline, height: 1),
+          RoomStickerPacksTile(roomId: roomId),
           Expanded(
             child: membersAsync.when(
               data: (members) => ListView.builder(

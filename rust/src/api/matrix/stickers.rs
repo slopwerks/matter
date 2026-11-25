@@ -3,6 +3,7 @@
 use super::*;
 
 pub(super) async fn send_sticker(
+    account_user_id: String,
     room_id: String,
     image_url: String,
     body: String,
@@ -16,6 +17,7 @@ pub(super) async fn send_sticker(
         .await
         .ok_or_else(|| api_err("rooms", "No client created.".to_string()))?;
 
+    ensure_account_matches(&client, &account_user_id)?;
     let room = client
         .get_room(
             &matrix_sdk::ruma::RoomId::parse(room_id.clone())
