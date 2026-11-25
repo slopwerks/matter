@@ -26,6 +26,7 @@ class ComposerActionsBar extends StatelessWidget {
     required this.onShowTools,
     required this.onSend,
     this.attachments,
+    this.emojiButtonWrapper,
   });
 
   final bool expanded;
@@ -40,6 +41,7 @@ class ComposerActionsBar extends StatelessWidget {
   final bool hasImages;
   final Widget editor;
   final Widget? attachments;
+  final Widget Function(Widget)? emojiButtonWrapper;
   final VoidCallback onToggleEmoji;
   final VoidCallback onToggleAttachment;
   final ValueChanged<BuildContext> onShowTools;
@@ -70,17 +72,18 @@ class ComposerActionsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.neu;
     final material = context.isMaterial;
+    final emojiButton = _toolButton(
+      icon: emojiIcon,
+      tooltip: '表情与贴纸',
+      selected: emojiSelected,
+      onPressed: sendBusy ? null : onToggleEmoji,
+    );
     return ComposerLayout(
       desktop: expanded,
       showMore: showMore && !material,
       attachments: attachments,
       editor: editor,
-      emojiButton: _toolButton(
-        icon: emojiIcon,
-        tooltip: '表情与贴纸',
-        selected: emojiSelected,
-        onPressed: sendBusy ? null : onToggleEmoji,
-      ),
+      emojiButton: emojiButtonWrapper?.call(emojiButton) ?? emojiButton,
       attachmentButton: Builder(
         builder: (buttonContext) {
           if (material && showMore) {

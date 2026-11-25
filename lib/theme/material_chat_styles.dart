@@ -323,3 +323,119 @@ final materialMarkdownEditorDecoration = materialAttachmentCaptionDecoration
       hintText: '用 Markdown 编写消息…',
       contentPadding: const EdgeInsets.all(20),
     );
+
+const desktopPickerGroupInset = 6.0;
+const desktopPickerGroupSize = 44.0;
+const desktopPickerGroupGap = 4.0;
+const desktopPickerFooterHeight =
+    desktopPickerGroupSize + desktopPickerGroupInset * 2;
+
+double desktopPickerGroupRadius(BuildContext context) =>
+    (context.isMaterial ? materialSurfaceRadius : NeuRadius.content) -
+    desktopPickerGroupInset;
+
+ButtonStyle desktopPickerGroupButtonStyle(
+  BuildContext context, {
+  required bool selected,
+}) => IconButton.styleFrom(
+  fixedSize: const Size.square(desktopPickerGroupSize),
+  minimumSize: const Size.square(desktopPickerGroupSize),
+  maximumSize: const Size.square(desktopPickerGroupSize),
+  padding: EdgeInsets.zero,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  backgroundColor: selected ? context.neu.accentSoft : Colors.transparent,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(desktopPickerGroupRadius(context)),
+  ),
+);
+
+({Color fill, ShapeBorder shape, double elevation, ButtonStyle tab})
+desktopComposerPickerStyle(BuildContext context, {required bool selected}) {
+  final theme = Theme.of(context);
+  final colors = context.neu;
+  return (
+    fill: context.isMaterial
+        ? theme.colorScheme.surfaceContainerLow
+        : colors.surfaceStrong,
+    shape: context.isMaterial
+        ? materialListItemShape
+        : const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(NeuRadius.content)),
+          ),
+    elevation: 8,
+    tab: TextButton.styleFrom(
+      foregroundColor: selected ? colors.accent : colors.textSecondary,
+      textStyle: theme.textTheme.labelLarge,
+      shape: const RoundedRectangleBorder(),
+    ),
+  );
+}
+
+({
+  BoxDecoration decoration,
+  TextStyle name,
+  TextStyle details,
+  EdgeInsets padding,
+})
+desktopPickerPreviewStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = context.neu;
+  final material = context.isMaterial;
+  final fill = material
+      ? theme.colorScheme.surfaceContainerHigh
+      : colors.surfaceStrong;
+  return (
+    decoration: BoxDecoration(
+      color: fill,
+      borderRadius: BorderRadius.circular(material ? 16 : NeuRadius.content),
+      border: Border.all(
+        color: material
+            ? theme.colorScheme.outlineVariant.withValues(alpha: .5)
+            : colors.hairline,
+      ),
+      gradient: material
+          ? null
+          : LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [neuShift(fill, .025), fill, neuShift(fill, -.015)],
+            ),
+      boxShadow: material
+          ? [
+              BoxShadow(
+                color: theme.colorScheme.shadow.withValues(alpha: .18),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+              BoxShadow(
+                color: theme.colorScheme.shadow.withValues(alpha: .10),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ]
+          : [
+              BoxShadow(
+                color: colors.shadowLight.withValues(
+                  alpha: colors.highlightAlpha,
+                ),
+                blurRadius: 10,
+                offset: const Offset(-3, -3),
+              ),
+              BoxShadow(
+                color: colors.shadowDark.withValues(alpha: .8),
+                blurRadius: 18,
+                offset: const Offset(5, 7),
+              ),
+            ],
+    ),
+    name: theme.textTheme.labelLarge!.copyWith(
+      color: material ? theme.colorScheme.onSurface : colors.text,
+    ),
+    details: theme.textTheme.bodySmall!.copyWith(
+      color: material
+          ? theme.colorScheme.onSurfaceVariant
+          : colors.textSecondary,
+    ),
+    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+  );
+}

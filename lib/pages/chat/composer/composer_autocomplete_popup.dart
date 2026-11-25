@@ -5,6 +5,8 @@ import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../widgets/app_avatar.dart';
 import '../composer_autocomplete.dart';
+import '../sticker_catalog.dart';
+import '../sticker_preview.dart';
 
 class ComposerAutocompleteOption {
   const ComposerAutocompleteOption({
@@ -13,6 +15,7 @@ class ComposerAutocompleteOption {
     this.subtitle,
     this.avatarUrl,
     this.emoji,
+    this.sticker,
   });
 
   final String title;
@@ -20,6 +23,7 @@ class ComposerAutocompleteOption {
   final String? subtitle;
   final String? avatarUrl;
   final String? emoji;
+  final StickerItem? sticker;
 }
 
 /// Candidate generation is independent of focus, providers and popup state.
@@ -27,6 +31,7 @@ List<ComposerAutocompleteOption> composerAutocompleteOptions(
   ComposerAutocompleteMatch match, {
   List<rust.Contact> members = const [],
   List<rust.ChatRoom> rooms = const [],
+  List<rust.StickerPack> stickerPacks = const [],
 }) {
   final query = match.query.toLowerCase();
   switch (match.kind) {
@@ -88,7 +93,7 @@ List<ComposerAutocompleteOption> composerAutocompleteOptions(
         );
       }).toList();
     case ComposerAutocompleteKind.emoji:
-      return emojiAutocompleteOptions(match.query)
+      final emoji = emojiAutocompleteOptions(match.query)
           .map(
             (option) => ComposerAutocompleteOption(
               title: ':${option.name}:',
@@ -97,6 +102,45 @@ List<ComposerAutocompleteOption> composerAutocompleteOptions(
             ),
           )
           .toList();
+      final faces = kComposerEmoticons.entries
+          .where((entry) => entry.key.contains(query))
+          .map(
+            (entry) => ComposerAutocompleteOption(
+              title: ':${entry.key}:',
+              subtitle: '文本表情 · ${entry.value}',
+              insertion: entry.value,
+              emoji: entry.value,
+            ),
+          );
+      final stickers =
+          searchStickerPacks(
+            stickerPacksFromRemote(stickerPacks),
+            query,
+          ).expand(
+            (pack) => pack.stickers
+                .where((sticker) => sticker.imageUrl != null)
+                .map(
+                  (sticker) => ComposerAutocompleteOption(
+                    title: sticker.shortcode == null
+                        ? sticker.body
+                        : ':${sticker.shortcode}:',
+                    subtitle: '贴纸 · ${pack.title} · 选择后发送',
+                    insertion: '',
+                    sticker: sticker,
+                  ),
+                ),
+          );
+      // Interleave kinds so even a broad query exposes each available kind.
+      final groups = [
+        emoji.take(50).toList(),
+        faces.toList(),
+        stickers.take(50).toList(),
+      ];
+      return [
+        for (var i = 0; i < 50; i++)
+          for (final group in groups)
+            if (i < group.length) group[i],
+      ].take(50).toList();
   }
 }
 
@@ -130,6 +174,73 @@ double composerAutocompleteItemExtent(BuildContext context) {
   final contentHeight =
       2 * lineHeight(text.titleSmall!) + 2 * lineHeight(text.labelSmall!);
   return contentHeight.clamp(44, double.infinity) + 16;
+}
+
+/// The anchor keeps its normal size while candidates paint above the composer.
+class ComposerAutocompleteOverlay extends StatefulWidget {
+  const ComposerAutocompleteOverlay({
+    super.key,
+    required this.popup,
+    required this.child,
+  });
+
+  final Widget? popup;
+  final Widget child;
+
+  @override
+  State<ComposerAutocompleteOverlay> createState() =>
+      _ComposerAutocompleteOverlayState();
+}
+
+class _ComposerAutocompleteOverlayState
+    extends State<ComposerAutocompleteOverlay> {
+  final _portal = OverlayPortalController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.popup != null) _portal.show();
+  }
+
+  @override
+  void didUpdateWidget(covariant ComposerAutocompleteOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((widget.popup != null) == (oldWidget.popup != null)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.popup != null) {
+        _portal.show();
+      } else {
+        _portal.hide();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => OverlayPortal.overlayChildLayoutBuilder(
+    controller: _portal,
+    overlayChildBuilder: (context, info) {
+      final anchor = MatrixUtils.transformRect(
+        info.childPaintTransform,
+        Offset.zero & info.childSize,
+      );
+      final top = MediaQuery.paddingOf(context).top + 8;
+      final available = (anchor.top - top - 4).clamp(
+        0.0,
+        info.overlaySize.height,
+      );
+      return Positioned(
+        left: anchor.left,
+        width: anchor.width,
+        bottom: info.overlaySize.height - anchor.top + 4,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: available),
+          child: widget.popup,
+        ),
+      );
+    },
+    child: widget.child,
+  );
 }
 
 class ComposerAutocompletePopup extends StatelessWidget {
@@ -177,11 +288,17 @@ class ComposerAutocompletePopup extends StatelessWidget {
             ? ShapeDecoration(
                 color: scheme.surfaceContainerHigh,
                 shape: theme.popupMenuTheme.shape ?? materialListItemShape,
+                shadows: desktopPickerPreviewStyle(context)
+                    .decoration
+                    .boxShadow,
               )
             : BoxDecoration(
                 color: colors.surfaceStrong,
                 borderRadius: BorderRadius.circular(NeuRadius.button),
                 border: Border.all(color: colors.hairline),
+                boxShadow: desktopPickerPreviewStyle(context)
+                    .decoration
+                    .boxShadow,
               ),
         child: loading && options.isEmpty
             ? Center(
@@ -226,11 +343,21 @@ class ComposerAutocompletePopup extends StatelessWidget {
                           ),
                           child: Row(
                             children: [
-                              if (option.emoji case final emoji?)
+                              if (option.sticker case final sticker?)
+                                SizedBox.square(
+                                  dimension: 34,
+                                  child: RemoteStickerPreview(
+                                    sticker: sticker,
+                                    cacheDimension: 96,
+                                  ),
+                                )
+                              else if (option.emoji case final emoji?)
                                 SizedBox(
                                   width: 34,
                                   child: Text(
                                     emoji,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 24),
                                   ),
                                 )

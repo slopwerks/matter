@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../../../features/markdown/markdown_text_editing_controller.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/chat_provider.dart';
+import '../../../providers/disabled_sticker_packs_provider.dart';
 import '../../../providers/composer_keyboard_settings_provider.dart';
 import '../../../providers/composer_attachment_provider.dart';
 import '../../../providers/interaction_mode_provider.dart';
@@ -17,6 +18,7 @@ import '../../../theme/neu_colors.dart';
 import '../../../widgets/glass.dart';
 import '../attachment_picker.dart';
 import '../desktop_clipboard.dart';
+import '../desktop_composer_picker.dart';
 import 'composer_actions_bar.dart';
 import 'composer_autocomplete_popup.dart';
 import 'composer_keyboard_controller.dart';
@@ -98,6 +100,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
   late final ComposerTypingController _typingController;
   ComposerPickerTab _pickerTab = ComposerPickerTab.emoji;
   int _pickerInstance = 0;
+  final _desktopPicker = MenuController();
+  bool _desktopPickerOpen = false;
   InputPanelMode _lastPickerPanelMode = InputPanelMode.emoji;
   double _renderedPickerHeight = 0;
   bool _attachmentInputFocused = false;
@@ -193,6 +197,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
       onChanged: () => setState(() {}),
       onPaste: _pasteClipboard,
       onSend: _sendMessage,
+      onStickerSelected: (sticker) => _sender.sendSticker(sticker, null),
     );
     _keyboard.initialize();
     _controller.addListener(_onTextChanged);
@@ -357,6 +362,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
   void _togglePicker([ComposerPickerTab? tab]) {
     final nextTab = tab ?? _pickerTab;
+    if (_isDesktop) {
+      setState(() => _pickerTab = nextTab);
+      if (_desktopPicker.isOpen) {
+        _desktopPicker.close();
+      } else {
+        _desktopPicker.open();
+      }
+      return;
+    }
     final sameTab = nextTab == _pickerTab;
     if (widget.panelMode == InputPanelMode.emoji && sameTab) {
       widget.onPanelModeChanged(InputPanelMode.none);
@@ -376,6 +390,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   void _showKeyboard() {
+    if (_desktopPicker.isOpen) _desktopPicker.close();
     widget.onPanelModeChanged(InputPanelMode.keyboard);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -495,10 +510,22 @@ class MessageInputState extends ConsumerState<MessageInput> {
         : null;
     AsyncValue<List<rust.Contact>>? membersAsync;
     AsyncValue<List<rust.ChatRoom>>? roomsAsync;
+    AsyncValue<List<rust.StickerPack>>? stickerPacksAsync;
     if (autocompleteMatch?.kind == ComposerAutocompleteKind.mention) {
       membersAsync = ref.watch(roomMembersProvider(widget.roomId));
     } else if (autocompleteMatch?.kind == ComposerAutocompleteKind.room) {
       roomsAsync = ref.watch(chatRoomsProvider);
+    } else if (autocompleteMatch?.kind == ComposerAutocompleteKind.emoji) {
+      stickerPacksAsync = ref.watch(stickerPacksProvider(widget.roomId));
+      final account = ref.watch(activeUserIdProvider);
+      if (account != null) {
+        ref.watch(
+          disabledStickerPacksProvider((
+            account: account,
+            roomId: widget.roomId,
+          )),
+        );
+      }
     }
     final autocompleteOptions = autocompleteMatch == null
         ? const <ComposerAutocompleteOption>[]
@@ -506,9 +533,12 @@ class MessageInputState extends ConsumerState<MessageInput> {
             autocompleteMatch,
             members: membersAsync?.asData?.value,
             rooms: roomsAsync?.asData?.value,
+            stickerPacks: stickerPacksAsync?.asData?.value,
           );
     final autocompleteLoading =
-        membersAsync?.isLoading == true || roomsAsync?.isLoading == true;
+        membersAsync?.isLoading == true ||
+        roomsAsync?.isLoading == true ||
+        stickerPacksAsync?.isLoading == true;
     final visiblePickerMode =
         widget.panelMode == InputPanelMode.emoji ||
             widget.panelMode == InputPanelMode.attachment
@@ -580,69 +610,93 @@ class MessageInputState extends ConsumerState<MessageInput> {
                 ComposerQuoteTransition(key: ValueKey(_draftKey), banner: quote)
               else
                 ?quote,
-              if (autocompleteMatch != null &&
-                  (autocompleteOptions.isNotEmpty || autocompleteLoading))
-                Flexible(
-                  fit: FlexFit.loose,
-                  child: ComposerAutocompletePopup(
-                    options: autocompleteOptions,
-                    loading: autocompleteLoading,
-                    viewportItemCount: MediaQuery.sizeOf(context).width < 600
-                        ? 4
-                        : 8,
-                    selectedIndex: _keyboard.index,
-                    scrollController: _keyboard.scroll,
-                    onHover: _keyboard.hover,
-                    onSelected: (option) {
-                      final match = _keyboard.match;
-                      if (match != null) _keyboard.select(match, option);
-                    },
-                  ),
-                ),
-              ComposerSurface(
-                expanded: expanded,
-                compact: desktop,
-                attachments: context.isMaterial ? attachments : null,
-                child: ComposerActionsBar(
+              ComposerAutocompleteOverlay(
+                popup:
+                    autocompleteMatch != null &&
+                        (autocompleteOptions.isNotEmpty || autocompleteLoading)
+                    ? ComposerAutocompletePopup(
+                        options: autocompleteOptions,
+                        loading: autocompleteLoading,
+                        viewportItemCount:
+                            MediaQuery.sizeOf(context).width < 600 ? 4 : 8,
+                        selectedIndex: _keyboard.index,
+                        scrollController: _keyboard.scroll,
+                        onHover: _keyboard.hover,
+                        onSelected: (option) {
+                          final match = _keyboard.match;
+                          if (match != null) _keyboard.select(match, option);
+                        },
+                      )
+                    : null,
+                child: ComposerSurface(
                   expanded: expanded,
                   compact: desktop,
-                  showMore: _isDesktop || desktop,
-                  inlineImages: inlineImages,
-                  emojiIcon: widget.panelMode == InputPanelMode.emoji
-                      ? Icons.keyboard_rounded
-                      : (_pickerTab == ComposerPickerTab.sticker
-                            ? Icons.interests_rounded
-                            : Icons.sentiment_satisfied_alt_rounded),
-                  emojiSelected: widget.panelMode == InputPanelMode.emoji,
-                  attachmentSelected:
-                      widget.panelMode == InputPanelMode.attachment,
-                  sendBusy: sendBusy,
-                  hasText: _hasText,
-                  hasImages: hasImages,
-                  onToggleEmoji: widget.panelMode == InputPanelMode.emoji
-                      ? _showKeyboard
-                      : _togglePicker,
-                  onToggleAttachment: _toggleAttachmentPicker,
-                  onShowTools: _tools.showToolsMenu,
-                  onSend: _sendMessage,
-                  attachments: context.isMaterial ? null : attachments,
-                  editor: ComposerTextField(
-                    key: _textFieldKey,
-                    controller: _controller,
-                    focusNode: _focusNode,
+                  attachments: context.isMaterial ? attachments : null,
+                  child: ComposerActionsBar(
                     expanded: expanded,
                     compact: desktop,
-                    readOnly: editingSourceLoading,
-                    onPaste: (_isDesktop || desktop)
-                        ? () {
-                            ContextMenuController.removeAny();
-                            unawaited(
-                              _pasteClipboard(SelectionChangedCause.toolbar),
-                            );
-                          }
+                    showMore: _isDesktop || desktop,
+                    inlineImages: inlineImages,
+                    emojiButtonWrapper: _isDesktop
+                        ? (child) => DesktopComposerPicker(
+                            controller: _desktopPicker,
+                            roomId: widget.roomId,
+                            tab: _pickerTab,
+                            onTabChanged: (tab) =>
+                                setState(() => _pickerTab = tab),
+                            onEmojiSelected: _insertEmoji,
+                            onStickerSelected: (sticker, rect) {
+                              _desktopPicker.close();
+                              _sender.sendSticker(sticker, rect);
+                            },
+                            onOpenChanged: (open) {
+                              if (mounted) {
+                                setState(() => _desktopPickerOpen = open);
+                              }
+                            },
+                            child: child,
+                          )
                         : null,
-                    onTap: () =>
-                        widget.onPanelModeChanged(InputPanelMode.keyboard),
+                    emojiIcon:
+                        !_isDesktop && widget.panelMode == InputPanelMode.emoji
+                        ? Icons.keyboard_rounded
+                        : (_pickerTab == ComposerPickerTab.sticker
+                              ? Icons.interests_rounded
+                              : Icons.sentiment_satisfied_alt_rounded),
+                    emojiSelected: _isDesktop
+                        ? _desktopPickerOpen
+                        : widget.panelMode == InputPanelMode.emoji,
+                    attachmentSelected:
+                        widget.panelMode == InputPanelMode.attachment,
+                    sendBusy: sendBusy,
+                    hasText: _hasText,
+                    hasImages: hasImages,
+                    onToggleEmoji:
+                        !_isDesktop && widget.panelMode == InputPanelMode.emoji
+                        ? _showKeyboard
+                        : _togglePicker,
+                    onToggleAttachment: _toggleAttachmentPicker,
+                    onShowTools: _tools.showToolsMenu,
+                    onSend: _sendMessage,
+                    attachments: context.isMaterial ? null : attachments,
+                    editor: ComposerTextField(
+                      key: _textFieldKey,
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      expanded: expanded,
+                      compact: desktop,
+                      readOnly: editingSourceLoading,
+                      onPaste: (_isDesktop || desktop)
+                          ? () {
+                              ContextMenuController.removeAny();
+                              unawaited(
+                                _pasteClipboard(SelectionChangedCause.toolbar),
+                              );
+                            }
+                          : null,
+                      onTap: () =>
+                          widget.onPanelModeChanged(InputPanelMode.keyboard),
+                    ),
                   ),
                 ),
               ),
@@ -654,7 +708,10 @@ class MessageInputState extends ConsumerState<MessageInput> {
                       : Duration.zero,
                   curve: Curves.easeOutCubic,
                   width: double.infinity,
-                  height: widget.pickerHeight,
+                  height:
+                      _isDesktop && visiblePickerMode == InputPanelMode.emoji
+                      ? 0
+                      : widget.pickerHeight,
                   child: ClipRect(
                     child: OverflowBox(
                       alignment: Alignment.topCenter,
@@ -664,8 +721,12 @@ class MessageInputState extends ConsumerState<MessageInput> {
                         width: double.infinity,
                         height: panelContentHeight,
                         child:
-                            widget.pickerHeight <= 0 &&
-                                widget.panelMode != InputPanelMode.attachment
+                            (_isDesktop &&
+                                    visiblePickerMode ==
+                                        InputPanelMode.emoji) ||
+                                widget.pickerHeight <= 0 &&
+                                    widget.panelMode !=
+                                        InputPanelMode.attachment
                             ? const SizedBox.shrink()
                             : switch (visiblePickerMode) {
                                 InputPanelMode.emoji => ComposerPickerPanel(

@@ -323,6 +323,14 @@ a theme transition instead of switching the whole palette halfway through.
 
 ## Desktop and tablet composers
 
+Inline autocomplete floats above the composer without changing its measured
+height or the timeline viewport. The popup follows the composer bounds and
+caps its height at the available space above it. `@` and `#` retain their
+identity completions; `:keyword` combines emoji, named text emoticons and
+available Matrix image-pack stickers. Text candidates insert at the active
+token. Sticker candidates explicitly say selection sends them, use the shared
+sticker send path, and remove only the active token, preserving other draft text.
+
 Material uses one floating `surfaceContainerHigh` capsule at every pane width:
 28 dp corners, a 56 dp default height and a 720 dp maximum surface width, with
 16 dp side and 12 dp bottom margins. Its editor has no nested filled field.
@@ -355,8 +363,28 @@ shadows. Composer dialogs and menus inherit their theme's overlay shapes.
 Staged images use a `surfaceContainerLow` card above the composer, with 18 dp
 corners, a count, a clear action and 56 dp thumbnails. Sending disables both
 clearing and individual removal. Neu retains its existing thumbnail strip.
-The emoji and sticker picker uses the classic left-aligned tabs, compact emoji
-grid and outlined sticker thumbnails in both themes. The active pack uses an
+On mobile, the emoji and sticker picker uses the classic left-aligned tabs,
+compact emoji grid and outlined sticker thumbnails in both themes. Desktop
+platforms use a composer-anchored popup with emoji/sticker tabs at the top,
+continuous sections and a bottom category/pack strip that follows scrolling.
+The desktop popup does not reserve timeline space; outside clicks and Escape
+close it. Its tab indicator sits on the tab bar's bottom edge. Both desktop
+footer strips start at the left and share 44 dp group buttons, 4 dp gaps and
+6 dp outer insets. Group-button radius is the popup radius minus that inset,
+keeping the bottom corner arcs concentric. Desktop search sits immediately
+below the tabs, above the content. It filters the available Matrix image packs
+by display name/scoped ID and image shortcode/body, rather than querying a
+nonexistent global sticker directory. Emoji and sticker cells show delayed,
+non-interactive hover cards with enlarged previews and name metadata.
+Hover-card chrome follows the active skin: Material uses a higher semantic
+surface, subtle outline and downward shadow; Neu uses a soft convex gradient,
+top-left highlight and bottom-right shadow. Name and metadata have separate
+foreground roles. Hover previews require 500 ms of pointer stability within
+4 dp. Scrolling (including inertial/programmatic scrolling), pointer presses,
+search changes and tab switches dismiss previews and pending timers. After
+scrolling ends, a 250 ms cooldown and fresh physical mouse movement are required;
+layout-driven mouse-enter events never arm previews. The overlay belongs to the
+cell lifecycle and ignores pointer input. The active pack uses an
 accent outline, and long-press previews use the floating rounded panel.
 Video viewer counters use `labelMedium`; speed and menu controls share the
 viewer pills, and volume uses the viewer's high-contrast slider colours.

@@ -10,14 +10,19 @@ import '../../src/rust/api/matrix.dart'
     show setStickerPacksCollected, StickerPackKey;
 import '../../widgets/sheets.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/material_theme.dart';
 import 'sticker_catalog.dart';
 import 'sticker_preview.dart';
+import 'desktop_picker_preview.dart';
 
 class StickerPackPanel extends ConsumerStatefulWidget {
   final String roomId;
   final void Function(StickerItem sticker, Rect? sourceRect) onStickerSelected;
   final Future<void> Function() onPackNavigation;
   final ScrollController scrollController;
+  final bool packStripAtBottom;
+  final String query;
+  final bool active;
 
   const StickerPackPanel({
     super.key,
@@ -25,6 +30,9 @@ class StickerPackPanel extends ConsumerStatefulWidget {
     required this.onStickerSelected,
     required this.onPackNavigation,
     required this.scrollController,
+    this.packStripAtBottom = false,
+    this.query = '',
+    this.active = true,
   });
 
   @override
@@ -161,9 +169,13 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   Future<void> _revealPackThumbnail(int index) async {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || !_packStripController.hasClients) return;
-    const itemStride = 48.0;
-    const horizontalPadding = 10.0;
-    const itemWidth = 40.0;
+    final itemStride = widget.packStripAtBottom
+        ? desktopPickerGroupSize + desktopPickerGroupGap
+        : 48.0;
+    final horizontalPadding = widget.packStripAtBottom
+        ? desktopPickerGroupInset
+        : 10.0;
+    final itemWidth = widget.packStripAtBottom ? desktopPickerGroupSize : 40.0;
     final position = _packStripController.position;
     final itemStart = horizontalPadding + index * itemStride;
     final itemEnd = itemStart + itemWidth;
@@ -214,6 +226,11 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification ||
+        notification is ScrollUpdateNotification ||
+        notification is OverscrollNotification) {
+      _hideHoldPreview();
+    }
     if (notification is ScrollUpdateNotification) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _updateActivePackByViewport();
@@ -223,6 +240,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   }
 
   void _showHoldPreview(StickerItem sticker) {
+    if (!widget.active) return;
     _holdPreviewSticker = sticker;
     final overlay = Overlay.of(context);
     _holdPreviewOverlay ??= OverlayEntry(
@@ -283,8 +301,34 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
   }
 
   @override
+  void didUpdateWidget(covariant StickerPackPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.active || widget.query != oldWidget.query) _hideHoldPreview();
+    if (widget.query != oldWidget.query) {
+      _jumpGeneration++;
+      _isJumpingToPack = false;
+      _activePackIndex = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (widget.scrollController.hasClients) {
+          widget.scrollController.jumpTo(0);
+        }
+        if (_packStripController.hasClients) _packStripController.jumpTo(0);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final packsAsync = ref.watch(stickerPacksProvider(widget.roomId));
+    final rooms = widget.packStripAtBottom
+        ? ref.watch(allChatRoomsProvider).asData?.value
+        : null;
+    final roomNames = <String, String>{
+      if (rooms != null)
+        for (final room in rooms) room.id: room.name,
+    };
+
     final account = ref.watch(activeUserIdProvider);
     final disabledPacks = account == null
         ? null
@@ -297,41 +341,55 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
               )
               .value;
 
-    return packsAsync.when(
-      data: (remotePacks) {
-        final packs = stickerPacksFromRemote(remotePacks)
-            .where((pack) => disabledPacks?.contains(pack.key) != true)
-            .toList();
-        _packs = packs;
-        _syncPackKeys(packs.length);
-        _syncVisibleStickers(packs);
-        return _buildPackStream(packs);
-      },
-      loading: () => Center(
-        child: CircularProgressIndicator(
-          color: context.neu.accent,
-          strokeWidth: 2,
-        ),
-      ),
-      error: (error, _) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
-            child: Text(
-              '加载贴纸包失败',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+    return Listener(
+      // Own release handling above lazy cells: their recognizers may be disposed
+      // while the panel-owned overlay is still visible.
+      onPointerUp: (_) => _hideHoldPreview(),
+      onPointerCancel: (_) => _hideHoldPreview(),
+      onPointerSignal: (_) => _hideHoldPreview(),
+      child: packsAsync.when(
+        data: (remotePacks) {
+          final packs = searchStickerPacks(
+            stickerPacksFromRemote(remotePacks)
+                .where((pack) => disabledPacks?.contains(pack.key) != true)
+                .toList(),
+            widget.query,
+          );
+          _activePackIndex = _activePackIndex.clamp(
+            0,
+            packs.isEmpty ? 0 : packs.length - 1,
+          );
+          _packs = packs;
+          _syncPackKeys(packs.length);
+          _syncVisibleStickers(packs);
+          return _buildPackStream(packs, roomNames);
+        },
+        loading: () => Center(
+          child: CircularProgressIndicator(
+            color: context.neu.accent,
+            strokeWidth: 2,
           ),
-          Expanded(
-            child: Center(
+        ),
+        error: (error, _) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
               child: Text(
-                '当前无法读取可用贴纸包',
-                style: Theme.of(context).textTheme.bodyMedium,
+                '加载贴纸包失败',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Center(
+                child: Text(
+                  '当前无法读取可用贴纸包',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -366,13 +424,16 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     }
   }
 
-  Widget _buildPackStream(List<StickerPack> packs) {
+  Widget _buildPackStream(
+    List<StickerPack> packs,
+    Map<String, String> roomNames,
+  ) {
     final account = ref.watch(activeUserIdProvider);
     final colors = context.neu;
     if (packs.isEmpty) {
       return Center(
         child: Text(
-          '当前房间没有可用贴纸包',
+          widget.query.trim().isEmpty ? '当前房间没有可用贴纸包' : '没有匹配的贴纸包或贴纸',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
@@ -380,9 +441,12 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
     }
 
     return Column(
+      verticalDirection: widget.packStripAtBottom
+          ? VerticalDirection.up
+          : VerticalDirection.down,
       children: [
         SizedBox(
-          height: 58,
+          height: widget.packStripAtBottom ? desktopPickerFooterHeight : 58,
           child: NotificationListener<OverscrollIndicatorNotification>(
             onNotification: (notification) {
               notification.disallowIndicator();
@@ -390,15 +454,20 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
             },
             child: ListView.separated(
               controller: _packStripController,
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+              padding: widget.packStripAtBottom
+                  ? const EdgeInsets.all(desktopPickerGroupInset)
+                  : const EdgeInsets.fromLTRB(10, 10, 10, 8),
               scrollDirection: Axis.horizontal,
               itemCount: packs.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              separatorBuilder: (_, _) => SizedBox(
+                width: widget.packStripAtBottom ? desktopPickerGroupGap : 8,
+              ),
               itemBuilder: (context, index) {
                 final pack = packs[index];
                 return _PackThumb(
+                  desktop: widget.packStripAtBottom,
                   label: pack.title,
-                  sticker: pack.stickers.first,
+                  sticker: pack.stickers.isEmpty ? null : pack.stickers.first,
                   fallback: pack.accent,
                   selected: index == _activePackIndex,
                   onTap: () => _jumpToPack(index),
@@ -495,7 +564,7 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                               ) {
                                 final sticker = packs[i].stickers[index];
                                 final stickerKey = _stickerKeyFor(sticker);
-                                return _StickerCard(
+                                final card = _StickerCard(
                                   key: stickerKey,
                                   sticker: sticker,
                                   onTap: () {
@@ -517,6 +586,20 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
                                   onLongPressEnd: (_) => _hideHoldPreview(),
                                   onLongPressCancel: _hideHoldPreview,
                                 );
+                                return widget.packStripAtBottom
+                                    ? DesktopPickerPreview(
+                                        preview: RemoteStickerPreview(
+                                          sticker: sticker,
+                                          cacheDimension: 256,
+                                        ),
+                                        name: sticker.shortcode == null
+                                            ? sticker.body
+                                            : ':${sticker.shortcode}:',
+                                        details:
+                                            '${sticker.body}\n${packs[i].title}\n${stickerPackSourceLabel(packs[i], roomNames)}',
+                                        child: card,
+                                      )
+                                    : card;
                               }, childCount: packs[i].stickers.length),
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
@@ -546,12 +629,14 @@ class _StickerPackPanelState extends ConsumerState<StickerPackPanel> {
 
 class _PackThumb extends StatelessWidget {
   final String label;
-  final StickerItem sticker;
+  final bool desktop;
+  final StickerItem? sticker;
   final String fallback;
   final bool selected;
   final VoidCallback onTap;
 
   const _PackThumb({
+    required this.desktop,
     required this.label,
     required this.sticker,
     required this.fallback,
@@ -562,6 +647,28 @@ class _PackThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.neu;
+    if (desktop) {
+      return Semantics(
+        selected: selected,
+        button: true,
+        child: IconButton(
+          tooltip: label,
+          onPressed: onTap,
+          isSelected: selected,
+          style: desktopPickerGroupButtonStyle(context, selected: selected),
+          icon: Padding(
+            padding: const EdgeInsets.all(6),
+            child: sticker == null
+                ? Center(child: Text(fallback))
+                : RemoteStickerPreview(
+                    sticker: sticker!,
+                    fallback: fallback,
+                    cacheDimension: 96,
+                  ),
+          ),
+        ),
+      );
+    }
     return Tooltip(
       message: label,
       child: Semantics(
@@ -586,11 +693,13 @@ class _PackThumb extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(NeuRadius.tag),
-              child: RemoteStickerPreview(
-                sticker: sticker,
-                fallback: fallback,
-                cacheDimension: 96,
-              ),
+              child: sticker == null
+                  ? Center(child: Text(fallback))
+                  : RemoteStickerPreview(
+                      sticker: sticker!,
+                      fallback: fallback,
+                      cacheDimension: 96,
+                    ),
             ),
           ),
         ),
