@@ -254,6 +254,11 @@ mod tests {
             .await
             .unwrap_err()
             .contains("明文"));
+        Mock::given(method("GET"))
+            .and(path_regex("/media/(v3/)?config$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"m.upload.size": 1024})))
+            .mount(server.server())
+            .await;
         Mock::given(method("POST"))
             .and(path_regex("/upload$"))
             .and(wiremock::matchers::body_bytes(bytes.clone()))
