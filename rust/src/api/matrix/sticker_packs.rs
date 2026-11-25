@@ -191,29 +191,35 @@ pub(super) async fn get_sticker_packs(
     room: &Room,
 ) -> Result<Vec<StickerPack>, String> {
     let imported_room_packs = sticker_collection::effective(client).await?;
-    let mut packs = load_room_sticker_packs(room, None).await?;
-    for pack in &mut packs {
-        pack.collected = imported_room_packs
-            .get(&pack.room_id)
-            .is_some_and(|keys| keys.contains(&pack.state_key));
+    let mut ranked = Vec::new();
+    let mut sources = HashSet::new();
+    let ancestors = super::space_inheritance::ancestors(client, room).await?;
+    for (distance, source) in std::iter::once(room).chain(&ancestors).enumerate() {
+        sources.insert(source.room_id().to_owned());
+        for mut pack in load_room_sticker_packs(source, None).await? {
+            pack.collected = imported_room_packs
+                .get(&pack.room_id)
+                .is_some_and(|keys| keys.contains(&pack.state_key));
+            ranked.push((if pack.collected { 0 } else { distance + 1 }, pack));
+        }
     }
     for (room_id, keys) in imported_room_packs {
-        if room.room_id().as_str() == room_id {
+        let parsed = matrix_sdk::ruma::RoomId::parse(room_id).map_err(|error| error.to_string())?;
+        if sources.contains(&parsed) {
             continue;
         }
-        let parsed = matrix_sdk::ruma::RoomId::parse(room_id).map_err(|error| error.to_string())?;
         if let Some(source) = client
             .get_room(&parsed)
             .filter(|room| room.state() == matrix_sdk::RoomState::Joined)
         {
             for mut pack in load_room_sticker_packs(&source, Some(&keys)).await? {
                 pack.collected = true;
-                packs.push(pack);
+                ranked.push((0, pack));
             }
         }
     }
-    packs.sort_by_cached_key(|pack| (pack.title.to_lowercase(), pack.id.clone()));
-    Ok(packs)
+    ranked.sort_by_cached_key(|(rank, pack)| (*rank, pack.title.to_lowercase(), pack.id.clone()));
+    Ok(ranked.into_iter().map(|(_, pack)| pack).collect())
 }
 
 pub(super) async fn find_sticker_pack(
@@ -265,6 +271,110 @@ mod tests {
             .to_string(),
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn resolves_only_verified_space_links_after_sync() {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        let target = room_id!("!target:localhost");
+        let first = room_id!("!a:localhost");
+        let second = room_id!("!b:localhost");
+        let via = json!({"via":["localhost"]});
+        let primary = json!({"via":["localhost"], "canonical":true});
+        let parent = |id: &str, content| pack_event("m.space.parent", id, content);
+        let child = |id: &str, content| pack_event("m.space.child", id, content);
+        let space = || {
+            pack_event(
+                "m.room.create",
+                "",
+                json!({"creator":"@alice:localhost", "type":"m.space"}),
+            )
+        };
+        let pack = |key| {
+            pack_event(
+                "m.room.image_pack",
+                key,
+                json!({"images":{"cat":{"url":"mxc://localhost/cat"}}}),
+            )
+        };
+        let room = server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(target)
+                    .add_state_event(parent(first.as_str(), via.clone()))
+                    .add_state_event(parent(second.as_str(), via.clone()))
+                    .add_state_event(pack("z-local")),
+            )
+            .await;
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(first)
+                    .add_state_event(space())
+                    .add_state_event(child(target.as_str(), via.clone()))
+                    .add_state_event(pack("a-near")),
+            )
+            .await;
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(second)
+                    .add_state_event(space())
+                    .add_state_event(child(target.as_str(), json!({"via":[]})))
+                    .add_state_event(pack("b-far")),
+            )
+            .await;
+        let titles = || async {
+            super::get_sticker_packs(&client, &room)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|pack| pack.title)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(titles().await, ["z-local", "a-near"]);
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(second).add_state_event(child(target.as_str(), via.clone())),
+            )
+            .await;
+        assert_eq!(titles().await, ["z-local"]);
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(target)
+                    .add_state_event(parent(second.as_str(), primary.clone())),
+            )
+            .await;
+        assert_eq!(titles().await, ["z-local", "b-far"]);
+        server
+            .sync_room(
+                &client,
+                JoinedRoomBuilder::new(target).add_state_event(parent(first.as_str(), primary)),
+            )
+            .await;
+        assert_eq!(titles().await, ["z-local", "a-near"]);
+        for (id, other) in [(first, second), (second, first)] {
+            server
+                .sync_room(
+                    &client,
+                    JoinedRoomBuilder::new(id)
+                        .add_state_event(child(other.as_str(), via.clone()))
+                        .add_state_event(parent(other.as_str(), via.clone())),
+                )
+                .await;
+        }
+        assert_eq!(titles().await, ["z-local", "a-near", "b-far"]);
+        server.mock_sync().ok_and_run(&client, |sync| {
+            sync.add_global_account_data(Raw::from_json_string(json!({"type":"m.image_pack.rooms", "content":{"rooms":{second.as_str():{"b-far":{}}}}}).to_string()).unwrap());
+        }).await;
+        assert_eq!(titles().await, ["b-far", "z-local", "a-near"]);
+        server
+            .sync_room(&client, matrix_sdk_test::LeftRoomBuilder::new(second))
+            .await;
+        assert_eq!(titles().await, ["z-local", "a-near"]);
     }
 
     #[tokio::test]

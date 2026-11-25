@@ -12,7 +12,17 @@ import 'package:matter/widgets/app_avatar.dart';
 import 'helpers/neu_test_theme.dart';
 
 class _FakeRustApi implements RustLibApi {
-  final linkedRooms = <(String, String)>[];
+  final linkedRooms = <(String, String, bool?)>[];
+  final primaryRooms = <(String, String, String)>[];
+  @override
+  Future<void> crateApiMatrixSetCanonicalSpace({
+    required String accountUserId,
+    required String spaceId,
+    required String roomId,
+  }) async {
+    primaryRooms.add((accountUserId, spaceId, roomId));
+  }
+
   @override
   Future<String> crateApiMatrixCreateGroupRoom({
     required String accountUserId,
@@ -21,11 +31,12 @@ class _FakeRustApi implements RustLibApi {
   }) async => '!new:example.org';
   @override
   Future<void> crateApiMatrixAddRoomToSpace({
+    bool? newRoom,
     required String accountUserId,
     required String spaceId,
     required String roomId,
   }) async {
-    linkedRooms.add((spaceId, roomId));
+    linkedRooms.add((spaceId, roomId, newRoom));
   }
 
   @override
@@ -185,9 +196,14 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('创建'));
       await tester.pumpAndSettle();
-      expect(api.linkedRooms, [(spaceId, '!new:example.org')]);
+      expect(api.linkedRooms, [(spaceId, '!new:example.org', true)]);
       expect(find.text('未读 3'), findsOneWidget);
       expect(find.text('空间详情'), findsNothing);
+      await tester.tap(find.byTooltip('房间操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('设为主空间'));
+      await tester.pumpAndSettle();
+      expect(api.primaryRooms, [('@alice:example.org', spaceId, room.id)]);
       await tester.tap(find.byTooltip('房间操作'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('从空间移除'));

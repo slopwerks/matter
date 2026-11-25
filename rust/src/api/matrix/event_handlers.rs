@@ -70,7 +70,7 @@ pub(super) fn install_live_update_event_handlers(client: &Client, identity: Clie
         async move {
             if matches!(
                 raw.get_field::<String>("type").ok().flatten().as_deref(),
-                Some("m.room.image_pack" | "im.ponies.room_emotes")
+                Some("m.room.image_pack" | "im.ponies.room_emotes" | "m.space.parent" | "m.space.child")
             ) {
                 notify_sync_event_for_client(&identity, SyncEvent::StickerPacksChanged).await;
             }
@@ -189,9 +189,12 @@ pub(super) fn install_live_update_event_handlers(client: &Client, identity: Clie
 
     let member_identity = identity.clone();
     client.add_event_handler(
-        move |_event: SyncStateEvent<RoomMemberEventContent>, room: Room| {
+        move |event: SyncStateEvent<RoomMemberEventContent>, room: Room| {
             let identity = member_identity.clone();
             async move {
+                if event.state_key().as_str() == identity.user_id {
+                    notify_sync_event_for_client(&identity, SyncEvent::StickerPacksChanged).await;
+                }
                 notify_sync_event_for_client(
                     &identity,
                     SyncEvent::RoomMembersChanged {

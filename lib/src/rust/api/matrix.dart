@@ -969,7 +969,19 @@ Future<void> addRoomToSpace({
   required String accountUserId,
   required String spaceId,
   required String roomId,
+  bool? newRoom,
 }) => RustLib.instance.api.crateApiMatrixAddRoomToSpace(
+  accountUserId: accountUserId,
+  spaceId: spaceId,
+  roomId: roomId,
+  newRoom: newRoom,
+);
+
+Future<void> setCanonicalSpace({
+  required String accountUserId,
+  required String spaceId,
+  required String roomId,
+}) => RustLib.instance.api.crateApiMatrixSetCanonicalSpace(
   accountUserId: accountUserId,
   spaceId: spaceId,
   roomId: roomId,

@@ -296,6 +296,7 @@ use polls::poll_start_content;
 #[cfg(test)]
 use polls::validate_poll_answer_ids;
 mod room_create;
+mod space_inheritance;
 mod spaces;
 mod stickers;
 #[cfg(test)]

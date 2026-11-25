@@ -50,8 +50,8 @@ pub(super) async fn try_start_sliding_sync(
                         // Space membership: without these, get_space_children and
                         // get_ungrouped_rooms see no parent/child relationships and
                         // every grouped room appears "ungrouped".
-                        (RoomStateType::SpaceChild, "".to_owned()),
-                        (RoomStateType::SpaceParent, "".to_owned()),
+                        (RoomStateType::SpaceChild, "*".to_owned()),
+                        (RoomStateType::SpaceParent, "*".to_owned()),
                         // Room type (m.room.create) so is_space() resolves reliably
                         // without a second round-trip.
                         (RoomStateType::RoomCreate, "".to_owned()),
