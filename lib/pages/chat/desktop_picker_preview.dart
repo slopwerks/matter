@@ -36,6 +36,12 @@ class _HoverGate extends ChangeNotifier {
   }
 
   void scroll(ScrollNotification event) {
+    if (event is! ScrollStartNotification &&
+        event is! ScrollEndNotification &&
+        event is! OverscrollNotification &&
+        !(event is ScrollUpdateNotification && (event.scrollDelta ?? 0) != 0)) {
+      return;
+    }
     final position = Scrollable.maybeOf(event.context!)?.position;
     if (position != null) {
       if (event is ScrollStartNotification) _scrolling.add(position);
@@ -115,6 +121,7 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
   _HoverGate? _gate;
   Timer? _wait;
   Offset? _settlePosition;
+  int _dismissGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -129,6 +136,7 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
   }
 
   void _dismiss() {
+    final generation = ++_dismissGeneration;
     _wait?.cancel();
     _wait = null;
     _settlePosition = null;
@@ -136,7 +144,7 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
     if (SchedulerBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _overlay.hide();
+        if (mounted && generation == _dismissGeneration) _overlay.hide();
       });
     } else {
       _overlay.hide();
@@ -153,7 +161,10 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
     _settlePosition = position;
     if (_overlay.isShowing) return;
     _wait = Timer(const Duration(milliseconds: 500), () {
-      if (mounted && _gate?.blocked != true) _overlay.show();
+      if (mounted && _gate?.blocked != true) {
+        _dismissGeneration++;
+        _overlay.show();
+      }
     });
   }
 
@@ -228,7 +239,19 @@ class _DesktopPickerPreviewState extends State<DesktopPickerPreview> {
     child: MouseRegion(
       key: _anchor,
       onHover: (event) => _hover(event.position),
-      onExit: (_) => _dismiss(),
+      onExit: (event) {
+        // Overlay/layout changes can synthesize exits without leaving the cell.
+        final box = _anchor.currentContext?.findRenderObject() as RenderBox?;
+        if (box != null &&
+            box.attached &&
+            box.hasSize &&
+            (Offset.zero & box.size).contains(
+              box.globalToLocal(event.position),
+            )) {
+          return;
+        }
+        _dismiss();
+      },
       child: widget.child,
     ),
   );

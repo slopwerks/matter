@@ -277,6 +277,21 @@ void main() {
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pumpAndSettle();
           expect(find.text('Sticker 0\nPack 2\n2'), findsOneWidget);
+          final previewRect = tester.getRect(preview);
+          final visibleCard = tester.element(find.text(':0:'));
+          for (var i = 0; i < 30; i++) {
+            await mouse.moveTo(
+              Offset(previewRect.left + 6 + i % 20, previewRect.center.dy),
+            );
+            await tester.pump(const Duration(milliseconds: 16));
+            expect(
+              find.text('Sticker 0\nPack 2\n2'),
+              findsOneWidget,
+              reason: 'move $i',
+            );
+            expect(tester.element(find.text(':0:')), same(visibleCard));
+          }
+
           if (const bool.fromEnvironment('RENDER_PICKER')) {
             await tester.runAsync(() async {
               final image =
