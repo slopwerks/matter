@@ -13,6 +13,7 @@ import '../../features/push/push_providers.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
+import '../../providers/app_font_provider.dart';
 import '../../providers/interaction_mode_provider.dart';
 import '../../providers/startup_page_provider.dart';
 import '../../providers/session_credential_store.dart';

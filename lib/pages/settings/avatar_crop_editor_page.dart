@@ -28,9 +28,8 @@ class AvatarCropEditorPage extends StatelessWidget {
     final overlayIconBrightness = dark ? Brightness.light : Brightness.dark;
     final editorTheme = context.isMaterial
         ? buildMaterialImageEditorTheme(Theme.of(context))
-        : ThemeData(
-            useMaterial3: true,
-            brightness: Theme.of(context).brightness,
+        : materialEditorThemeFrom(
+            Theme.of(context),
             scaffoldBackgroundColor: colors.base,
             colorScheme: ColorScheme.fromSeed(
               seedColor: colors.accent,

@@ -84,9 +84,8 @@ class _ChatImageEditorPageState extends State<ChatImageEditorPage> {
         : Brightness.light;
     final editorTheme = context.isMaterial
         ? buildMaterialImageEditorTheme(Theme.of(context))
-        : ThemeData(
-            useMaterial3: true,
-            brightness: Theme.of(context).brightness,
+        : materialEditorThemeFrom(
+            Theme.of(context),
             scaffoldBackgroundColor: colors.base,
             colorScheme: ColorScheme.fromSeed(
               seedColor: colors.accent,
