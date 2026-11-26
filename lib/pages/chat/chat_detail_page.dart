@@ -222,8 +222,9 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   String? _entryUnreadOwner;
   bool _jumpingToUnread = false;
   bool _markingEntryRead = false;
-  AxisDirection? _unreadDirection = AxisDirection.up;
+  AxisDirection? _unreadDirection;
   bool _unreadPositionScheduled = false;
+  bool _entryMessagesRefreshPending = false;
   bool _refreshUnreadOnActivation = false;
   String? _unreadRetryTargetId;
   UnreadNavigation? _unreadNavigation;
@@ -674,6 +675,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     _messageJumpGeneration++;
     _isJumpingToMessage = false;
     _cancelUnreadScan();
+    _entryMessagesRefreshPending = false;
     _viewSuspended = false;
     if (_currentRoomIdNotifier.value == widget.roomId) {
       _currentRoomIdNotifier.value = null;
@@ -808,77 +810,98 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
   Future<void> _primeAndRefreshMessages() async {
     final account = ref.read(activeUserIdProvider);
     final activation = _activationId;
-    if (account != null &&
-        (_entryUnreadOwner != account || _refreshUnreadOnActivation)) {
-      try {
-        final entry = await unread.getRoomUnreadState(
-          accountUserId: account,
-          roomId: widget.roomId,
-        );
-        if (!mounted ||
-            activation != _activationId ||
-            ref.read(activeUserIdProvider) != account ||
-            _viewSuspended) {
-          return;
-        }
-        setState(() {
-          final previous = _entryUnreadOwner == account ? _entryUnread : null;
-          if (_entryUnreadOwner != account) _clearUnreadNavigation();
-          _entryUnreadOwner = account;
-          _refreshUnreadOnActivation = false;
-          if (previous != null &&
-              entry.throughEventId != null &&
-              entry.throughEventId != previous.throughEventId) {
-            // Extend the saved interval, never replace its old starting point
-            // with the receipt that auto-read advanced during the last visit.
-            _cancelUnreadScan();
-            _unreadNextBatch = null;
-            _unreadPageTokens.clear();
-            _unreadScanError = null;
-            _entryUnread = unread.RoomUnreadState(
-              unreadCount: entry.unreadCount,
-              readEventId: previous.readEventId,
-              throughEventId: entry.throughEventId,
-              boundaryResolved: previous.boundaryResolved,
-            );
-            _unreadNavigation!.complete = false;
-          } else if (previous == null && entry.unreadCount > 0) {
-            _entryUnread = entry;
-            _unreadNavigation = UnreadNavigation(
-              boundaryResolved: entry.boundaryResolved == true,
-              eventIds: entry.unreadEventIds ?? const [],
-              unresolvedIds: entry.unresolvedEventIds ?? const [],
-              complete: entry.unreadEventIds != null,
-            );
+    _entryMessagesRefreshPending = true;
+    try {
+      if (account != null &&
+          (_entryUnreadOwner != account || _refreshUnreadOnActivation)) {
+        try {
+          final entry = await unread.getRoomUnreadState(
+            accountUserId: account,
+            roomId: widget.roomId,
+          );
+          if (!mounted ||
+              activation != _activationId ||
+              ref.read(activeUserIdProvider) != account ||
+              _viewSuspended) {
+            return;
           }
-        });
-      } catch (error) {
-        debugPrint('capture unread position failed: $error');
+          setState(() {
+            final previous = _entryUnreadOwner == account ? _entryUnread : null;
+            if (_entryUnreadOwner != account) _clearUnreadNavigation();
+            _entryUnreadOwner = account;
+            _refreshUnreadOnActivation = false;
+            if (previous != null &&
+                entry.throughEventId != null &&
+                entry.throughEventId != previous.throughEventId) {
+              // Extend the saved interval, never replace its old starting point
+              // with the receipt that auto-read advanced during the last visit.
+              _cancelUnreadScan();
+              _unreadNextBatch = null;
+              _unreadPageTokens.clear();
+              _unreadScanError = null;
+              final knownCount = _unreadNavigation?.candidateCount;
+              final fallbackCount = math.max(
+                knownCount != null && knownCount > 0
+                    ? knownCount
+                    : previous.unreadCount,
+                entry.unreadCount,
+              );
+              _entryUnread = unread.RoomUnreadState(
+                unreadCount: fallbackCount,
+                readEventId: previous.readEventId,
+                throughEventId: entry.throughEventId,
+                boundaryResolved: previous.boundaryResolved,
+              );
+              _unreadNavigation!.complete = false;
+            } else if (previous == null && entry.unreadCount > 0) {
+              final navigation = UnreadNavigation(
+                boundaryResolved: entry.boundaryResolved == true,
+                eventIds: entry.unreadEventIds ?? const [],
+                unresolvedIds: entry.unresolvedEventIds ?? const [],
+                complete: entry.unreadEventIds != null,
+              );
+              if (!navigation.complete ||
+                  navigation.hasUnresolved ||
+                  navigation.firstNavigableId != null) {
+                _entryUnread = entry;
+                _unreadNavigation = navigation;
+                _unreadDirection = null;
+              }
+            }
+          });
+        } catch (error) {
+          debugPrint('capture unread position failed: $error');
+        }
       }
-    }
-    await primeMessageCache(ref, widget.roomId);
-    if (!mounted ||
-        _currentRoomIdNotifier.value != widget.roomId ||
-        activation != _activationId ||
-        _viewSuspended ||
-        ref.read(activeUserIdProvider) != account) {
-      return;
-    }
-    _setRoomViewOwner(account);
-    // Fire the read marker without blocking the timeline: awaiting it first
-    // delays message rendering on a slow network, and awaiting the refresh
-    // first would leave the room marked unread for the whole refresh
-    // duration (and permanently, if the user leaves mid-refresh).
-    if (!ref.read(roomAutoReadSuppressedProvider(widget.roomId))) {
-      unawaited(_markRoomReadAndRefreshList());
-    }
-    await refreshMessagesFromNetwork(ref, widget.roomId);
-    if (mounted &&
-        activation == _activationId &&
-        ref.read(activeUserIdProvider) == account &&
-        !_viewSuspended) {
-      unawaited(_loadUnreadPages());
-      _scheduleUnreadCandidateUpdate();
+      await primeMessageCache(ref, widget.roomId);
+      if (!mounted ||
+          _currentRoomIdNotifier.value != widget.roomId ||
+          activation != _activationId ||
+          _viewSuspended ||
+          ref.read(activeUserIdProvider) != account) {
+        return;
+      }
+      _setRoomViewOwner(account);
+      // Fire the read marker without blocking the timeline: awaiting it first
+      // delays message rendering on a slow network, and awaiting the refresh
+      // first would leave the room marked unread for the whole refresh
+      // duration (and permanently, if the user leaves mid-refresh).
+      if (!ref.read(roomAutoReadSuppressedProvider(widget.roomId))) {
+        unawaited(_markRoomReadAndRefreshList());
+      }
+      await refreshMessagesFromNetwork(ref, widget.roomId);
+      if (mounted &&
+          activation == _activationId &&
+          ref.read(activeUserIdProvider) == account &&
+          !_viewSuspended) {
+        unawaited(_loadUnreadPages());
+        _scheduleUnreadCandidateUpdate();
+      }
+    } finally {
+      if (mounted && activation == _activationId) {
+        _entryMessagesRefreshPending = false;
+        _scheduleUnreadPosition();
+      }
     }
   }
 
@@ -983,28 +1006,119 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _unreadPositionScheduled = false;
       if (!mounted || _entryUnread == null) return;
-      final id = _unreadRetryTargetId ?? _unreadNavigation?.firstNavigableId;
-      final box = _messageAnchorKeys[id]?.currentContext?.findRenderObject();
+      final navigation = _unreadNavigation;
+      final id = _unreadRetryTargetId ?? navigation?.firstNavigableId;
+      final box = id == null
+          ? null
+          : _messageAnchorKeys[id]?.currentContext?.findRenderObject();
       final viewport = _scrollViewportKey.currentContext?.findRenderObject();
-      AxisDirection? direction = AxisDirection.up;
-      if (box is RenderBox &&
-          box.attached &&
-          box.hasSize &&
-          viewport is RenderBox &&
-          viewport.hasSize &&
-          _unreadMessagePainted(box, viewport)) {
-        final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
-        direction = top < _unreadTopInset
-            ? AxisDirection.up
-            : top >= viewport.size.height - _unreadBottomInset
-            ? AxisDirection.down
-            : null;
-      } else if (id != null && _messageIndex.containsKey(id)) {
-        final target = _timelineEntryIndexForMessage(id);
-        final built = _builtMessageEntryIndices();
-        if (target != null && built.isNotEmpty && target < built.first) {
-          direction = AxisDirection.down;
+      final hasViewport = viewport is RenderBox && viewport.hasSize;
+      final readableTop = _unreadTopInset;
+      final readableBottom = hasViewport
+          ? viewport.size.height - _unreadBottomInset
+          : 0.0;
+
+      AxisDirection? direction;
+      var targetVisibleInReadableViewport = false;
+
+      if (!hasViewport || readableBottom <= readableTop) {
+        return;
+      }
+
+      if (id != null) {
+        if (box is RenderBox &&
+            box.attached &&
+            box.hasSize &&
+            hasViewport &&
+            readableBottom > readableTop &&
+            _unreadMessagePainted(box, viewport)) {
+          final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+          final fits = box.size.height <= readableBottom - readableTop;
+          if (top < readableTop - 1) {
+            direction = AxisDirection.up;
+          } else if (top >= readableBottom ||
+              (fits && top + box.size.height > readableBottom + 1)) {
+            direction = AxisDirection.down;
+          } else {
+            direction = null;
+            targetVisibleInReadableViewport = true;
+          }
+        } else if (_messageIndex.containsKey(id)) {
+          final target = _timelineEntryIndexForMessage(id);
+          final built = _builtMessageEntryIndices();
+          if (target != null && built.isNotEmpty) {
+            if (target < built.first) {
+              direction = AxisDirection.down;
+            } else if (target > built.last) {
+              direction = AxisDirection.up;
+            }
+          }
+        } else if (!_entryMessagesRefreshPending) {
+          if (_focusedBrowsing &&
+              ref
+                  .read(messageCacheProvider(widget.roomId))
+                  .any((message) => message.id == id)) {
+            direction = AxisDirection.down;
+          } else {
+            direction = AxisDirection.up;
+          }
         }
+      } else if (_unreadScanError != null) {
+        direction = AxisDirection.up;
+      } else if (_unreadNeedsHistoryFallback && !_entryMessagesRefreshPending) {
+        final oldestId = _displayedMessages.isEmpty
+            ? null
+            : _displayedMessages.first.id;
+        final oldestBox = oldestId == null
+            ? null
+            : _messageAnchorKeys[oldestId]?.currentContext?.findRenderObject();
+        final oldestVisible =
+            !_hasMoreMessages &&
+            (_displayedMessages.isEmpty ||
+                (oldestBox is RenderBox &&
+                    oldestBox.attached &&
+                    oldestBox.hasSize &&
+                    hasViewport &&
+                    readableBottom > readableTop &&
+                    _unreadMessagePainted(oldestBox, viewport) &&
+                    oldestBox
+                            .localToGlobal(Offset.zero, ancestor: viewport)
+                            .dy >=
+                        readableTop - 1));
+        if (oldestVisible) {
+          if (!_jumpingToUnread &&
+              !_isJumpingToMessage &&
+              !_initialMessageJumpPending &&
+              !_viewSuspended &&
+              (_route?.isCurrent ?? true)) {
+            setState(_clearUnreadNavigation);
+            return;
+          }
+        } else {
+          direction = AxisDirection.up;
+        }
+      }
+
+      if (direction == AxisDirection.down &&
+          !_focusedBrowsing &&
+          _scrollController.hasClients &&
+          _distanceFromLatest(_scrollController.position) <= 1.0) {
+        direction = null;
+      }
+
+      final canAutoClearVisibleTarget =
+          targetVisibleInReadableViewport &&
+          id != null &&
+          !(navigation?.hasUnresolvedBefore(id) ?? false) &&
+          (_unreadRetryTargetId == null || _unreadRetryTargetId == id) &&
+          !_jumpingToUnread &&
+          !_isJumpingToMessage &&
+          !_initialMessageJumpPending &&
+          !_viewSuspended &&
+          (_route?.isCurrent ?? true);
+      if (canAutoClearVisibleTarget) {
+        setState(_clearUnreadNavigation);
+        return;
       }
       if (direction != _unreadDirection) {
         setState(() => _unreadDirection = direction);
@@ -1024,7 +1138,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     }
     _cancelUnreadScan();
     _entryUnread = null;
-    _unreadDirection = AxisDirection.up;
+    _unreadDirection = null;
     _unreadNavigation = null;
     _unreadNextBatch = null;
     _unreadScanError = null;
@@ -1167,10 +1281,26 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               !ignored.contains(message.senderId),
         );
       }
+      if (_unreadRetryTargetId != null &&
+          navigation.isExcluded(_unreadRetryTargetId!)) {
+        _unreadRetryTargetId = null;
+      }
+      final noUnreadLeft =
+          _unreadScanError == null &&
+          !_unreadNeedsHistoryFallback &&
+          _unreadRetryTargetId == null &&
+          navigation.firstNavigableId == null &&
+          navigation.complete &&
+          !navigation.hasUnresolved;
+      if (noUnreadLeft) {
+        setState(_clearUnreadNavigation);
+        return;
+      }
       if (previousCount != navigation.candidateCount ||
           previousTarget != navigation.firstNavigableId ||
           previouslyUnresolved != navigation.hasUnresolved) {
         setState(() {});
+        _scheduleUnreadPosition();
       }
     });
   }
@@ -1406,6 +1536,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
     ScrollMetricsNotification notification,
   ) {
     if (notification.depth != 0) return false;
+    _scheduleUnreadPosition();
     _updateLatestMessageControl(notification.metrics);
     if (_timelinePivotEndId == null) {
       _maybeLoadOlderMessages(notification.metrics);
@@ -3074,6 +3205,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         context.isMaterial &&
         entryUnread != null &&
         _unreadDirection != null &&
+        !unreadUnavailable &&
         !_initialMessageJumpPending &&
         _forwardNoticeRoom == null &&
         !(mediaQuery.size.width < 600 && keepsStablePicker);
@@ -3633,25 +3765,36 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           constraints: BoxConstraints(
                             maxWidth: math.max(0, mediaQuery.size.width - 32),
                           ),
-                          child: MaterialUnreadPill(
-                            label: _unreadScanError != null
-                                ? '加载失败 · 重试'
-                                : unreadUnavailable
-                                ? '暂无可定位的未读'
-                                : _unreadNeedsHistoryFallback
-                                ? '查看较早消息'
-                                : '${_unreadNavigation?.candidateCount ?? entryUnread.unreadCount} 条新消息',
-                            loading: unreadLoading,
-                            failed: _unreadScanError != null,
-                            below: _unreadDirection == AxisDirection.down,
-                            onMarkRead: _markingEntryRead
-                                ? null
-                                : _markEntryRead,
-                            onJump: unreadUnavailable || unreadLoading
-                                ? null
-                                : _unreadScanError != null
-                                ? _retryUnreadPages
-                                : _jumpToFirstUnread,
+                          child: Builder(
+                            builder: (context) {
+                              final unreadCountDisplay =
+                                  _unreadNavigation?.candidateCount ??
+                                  entryUnread.unreadCount;
+                              return MaterialUnreadPill(
+                                label: _unreadScanError != null
+                                    ? '加载失败 · 重试'
+                                    : unreadUnavailable
+                                    ? '暂无可定位的未读'
+                                    : _unreadNeedsHistoryFallback
+                                    ? '查看较早消息'
+                                    : unreadLoading
+                                    ? '正在定位未读…'
+                                    : unreadCountDisplay > 0
+                                    ? '$unreadCountDisplay 条新消息'
+                                    : '未读消息',
+                                loading: unreadLoading,
+                                failed: _unreadScanError != null,
+                                below: _unreadDirection == AxisDirection.down,
+                                onMarkRead: _markingEntryRead
+                                    ? null
+                                    : _markEntryRead,
+                                onJump: unreadUnavailable || unreadLoading
+                                    ? null
+                                    : _unreadScanError != null
+                                    ? _retryUnreadPages
+                                    : _jumpToFirstUnread,
+                              );
+                            },
                           ),
                         )
                       : null,

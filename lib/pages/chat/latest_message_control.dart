@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/neu_colors.dart';
@@ -237,24 +239,20 @@ class _LatestMessageControlState extends State<LatestMessageControl>
               return Semantics(
                 button: true,
                 label: widget.showSentNotice ? '消息已发送，查看最新消息' : '滚动到最新消息',
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: widget.onPressed,
-                    customBorder: shape,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        vertical:
-                            material &&
-                                theme.materialTapTargetSize ==
-                                    MaterialTapTargetSize.padded
-                            ? (kMinInteractiveDimension - height).clamp(
-                                    0.0,
-                                    double.infinity,
-                                  ) /
-                                  2
-                            : 0,
-                      ),
+                child: _CapsuleTapTargetPadding(
+                  minHeight:
+                      material &&
+                          theme.materialTapTargetSize ==
+                              MaterialTapTargetSize.padded
+                      ? kMinInteractiveDimension
+                      : 0,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    shape: shape,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: widget.onPressed,
+                      customBorder: shape,
                       child: Ink(
                         width: lerpDouble(
                           material ? jumpWidth : _collapsedWidth,
@@ -341,6 +339,100 @@ class _LatestMessageControlState extends State<LatestMessageControl>
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Expands hit-testing vertically to [minHeight] without enlarging the
+/// inner [Material] and [InkWell] bounds, keeping tap highlights clipped to
+/// the visible capsule.
+class _CapsuleTapTargetPadding extends SingleChildRenderObjectWidget {
+  const _CapsuleTapTargetPadding({
+    required this.minHeight,
+    required super.child,
+  });
+
+  final double minHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderCapsuleTapTargetPadding(minHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderCapsuleTapTargetPadding renderObject,
+  ) {
+    renderObject.minHeight = minHeight;
+  }
+}
+
+class _RenderCapsuleTapTargetPadding extends RenderShiftedBox {
+  _RenderCapsuleTapTargetPadding(this._minHeight) : super(null);
+
+  double _minHeight;
+  set minHeight(double value) {
+    if (_minHeight == value) return;
+    _minHeight = value;
+    markNeedsLayout();
+  }
+
+  Size _computeSize({
+    required BoxConstraints constraints,
+    required ChildLayouter layoutChild,
+  }) {
+    final child = this.child;
+    if (child == null) return Size.zero;
+    final childSize = layoutChild(child, constraints);
+    return constraints.constrain(
+      Size(childSize.width, math.max(childSize.height, _minHeight)),
+    );
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) {
+    final childHeight = child?.getMinIntrinsicHeight(width) ?? 0;
+    return math.max(childHeight, _minHeight);
+  }
+
+  @override
+  double computeMaxIntrinsicHeight(double width) {
+    final childHeight = child?.getMaxIntrinsicHeight(width) ?? 0;
+    return math.max(childHeight, _minHeight);
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => _computeSize(
+    constraints: constraints,
+    layoutChild: ChildLayoutHelper.dryLayoutChild,
+  );
+
+  @override
+  void performLayout() {
+    size = _computeSize(
+      constraints: constraints,
+      layoutChild: ChildLayoutHelper.layoutChild,
+    );
+    final child = this.child;
+    if (child != null) {
+      final childParentData = child.parentData! as BoxParentData;
+      childParentData.offset = Alignment.center.alongOffset(
+        size - child.size as Offset,
+      );
+    }
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!size.contains(position)) return false;
+    if (super.hitTest(result, position: position)) return true;
+    final child = this.child;
+    if (child == null) return false;
+    final center = child.size.center(Offset.zero);
+    return result.addWithRawTransform(
+      transform: MatrixUtils.forceToPoint(center),
+      position: center,
+      hitTest: (result, pos) => child.hitTest(result, position: pos),
     );
   }
 }

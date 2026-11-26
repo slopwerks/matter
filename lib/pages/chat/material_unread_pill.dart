@@ -28,24 +28,33 @@ class MaterialUnreadPill extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       spacing: 8,
       children: [
-        IconButton.filledTonal(
-          tooltip: '全部标为已读',
-          onPressed: onMarkRead,
-          style: IconButton.styleFrom(
-            fixedSize: Size.square(height),
-            minimumSize: Size.zero,
-            visualDensity: VisualDensity.standard,
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-            foregroundColor: Theme.of(context).colorScheme.onSurface,
-            padding: const EdgeInsets.all(materialTimelinePillInset),
-            shape: const CircleBorder(),
+        MaterialPress(
+          builder: (states) => IconButton.filledTonal(
+            statesController: states,
+            tooltip: '全部标为已读',
+            onPressed: onMarkRead,
+            style: IconButton.styleFrom(
+              fixedSize: Size.square(height),
+              minimumSize: Size.zero,
+              visualDensity: VisualDensity.standard,
+              backgroundColor: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHigh,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
+              padding: const EdgeInsets.all(materialTimelinePillInset),
+              shape: const CircleBorder(),
+            ),
+            icon: const Icon(
+              Icons.check_rounded,
+              size: materialTimelinePillIcon,
+            ),
           ),
-          icon: const Icon(Icons.check_rounded, size: materialTimelinePillIcon),
         ),
         Flexible(
           child: MaterialPress(
             builder: (states) => FilledButton.icon(
               statesController: states,
+              clipBehavior: Clip.antiAlias,
               style: materialUnreadJumpStyle(context),
               onPressed: onJump,
               label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),

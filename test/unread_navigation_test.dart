@@ -81,4 +81,47 @@ void main() {
       expect(state.candidateCount, 1);
     },
   );
+
+  test(
+    'tracks excluded targets and reports zero candidates when all are excluded',
+    () {
+      final state = UnreadNavigation(
+        boundaryResolved: true,
+        eventIds: ['a', 'b'],
+        complete: true,
+      );
+      expect(state.isExcluded('a'), isFalse);
+      state.resolve('a', candidate: false);
+      state.exclude(['b']);
+      expect(state.isExcluded('a'), isTrue);
+      expect(state.isExcluded('b'), isTrue);
+      expect(state.firstNavigableId, isNull);
+      expect(state.candidateCount, 0);
+      expect(state.hasUnresolved, isFalse);
+    },
+  );
+
+  test(
+    'hasUnresolvedBefore ignores unresolved events newer than the target',
+    () {
+      final state = UnreadNavigation(
+        boundaryResolved: true,
+        eventIds: ['a', 'utd-after'],
+        unresolvedIds: ['utd-after'],
+        complete: true,
+      );
+      expect(state.firstNavigableId, 'a');
+      expect(state.hasUnresolved, isTrue);
+      expect(state.hasUnresolvedBefore('a'), isFalse);
+
+      final preceded = UnreadNavigation(
+        boundaryResolved: true,
+        eventIds: ['utd-before', 'b'],
+        unresolvedIds: ['utd-before'],
+        complete: true,
+      );
+      expect(preceded.firstNavigableId, 'b');
+      expect(preceded.hasUnresolvedBefore('b'), isTrue);
+    },
+  );
 }

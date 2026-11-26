@@ -53,7 +53,7 @@ pub async fn get_room_unread_state(
     let room = get_room_by_id(&client, &room_id)?;
     run_bounded(async move {
         let server_count = room.unread_notification_counts().notification_count;
-        let unread_count = if server_count > 0 {
+        let mut unread_count = if server_count > 0 {
             server_count
         } else {
             room.num_unread_messages()
@@ -132,8 +132,29 @@ pub async fn get_room_unread_state(
                     .await;
             let (ids, unresolved) =
                 classify_unread_events(&room, &events, &known, &account_user_id, &HashSet::new());
+            unread_count = reconcile_local_unread_count(unread_count, &ids, &unresolved);
             (Some(ids), Some(unresolved))
         } else {
+            if read_event_id.is_none()
+                && server_count == 0
+                && unread_count > 0
+                && !cached.is_empty()
+            {
+                let tail_start = tail_after_own_event(&cached, &account_user_id);
+                let known = sdk_timeline::convert_snapshot(
+                    &room,
+                    &items.iter().cloned().collect::<Vec<_>>(),
+                )
+                .await;
+                let (ids, unresolved) = classify_unread_events(
+                    &room,
+                    &cached[tail_start..],
+                    &known,
+                    &account_user_id,
+                    &HashSet::new(),
+                );
+                unread_count = reconcile_local_unread_count(unread_count, &ids, &unresolved);
+            }
             (None, None)
         };
         Ok(RoomUnreadState {
@@ -204,6 +225,34 @@ async fn cached_entry_interval(
             .map_err(|error| api_err("rooms", format!("读取未读缓存失败: {error}")))?;
     }
     Ok(None)
+}
+
+/// Clamp reported unread count against a complete, fully-resolved local event slice.
+/// Prevents stale server counts or non-message encrypted events (e.g. reactions/edits)
+/// from keeping `unread_count > 0` when zero renderable messages remain, without
+/// overriding `0` when an implicit own-message receipt already marked the room read.
+fn reconcile_local_unread_count(reported: i32, ids: &[String], unresolved: &[String]) -> i32 {
+    if unresolved.is_empty() {
+        let exact = ids.len().min(i32::MAX as usize) as i32;
+        reported.min(exact)
+    } else {
+        reported
+    }
+}
+
+fn tail_after_own_event(events: &[TimelineEvent], account: &str) -> usize {
+    events
+        .iter()
+        .rposition(|event| {
+            event
+                .raw()
+                .get_field::<String>("sender")
+                .ok()
+                .flatten()
+                .as_deref()
+                == Some(account)
+        })
+        .map_or(0, |index| index + 1)
 }
 
 fn classify_unread_events(
@@ -495,5 +544,41 @@ mod tests {
         preferred.1.ts = None;
         let result = newer_receipt(Some(preferred), Some(receipt("$other", 2)), &HashMap::new());
         assert_eq!(result.unwrap().0.as_str(), "$preferred");
+    }
+
+    #[test]
+    fn resolved_empty_interval_zeros_stale_reported_unread_count() {
+        assert_eq!(reconcile_local_unread_count(3, &[], &[]), 0);
+        assert_eq!(reconcile_local_unread_count(5, &["$a".to_owned()], &[]), 1);
+        assert_eq!(reconcile_local_unread_count(0, &["$a".to_owned()], &[]), 0);
+        assert_eq!(
+            reconcile_local_unread_count(3, &[], &["$utd".to_owned()]),
+            3
+        );
+    }
+
+    #[test]
+    fn tail_after_own_event_finds_last_self_authored_event() {
+        use matrix_sdk::ruma::serde::Raw;
+        use serde_json::json;
+
+        let make = |sender: &str, id: &str| {
+            let raw: Raw<AnySyncTimelineEvent> = serde_json::from_value(json!({
+                "type": "m.room.message",
+                "event_id": id,
+                "sender": sender,
+                "origin_server_ts": 1,
+                "content": { "msgtype": "m.text", "body": "hi" }
+            }))
+            .unwrap();
+            TimelineEvent::from_plaintext(raw)
+        };
+        let events = vec![
+            make("@bob:example.org", "$1"),
+            make("@alice:example.org", "$2"),
+            make("@bob:example.org", "$3"),
+        ];
+        assert_eq!(tail_after_own_event(&events, "@alice:example.org"), 2);
+        assert_eq!(tail_after_own_event(&events, "@carol:example.org"), 0);
     }
 }
