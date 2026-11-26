@@ -379,13 +379,19 @@ ThemeData buildMaterialTheme(
   Brightness brightness, {
   Color seedColor = defaultMaterialSeedColor,
   ColorScheme? colorScheme,
+  String? fontFamily,
+  List<String>? fontFamilyFallback,
 }) {
   final scheme =
       colorScheme ??
       materialColorScheme(seedColor: seedColor, brightness: brightness);
   final dark = brightness == Brightness.dark;
   final surfaces = _surfacesOf(scheme);
-  final text = _buildTextTheme(scheme);
+  // Applied before anything copies a style: chip labels, input decoration and
+  // the tab bar all take snapshots of these styles, so patching the finished
+  // theme afterwards would leave them on the platform font.
+  final text = _buildTextTheme(scheme)
+      .apply(fontFamily: fontFamily, fontFamilyFallback: fontFamilyFallback);
   final overlaySurface = scheme.surfaceContainer;
   // 分隔线取正文色的 14%,不用 outlineVariant:后者在深色页上比对浅色页重一倍,
   // 还会带种子的色偏。

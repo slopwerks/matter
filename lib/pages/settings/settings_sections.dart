@@ -7,6 +7,8 @@ extension _SettingsSections on _SettingsPageState {
     final compactPicker =
         context.isMaterial && MaterialRootHeader.isCompact(context);
     final style = ref.watch(appThemeStyleProvider);
+    final fontChoice = ref.watch(appFontProvider);
+    final fallbackChoice = ref.watch(fallbackFontProvider);
     return <
       ({String title, List<_SettingItem> items, _SettingsCategory category})
     >[
@@ -116,6 +118,24 @@ extension _SettingsSections on _SettingsPageState {
                     .update(family: result.family, mode: result.themeMode);
               }
             },
+          ),
+          _SettingItem(
+            icon: Icons.font_download_outlined,
+            category: _SettingsCategory.appearance,
+            title: '字体',
+            subtitle:
+                switch (fontChoice) {
+                  PickedFontChoice(:final name) => name,
+                  SystemFontChoice(:final family) => family,
+                  null => '跟随系统',
+                } +
+                switch (fallbackChoice) {
+                  null => '',
+                  FileFallback(:final name) => ' · 回退 $name',
+                  FamilyFallback(:final family) => ' · 回退 $family',
+                },
+            keywords: '字体 字形 系统字体 自定义字体 font typeface',
+            onTap: _chooseFont,
           ),
           if (context.isMaterial)
             _SettingItem(

@@ -22,6 +22,7 @@ import 'features/push/push_notification_listener.dart';
 import 'pages/login/login_page.dart';
 import 'pages/chat/prepared_media_source.dart';
 import 'pages/chat/chat_detail_page.dart';
+import 'providers/app_font_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/chat_visual_settings_provider.dart';
@@ -33,6 +34,7 @@ import 'src/rust/frb_generated.dart';
 import 'theme/neu_colors.dart';
 import 'theme/material_theme.dart';
 import 'theme/neu_theme.dart';
+import 'theme/system_font.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -365,6 +367,8 @@ class _AppRootState extends ConsumerState<_AppRoot>
     final isLoggedIn = ref.watch(isLoggedInProvider);
     final showMainApp = isLoggedIn || _restoring;
     if (isLoggedIn) _resumeSession = false;
+    final fontFamily = ref.watch(appFontFamilyProvider);
+    final fontFallback = ref.watch(appFontFallbackProvider);
     final themeStyle = ref.watch(appThemeStyleProvider);
     final materialColors = themeStyle.isMaterial
         ? ref.watch(materialColorSchemesProvider)
@@ -374,10 +378,17 @@ class _AppRootState extends ConsumerState<_AppRoot>
         ? buildMaterialTheme(
             Brightness.light,
             colorScheme: materialColors!.light,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
           )
         : buildNeuTheme(NeuColors.light, Brightness.light);
     final darkTheme = themeStyle.isMaterial
-        ? buildMaterialTheme(Brightness.dark, colorScheme: materialColors!.dark)
+        ? buildMaterialTheme(
+            Brightness.dark,
+            colorScheme: materialColors!.dark,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
+          )
         : buildNeuTheme(NeuColors.dark, Brightness.dark);
     _syncSystemOverlayStyle(themeStyle, theme, darkTheme);
     final themeMode = themeStyle.themeMode;
@@ -393,8 +404,8 @@ class _AppRootState extends ConsumerState<_AppRoot>
       localizationsDelegates: const [
         ...material_ui.GlobalMaterialLocalizations.delegates,
       ],
-      theme: theme,
-      darkTheme: darkTheme,
+      theme: applySystemFont(theme, fontFamily, fallback: fontFallback),
+      darkTheme: applySystemFont(darkTheme, fontFamily, fallback: fontFallback),
       themeMode: themeMode,
       builder: (context, child) => ChatVisualSettingsRoot(
         child: DesktopNotificationListener(
