@@ -8,7 +8,38 @@ extension _SettingsSections on _SettingsPageState {
         context.isMaterial && MaterialRootHeader.isCompact(context);
     final style = ref.watch(appThemeStyleProvider);
     final fontChoice = ref.watch(appFontProvider);
+    final chatFontChoice = ref.watch(chatFontProvider);
+    final monoFontChoice = ref.watch(monospaceFontProvider);
     final fallbackChoice = ref.watch(fallbackFontProvider);
+    final fontScales = ref.watch(fontScaleSettingsProvider);
+    final fontSummaryParts = <String>[
+      switch (fontChoice) {
+        PickedFontChoice(:final name) => name,
+        SystemFontChoice(:final family) => family,
+        BundledFontChoice(:final name) => name,
+        PlatformDefaultFontChoice() || null => '跟随系统',
+      },
+      if (chatFontChoice != null)
+        switch (chatFontChoice) {
+          PickedFontChoice(:final name) => '正文 $name',
+          SystemFontChoice(:final family) => '正文 $family',
+          BundledFontChoice(:final name) => '正文 $name',
+          PlatformDefaultFontChoice() => '正文 跟随系统',
+        },
+      switch (monoFontChoice) {
+        BundledFontChoice(:final name) => '等宽 $name',
+        PickedFontChoice(:final name) => '等宽 $name',
+        SystemFontChoice(:final family) => '等宽 $family',
+        PlatformDefaultFontChoice() || null => '等宽 系统',
+      },
+      if (fallbackChoice != null)
+        switch (fallbackChoice) {
+          FileFallback(:final name) => '回退 $name',
+          FamilyFallback(:final family) => '回退 $family',
+        },
+      if (!fontScales.isDefault)
+        '${(fontScales.uiScale * 100).round()}%/${(fontScales.chatScale * 100).round()}%/${(fontScales.monoScale * 100).round()}%',
+    ];
     return <
       ({String title, List<_SettingItem> items, _SettingsCategory category})
     >[
@@ -120,22 +151,16 @@ extension _SettingsSections on _SettingsPageState {
             },
           ),
           _SettingItem(
-            icon: Icons.font_download_outlined,
+            icon: Icons.text_fields_rounded,
             category: _SettingsCategory.appearance,
-            title: '字体',
-            subtitle:
-                switch (fontChoice) {
-                  PickedFontChoice(:final name) => name,
-                  SystemFontChoice(:final family) => family,
-                  null => '跟随系统',
-                } +
-                switch (fallbackChoice) {
-                  null => '',
-                  FileFallback(:final name) => ' · 回退 $name',
-                  FamilyFallback(:final family) => ' · 回退 $family',
-                },
-            keywords: '字体 字形 系统字体 自定义字体 font typeface',
-            onTap: _chooseFont,
+            title: '字体与排版',
+            subtitle: fontSummaryParts.join(' · '),
+            keywords:
+                '字体 字形 字号 缩放 等宽 正文 回退 系统字体 自定义字体 font typeface monospace scale',
+            onTap: () => MaterialListDetail.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const FontSettingsPage()),
+            ),
           ),
           if (context.isMaterial)
             _SettingItem(

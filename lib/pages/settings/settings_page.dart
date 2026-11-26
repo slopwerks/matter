@@ -37,6 +37,7 @@ import 'encryption_page.dart';
 import 'blur_settings_page.dart';
 import 'code_block_settings_page.dart';
 import 'composer_keyboard_settings_page.dart';
+import 'font_settings_page.dart';
 import 'interaction_mode_settings_page.dart';
 import 'startup_page_settings_page.dart';
 import 'timeline_event_settings_page.dart';
