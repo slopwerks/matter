@@ -81,4 +81,23 @@ void main() {
       expect(state.candidateCount, 1);
     },
   );
+
+  test(
+    'tracks excluded targets and reports zero candidates when all are excluded',
+    () {
+      final state = UnreadNavigation(
+        boundaryResolved: true,
+        eventIds: ['a', 'b'],
+        complete: true,
+      );
+      expect(state.isExcluded('a'), isFalse);
+      state.resolve('a', candidate: false);
+      state.exclude(['b']);
+      expect(state.isExcluded('a'), isTrue);
+      expect(state.isExcluded('b'), isTrue);
+      expect(state.firstNavigableId, isNull);
+      expect(state.candidateCount, 0);
+      expect(state.hasUnresolved, isFalse);
+    },
+  );
 }

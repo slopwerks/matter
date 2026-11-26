@@ -32,6 +32,7 @@ class UnreadMessagesBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final material = context.isMaterial;
     final style = materialUnreadBannerStyle(Theme.of(context));
+    final count = this.count;
     Widget buildContent([WidgetStatesController? states]) => Row(
       children: [
         Expanded(
@@ -57,7 +58,7 @@ class UnreadMessagesBanner extends StatelessWidget {
                   ? '暂无可定位的未读消息'
                   : historyFallback
                   ? '查看较早消息'
-                  : count != null
+                  : count != null && count > 0
                   ? '$count 条未读 · 跳到最早未读'
                   : '未读消息 · 跳到最早未读',
               maxLines: 1,

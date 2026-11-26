@@ -835,21 +835,33 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
             _unreadNextBatch = null;
             _unreadPageTokens.clear();
             _unreadScanError = null;
+            final knownCount = _unreadNavigation?.candidateCount;
+            final fallbackCount = math.max(
+              knownCount != null && knownCount > 0
+                  ? knownCount
+                  : previous.unreadCount,
+              entry.unreadCount,
+            );
             _entryUnread = unread.RoomUnreadState(
-              unreadCount: entry.unreadCount,
+              unreadCount: fallbackCount,
               readEventId: previous.readEventId,
               throughEventId: entry.throughEventId,
               boundaryResolved: previous.boundaryResolved,
             );
             _unreadNavigation!.complete = false;
           } else if (previous == null && entry.unreadCount > 0) {
-            _entryUnread = entry;
-            _unreadNavigation = UnreadNavigation(
+            final navigation = UnreadNavigation(
               boundaryResolved: entry.boundaryResolved == true,
               eventIds: entry.unreadEventIds ?? const [],
               unresolvedIds: entry.unresolvedEventIds ?? const [],
               complete: entry.unreadEventIds != null,
             );
+            if (!navigation.complete ||
+                navigation.hasUnresolved ||
+                navigation.firstNavigableId != null) {
+              _entryUnread = entry;
+              _unreadNavigation = navigation;
+            }
           }
         });
       } catch (error) {
@@ -1166,6 +1178,21 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               message.msgType != MessageType.event &&
               !ignored.contains(message.senderId),
         );
+      }
+      if (_unreadRetryTargetId != null &&
+          navigation.isExcluded(_unreadRetryTargetId!)) {
+        _unreadRetryTargetId = null;
+      }
+      final noUnreadLeft =
+          _unreadScanError == null &&
+          !_unreadNeedsHistoryFallback &&
+          _unreadRetryTargetId == null &&
+          navigation.firstNavigableId == null &&
+          navigation.complete &&
+          !navigation.hasUnresolved;
+      if (noUnreadLeft) {
+        setState(_clearUnreadNavigation);
+        return;
       }
       if (previousCount != navigation.candidateCount ||
           previousTarget != navigation.firstNavigableId ||
@@ -3074,6 +3101,7 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
         context.isMaterial &&
         entryUnread != null &&
         _unreadDirection != null &&
+        !unreadUnavailable &&
         !_initialMessageJumpPending &&
         _forwardNoticeRoom == null &&
         !(mediaQuery.size.width < 600 && keepsStablePicker);
@@ -3633,25 +3661,36 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
                           constraints: BoxConstraints(
                             maxWidth: math.max(0, mediaQuery.size.width - 32),
                           ),
-                          child: MaterialUnreadPill(
-                            label: _unreadScanError != null
-                                ? '加载失败 · 重试'
-                                : unreadUnavailable
-                                ? '暂无可定位的未读'
-                                : _unreadNeedsHistoryFallback
-                                ? '查看较早消息'
-                                : '${_unreadNavigation?.candidateCount ?? entryUnread.unreadCount} 条新消息',
-                            loading: unreadLoading,
-                            failed: _unreadScanError != null,
-                            below: _unreadDirection == AxisDirection.down,
-                            onMarkRead: _markingEntryRead
-                                ? null
-                                : _markEntryRead,
-                            onJump: unreadUnavailable || unreadLoading
-                                ? null
-                                : _unreadScanError != null
-                                ? _retryUnreadPages
-                                : _jumpToFirstUnread,
+                          child: Builder(
+                            builder: (context) {
+                              final unreadCountDisplay =
+                                  _unreadNavigation?.candidateCount ??
+                                  entryUnread.unreadCount;
+                              return MaterialUnreadPill(
+                                label: _unreadScanError != null
+                                    ? '加载失败 · 重试'
+                                    : unreadUnavailable
+                                    ? '暂无可定位的未读'
+                                    : _unreadNeedsHistoryFallback
+                                    ? '查看较早消息'
+                                    : unreadLoading
+                                    ? '正在定位未读…'
+                                    : unreadCountDisplay > 0
+                                    ? '$unreadCountDisplay 条新消息'
+                                    : '未读消息',
+                                loading: unreadLoading,
+                                failed: _unreadScanError != null,
+                                below: _unreadDirection == AxisDirection.down,
+                                onMarkRead: _markingEntryRead
+                                    ? null
+                                    : _markEntryRead,
+                                onJump: unreadUnavailable || unreadLoading
+                                    ? null
+                                    : _unreadScanError != null
+                                    ? _retryUnreadPages
+                                    : _jumpToFirstUnread,
+                              );
+                            },
                           ),
                         )
                       : null,

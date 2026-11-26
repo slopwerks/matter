@@ -26,6 +26,7 @@ class UnreadNavigation {
       ? _candidateIds.length
       : null;
   bool get hasUnresolved => _unresolved.isNotEmpty;
+  bool isExcluded(String id) => _excluded.contains(id);
 
   void addPage(
     Iterable<String> ids, {
