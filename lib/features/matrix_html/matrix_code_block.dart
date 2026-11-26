@@ -51,6 +51,7 @@ import 'package:re_highlight/styles/vs2015.dart';
 import '../../providers/code_block_settings_provider.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/tokens/app_typography.dart';
 import 'matrix_html_node.dart';
 
 class CodeHighlightThemeInfo {
@@ -498,9 +499,10 @@ class _MatrixCodeBlockState extends ConsumerState<MatrixCodeBlock> {
         ? const Color(0xFFE5E9F0)
         : themeInfo.defaultTextColor;
 
-    final codeStyle = widget.baseStyle.copyWith(
-      fontFamily: 'monospace',
-      fontSize: widget.baseStyle.fontSize == null
+    final codeStyle = AppTypography.monospaceOf(
+      context,
+      base: widget.baseStyle,
+      baseFontSize: widget.baseStyle.fontSize == null
           ? 13
           : widget.baseStyle.fontSize! - 1,
       color: codeDefaultColor,

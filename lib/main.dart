@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -38,6 +39,7 @@ import 'theme/system_font.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _registerBundledFontLicenses();
   CachedNetworkImageProvider.defaultCacheManager = managedDefaultImageCache;
   MediaKit.ensureInitialized();
   await cleanupStaleMediaSources();
@@ -121,6 +123,15 @@ Future<void> main() async {
       child: _AppRoot(hasSessions: hasSessions),
     ),
   );
+}
+
+void _registerBundledFontLicenses() {
+  LicenseRegistry.addLicense(() async* {
+    final text = await rootBundle.loadString(
+      'assets/fonts/IoskeleyMono.LICENSE.txt',
+    );
+    yield LicenseEntryWithLineBreaks(const ['Ioskeley Mono'], text);
+  });
 }
 
 /// Record a Dart-side error in the app-wide log (the same ring buffer,
@@ -369,6 +380,11 @@ class _AppRootState extends ConsumerState<_AppRoot>
     if (isLoggedIn) _resumeSession = false;
     final fontFamily = ref.watch(appFontFamilyProvider);
     final fontFallback = ref.watch(appFontFallbackProvider);
+    final chatFontFamily = ref.watch(chatFontFamilyProvider);
+    final chatFontFallback = ref.watch(chatFontFallbackProvider);
+    final monoFontFamily = ref.watch(monospaceFontFamilyProvider);
+    final monoFontFallback = ref.watch(monospaceFontFallbackProvider);
+    final fontScales = ref.watch(fontScaleSettingsProvider);
     final themeStyle = ref.watch(appThemeStyleProvider);
     final materialColors = themeStyle.isMaterial
         ? ref.watch(materialColorSchemesProvider)
@@ -380,16 +396,50 @@ class _AppRootState extends ConsumerState<_AppRoot>
             colorScheme: materialColors!.light,
             fontFamily: fontFamily,
             fontFamilyFallback: fontFallback,
+            chatFontFamily: chatFontFamily,
+            chatFontFallback: chatFontFallback,
+            chatFontScale: fontScales.chatScale,
+            monospaceFontFamily: monoFontFamily,
+            monospaceFontFallback: monoFontFallback,
+            monoFontScale: fontScales.monoScale,
           )
-        : buildNeuTheme(NeuColors.light, Brightness.light);
+        : buildNeuTheme(
+            NeuColors.light,
+            Brightness.light,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
+            chatFontFamily: chatFontFamily,
+            chatFontFallback: chatFontFallback,
+            chatFontScale: fontScales.chatScale,
+            monospaceFontFamily: monoFontFamily,
+            monospaceFontFallback: monoFontFallback,
+            monoFontScale: fontScales.monoScale,
+          );
     final darkTheme = themeStyle.isMaterial
         ? buildMaterialTheme(
             Brightness.dark,
             colorScheme: materialColors!.dark,
             fontFamily: fontFamily,
             fontFamilyFallback: fontFallback,
+            chatFontFamily: chatFontFamily,
+            chatFontFallback: chatFontFallback,
+            chatFontScale: fontScales.chatScale,
+            monospaceFontFamily: monoFontFamily,
+            monospaceFontFallback: monoFontFallback,
+            monoFontScale: fontScales.monoScale,
           )
-        : buildNeuTheme(NeuColors.dark, Brightness.dark);
+        : buildNeuTheme(
+            NeuColors.dark,
+            Brightness.dark,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
+            chatFontFamily: chatFontFamily,
+            chatFontFallback: chatFontFallback,
+            chatFontScale: fontScales.chatScale,
+            monospaceFontFamily: monoFontFamily,
+            monospaceFontFallback: monoFontFallback,
+            monoFontScale: fontScales.monoScale,
+          );
     _syncSystemOverlayStyle(themeStyle, theme, darkTheme);
     final themeMode = themeStyle.themeMode;
 
@@ -407,26 +457,41 @@ class _AppRootState extends ConsumerState<_AppRoot>
       theme: applySystemFont(theme, fontFamily, fallback: fontFallback),
       darkTheme: applySystemFont(darkTheme, fontFamily, fallback: fontFallback),
       themeMode: themeMode,
-      builder: (context, child) => ChatVisualSettingsRoot(
-        child: DesktopNotificationListener(
-          navigatorKey: _navigatorKey,
-          child: PushNotificationListener(
+      builder: (context, child) {
+        final content = ChatVisualSettingsRoot(
+          child: DesktopNotificationListener(
             navigatorKey: _navigatorKey,
-            child: SessionExpiryListener(
+            child: PushNotificationListener(
               navigatorKey: _navigatorKey,
-              onRelogin: (canResume) {
-                _resumeSession = canResume;
-                _reloginUser = ref.read(currentUserProvider);
-                clearActiveSessionState(ref, markSessionReady: true);
-                _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-              },
-              child: StorageMaintenanceRoot(
-                child: AudioPlaybackRoot(child: child!),
+              child: SessionExpiryListener(
+                navigatorKey: _navigatorKey,
+                onRelogin: (canResume) {
+                  _resumeSession = canResume;
+                  _reloginUser = ref.read(currentUserProvider);
+                  clearActiveSessionState(ref, markSessionReady: true);
+                  _navigatorKey.currentState?.popUntil(
+                    (route) => route.isFirst,
+                  );
+                },
+                child: StorageMaintenanceRoot(
+                  child: AudioPlaybackRoot(child: child!),
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+        if ((fontScales.uiScale - 1.0).abs() < 0.001) return content;
+        final media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: _MultipliedTextScaler(
+              media.textScaler,
+              fontScales.uiScale,
+            ),
+          ),
+          child: content,
+        );
+      },
       home: showMainApp
           ? const MatterApp()
           : LoginPage(
@@ -472,4 +537,29 @@ class _AppRootState extends ConsumerState<_AppRoot>
       );
     });
   }
+}
+
+class _MultipliedTextScaler extends TextScaler {
+  const _MultipliedTextScaler(this.base, this.factor);
+
+  final TextScaler base;
+  final double factor;
+
+  @override
+  // ignore: deprecated_member_use
+  double get textScaleFactor => base.textScaleFactor * factor;
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * factor;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is _MultipliedTextScaler &&
+        other.base == base &&
+        other.factor == factor;
+  }
+
+  @override
+  int get hashCode => Object.hash(base, factor);
 }

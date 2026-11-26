@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/chat_provider.dart';
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
+import '../../theme/tokens/app_typography.dart';
 import '../../widgets/app_avatar.dart';
 import 'matrix_code_block.dart';
 import 'matrix_html_flow.dart';
@@ -299,8 +300,9 @@ class _MatrixNodeRenderer {
       case 'h5':
       case 'h6':
         final level = int.parse(element.tag.substring(1));
+        final chatScale = AppTypography.maybeOf(context)?.chatScale ?? 1.0;
         final headerStyle = baseStyle.copyWith(
-          fontSize: (22 - level * 1.5).clamp(15, 21).toDouble(),
+          fontSize: ((22 - level * 1.5).clamp(15, 21) * chatScale).toDouble(),
           fontWeight: FontWeight.w800,
           height: 1.25,
         );
@@ -329,11 +331,15 @@ class _MatrixNodeRenderer {
             final width = constraints.maxWidth.isFinite
                 ? constraints.maxWidth
                 : 520.0;
+            final chatScale = AppTypography.maybeOf(context)?.chatScale ?? 1.0;
+            final unscaledBase = baseStyle.fontSize != null && chatScale > 0
+                ? baseStyle.copyWith(fontSize: baseStyle.fontSize! / chatScale)
+                : baseStyle;
             return MatrixCodeBlock(
               code: element.textContent,
               language: extractCodeLanguage(element),
               width: width,
-              baseStyle: baseStyle,
+              baseStyle: unscaledBase,
               accentColor: accentColor,
             );
           },
@@ -940,8 +946,9 @@ class _MatrixNodeRenderer {
       } else if (element.tag == 'del' || element.tag == 's') {
         style = style.copyWith(decoration: TextDecoration.lineThrough);
       } else if (element.tag == 'code') {
-        style = style.copyWith(
-          fontFamily: 'monospace',
+        style = AppTypography.monospaceOf(
+          context,
+          base: style,
           backgroundColor: Colors.black.withValues(alpha: 0.14),
         );
       } else if (element.tag == 'span' &&

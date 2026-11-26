@@ -8,6 +8,7 @@ import '../../../providers/text_selection_target.dart';
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
+import '../../../theme/tokens/app_typography.dart';
 
 import '../../../features/markdown/markdown_composer.dart';
 import '../../../features/matrix_html/matrix_html_parser.dart';
@@ -66,8 +67,10 @@ class TimelineTextBubble extends ConsumerWidget {
     final formattedBody = this.formattedBody;
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
+    final typography = AppTypography.maybeOf(context);
     final maxBubbleWidth = TimelineBubbleFrame.maxWidth(context);
-    final textStyle = textTheme.bodyLarge!.copyWith(
+    final bodyBase = typography?.chatBody ?? textTheme.bodyLarge!;
+    final textStyle = bodyBase.copyWith(
       color: isMe ? outgoingBubbleForeground(context) : colors.text,
       height: context.isMaterial ? 1.625 : 1.35,
     );
@@ -233,7 +236,13 @@ class TimelineTextBubble extends ConsumerWidget {
   TextStyle _replyPreviewTextStyle(BuildContext context, bool isMe) {
     final colors = context.neu;
     final theme = Theme.of(context);
-    return theme.textTheme.bodySmall!.copyWith(
+    final typography = AppTypography.maybeOf(context);
+    final small = theme.textTheme.bodySmall!;
+    return small.copyWith(
+      fontFamily: typography?.chatBody.fontFamily ?? small.fontFamily,
+      fontFamilyFallback:
+          typography?.chatBody.fontFamilyFallback ?? small.fontFamilyFallback,
+      fontSize: (small.fontSize ?? 12) * (typography?.chatScale ?? 1.0),
       color: context.isMaterial
           ? materialTimelinePreviewStyle(theme).foreground
           : isMe
