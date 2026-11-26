@@ -14,6 +14,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/connection_provider.dart';
 import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/image_view_history.dart';
+import '../../providers/interaction_mode_provider.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/material_theme.dart';
 import '../../theme/neu_colors.dart';
@@ -597,6 +598,9 @@ class _ImageMessageBubbleState extends ConsumerState<ImageMessageBubble> {
             mentionDisplayNames: widget.mentionDisplayNames,
             mentionedUserIds: widget.mentionedUserIds,
             onMentionTap: widget.onMentionTap,
+            selectable: ref
+                .watch(interactionModeProvider)
+                .usesKeyboardMouse(Theme.of(context).platform),
           ),
         ],
       ),
@@ -727,6 +731,9 @@ class ImageMessageCaption extends StatelessWidget {
   final List<String> mentionedUserIds;
   final MessageMentionTapHandler? onMentionTap;
 
+  /// Selection belongs to the mouse; on touch the long press opens the menu.
+  final bool selectable;
+
   const ImageMessageCaption({
     super.key,
     required this.text,
@@ -735,6 +742,7 @@ class ImageMessageCaption extends StatelessWidget {
     required this.mentionDisplayNames,
     required this.mentionedUserIds,
     required this.onMentionTap,
+    this.selectable = true,
   });
 
   @override
@@ -769,6 +777,7 @@ class ImageMessageCaption extends StatelessWidget {
               accentColor: accent,
               mentionDisplayNames: mentionDisplayNames,
               onMentionTap: onMentionTap,
+              selectable: selectable,
             )
           : MessageText(
               text,

@@ -8,6 +8,7 @@ import '../../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../../theme/neu_colors.dart';
 
 import '../../../providers/chat_provider.dart';
+import '../../../providers/interaction_mode_provider.dart';
 import '../file_message_bubble.dart';
 import '../image_message_bubble.dart';
 import '../image_message_collection.dart';
@@ -108,6 +109,11 @@ class TimelineMessagePresenter {
         imageRun?.messages.first.id ?? flightId ?? message.id;
     final isLocalOutgoing = isLocalOutgoingMessage(message.id);
     final isLocalFailed = isLocalOutgoingFailedMessage(message.id);
+    // Captions follow the message body: selecting text is a mouse gesture,
+    // while on touch the long press opens the menu.
+    final selectableText = ref
+        .watch(interactionModeProvider)
+        .usesKeyboardMouse(Theme.of(context).platform);
     final isLocalSent = isLocalOutgoingSentMessage(message.id);
     final offersPlusOne = plusOneIds.contains(message.id) && !isLocalOutgoing;
     // An optimistic image has no `mxc://` source yet, so its bubble is fed
@@ -201,6 +207,7 @@ class TimelineMessagePresenter {
                   mentionDisplayNames: mentionDisplayNames,
                   mentionedUserIds: image.mentionedUserIds,
                   onMentionTap: onMentionTap,
+                  selectable: selectableText,
                 );
         },
         tileBuilder: (image, size, radius) => Builder(

@@ -22,6 +22,7 @@ import '../../providers/chat_visual_settings_provider.dart';
 import '../../providers/timeline_event_settings_provider.dart';
 import '../../providers/message_cache_persistence.dart';
 import '../../providers/message_ordering.dart';
+import '../../providers/text_selection_target.dart';
 import '../../providers/message_history_cursor.dart';
 import '../../providers/image_view_history.dart';
 import '../../providers/mutable_state.dart';
@@ -1456,6 +1457,8 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       _userScrollActive = notification.direction != ScrollDirection.idle;
     }
     if (notification is ScrollStartNotification) {
+      // Scrolling away ends a "select text" mode started from the menu.
+      ref.read(textSelectionTargetProvider.notifier).clear();
       _userScrollActive = notification.dragDetails != null || _userScrollActive;
       if (_userScrollActive) {
         _newerLoadArmed = true;
@@ -3322,16 +3325,24 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
               : '已标记未读')
         : '在线';
 
+    // Back leaves the bubble's text selection before it leaves the room.
+    final selectingText = ref.watch(textSelectionTargetProvider) != null;
     return ChatVisualSettingsScope(
       settings: visualSettings,
       child: PopScope(
         canPop:
-            !_paneVisible ||
-            (!widget.embedded &&
-                _inputPanelMode == InputPanelMode.none &&
-                !keyboardVisible),
+            !selectingText &&
+            (!_paneVisible ||
+                (!widget.embedded &&
+                    _inputPanelMode == InputPanelMode.none &&
+                    !keyboardVisible)),
         onPopInvokedWithResult: (didPop, _) {
-          if (didPop || !_paneVisible) return;
+          if (didPop) return;
+          if (selectingText) {
+            ref.read(textSelectionTargetProvider.notifier).clear();
+            return;
+          }
+          if (!_paneVisible) return;
           // The Material shell dispatches back once, after modal details.
           if (context.isMaterial && widget.onBack != null) return;
           SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
