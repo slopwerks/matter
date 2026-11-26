@@ -1,6 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/theme/image_editor_theme.dart';
+import 'package:matter/theme/material_theme.dart';
+import 'package:matter/theme/neu_colors.dart';
+import 'package:matter/theme/neu_theme.dart';
 import 'package:matter/theme/system_font.dart';
+import 'package:matter/theme/tokens/app_design_tokens.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
@@ -12,10 +16,29 @@ void main() {
     expect(applied.primaryTextTheme.bodyMedium?.fontFamily, 'sans-serif');
   });
 
-  test('a null family keeps the theme font', () {
+  test('a null family and null fallback keeps the theme font', () {
     final applied = applySystemFont(ThemeData(), null);
 
     expect(applied.textTheme.bodyMedium?.fontFamily, isNot(kSystemFontFamily));
+  });
+
+  test('a null family still applies fallback fonts when provided', () {
+    final base = buildNeuTheme(NeuColors.light, Brightness.light);
+    final applied = applySystemFont(
+      base,
+      null,
+      fallback: const ['MatterFallbackFont', 'MatterSecondaryFallback'],
+    );
+
+    expect(applied.textTheme.bodyMedium?.fontFamilyFallback, [
+      'MatterFallbackFont',
+      'MatterSecondaryFallback',
+    ]);
+    final tokens = applied.extension<AppDesignTokens>()!;
+    expect(tokens.typography.listTitle.fontFamilyFallback, [
+      'MatterFallbackFont',
+      'MatterSecondaryFallback',
+    ]);
   });
 
   test('a picked font replaces the system family everywhere', () {
@@ -26,6 +49,34 @@ void main() {
     expect(applied.primaryTextTheme.bodyMedium?.fontFamily, 'MatterCustomFont');
   });
 
+  test('neu theme applies font family, fallback and typography slots', () {
+    final neu = buildNeuTheme(
+      NeuColors.light,
+      Brightness.light,
+      fontFamily: 'MatterCustomFont',
+      fontFamilyFallback: const ['MatterFallbackFont'],
+      chatFontFamily: 'MatterChatFont',
+      chatFontScale: 1.2,
+      monospaceFontFamily: kBundledMonospaceFamily,
+      monospaceFontFallback: const ['MatterCustomFont'],
+      monoFontScale: 1.1,
+    );
+
+    expect(neu.textTheme.bodyMedium?.fontFamily, 'MatterCustomFont');
+    expect(neu.textTheme.bodyMedium?.fontFamilyFallback, [
+      'MatterFallbackFont',
+    ]);
+    final typo = neu.extension<AppDesignTokens>()!.typography;
+    expect(typo.pageTitle.fontFamily, 'MatterCustomFont');
+    expect(typo.listTitle.fontFamily, 'MatterCustomFont');
+    expect(typo.sectionTitle.fontFamily, 'MatterCustomFont');
+    expect(typo.chatBody.fontFamily, 'MatterChatFont');
+    expect(typo.chatBody.fontSize, closeTo(15 * 1.2, 0.01));
+    expect(typo.monospace.fontFamily, kBundledMonospaceFamily);
+    expect(typo.monospace.fontFamilyFallback, ['MatterCustomFont']);
+    expect(typo.monoScale, 1.1);
+  });
+
   test('the image editor keeps the app font', () {
     final app = applySystemFont(ThemeData(), 'MatterCustomFont');
 
@@ -33,5 +84,29 @@ void main() {
 
     expect(editor.textTheme.bodyMedium?.fontFamily, 'MatterCustomFont');
     expect(editor.primaryTextTheme.bodyMedium?.fontFamily, 'MatterCustomFont');
+  });
+
+  test('preview theme preserves parent app, chat and monospace fonts', () {
+    final parent = buildMaterialTheme(
+      Brightness.light,
+      fontFamily: 'MatterUiFont',
+      fontFamilyFallback: const ['MatterFallback'],
+      chatFontFamily: 'MatterChatFont',
+      chatFontScale: 1.15,
+      monospaceFontFamily: kBundledMonospaceFamily,
+      monoFontScale: 1.2,
+    );
+
+    final preview = buildMaterialPreviewTheme(parent, parent.colorScheme);
+
+    expect(preview.textTheme.bodyMedium?.fontFamily, 'MatterUiFont');
+    expect(preview.textTheme.bodyMedium?.fontFamilyFallback, [
+      'MatterFallback',
+    ]);
+    final typo = preview.extension<AppDesignTokens>()!.typography;
+    expect(typo.chatBody.fontFamily, 'MatterChatFont');
+    expect(typo.chatScale, 1.15);
+    expect(typo.monospace.fontFamily, kBundledMonospaceFamily);
+    expect(typo.monoScale, 1.2);
   });
 }

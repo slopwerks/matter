@@ -155,19 +155,20 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/homeservers.json
+    - assets/fonts/IoskeleyMono.LICENSE.txt
 
   fonts:
-    # Twemoji Mozilla v0.7.0 (COLR, Twemoji 14), CC-BY 4.0。
-    # 完整字体由 theme/emoji.dart 的 run 拆分显式用于 emoji 序列
-    # （含键帽所需的 #/*/0-9）。
-    - family: Twemoji Mozilla
+    # Ioskeley Mono v2.2.0 (Normal/Unhinted), SIL Open Font License 1.1。
+    - family: Ioskeley Mono
       fonts:
-        - asset: assets/fonts/Twemoji.Mozilla.ttf
-    # 全局兜底变体从 cmap 排除 #/*/0-9，防止普通计数被空白
-    # 占位字形接管；仅覆盖未经 run 拆分的路径。
-    - family: Twemoji Mozilla Fallback
-      fonts:
-        - asset: assets/fonts/Twemoji.Mozilla.fallback.ttf
+        - asset: assets/fonts/IoskeleyMono-Regular.ttf
+        - asset: assets/fonts/IoskeleyMono-Italic.ttf
+          style: italic
+        - asset: assets/fonts/IoskeleyMono-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/IoskeleyMono-BoldItalic.ttf
+          weight: 700
+          style: italic
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

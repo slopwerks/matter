@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/mutable_state.dart';
 import '../../src/rust/api/matrix.dart' as rust;
 import '../../theme/neu_colors.dart';
+import '../../theme/tokens/app_typography.dart';
 import '../../widgets/floating_app_bar.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
@@ -315,9 +316,10 @@ class _LogViewerPageState extends ConsumerState<LogViewerPage> {
                               const SizedBox(width: NeuSpacing.sm),
                               Text(
                                 '${filtered.length}/${allLogs.length}',
-                                style: textTheme.labelSmall?.copyWith(
+                                style: AppTypography.monospaceOf(
+                                  context,
+                                  base: textTheme.labelSmall,
                                   color: colors.textTertiary,
-                                  fontFamily: 'monospace',
                                 ),
                               ),
                             ],
@@ -695,10 +697,11 @@ class _LogEntryTile extends StatelessWidget {
                     children: [
                       Text(
                         timeStr,
-                        style: textTheme.labelSmall?.copyWith(
+                        style: AppTypography.monospaceOf(
+                          context,
+                          base: textTheme.labelSmall,
+                          baseFontSize: 10.5,
                           color: colors.textTertiary,
-                          fontFamily: 'monospace',
-                          fontSize: 10.5,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -714,11 +717,12 @@ class _LogEntryTile extends StatelessWidget {
                           ),
                           child: Text(
                             entry.tag,
-                            style: textTheme.labelSmall?.copyWith(
+                            style: AppTypography.monospaceOf(
+                              context,
+                              base: textTheme.labelSmall,
+                              baseFontSize: 10.5,
                               color: tagColor,
-                              fontSize: 10.5,
                               fontWeight: FontWeight.w600,
-                              fontFamily: 'monospace',
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -729,9 +733,10 @@ class _LogEntryTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     entry.message,
-                    style: textTheme.bodySmall?.copyWith(
+                    style: AppTypography.monospaceOf(
+                      context,
+                      base: textTheme.bodySmall,
                       color: messageColor,
-                      fontFamily: 'monospace',
                       height: 1.3,
                     ),
                   ),

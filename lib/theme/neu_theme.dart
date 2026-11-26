@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'app_component_theme.dart';
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
+import 'system_font.dart';
 import 'tokens.dart';
 
 /// 新拟物主题的 ThemeData 构建（移植自原型 app.dart）。
@@ -10,7 +11,18 @@ import 'tokens.dart';
 /// 统一字阶（全 App 唯一字号来源，页面不再散落硬编码字号）：
 /// headline 24 品牌/大标题；title 20/16/14 页面标题→卡片标题→小分区；
 /// body 15/13/12 正文→次级说明→元信息；label 15 按钮、11 徽标/极小标签。
-ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
+ThemeData buildNeuTheme(
+  NeuColors neu,
+  Brightness brightness, {
+  String? fontFamily,
+  List<String>? fontFamilyFallback,
+  String? chatFontFamily,
+  List<String>? chatFontFallback,
+  double chatFontScale = 1.0,
+  String monospaceFontFamily = kSystemMonospaceFamily,
+  List<String>? monospaceFontFallback,
+  double monoFontScale = 1.0,
+}) {
   TextStyle ts(double size, FontWeight weight, Color color, [double? height]) =>
       TextStyle(
         fontSize: size,
@@ -41,11 +53,10 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
     bodySmall: ts(12, FontWeight.w400, neu.textTertiary, 1.4),
     labelLarge: ts(15, FontWeight.w600, neu.text),
     labelSmall: ts(11, FontWeight.w400, neu.textTertiary, 1.2),
-  );
+  ).apply(fontFamily: fontFamily, fontFamilyFallback: fontFamilyFallback);
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
-    fontFamilyFallback: kEmojiFontFallback,
     scaffoldBackgroundColor: neu.base,
     splashFactory: NoSplash.splashFactory,
     highlightColor: Colors.transparent,
@@ -74,6 +85,18 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
   );
   // ThemeData 补齐字体族与 fallback 后再生成字阶，避免 Tokens 丢掉字体信息。
   final resolvedText = theme.textTheme;
+  final effectiveChatScale = chatFontScale.clamp(0.5, 2.5);
+  final effectiveMonoScale = monoFontScale.clamp(0.5, 2.5);
+  final chatBody = resolvedText.bodyLarge!.copyWith(
+    fontFamily: chatFontFamily ?? resolvedText.bodyLarge!.fontFamily,
+    fontFamilyFallback:
+        chatFontFallback ?? resolvedText.bodyLarge!.fontFamilyFallback,
+    fontSize: (resolvedText.bodyLarge!.fontSize ?? 15) * effectiveChatScale,
+  );
+  final monospace = TextStyle(
+    fontFamily: monospaceFontFamily,
+    fontFamilyFallback: monospaceFontFallback,
+  );
   return theme.copyWith(
     extensions: [
       ...theme.extensions.values,
@@ -100,6 +123,10 @@ ThemeData buildNeuTheme(NeuColors neu, Brightness brightness) {
           pageTitle: resolvedText.headlineMedium!,
           listTitle: resolvedText.titleMedium!,
           sectionTitle: resolvedText.titleSmall!,
+          chatBody: chatBody,
+          monospace: monospace,
+          chatScale: effectiveChatScale,
+          monoScale: effectiveMonoScale,
         ),
         motion: AppMotion.neu,
       ),

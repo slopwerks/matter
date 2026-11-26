@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../theme/neu_colors.dart';
 import '../../theme/material_theme.dart';
+import '../../theme/tokens/app_typography.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/neu_decoration.dart';
 import '../../widgets/neu_surface.dart';
@@ -107,8 +108,11 @@ class EncryptionRecoveryKeyDialog extends StatelessWidget {
             recoveryKey,
             style: dialogContext.isMaterial
                 ? materialEncryptionValueStyle(Theme.of(dialogContext)).text
-                : Theme.of(dialogContext).textTheme.bodySmall
-                      ?.copyWith(fontFamily: 'monospace', height: 1.6),
+                : AppTypography.monospaceOf(
+                    dialogContext,
+                    base: Theme.of(dialogContext).textTheme.bodySmall,
+                    height: 1.6,
+                  ),
           ),
         ),
         const SizedBox(height: 18),
