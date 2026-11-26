@@ -77,6 +77,7 @@ class TimelineMessageMenu extends StatefulWidget {
   final Rect? bubbleRect;
   final VoidCallback onClose;
   final VoidCallback onCopy;
+  final VoidCallback? onSelectText;
   final VoidCallback onReply;
 
   /// Repeats the message content as a new event; null when not repeatable.
@@ -101,6 +102,7 @@ class TimelineMessageMenu extends StatefulWidget {
     required this.bubbleRect,
     required this.onClose,
     required this.onCopy,
+    this.onSelectText,
     required this.onReply,
     this.onPlusOne,
     this.onAddStickerPack,
@@ -282,6 +284,12 @@ class TimelineMessageMenuState extends State<TimelineMessageMenu> {
             icon: Icons.copy_rounded,
             label: '复制',
             onTap: () => _select(widget.onCopy),
+          ),
+        if (isText && widget.onSelectText != null)
+          _IconTextAction(
+            icon: Icons.text_fields_rounded,
+            label: '选择文字',
+            onTap: () => _select(widget.onSelectText!),
           ),
         if (widget.onReadFullScreen != null)
           _IconTextAction(

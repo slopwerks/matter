@@ -19,6 +19,10 @@ class TimelineAdaptiveTextMetadata extends ConsumerWidget {
   final List<String> mentionedUserIds;
   final MessageMentionTapHandler? onMentionTap;
 
+  /// Forced on when the message menu handed this body over to text selection,
+  /// so touch users can drag-select after choosing it.
+  final bool selectable;
+
   const TimelineAdaptiveTextMetadata({
     super.key,
     required this.text,
@@ -31,6 +35,7 @@ class TimelineAdaptiveTextMetadata extends ConsumerWidget {
     this.mentionDisplayNames = const {},
     this.mentionedUserIds = const [],
     this.onMentionTap,
+    this.selectable = false,
   });
 
   @override
@@ -54,7 +59,7 @@ class TimelineAdaptiveTextMetadata extends ConsumerWidget {
         .usesKeyboardMouse(Theme.of(context).platform);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: desktop ? SelectionArea(child: content) : content,
+      child: desktop || selectable ? SelectionArea(child: content) : content,
     );
   }
 }

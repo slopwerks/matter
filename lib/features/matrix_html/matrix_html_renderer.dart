@@ -32,6 +32,11 @@ class MatrixHtmlMessage extends StatefulWidget {
   final double minWidth;
   final MatrixHtmlImageResolver? imageResolver;
 
+  /// Whether the rendered body may be selected with a drag or a long press.
+  /// A message bubble turns this off for touch input: there the long press
+  /// belongs to the message menu, not to text selection.
+  final bool selectable;
+
   const MatrixHtmlMessage({
     super.key,
     required this.html,
@@ -43,6 +48,7 @@ class MatrixHtmlMessage extends StatefulWidget {
     this.trailingMetadata,
     this.minWidth = 0,
     this.imageResolver,
+    this.selectable = true,
   });
 
   @override
@@ -108,8 +114,8 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
     if (trailingMetadata != null) {
       final inline = renderer.singleInlineBlock(_nodes);
       if (inline != null) {
-        return SelectionArea(
-          child: _InlineRichTextMetadata(
+        return _selectable(
+          _InlineRichTextMetadata(
             text: inline.span,
             metadata: trailingMetadata,
             minWidth: widget.minWidth,
@@ -129,8 +135,8 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
               : MediaQuery.sizeOf(context).width;
           return SizedBox(
             width: width,
-            child: SelectionArea(
-              child: Column(
+            child: _selectable(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: blocks,
@@ -143,14 +149,17 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
 
     final blocks = renderer.renderBlocks(_nodes);
     if (blocks.isEmpty) return const SizedBox.shrink();
-    return SelectionArea(
-      child: Column(
+    return _selectable(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: blocks,
       ),
     );
   }
+
+  Widget _selectable(Widget child) =>
+      widget.selectable ? SelectionArea(child: child) : child;
 }
 
 class _MatrixNodeRenderer {

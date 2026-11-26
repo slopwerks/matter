@@ -9,6 +9,7 @@ import '../../../theme/neu_colors.dart';
 
 import '../../../providers/auth_provider.dart';
 import '../../../providers/chat_provider.dart';
+import '../../../providers/text_selection_target.dart';
 import '../../../widgets/app_avatar.dart';
 import '../../../widgets/glass.dart';
 import '../../../widgets/sheets.dart';
@@ -193,6 +194,8 @@ class TimelineMessageActions {
     final Rect? bubbleRect = renderObject is RenderBox && renderObject.hasSize
         ? (renderObject.localToGlobal(Offset.zero) & renderObject.size)
         : null;
+    // Any menu closes a previous "select text" mode.
+    ref.read(textSelectionTargetProvider.notifier).clear();
     final menuAccount = ref.read(activeUserIdProvider) ?? '';
     final canPin =
         message.msgType != MessageType.event &&
@@ -222,6 +225,12 @@ class TimelineMessageActions {
           await Clipboard.setData(ClipboardData(text: message.content));
           if (overlayContext.mounted) {
             neuToast(overlayContext, '已复制');
+          }
+        },
+        onSelectText: () {
+          ref.read(textSelectionTargetProvider.notifier).enter(message.id);
+          if (overlayContext.mounted) {
+            neuToast(overlayContext, '现在可以拖动选择文字');
           }
         },
         onReply: () => startReply(overlayContext, ref, message),

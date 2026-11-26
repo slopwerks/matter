@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/interaction_mode_provider.dart';
+import '../../../providers/text_selection_target.dart';
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
 import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
@@ -25,7 +28,7 @@ String? effectiveFormattedHtml(ChatMessage message) =>
     ) ??
     message.formattedBody;
 
-class TimelineTextBubble extends StatelessWidget {
+class TimelineTextBubble extends ConsumerWidget {
   const TimelineTextBubble({
     super.key,
     required this.message,
@@ -49,8 +52,17 @@ class TimelineTextBubble extends StatelessWidget {
   final Map<String, ChatMessage> messageIndex;
   final Widget metadata;
   final ValueChanged<String>? onMessageJumpRequested;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // A long press on touch opens the message menu; text becomes selectable
+    // only after the menu asked for it.
+    final selecting = ref.watch(textSelectionTargetProvider) == message.id;
+    final selectable =
+        selecting ||
+        ref
+            .watch(interactionModeProvider)
+            .usesKeyboardMouse(Theme.of(context).platform);
     final formattedBody = this.formattedBody;
     final colors = context.neu;
     final textTheme = Theme.of(context).textTheme;
@@ -126,6 +138,7 @@ class TimelineTextBubble extends StatelessWidget {
             onMentionTap: onMentionTap,
             trailingMetadata: metadata,
             minWidth: replyPreviewWidth,
+            selectable: selectable,
           )
         else
           TimelineAdaptiveTextMetadata(
@@ -140,6 +153,7 @@ class TimelineTextBubble extends StatelessWidget {
             mentionDisplayNames: mentionDisplayNames,
             mentionedUserIds: message.mentionedUserIds,
             onMentionTap: onMentionTap,
+            selectable: selecting,
           ),
         ?linkPreview,
       ],
@@ -149,7 +163,21 @@ class TimelineTextBubble extends StatelessWidget {
       isMe: isMe,
       isFirst: isFirst,
       isLast: isLast,
-      child: content,
+      // The outline marks the bubble whose text accepts a drag right now.
+      child: selecting
+          // A touch anywhere else drops the selection mode again.
+          ? TapRegion(
+              onTapOutside: (_) =>
+                  ref.read(textSelectionTargetProvider.notifier).clear(),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.accent, width: 1.5),
+                  borderRadius: BorderRadius.circular(NeuRadius.tag),
+                ),
+                child: content,
+              ),
+            )
+          : content,
     );
   }
 

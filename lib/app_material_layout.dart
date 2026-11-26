@@ -45,6 +45,7 @@ extension _MaterialAppLayout on _MatterAppState {
       canPop: !singleChat && !modalDetails,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
+        if (clearTextSelectionOnBack(ref)) return;
         if (modalDetails) {
           _setMaterialDetails(false);
         } else if (singleChat) {
