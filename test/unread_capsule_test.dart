@@ -351,6 +351,82 @@ void main() {
   );
 
   testWidgets(
+    'visible unread messages at bottom do not trigger pill on open or after app resume',
+    (tester) async {
+      const roomId = '!visible:example.org';
+      rustApi.rooms = [_room(roomId, unreadCount: 2)];
+      rustApi.messages = [
+        _msg(r'$1', 1000),
+        _msg(r'$2', 2000),
+        _msg(r'$3', 3000),
+      ];
+      rustApi.unreadState = const unread.RoomUnreadState(
+        unreadCount: 2,
+        readEventId: r'$1',
+        throughEventId: r'$3',
+        boundaryResolved: true,
+        unreadEventIds: [r'$2', r'$3'],
+        unresolvedEventIds: [],
+      );
+
+      await _pumpDetailPage(tester, rustApi, roomId: roomId);
+
+      // Messages $2 and $3 are already visible in the viewport: no pill!
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+      expect(find.textContaining(RegExp(r'^0\s*条')), findsNothing);
+
+      // Pause and resume app with auto-read cleared (unreadCount == 0) and a
+      // new event $4 arriving in the tail. Must NOT resurrect as "0 条新消息".
+      rustApi.messages = [
+        _msg(r'$1', 1000),
+        _msg(r'$2', 2000),
+        _msg(r'$3', 3000),
+        _msg(r'$4', 4000, isMe: true, senderId: '@alice:example.org'),
+      ];
+      rustApi.unreadState = const unread.RoomUnreadState(
+        unreadCount: 0,
+        readEventId: r'$3',
+        throughEventId: r'$4',
+        boundaryResolved: true,
+        unreadEventIds: [],
+        unresolvedEventIds: [],
+      );
+      await _simulateAppBackgroundAndResume(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+      expect(find.textContaining(RegExp(r'^0\s*条')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'scrolling up after viewing bottom unread messages never resurrects the pill',
+    (tester) async {
+      const roomId = '!scroll-after-view:example.org';
+      final msgs = List.generate(25, (i) => _msg('\$${i + 1}', (i + 1) * 1000));
+      rustApi.rooms = [_room(roomId, unreadCount: 1)];
+      rustApi.messages = msgs;
+      rustApi.unreadState = const unread.RoomUnreadState(
+        unreadCount: 1,
+        readEventId: r'$24',
+        throughEventId: r'$25',
+        boundaryResolved: true,
+        unreadEventIds: [r'$25'],
+        unresolvedEventIds: [],
+      );
+
+      await _pumpDetailPage(tester, rustApi, roomId: roomId);
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+
+      // Scroll up far enough that $25 goes above the top of the viewport.
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+    },
+  );
+
+  testWidgets(
     'room with only ignored unread candidates never shows pill or 暂无可定位的未读',
     (tester) async {
       const roomId = '!ignored:example.org';
@@ -430,6 +506,38 @@ void main() {
 
       expect(find.text('30 条新消息'), findsOneWidget);
       expect(find.textContaining(RegExp(r'^0\s*条')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'unresolved event after visible bottom unread target still clears and does not resurrect on scroll',
+    (tester) async {
+      const roomId = '!utd-after:example.org';
+      final msgs = List.generate(
+        25,
+        (i) => _msg(
+          '\$${i + 1}',
+          (i + 1) * 1000,
+          content: i == 24 ? unableToDecryptMessageContent : null,
+        ),
+      );
+      rustApi.rooms = [_room(roomId, unreadCount: 2)];
+      rustApi.messages = msgs;
+      rustApi.unreadState = const unread.RoomUnreadState(
+        unreadCount: 2,
+        readEventId: r'$23',
+        throughEventId: r'$25',
+        boundaryResolved: true,
+        unreadEventIds: [r'$24', r'$25'],
+        unresolvedEventIds: [r'$25'],
+      );
+
+      await _pumpDetailPage(tester, rustApi, roomId: roomId);
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
+      await tester.pumpAndSettle();
+      expect(find.byType(MaterialUnreadPill), findsNothing);
     },
   );
 }

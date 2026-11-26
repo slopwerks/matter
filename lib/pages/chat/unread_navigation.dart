@@ -28,6 +28,17 @@ class UnreadNavigation {
   bool get hasUnresolved => _unresolved.isNotEmpty;
   bool isExcluded(String id) => _excluded.contains(id);
 
+  /// True when an unresolved event precedes [id] in chronological order,
+  /// meaning a still-pending message could replace [id] as the earliest unread.
+  bool hasUnresolvedBefore(String id) {
+    if (_unresolved.isEmpty) return false;
+    for (final candidate in _ids) {
+      if (candidate == id) return false;
+      if (_unresolved.contains(candidate)) return true;
+    }
+    return false;
+  }
+
   void addPage(
     Iterable<String> ids, {
     Iterable<String> unresolvedIds = const [],

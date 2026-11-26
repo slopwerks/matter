@@ -100,4 +100,28 @@ void main() {
       expect(state.hasUnresolved, isFalse);
     },
   );
+
+  test(
+    'hasUnresolvedBefore ignores unresolved events newer than the target',
+    () {
+      final state = UnreadNavigation(
+        boundaryResolved: true,
+        eventIds: ['a', 'utd-after'],
+        unresolvedIds: ['utd-after'],
+        complete: true,
+      );
+      expect(state.firstNavigableId, 'a');
+      expect(state.hasUnresolved, isTrue);
+      expect(state.hasUnresolvedBefore('a'), isFalse);
+
+      final preceded = UnreadNavigation(
+        boundaryResolved: true,
+        eventIds: ['utd-before', 'b'],
+        unresolvedIds: ['utd-before'],
+        complete: true,
+      );
+      expect(preceded.firstNavigableId, 'b');
+      expect(preceded.hasUnresolvedBefore('b'), isTrue);
+    },
+  );
 }
