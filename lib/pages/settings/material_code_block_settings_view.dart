@@ -150,7 +150,7 @@ class _CodePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedTheme(
-    data: buildMaterialTheme(scheme.brightness, colorScheme: scheme),
+    data: buildMaterialPreviewTheme(Theme.of(context), scheme),
     duration: MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 300),

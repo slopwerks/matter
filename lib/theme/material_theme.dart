@@ -6,6 +6,7 @@ import 'app_component_theme.dart';
 import 'material_color_scheme.dart';
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
+import 'system_font.dart';
 import 'tokens.dart';
 
 export 'material_color_scheme.dart';
@@ -91,40 +92,47 @@ materialProfileCardStyle(ThemeData theme, {bool detail = false}) => (
   ),
 );
 
-({Color fill, TextStyle? text}) materialEncryptionValueStyle(ThemeData theme) =>
-    (
-      fill: theme.colorScheme.surfaceContainerHighest,
-      text: theme.textTheme.bodySmall?.copyWith(
-        fontFamily: 'monospace',
-        height: 1.6,
-      ),
-    );
+({Color fill, TextStyle? text}) materialEncryptionValueStyle(ThemeData theme) {
+  final typography = theme.extension<AppDesignTokens>()?.typography;
+  final base = theme.textTheme.bodySmall;
+  return (
+    fill: theme.colorScheme.surfaceContainerHighest,
+    text: typography != null
+        ? typography.resolveMonospace(base, height: 1.6)
+        : base?.copyWith(fontFamily: kSystemMonospaceFamily, height: 1.6),
+  );
+}
 
 ({Color fill, TextStyle? level, TextStyle? metadata, TextStyle? message})
 materialLogEntryStyle(ThemeData theme, String level) {
   final scheme = theme.colorScheme;
+  final typography = theme.extension<AppDesignTokens>()?.typography;
   final foreground = switch (level) {
     'error' => scheme.error,
     'warn' => scheme.tertiary,
     'debug' => scheme.onSurfaceVariant,
     _ => scheme.primary,
   };
+  final metadataBase = theme.textTheme.labelSmall?.copyWith(
+    color: level == 'error' ? scheme.onErrorContainer : scheme.onSurfaceVariant,
+  );
+  final messageBase = theme.textTheme.bodySmall?.copyWith(
+    color: level == 'error' ? scheme.onErrorContainer : scheme.onSurface,
+  );
   return (
     fill: level == 'error' ? scheme.errorContainer : scheme.surface,
     level: theme.textTheme.labelMedium?.copyWith(
       color: level == 'error' ? scheme.onErrorContainer : foreground,
     ),
-    metadata: theme.textTheme.labelSmall?.copyWith(
-      color: level == 'error'
-          ? scheme.onErrorContainer
-          : scheme.onSurfaceVariant,
-      fontFamily: 'monospace',
-    ),
-    message: theme.textTheme.bodySmall?.copyWith(
-      color: level == 'error' ? scheme.onErrorContainer : scheme.onSurface,
-      fontFamily: 'monospace',
-      height: 1.5,
-    ),
+    metadata: typography != null
+        ? typography.resolveMonospace(metadataBase)
+        : metadataBase?.copyWith(fontFamily: kSystemMonospaceFamily),
+    message: typography != null
+        ? typography.resolveMonospace(messageBase, height: 1.5)
+        : messageBase?.copyWith(
+            fontFamily: kSystemMonospaceFamily,
+            height: 1.5,
+          ),
   );
 }
 
@@ -369,6 +377,26 @@ ColorScheme applyMaterialBackground(
   );
 }
 
+/// Builds a Material preview [ThemeData] for [scheme] while preserving the
+/// active app, chat, fallback and monospace font choices from [parent].
+ThemeData buildMaterialPreviewTheme(ThemeData parent, ColorScheme scheme) {
+  final typography = parent.extension<AppDesignTokens>()?.typography;
+  final body = parent.textTheme.bodyMedium;
+  return buildMaterialTheme(
+    scheme.brightness,
+    colorScheme: scheme,
+    fontFamily: body?.fontFamily,
+    fontFamilyFallback: body?.fontFamilyFallback,
+    chatFontFamily: typography?.chatBody.fontFamily,
+    chatFontFallback: typography?.chatBody.fontFamilyFallback,
+    chatFontScale: typography?.chatScale ?? 1.0,
+    monospaceFontFamily:
+        typography?.monospace.fontFamily ?? kSystemMonospaceFamily,
+    monospaceFontFallback: typography?.monospace.fontFamilyFallback,
+    monoFontScale: typography?.monoScale ?? 1.0,
+  );
+}
+
 /// Material 3 palette。现有页面的颜色角色映射到 ColorScheme,两套外观共用
 /// 同一批有状态组件和业务逻辑。
 ///
@@ -381,6 +409,12 @@ ThemeData buildMaterialTheme(
   ColorScheme? colorScheme,
   String? fontFamily,
   List<String>? fontFamilyFallback,
+  String? chatFontFamily,
+  List<String>? chatFontFallback,
+  double chatFontScale = 1.0,
+  String monospaceFontFamily = kSystemMonospaceFamily,
+  List<String>? monospaceFontFallback,
+  double monoFontScale = 1.0,
 }) {
   final scheme =
       colorScheme ??
@@ -401,6 +435,17 @@ ThemeData buildMaterialTheme(
     fontSize: 16,
     fontWeight: FontWeight.w500,
   );
+  final effectiveChatScale = chatFontScale.clamp(0.5, 2.5);
+  final effectiveMonoScale = monoFontScale.clamp(0.5, 2.5);
+  final chatBody = text.bodyLarge!.copyWith(
+    fontFamily: chatFontFamily ?? text.bodyLarge!.fontFamily,
+    fontFamilyFallback: chatFontFallback ?? text.bodyLarge!.fontFamilyFallback,
+    fontSize: (text.bodyLarge!.fontSize ?? 16) * effectiveChatScale,
+  );
+  final monospace = TextStyle(
+    fontFamily: monospaceFontFamily,
+    fontFamilyFallback: monospaceFontFallback ?? kEmojiFontFallback,
+  );
   final tokens = AppDesignTokens(
     spacing: const AppSpacing(),
     radii: const AppRadii.material(),
@@ -416,6 +461,10 @@ ThemeData buildMaterialTheme(
       pageTitle: text.headlineSmall!,
       listTitle: listTitle!,
       sectionTitle: text.titleSmall!.copyWith(color: scheme.onSurfaceVariant),
+      chatBody: chatBody,
+      monospace: monospace,
+      chatScale: effectiveChatScale,
+      monoScale: effectiveMonoScale,
     ),
     motion: AppMotion.material,
   );
