@@ -444,7 +444,7 @@ ThemeData buildMaterialTheme(
   );
   final monospace = TextStyle(
     fontFamily: monospaceFontFamily,
-    fontFamilyFallback: monospaceFontFallback ?? kEmojiFontFallback,
+    fontFamilyFallback: monospaceFontFallback,
   );
   final tokens = AppDesignTokens(
     spacing: const AppSpacing(),
@@ -481,7 +481,6 @@ ThemeData buildMaterialTheme(
     brightness: brightness,
     colorScheme: scheme,
     textTheme: text,
-    fontFamilyFallback: kEmojiFontFallback,
     scaffoldBackgroundColor: surfaces.page,
     pageTransitionsTheme: PageTransitionsTheme(
       builders: {

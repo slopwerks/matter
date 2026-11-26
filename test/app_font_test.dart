@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/fonts/system_font_catalog.dart';
 import 'package:matter/providers/app_font_provider.dart';
-import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/theme/system_font.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -115,11 +114,10 @@ void main() {
     expect(container.read(appFontFallbackProvider), [
       kFallbackFontFamily,
       kCjkFallbackFamily,
-      ...?kEmojiFontFallback,
     ]);
   });
 
-  test('a system family fallback is passed through and deduplicated with emoji fallback', () {
+  test('a system family fallback is passed through', () {
     final container = ProviderContainer(
       overrides: [
         appFontProvider.overrideWith(
@@ -132,10 +130,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    expect(container.read(appFontFallbackProvider), [
-      'monospace',
-      ...?kEmojiFontFallback,
-    ]);
+    expect(container.read(appFontFallbackProvider), ['monospace']);
   });
 
   test('no fallback is requested when nothing is picked', () {
@@ -210,29 +205,25 @@ void main() {
     },
   );
 
-  test(
-    'monospace fallback combines user fallback, chat font and emoji fallback',
-    () {
-      final container = ProviderContainer(
-        overrides: [
-          appFontProvider.overrideWith(
-            () => _FixedFont(const SystemFontChoice('Sarasa Gothic SC')),
-          ),
-          chatFontProvider.overrideWith(() => _FixedChatFont(null)),
-          fallbackFontProvider.overrideWith(
-            () => _FixedFallback(const FamilyFallback('Noto Sans CJK SC')),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
+  test('monospace fallback combines user fallback and chat font', () {
+    final container = ProviderContainer(
+      overrides: [
+        appFontProvider.overrideWith(
+          () => _FixedFont(const SystemFontChoice('Sarasa Gothic SC')),
+        ),
+        chatFontProvider.overrideWith(() => _FixedChatFont(null)),
+        fallbackFontProvider.overrideWith(
+          () => _FixedFallback(const FamilyFallback('Noto Sans CJK SC')),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
 
-      expect(container.read(monospaceFontFallbackProvider), [
-        'Noto Sans CJK SC',
-        'Sarasa Gothic SC',
-        ...?kEmojiFontFallback,
-      ]);
-    },
-  );
+    expect(container.read(monospaceFontFallbackProvider), [
+      'Noto Sans CJK SC',
+      'Sarasa Gothic SC',
+    ]);
+  });
 
   test('font scales clamp, persist and reset cleanly', () async {
     SharedPreferences.setMockInitialValues({});

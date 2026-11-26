@@ -9,7 +9,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/fonts/system_font_catalog.dart';
-import '../theme/neu_colors.dart';
 import '../theme/system_font.dart';
 
 /// Family the picked UI font file is registered under.
@@ -578,11 +577,7 @@ List<String>? _mergeFallbacks(Iterable<String> primary) {
   }
 
   addAll(primary);
-  if (merged.isEmpty) return null;
-  // Keep Twemoji fallback at the end when custom fallbacks are active,
-  // otherwise TextTheme.apply overrides ThemeData.fontFamilyFallback.
-  addAll(kEmojiFontFallback);
-  return merged;
+  return merged.isEmpty ? null : merged;
 }
 
 String? _resolveFamily(FontChoice? choice, String customFamily) =>
@@ -617,8 +612,7 @@ final systemFontFamiliesProvider = FutureProvider<List<String>>(
 );
 
 /// Families tried before the platform fallback: the user's own fallback first,
-/// then whatever the chosen system family brings along (a CJK serif), followed
-/// by emoji fallback when non-empty.
+/// then whatever the chosen system family brings along (a CJK serif).
 final appFontFallbackProvider = Provider<List<String>?>((ref) {
   final choice = ref.watch(appFontProvider);
   final custom = ref.watch(fallbackFontProvider);
@@ -669,7 +663,7 @@ final monospaceFontFamilyProvider = Provider<String>((ref) {
 });
 
 /// Fallback chain for monospace text: user fallback, then chat/UI font so CJK
-/// comments in code use the user's chosen text font, then emoji fallback.
+/// comments in code use the user's chosen text font.
 final monospaceFontFallbackProvider = Provider<List<String>?>((ref) {
   final custom = ref.watch(fallbackFontProvider);
   final chatFamily = ref.watch(chatFontFamilyProvider);
@@ -687,11 +681,6 @@ final monospaceFontFallbackProvider = Provider<List<String>?>((ref) {
   add(chatFamily);
   if (chatFallback != null) {
     for (final f in chatFallback) {
-      add(f);
-    }
-  }
-  if (kEmojiFontFallback != null) {
-    for (final f in kEmojiFontFallback!) {
       add(f);
     }
   }

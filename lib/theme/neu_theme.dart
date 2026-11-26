@@ -57,7 +57,6 @@ ThemeData buildNeuTheme(
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
-    fontFamilyFallback: kEmojiFontFallback,
     scaffoldBackgroundColor: neu.base,
     splashFactory: NoSplash.splashFactory,
     highlightColor: Colors.transparent,
@@ -96,7 +95,7 @@ ThemeData buildNeuTheme(
   );
   final monospace = TextStyle(
     fontFamily: monospaceFontFamily,
-    fontFamilyFallback: monospaceFontFallback ?? kEmojiFontFallback,
+    fontFamilyFallback: monospaceFontFallback,
   );
   return theme.copyWith(
     extensions: [

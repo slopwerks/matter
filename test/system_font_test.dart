@@ -26,17 +26,17 @@ void main() {
     final applied = applySystemFont(
       base,
       null,
-      fallback: const ['MatterFallbackFont', 'Twemoji Mozilla Fallback'],
+      fallback: const ['MatterFallbackFont', 'MatterSecondaryFallback'],
     );
 
     expect(applied.textTheme.bodyMedium?.fontFamilyFallback, [
       'MatterFallbackFont',
-      'Twemoji Mozilla Fallback',
+      'MatterSecondaryFallback',
     ]);
     final tokens = applied.extension<AppDesignTokens>()!;
     expect(tokens.typography.listTitle.fontFamilyFallback, [
       'MatterFallbackFont',
-      'Twemoji Mozilla Fallback',
+      'MatterSecondaryFallback',
     ]);
   });
 
