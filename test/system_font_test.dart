@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/theme/image_editor_theme.dart';
+import 'package:matter/theme/material_theme.dart';
 import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/theme/neu_theme.dart';
 import 'package:matter/theme/system_font.dart';
@@ -83,5 +84,29 @@ void main() {
 
     expect(editor.textTheme.bodyMedium?.fontFamily, 'MatterCustomFont');
     expect(editor.primaryTextTheme.bodyMedium?.fontFamily, 'MatterCustomFont');
+  });
+
+  test('preview theme preserves parent app, chat and monospace fonts', () {
+    final parent = buildMaterialTheme(
+      Brightness.light,
+      fontFamily: 'MatterUiFont',
+      fontFamilyFallback: const ['MatterFallback'],
+      chatFontFamily: 'MatterChatFont',
+      chatFontScale: 1.15,
+      monospaceFontFamily: kBundledMonospaceFamily,
+      monoFontScale: 1.2,
+    );
+
+    final preview = buildMaterialPreviewTheme(parent, parent.colorScheme);
+
+    expect(preview.textTheme.bodyMedium?.fontFamily, 'MatterUiFont');
+    expect(preview.textTheme.bodyMedium?.fontFamilyFallback, [
+      'MatterFallback',
+    ]);
+    final typo = preview.extension<AppDesignTokens>()!.typography;
+    expect(typo.chatBody.fontFamily, 'MatterChatFont');
+    expect(typo.chatScale, 1.15);
+    expect(typo.monospace.fontFamily, kBundledMonospaceFamily);
+    expect(typo.monoScale, 1.2);
   });
 }

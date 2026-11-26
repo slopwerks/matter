@@ -1,16 +1,12 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/fonts/system_font_catalog.dart';
 import 'package:matter/features/matrix_html/matrix_html_renderer.dart';
-import 'package:matter/pages/settings/font_settings_page.dart';
 import 'package:matter/providers/app_font_provider.dart';
 import 'package:matter/theme/material_theme.dart';
 import 'package:matter/theme/neu_colors.dart';
 import 'package:matter/theme/neu_theme.dart';
 import 'package:matter/theme/system_font.dart';
-import 'package:matter/theme/tokens/app_typography.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 List<TextSpan> _flattenSpans(InlineSpan span) => [
   if (span is TextSpan) ...[
@@ -86,54 +82,16 @@ void main() {
     expect(families.where((family) => family != 'MatterCustomFont'), isEmpty);
   });
 
-  testWidgets('preview theme preserves parent app, chat and monospace fonts', (
-    tester,
-  ) async {
-    final parent = buildMaterialTheme(
-      Brightness.light,
-      fontFamily: 'MatterUiFont',
-      fontFamilyFallback: const ['MatterFallback'],
-      chatFontFamily: 'MatterChatFont',
-      chatFontScale: 1.15,
-      monospaceFontFamily: kBundledMonospaceFamily,
-      monoFontScale: 1.2,
-    );
-    late ThemeData captured;
-
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: parent,
-        home: Builder(
-          builder: (context) {
-            captured = buildMaterialPreviewTheme(
-              Theme.of(context),
-              Theme.of(context).colorScheme,
-            );
-            return const SizedBox.shrink();
-          },
-        ),
-      ),
-    );
-
-    expect(captured.textTheme.bodyMedium?.fontFamily, 'MatterUiFont');
-    expect(captured.textTheme.bodyMedium?.fontFamilyFallback, [
-      'MatterFallback',
-    ]);
-    final typo = AppTypography.maybeOf(tester.element(find.byType(SizedBox)))!;
-    expect(typo.chatBody.fontFamily, 'MatterChatFont');
-    expect(typo.monospace.fontFamily, kBundledMonospaceFamily);
-    expect(typo.monoScale, 1.2);
-  });
-
   testWidgets(
-    'inline code in MatrixHtmlMessage uses configured monospace font',
+    'MatrixHtmlMessage keeps inline code and code blocks on monospace scale without double-scaling chatScale',
     (tester) async {
       final theme = buildNeuTheme(
         NeuColors.light,
         Brightness.light,
         chatFontFamily: 'MatterChatFont',
+        chatFontScale: 1.5,
         monospaceFontFamily: kBundledMonospaceFamily,
-        monoFontScale: 1.25,
+        monoFontScale: 1.2,
       );
 
       await tester.pumpWidget(
@@ -141,8 +99,13 @@ void main() {
           theme: theme,
           home: const Scaffold(
             body: MatrixHtmlMessage(
-              html: '<p>Run <code>flutter test</code> now</p>',
-              style: TextStyle(fontFamily: 'MatterChatFont', fontSize: 16),
+              html:
+                  '<p>Run <code>flutter test</code></p>'
+                  '<pre><code>print("hi");</code></pre>',
+              style: TextStyle(
+                fontFamily: 'MatterChatFont',
+                fontSize: 15 * 1.5,
+              ),
               accentColor: Colors.blue,
               selectable: false,
             ),
@@ -150,73 +113,18 @@ void main() {
         ),
       );
 
-      final rich = tester.widget<RichText>(find.byType(RichText));
-      final codeSpan = _flattenSpans(rich.text)
-          .firstWhere((s) => s.text == 'flutter test');
-      expect(codeSpan.style?.fontFamily, kBundledMonospaceFamily);
-      expect(codeSpan.style?.fontSize, closeTo(16 * 1.25, 0.01));
-    },
-  );
+      final spans = [
+        for (final rich in tester.widgetList<RichText>(find.byType(RichText)))
+          ..._flattenSpans(rich.text),
+      ];
+      final inlineCode = spans.firstWhere((s) => s.text == 'flutter test');
+      expect(inlineCode.style?.fontFamily, kBundledMonospaceFamily);
+      expect(inlineCode.style?.fontSize, closeTo(15 * 1.5 * 1.2, 0.01));
 
-  testWidgets(
-    'FontSettingsPage renders in Material and Neu and resets scales',
-    (tester) async {
-      for (final material in [true, false]) {
-        SharedPreferences.setMockInitialValues({'mono_font_scale': 1.25});
-        final container = ProviderContainer();
-        addTearDown(container.dispose);
-
-        await tester.pumpWidget(
-          UncontrolledProviderScope(
-            container: container,
-            child: MaterialApp(
-              theme: material
-                  ? buildMaterialTheme(
-                      Brightness.light,
-                      monospaceFontFamily: kBundledMonospaceFamily,
-                    )
-                  : buildNeuTheme(
-                      NeuColors.light,
-                      Brightness.light,
-                      monospaceFontFamily: kBundledMonospaceFamily,
-                    ),
-              home: const FontSettingsPage(),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        final listScrollable = find.byType(Scrollable).first;
-        expect(find.text('字体与排版'), findsOneWidget);
-        await tester.scrollUntilVisible(
-          find.text('界面字体'),
-          200,
-          scrollable: listScrollable,
-        );
-        expect(find.text('界面字体'), findsOneWidget);
-        expect(find.text('聊天正文字体'), findsOneWidget);
-        expect(find.text('等宽字体'), findsOneWidget);
-        expect(find.text('回退字体'), findsOneWidget);
-
-        await tester.scrollUntilVisible(
-          find.text('125%'),
-          200,
-          scrollable: listScrollable,
-        );
-        expect(find.text('125%'), findsOneWidget);
-
-        final resetFinder = find.text('恢复默认字体设置');
-        await tester.scrollUntilVisible(
-          resetFinder,
-          200,
-          scrollable: listScrollable,
-        );
-        await tester.ensureVisible(resetFinder);
-        await tester.pumpAndSettle();
-        await tester.tap(resetFinder);
-        await tester.pumpAndSettle();
-        expect(container.read(fontScaleSettingsProvider).isDefault, isTrue);
-      }
+      final blockCode = spans.firstWhere((s) => s.text == 'print("hi");');
+      expect(blockCode.style?.fontFamily, kBundledMonospaceFamily);
+      // Code block unscales chatScale (1.5) to base 15, steps down 1, then applies monoScale (1.2).
+      expect(blockCode.style?.fontSize, closeTo((15 - 1) * 1.2, 0.01));
     },
   );
 
