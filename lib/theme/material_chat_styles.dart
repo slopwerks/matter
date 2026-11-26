@@ -91,6 +91,7 @@ const materialTimelineJumpPadding = EdgeInsetsDirectional.only(
 
 ButtonStyle materialUnreadJumpStyle(BuildContext context) =>
     FilledButton.styleFrom(
+      elevation: 0,
       minimumSize: Size(0, materialTimelinePillHeight(context)),
       visualDensity: VisualDensity.standard,
       textStyle: Theme.of(context).textTheme.labelMedium
