@@ -88,6 +88,7 @@ dependencies:
   jni_flutter: ^1.1.0
   dynamic_color: ^2.1.0
   pasteboard: ^0.6.2
+  mime: ^2.1.0
   desktop_drop: ^0.8.4
   connectivity_plus: ^7.0.0
   path: any

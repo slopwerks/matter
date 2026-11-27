@@ -67,6 +67,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        ClipboardBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         storageBridge = StorageBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         DownloadRuntime.attachHost(this, flutterEngine)
         AudioRuntime.attachHost(this, flutterEngine)

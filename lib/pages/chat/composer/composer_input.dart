@@ -17,7 +17,7 @@ import '../../../src/rust/api/matrix.dart' as rust;
 import '../../../theme/neu_colors.dart';
 import '../../../widgets/glass.dart';
 import '../attachment_picker.dart';
-import '../desktop_clipboard.dart';
+import '../composer_clipboard.dart';
 import '../desktop_composer_picker.dart';
 import 'composer_actions_bar.dart';
 import 'composer_autocomplete_popup.dart';
@@ -331,17 +331,13 @@ class MessageInputState extends ConsumerState<MessageInput> {
     }
     _readingClipboard = true;
     try {
-      final image = await readClipboardImage();
+      final files = await readClipboardAttachments();
       if (!mounted ||
           (ref.read(activeUserIdProvider) ?? '') != _draftKey.userId) {
         return;
       }
-      if (image != null) {
-        if (_inlineImages) {
-          unawaited(previewExternalFiles([image]));
-        } else {
-          await previewExternalFiles([image]);
-        }
+      if (files.isNotEmpty) {
+        await previewExternalFiles(files);
       } else {
         final editable = _focusNode.context
             ?.findAncestorStateOfType<EditableTextState>();
@@ -686,14 +682,12 @@ class MessageInputState extends ConsumerState<MessageInput> {
                       expanded: expanded,
                       compact: desktop,
                       readOnly: editingSourceLoading,
-                      onPaste: (_isDesktop || desktop)
-                          ? () {
-                              ContextMenuController.removeAny();
-                              unawaited(
-                                _pasteClipboard(SelectionChangedCause.toolbar),
-                              );
-                            }
-                          : null,
+                      onPaste: () {
+                        ContextMenuController.removeAny();
+                        unawaited(
+                          _pasteClipboard(SelectionChangedCause.toolbar),
+                        );
+                      },
                       onTap: () =>
                           widget.onPanelModeChanged(InputPanelMode.keyboard),
                     ),

@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, UIDocumentPickerDelegate {
@@ -17,6 +18,91 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     audioPlaybackBridge = AudioPlaybackBridge(messenger: engineBridge.applicationRegistrar.messenger())
+    let clipboard = FlutterMethodChannel(
+      name: "moe.aks.matter/clipboard",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    clipboard.setMethodCallHandler { call, result in
+      guard call.method == "readFiles" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let items = UIPasteboard.general.items
+      DispatchQueue.global(qos: .userInitiated).async {
+        do {
+          var files: [[String: Any]] = []
+          var total = 0
+          for item in items {
+            let fileURL: URL?
+            if let value = item[UTType.fileURL.identifier] as? URL {
+              fileURL = value
+            } else if let value = item[UTType.fileURL.identifier] as? Data {
+              fileURL = URL(dataRepresentation: value, relativeTo: nil)
+            } else if let value = item[UTType.fileURL.identifier] as? String {
+              fileURL = URL(string: value)
+            } else {
+              fileURL = nil
+            }
+            let data: Data
+            let type: UTType?
+            let name: String
+            if let url = fileURL, url.isFileURL {
+              let accessing = url.startAccessingSecurityScopedResource()
+              defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+              let values = try url.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey, .contentTypeKey])
+              guard values.isDirectory != true else {
+                throw NSError(domain: "clipboard", code: 1, userInfo: [NSLocalizedDescriptionKey: "暂不支持发送文件夹"])
+              }
+              guard (values.fileSize ?? 0) <= 64 * 1024 * 1024 - total else {
+                throw NSError(domain: "clipboard", code: 2, userInfo: [NSLocalizedDescriptionKey: "剪贴板附件超过 64MB 限制"])
+              }
+              guard let stream = InputStream(url: url) else {
+                throw NSError(domain: "clipboard", code: 3, userInfo: [NSLocalizedDescriptionKey: "无法读取剪贴板文件"])
+              }
+              stream.open()
+              defer { stream.close() }
+              var contents = Data()
+              var buffer = [UInt8](repeating: 0, count: 8192)
+              while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count < 0 { throw stream.streamError ?? NSError(domain: "clipboard", code: 3) }
+                if count == 0 { break }
+                guard contents.count + count <= 64 * 1024 * 1024 - total else {
+                  throw NSError(domain: "clipboard", code: 2, userInfo: [NSLocalizedDescriptionKey: "剪贴板附件超过 64MB 限制"])
+                }
+                contents.append(contentsOf: buffer.prefix(count))
+              }
+              data = contents
+              type = values.contentType
+              name = url.lastPathComponent
+            } else {
+              guard let representation = item.first(where: { key, value in
+                guard let candidate = UTType(key), value is Data else { return false }
+                return !candidate.conforms(to: .text) && !candidate.conforms(to: .url) &&
+                  candidate.conforms(to: .data) && candidate.preferredMIMEType != nil
+              }), let value = representation.value as? Data else { continue }
+              data = value
+              type = UTType(representation.key)
+              name = "clipboard_\(files.count).\(type?.preferredFilenameExtension ?? "bin")"
+            }
+            total += data.count
+            guard total <= 64 * 1024 * 1024 else {
+              throw NSError(domain: "clipboard", code: 2, userInfo: [NSLocalizedDescriptionKey: "剪贴板附件超过 64MB 限制"])
+            }
+            files.append([
+              "name": name,
+              "mime": type?.preferredMIMEType ?? "application/octet-stream",
+              "bytes": FlutterStandardTypedData(bytes: data),
+            ])
+          }
+          DispatchQueue.main.async { result(files) }
+        } catch {
+          DispatchQueue.main.async {
+            result(FlutterError(code: "clipboard_read_failed", message: error.localizedDescription, details: nil))
+          }
+        }
+      }
+    }
     let channel = FlutterMethodChannel(
       name: "moe.aks.matter/file_saver",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
