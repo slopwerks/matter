@@ -61,13 +61,18 @@ class _MessageInsertAnimationState extends State<MessageInsertAnimation>
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: SizeTransition(
-        sizeFactor: _size,
-        alignment: Alignment.bottomRight,
-        child: FadeTransition(
-          opacity: _opacity,
-          child: SlideTransition(position: _position, child: widget.child),
+    return AnimatedBuilder(
+      animation: _controller,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: SlideTransition(position: _position, child: widget.child),
+      ),
+      builder: (context, child) => ClipRect(
+        clipBehavior: _controller.isCompleted ? Clip.none : Clip.hardEdge,
+        child: Align(
+          alignment: Alignment.bottomRight,
+          heightFactor: _size.value,
+          child: child,
         ),
       ),
     );
