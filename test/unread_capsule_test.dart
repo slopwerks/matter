@@ -26,10 +26,12 @@ class _FakeUnreadRustApi implements RustLibApi {
   );
   Completer<List<rust.ChatMessage>>? pendingGetMessages;
   Completer<unread.UnreadPage>? pendingUnreadPage;
+  Future<unread.UnreadPage> Function(String? nextBatch)? unreadPageHandler;
   unread.UnreadPage unreadPageResult = const unread.UnreadPage(
     eventIds: [],
     unresolvedEventIds: [],
     reachedEnd: true,
+    resetBefore: false,
   );
   int getUnreadStateCalls = 0;
   int markRoomAsReadCalls = 0;
@@ -159,7 +161,10 @@ class _FakeUnreadRustApi implements RustLibApi {
     required String throughEventId,
     String? nextBatch,
     required List<String> ignoredUserIds,
-  }) => pendingUnreadPage?.future ?? Future.value(unreadPageResult);
+  }) =>
+      unreadPageHandler?.call(nextBatch) ??
+      pendingUnreadPage?.future ??
+      Future.value(unreadPageResult);
 
   @override
   Stream<rust.SyncEvent> crateApiMatrixWatchSyncEvents() => syncEvents.stream;
@@ -299,10 +304,12 @@ void main() {
     rustApi.unreadState = const unread.RoomUnreadState(unreadCount: 0);
     rustApi.pendingGetMessages = null;
     rustApi.pendingUnreadPage = null;
+    rustApi.unreadPageHandler = null;
     rustApi.unreadPageResult = const unread.UnreadPage(
       eventIds: [],
       unresolvedEventIds: [],
       reachedEnd: true,
+      resetBefore: false,
     );
     rustApi.getUnreadStateCalls = 0;
     rustApi.markRoomAsReadCalls = 0;
@@ -500,6 +507,7 @@ void main() {
           eventIds: [for (var i = 2; i <= 31; i++) '\$$i'],
           unresolvedEventIds: const [],
           reachedEnd: true,
+          resetBefore: false,
         ),
       );
       await tester.pumpAndSettle();
@@ -537,6 +545,99 @@ void main() {
 
       await tester.drag(find.byType(CustomScrollView), const Offset(0, 600));
       await tester.pumpAndSettle();
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'tapping 30 unread pill in a 120-message room jumps to exact first unread message',
+    (tester) async {
+      const roomId = '!jump-exact:example.org';
+      final msgs = List.generate(
+        120,
+        (i) => _msg(
+          '\$${i + 1}',
+          (i + 1) * 1000,
+          senderId: i.isEven ? '@bob:example.org' : '@carol:example.org',
+        ),
+      );
+      rustApi.rooms = [_room(roomId, unreadCount: 30)];
+      rustApi.messages = msgs;
+      rustApi.unreadState = unread.RoomUnreadState(
+        unreadCount: 30,
+        readEventId: r'$90',
+        throughEventId: r'$120',
+        boundaryResolved: true,
+        unreadEventIds: [for (var i = 91; i <= 120; i++) '\$$i'],
+        unresolvedEventIds: const [],
+      );
+
+      await _pumpDetailPage(tester, rustApi, roomId: roomId);
+
+      expect(find.byType(MaterialUnreadPill), findsOneWidget);
+      expect(find.text('30 条新消息'), findsOneWidget);
+
+      await tester.tap(find.text('30 条新消息'));
+      await tester.pumpAndSettle();
+
+      // Landed on $91 (30th from bottom), NOT $21 (100th from bottom).
+      expect(find.text(r'Message $91'), findsOneWidget);
+      expect(find.text(r'Message $21'), findsNothing);
+      expect(find.byType(MaterialUnreadPill), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'multi-page unread scan resets stale earlier page when own-message boundary appears on page 2',
+    (tester) async {
+      const roomId = '!reset-page2:example.org';
+      final msgs = List.generate(
+        120,
+        (i) => _msg(
+          '\$${i + 1}',
+          (i + 1) * 1000,
+          senderId: i == 89 ? '@alice:example.org' : '@bob:example.org',
+          isMe: i == 89,
+        ),
+      );
+      rustApi.rooms = [_room(roomId, unreadCount: 30)];
+      rustApi.messages = msgs;
+      rustApi.unreadState = const unread.RoomUnreadState(
+        unreadCount: 30,
+        readEventId: r'$20',
+        throughEventId: r'$120',
+        boundaryResolved: false,
+      );
+      rustApi.unreadPageHandler = (nextBatch) async {
+        if (nextBatch == null) {
+          return unread.UnreadPage(
+            eventIds: [for (var i = 21; i <= 70; i++) '\$$i'],
+            unresolvedEventIds: const [],
+            nextBatch: 'page-2',
+            reachedEnd: false,
+            resetBefore: false,
+          );
+        }
+        return unread.UnreadPage(
+          eventIds: [for (var i = 91; i <= 120; i++) '\$$i'],
+          unresolvedEventIds: const [],
+          nextBatch: null,
+          reachedEnd: true,
+          resetBefore: true,
+          boundaryResolved: true,
+        );
+      };
+
+      await _pumpDetailPage(tester, rustApi, roomId: roomId);
+
+      expect(find.byType(MaterialUnreadPill), findsOneWidget);
+      expect(find.text('30 条新消息'), findsOneWidget);
+
+      await tester.tap(find.text('30 条新消息'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(r'Message $91'), findsOneWidget);
+      expect(find.text(r'Message $21'), findsNothing);
       expect(find.byType(MaterialUnreadPill), findsNothing);
     },
   );

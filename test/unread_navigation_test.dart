@@ -124,4 +124,21 @@ void main() {
       expect(preceded.hasUnresolvedBefore('b'), isTrue);
     },
   );
+
+  test('resetBefore discards candidates from earlier pages and upgrades boundaryResolved', () {
+    final state = UnreadNavigation(boundaryResolved: false);
+    state.addPage(['old-1', 'old-2'], reachedEnd: false);
+    expect(state.firstNavigableId, 'old-1');
+    expect(state.candidateCount, isNull);
+
+    state.addPage(
+      ['new-1', 'new-2', 'new-3'],
+      reachedEnd: true,
+      resetBefore: true,
+      boundaryResolved: true,
+    );
+    expect(state.firstNavigableId, 'new-1');
+    expect(state.candidateCount, 3);
+    expect(state.hasUnresolved, isFalse);
+  });
 }
