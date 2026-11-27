@@ -77,7 +77,10 @@ class AttachmentSendController {
   /// resolving a second one.
   MessageSendPresentation _batchPresentation = MessageSendPresentation.quiet;
 
-  Future<bool> sendSelectedMedia({bool closePicker = true}) async {
+  Future<bool> sendSelectedMedia({
+    bool closePicker = true,
+    bool includeReply = true,
+  }) async {
     _ensureCanSend();
     final items = List<AttachmentMediaItem>.of(draft.selected);
     if (isSending || items.isEmpty) return false;
@@ -85,7 +88,7 @@ class AttachmentSendController {
     final caption = description.isEmpty ? null : description;
     final lastImage = items.lastIndexWhere((item) => item.isImage);
     final replyState = container.read(replyingToProvider(draftKey).notifier);
-    final replyTo = replyState.value;
+    final replyTo = includeReply ? replyState.value : null;
     var albumRoot = draft.albumRootEventId;
     final album =
         albumRoot != null || items.where((item) => item.isImage).length > 1;

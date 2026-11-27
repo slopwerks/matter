@@ -437,15 +437,51 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final replyState = ref.read(replyingToProvider(_draftKey).notifier);
     final replyTo = replyState.value;
     final draftState = ref.read(messageDraftProvider(_draftKey).notifier);
+    final replyTextFirst = replyTo != null && text.trim().isNotEmpty;
     _sendingPendingImages = true;
     try {
-      final imagesSent = await sender.sendSelectedMedia(description: '');
+      if (replyTextFirst) {
+        Object? textError;
+        final textSent = await sendDraftText(
+          ref,
+          roomId: widget.roomId,
+          draftKey: _draftKey,
+          rawText: text,
+          replyToOverride: replyTo,
+          overrideReply: true,
+          totalMembers: widget.totalMembers,
+          refreshContainer: ProviderScope.containerOf(context, listen: false),
+          onError: (error) => textError = error,
+        );
+        if (!textSent) {
+          if (replyState.mounted && replyState.value == null) {
+            replyState.value = replyTo;
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('文字发送失败: $textError')));
+          }
+          return false;
+        }
+        if (draftState.mounted && draftState.value == text) {
+          draftState.value = '';
+        }
+        if (mounted && _controller.text == text) _controller.clear();
+        if (!mounted || ref.read(activeUserIdProvider) != _draftKey.userId) {
+          return true;
+        }
+        unawaited(refreshMessages(ref, widget.roomId));
+      }
+      final imagesSent = await sender.sendSelectedMedia(
+        description: '',
+        includeReply: !replyTextFirst,
+      );
       if (!imagesSent) return false;
       if (!mounted || ref.read(activeUserIdProvider) != _draftKey.userId) {
         return true;
       }
       var sent = true;
-      if (text.trim().isNotEmpty) {
+      if (!replyTextFirst && text.trim().isNotEmpty) {
         Object? textError;
         sent = await sendDraftText(
           ref,
@@ -467,10 +503,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
         }
         if (sent && mounted) unawaited(refreshMessages(ref, widget.roomId));
       }
-      if (sent && draftState.mounted && draftState.value == text) {
+      if (!replyTextFirst &&
+          sent &&
+          draftState.mounted &&
+          draftState.value == text) {
         draftState.value = '';
       }
-      if (sent && mounted && _controller.text == text) _controller.clear();
+      if (!replyTextFirst && sent && mounted && _controller.text == text) {
+        _controller.clear();
+      }
       if (mounted) _showKeyboard();
       return sent;
     } catch (error) {

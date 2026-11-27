@@ -180,10 +180,16 @@ class AttachmentPickerState extends State<AttachmentPicker> {
     super.dispose();
   }
 
-  Future<bool> sendSelectedMedia({required String description}) {
+  Future<bool> sendSelectedMedia({
+    required String description,
+    bool includeReply = true,
+  }) {
     if (_sender.isSending || _mediaDraft.isSending) return Future.value(false);
     _mediaDraft.description.text = description;
-    return _sender.sendSelectedMedia(closePicker: false);
+    return _sender.sendSelectedMedia(
+      closePicker: false,
+      includeReply: includeReply,
+    );
   }
 
   Future<void> _openPreview(

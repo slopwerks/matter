@@ -186,7 +186,8 @@ void main() {
               [];
         }
       });
-      api.fail = true;
+      api.fail = !withText;
+      api.failText = withText;
       await tester.tap(find.byKey(const ValueKey('send_only')));
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -195,12 +196,14 @@ void main() {
       expect(container.read(replyingToProvider(_key))?.id, reply.id);
       expect(pending.selected, hasLength(1));
       api.fail = false;
+      api.failText = false;
       await tester.tap(find.byKey(const ValueKey('send_only')));
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 150));
       });
       await tester.pumpAndSettle();
-      expect(api.imageReplies, [reply.id]);
+      expect(api.imageReplies, [withText ? null : reply.id]);
+      expect(api.sent, withText ? ['A sunset', 'image'] : ['image']);
       expect(api.textReplies, withText ? [reply.id] : isEmpty);
       expect(api.images.single.caption, isNull);
       expect(container.read(replyingToProvider(_key)), isNull);
@@ -209,6 +212,60 @@ void main() {
       container.dispose();
     });
   }
+
+  testWidgets('reply text succeeds before image failure and is not resent', (
+    tester,
+  ) async {
+    final key = GlobalKey<MessageInputState>();
+    final container = await _pumpComposer(tester, key);
+    final reply = rust.ChatMessage(
+      id: r'$target',
+      senderId: '@other:example.org',
+      senderName: 'Other',
+      content: 'Original',
+      mentionedUserIds: const [],
+      mentionsRoom: false,
+      timestamp: '1',
+      isMe: false,
+      msgType: rust.MessageType.text,
+      isEdited: false,
+      editHistory: const [],
+      reactions: const [],
+      readers: const [],
+      totalMembers: 2,
+    );
+    container.read(replyingToProvider(_key).notifier).value = reply;
+    unawaited(key.currentState!.previewExternalFiles([_image()]));
+    await tester.pumpAndSettle();
+    final pending = container.read(composerAttachmentDraftProvider(_key));
+    pending.addListener(() {
+      if (pending.isSending && pending.selected.isEmpty) {
+        container.read(localOutgoingMessagesProvider(_key).notifier).value = [];
+      }
+    });
+    api.fail = true;
+    await tester.tap(find.byKey(const ValueKey('send_only')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    });
+    await tester.pump();
+    expect(api.sent, ['A sunset']);
+    expect(api.textReplies, [reply.id]);
+    expect(container.read(messageDraftProvider(_key)), '');
+    expect(container.read(replyingToProvider(_key)), isNull);
+    expect(pending.selected, hasLength(1));
+    api.fail = false;
+    await tester.tap(find.byKey(const ValueKey('send_only')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    });
+    await tester.pumpAndSettle();
+    expect(api.sent, ['A sunset', 'image']);
+    expect(api.imageReplies, [null]);
+    expect(api.textReplies, [reply.id]);
+    await tester.pumpWidget(const SizedBox());
+    container.dispose();
+  });
 
   testWidgets('touch composer stages images above text without uploading', (
     tester,
