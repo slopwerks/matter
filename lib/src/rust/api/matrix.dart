@@ -699,6 +699,8 @@ Future<void> sendSticker({
   String? mimeType,
   int? width,
   int? height,
+  String? replyToEventId,
+  String? replyToUserId,
 }) => RustLib.instance.api.crateApiMatrixSendSticker(
   accountUserId: accountUserId,
   roomId: roomId,
@@ -707,6 +709,8 @@ Future<void> sendSticker({
   mimeType: mimeType,
   width: width,
   height: height,
+  replyToEventId: replyToEventId,
+  replyToUserId: replyToUserId,
 );
 
 Future<DirectoryRoomPage> searchRoomDirectory({

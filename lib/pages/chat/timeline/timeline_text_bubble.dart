@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/interaction_mode_provider.dart';
 import '../../../providers/text_selection_target.dart';
 import '../../../src/rust/api/matrix.dart' hide redactMessage;
-import '../../../theme/material_theme.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../theme/tokens/app_typography.dart';
 
@@ -17,6 +16,7 @@ import '../../../features/matrix_html/matrix_link_router.dart';
 import '../message_text.dart';
 import '../link_preview.dart';
 import 'timeline_bubble_frame.dart';
+import 'timeline_reply_preview.dart';
 import 'timeline_text_metadata_layout.dart';
 
 /// The HTML a text message should render with: the sender's formatted body,
@@ -128,7 +128,12 @@ class TimelineTextBubble extends ConsumerWidget {
       children: [
         ?senderHeader,
         if (replyContent != null)
-          _buildReplyPreview(context, message.inReplyTo!, replyContent, isMe),
+          TimelineReplyPreview(
+            replyToId: message.inReplyTo!,
+            replyContent: replyContent,
+            isMe: isMe,
+            onMessageJumpRequested: onMessageJumpRequested,
+          ),
         if (readerHtml != null)
           MatrixHtmlMessage(
             key: ValueKey('formatted-body:${message.id}'),
@@ -184,74 +189,6 @@ class TimelineTextBubble extends ConsumerWidget {
     );
   }
 
-  Widget _buildReplyPreview(
-    BuildContext context,
-    String replyToId,
-    String replyContent,
-    bool isMe,
-  ) {
-    final colors = context.neu;
-    final style = context.isMaterial
-        ? materialTimelinePreviewStyle(Theme.of(context))
-        : null;
-    return Semantics(
-      button: true,
-      label: '跳转到被回复的消息',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onMessageJumpRequested == null
-            ? null
-            : () => onMessageJumpRequested!(replyToId),
-        child: Container(
-          key: ValueKey('reply-preview:$replyToId'),
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color:
-                style?.fill ??
-                (isMe
-                    ? Colors.white.withValues(alpha: 0.16)
-                    : colors.base.withValues(alpha: 0.65)),
-            borderRadius: style?.radius ?? BorderRadius.circular(NeuRadius.tag),
-            border: Border(
-              left: BorderSide(
-                color:
-                    style?.accent ??
-                    (isMe ? outgoingBubbleForeground(context) : colors.accent),
-                width: 3,
-              ),
-            ),
-          ),
-          child: Text(
-            replyContent,
-            style: _replyPreviewTextStyle(context, isMe),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ),
-    );
-  }
-
-  TextStyle _replyPreviewTextStyle(BuildContext context, bool isMe) {
-    final colors = context.neu;
-    final theme = Theme.of(context);
-    final typography = AppTypography.maybeOf(context);
-    final small = theme.textTheme.bodySmall!;
-    return small.copyWith(
-      fontFamily: typography?.chatBody.fontFamily ?? small.fontFamily,
-      fontFamilyFallback:
-          typography?.chatBody.fontFamilyFallback ?? small.fontFamilyFallback,
-      fontSize: (small.fontSize ?? 12) * (typography?.chatScale ?? 1.0),
-      color: context.isMaterial
-          ? materialTimelinePreviewStyle(theme).foreground
-          : isMe
-          ? outgoingBubbleForeground(context).withValues(alpha: 0.7)
-          : colors.textTertiary,
-      height: 1.3,
-    );
-  }
-
   double _replyPreviewWidth(
     BuildContext context,
     String replyContent,
@@ -263,7 +200,7 @@ class TimelineTextBubble extends ConsumerWidget {
     final painter = TextPainter(
       text: TextSpan(
         text: replyContent,
-        style: _replyPreviewTextStyle(context, isMe),
+        style: replyPreviewTextStyle(context, isMe),
       ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),

@@ -46,22 +46,11 @@ pub(super) fn with_metadata(
         content["m.relates_to"]["rel_type"] = Value::String(ALBUM_RELATION.to_owned());
         content["m.relates_to"]["event_id"] = Value::String(root.to_string());
     }
-    let reply_user = metadata
-        .reply_to_user_id
-        .as_ref()
-        .map(matrix_sdk::ruma::UserId::parse)
-        .transpose()
-        .map_err(|error| format!("Invalid reply user ID: {error}"))?;
-    if let Some(event_id) = &metadata.reply_to_event_id {
-        let event_id = matrix_sdk::ruma::EventId::parse(event_id)
-            .map_err(|error| format!("Invalid reply event ID: {error}"))?;
-        content["m.relates_to"]["m.in_reply_to"] = serde_json::json!({
-            "event_id": event_id.as_str(),
-        });
-        if let Some(user_id) = reply_user {
-            content["m.mentions"] = serde_json::json!({ "user_ids": [user_id.as_str()] });
-        }
-    }
+    content = with_reply(
+        content,
+        metadata.reply_to_event_id.as_deref(),
+        metadata.reply_to_user_id.as_deref(),
+    )?;
     if let Some(hash) = &metadata.blurhash {
         content["info"][BLURHASH_KEY] = Value::String(hash.clone());
     }
@@ -69,6 +58,30 @@ pub(super) fn with_metadata(
         content[SPOILER_KEY] = Value::Bool(true);
         if let Some(reason) = nonempty_caption(metadata.spoiler_reason.as_deref()) {
             content[format!("{SPOILER_KEY}.reason")] = Value::String(reason.to_owned());
+        }
+    }
+    Ok(content)
+}
+
+/// Attach the standard reply relation and recipient mention to message-like
+/// content, without adding image-specific metadata.
+pub(super) fn with_reply(
+    mut content: Value,
+    reply_to_event_id: Option<&str>,
+    reply_to_user_id: Option<&str>,
+) -> Result<Value, String> {
+    let reply_user = reply_to_user_id
+        .map(matrix_sdk::ruma::UserId::parse)
+        .transpose()
+        .map_err(|error| format!("Invalid reply user ID: {error}"))?;
+    if let Some(event_id) = reply_to_event_id {
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id)
+            .map_err(|error| format!("Invalid reply event ID: {error}"))?;
+        content["m.relates_to"]["m.in_reply_to"] = serde_json::json!({
+            "event_id": event_id.as_str(),
+        });
+        if let Some(user_id) = reply_user {
+            content["m.mentions"] = serde_json::json!({ "user_ids": [user_id.as_str()] });
         }
     }
     Ok(content)

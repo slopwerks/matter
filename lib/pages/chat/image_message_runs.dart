@@ -29,6 +29,7 @@ bool _adjacentImages(rust.ChatMessage previous, rust.ChatMessage message) {
       isChatImage(message) &&
       message.senderId == previous.senderId &&
       message.isMe == previous.isMe &&
+      message.inReplyTo == previous.inReplyTo &&
       _imageDescription(message) == _imageDescription(previous) &&
       chatDateKey(message.timestamp) == chatDateKey(previous.timestamp) &&
       timestamp != null &&
