@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -28,6 +29,8 @@ class NeuDecoration extends Decoration {
     this.intensity = 1,
     this.borderColor,
     this.superellipseEnabled = true,
+    this.depthProgress,
+    this.accentProgress,
   });
 
   final NeuColors colors;
@@ -46,11 +49,52 @@ class NeuDecoration extends Decoration {
   /// 额外描边(如选中描主色)。
   final Color? borderColor;
   final bool superellipseEnabled;
+  final double? depthProgress;
+  final double? accentProgress;
+
+  double get _accentProgress => accentProgress ?? (accent ? 1 : 0);
+
+  Color get _baseColor => color ?? (accent ? colors.accent : colors.surface);
+
+  double get _depthProgress =>
+      depthProgress ??
+      switch (depth) {
+        NeuDepth.raised => 1,
+        NeuDepth.flat => 0,
+        NeuDepth.pressed => -1,
+      };
+
+  NeuDecoration _lerp(NeuDecoration other, double progress) => NeuDecoration(
+    colors: colors.lerp(other.colors, progress),
+    depth: progress < .5 ? depth : other.depth,
+    depthProgress: lerpDouble(_depthProgress, other._depthProgress, progress),
+    radius: lerpDouble(radius, other.radius, progress)!,
+    color: Color.lerp(_baseColor, other._baseColor, progress),
+    accent: progress < .5 ? accent : other.accent,
+    accentProgress: lerpDouble(
+      _accentProgress,
+      other._accentProgress,
+      progress,
+    ),
+    intensity: lerpDouble(intensity, other.intensity, progress)!,
+    borderColor: Color.lerp(borderColor, other.borderColor, progress),
+    superellipseEnabled: progress < .5
+        ? superellipseEnabled
+        : other.superellipseEnabled,
+  );
+
+  @override
+  Decoration? lerpFrom(Decoration? a, double t) =>
+      a is NeuDecoration ? a._lerp(this, t) : super.lerpFrom(a, t);
+
+  @override
+  Decoration? lerpTo(Decoration? b, double t) =>
+      b is NeuDecoration ? _lerp(b, t) : super.lerpTo(b, t);
 
   // Let repaint boundaries (including lazy-list rows) raster-cache the blur
   // operations instead of rasterizing both shadows on every scrolling frame.
   @override
-  bool get isComplex => !colors.isMaterial && depth != NeuDepth.flat;
+  bool get isComplex => !colors.isMaterial && _depthProgress != 0;
 
   @override
   BoxPainter createBoxPainter([VoidCallback? onChanged]) =>
@@ -61,6 +105,8 @@ class NeuDecoration extends Decoration {
       other is NeuDecoration &&
       other.colors == colors &&
       other.depth == depth &&
+      other.depthProgress == depthProgress &&
+      other.accentProgress == accentProgress &&
       other.radius == radius &&
       other.color == color &&
       other.accent == accent &&
@@ -72,6 +118,8 @@ class NeuDecoration extends Decoration {
   int get hashCode => Object.hash(
     colors,
     depth,
+    depthProgress,
+    accentProgress,
     radius,
     color,
     accent,
@@ -109,10 +157,7 @@ class _NeuPainter extends BoxPainter {
           offset & size,
           Radius.circular(decoration.radius),
         ),
-        Paint()
-          ..color = decoration.accent
-              ? c.accent
-              : (decoration.color ?? c.surface),
+        Paint()..color = decoration._baseColor,
       );
       if (decoration.borderColor case final borderColor?) {
         canvas.drawRRect(
@@ -128,7 +173,8 @@ class _NeuPainter extends BoxPainter {
       }
       return;
     }
-    final d = 3.8 * decoration.intensity;
+    final strength = decoration._depthProgress.abs();
+    final d = 3.8 * decoration.intensity * strength;
     final sigma = d * 1.15;
     if (_size != size) {
       _size = size;
@@ -137,27 +183,27 @@ class _NeuPainter extends BoxPainter {
     canvas.save();
     canvas.translate(offset.dx, offset.dy);
 
-    switch (decoration.depth) {
-      case NeuDepth.raised:
+    switch (decoration._depthProgress) {
+      case > 0:
         _drawShape(
           canvas,
           _darkOuterShadow,
           _darkOuterRoundedShadow,
-          _shadowPaint(c.shadowDark.withValues(alpha: .72), sigma),
+          _shadowPaint(c.shadowDark.withValues(alpha: .72 * strength), sigma),
         );
         _drawShape(
           canvas,
           _lightOuterShadow,
           _lightOuterRoundedShadow,
           _shadowPaint(
-            c.shadowLight.withValues(alpha: c.highlightAlpha),
+            c.shadowLight.withValues(alpha: c.highlightAlpha * strength),
             sigma * .65,
           ),
         );
         _drawShape(canvas, _shape, _roundedShape, _fillPaint);
-      case NeuDepth.flat:
+      case 0:
         _drawShape(canvas, _shape, _roundedShape, _fillPaint);
-      case NeuDepth.pressed:
+      default:
         _drawShape(canvas, _shape, _roundedShape, _fillPaint);
         canvas.save();
         if (_roundedShape case final roundedShape?) {
@@ -168,13 +214,21 @@ class _NeuPainter extends BoxPainter {
         _shadow(
           canvas,
           _darkShadow,
-          c.shadowDark.withValues(alpha: .48),
+          Color.lerp(
+            c.shadowDark,
+            neuShift(decoration._baseColor, -.12),
+            decoration._accentProgress,
+          )!.withValues(alpha: .48 * strength),
           sigma,
         );
         _shadow(
           canvas,
           _lightShadow,
-          c.shadowLight.withValues(alpha: c.highlightAlpha),
+          Color.lerp(
+            c.shadowLight,
+            neuShift(decoration._baseColor, .10),
+            decoration._accentProgress,
+          )!.withValues(alpha: c.highlightAlpha * strength),
           sigma * .9,
         );
         canvas.restore();
@@ -206,22 +260,31 @@ class _NeuPainter extends BoxPainter {
         ? null
         : RRect.fromRectAndRadius(rect, Radius.circular(radius));
 
-    final base = decoration.color ?? c.surface;
+    final base = decoration._baseColor;
 
-    switch (decoration.depth) {
-      case NeuDepth.raised:
+    switch (decoration._depthProgress) {
+      case > 0:
         _darkOuterShadow = _shape.shift(Offset(d, d));
         _lightOuterShadow = _shape.shift(Offset(-d, -d));
         _darkOuterRoundedShadow = _roundedShape?.shift(Offset(d, d));
         _lightOuterRoundedShadow = _roundedShape?.shift(Offset(-d, -d));
-        _fillPaint = _fill(rect, base, convex: true, c: c);
-      case NeuDepth.flat:
-        _fillPaint = _fill(rect, base, convex: false, c: c);
-      case NeuDepth.pressed:
+        _fillPaint = _fill(rect, base, convex: true);
+      case 0:
+        _fillPaint = _fill(rect, base, convex: false);
+      default:
         final path = _roundedShape == null
             ? (Path()..addRSuperellipse(_shape))
             : (Path()..addRRect(_roundedShape!));
-        _fillPaint = _fill(rect, neuShift(base, -0.012), convex: false, c: c);
+        _fillPaint = _fill(
+          rect,
+          neuShift(
+            base,
+            -0.012 *
+                decoration._depthProgress.abs() *
+                (1 - decoration._accentProgress),
+          ),
+          convex: false,
+        );
         _darkShadow = _innerShadow(rect, path, Offset(d * .8, d * .8), sigma);
         _lightShadow = _innerShadow(
           rect,
@@ -245,30 +308,24 @@ class _NeuPainter extends BoxPainter {
     }
   }
 
-  Paint _fill(
-    Rect rect,
-    Color base, {
-    required bool convex,
-    required NeuColors c,
-  }) {
+  Paint _fill(Rect rect, Color base, {required bool convex}) {
     final Gradient? gradient;
-    if (decoration.accent) {
+    final accent = decoration._accentProgress;
+    final depth = convex ? decoration._depthProgress : 0.0;
+    if (accent > 0 || convex) {
       gradient = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [neuShift(c.accent, .08), neuShift(c.accent, -.06)],
-      );
-    } else if (convex) {
-      gradient = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [neuShift(base, .055), neuShift(base, -.05)],
+        colors: [
+          neuShift(base, lerpDouble(.055 * depth, .08, accent)!),
+          neuShift(base, lerpDouble(-.05 * depth, -.06, accent)!),
+        ],
       );
     } else {
       gradient = null;
     }
     return Paint()
-      ..color = decoration.accent ? c.accent : base
+      ..color = base
       ..shader = gradient?.createShader(rect);
   }
 

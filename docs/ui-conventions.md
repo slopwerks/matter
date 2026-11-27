@@ -308,6 +308,9 @@ layout, hit testing and popup anchors stay at rest. Reduced motion disables it.
 
 `NeuAction`, `NeuButton`, `NeuIconButton` and space cards use that feedback in
 Material. Their new-skeuomorphic branches keep their existing press treatment.
+`NeuDecoration` interpolates raised and pressed depth through a flat surface:
+outer shadows contract and fade before inner shadows grow. Buttons retain their
+110 ms press transition, including smooth reversal when released partway through.
 Toolbar icon controls use `MaterialToolbar` and a neutral filled pill, with the
 style defined in `material_theme.dart`; inline buttons keep their usual fill.
 Settings section headings use `titleSmall` rather than letter-spaced captions.
@@ -335,6 +338,8 @@ Material uses one floating `surfaceContainerHigh` capsule at every pane width:
 28 dp corners, a 56 dp default height and a 720 dp maximum surface width, with
 16 dp side and 12 dp bottom margins. Its editor has no nested filled field.
 Neu retains its compact input and the wide editor with a top divider.
+The wide editor centers short text vertically within its minimum height and
+grows with multiline content up to its existing height limit.
 Material has one plus button for attachments and chat tools. On desktops and in keyboard/mouse
 mode it opens a menu with images first. On mobile touch it opens the picker.
 Composer control shapes live in `material_theme.dart`: Material uses circular
