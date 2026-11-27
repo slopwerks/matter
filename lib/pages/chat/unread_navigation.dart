@@ -10,7 +10,7 @@ class UnreadNavigation {
     addPage(eventIds, unresolvedIds: unresolvedIds, reachedEnd: complete);
   }
 
-  final bool boundaryResolved;
+  bool boundaryResolved;
   bool complete;
   final _ids = <String>{};
   final _unresolved = <String>{};
@@ -43,7 +43,17 @@ class UnreadNavigation {
     Iterable<String> ids, {
     Iterable<String> unresolvedIds = const [],
     required bool reachedEnd,
+    bool resetBefore = false,
+    bool? boundaryResolved,
   }) {
+    if (resetBefore) {
+      _ids.clear();
+      _unresolved.clear();
+      _confirmed.clear();
+    }
+    if (boundaryResolved == true) {
+      this.boundaryResolved = true;
+    }
     final pending = unresolvedIds.toSet();
     for (final id in ids) {
       _ids.add(id);

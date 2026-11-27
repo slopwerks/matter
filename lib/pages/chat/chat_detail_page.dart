@@ -1200,10 +1200,13 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
           }
         }
         setState(() {
+          if (page.resetBefore) _unreadRetryTargetId = null;
           navigation.addPage(
             page.eventIds,
             unresolvedIds: page.unresolvedEventIds,
             reachedEnd: page.reachedEnd,
+            resetBefore: page.resetBefore,
+            boundaryResolved: page.boundaryResolved,
           );
           _unreadNextBatch = page.nextBatch;
         });

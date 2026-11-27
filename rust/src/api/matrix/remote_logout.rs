@@ -9,6 +9,7 @@ use super::*;
 /// to that account's client.
 pub(super) async fn clear_timeline_cache_for(user_id: &str) {
     sdk_timeline::clear_for_user(user_id).await;
+    unread::clear_for_user(user_id).await;
 }
 
 /// Fire-and-forget retry of a pending remote logout for [user_id] using the

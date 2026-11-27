@@ -8,8 +8,9 @@ import '../matrix.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `cached_entry_interval`, `classify_unread_events`, `newer_receipt`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `cached_entry_interval_any_boundary`, `classify_unread_events`, `clear_for_user`, `is_own_implicit_read_event`, `is_renderable_raw_unread_event`, `last_boundary_in_slice`, `load_matching_entry_boundaries`, `newer_receipt`, `reconcile_local_unread_count`, `redacted_targets_in_slice`, `save_entry_boundaries`, `select_entry_boundary`, `tail_after_own_event`, `timeline_event_id_set`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EntryBoundarySnapshot`, `LocalEntryInterval`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// This is a local read. Call it before enabling the viewed room's auto-reads.
 Future<RoomUnreadState> getRoomUnreadState({
@@ -105,11 +106,20 @@ class UnreadPage {
   final String? nextBatch;
   final bool reachedEnd;
 
+  /// True when a newer read boundary (e.g. own sent message) appeared in this
+  /// page, so candidates from earlier pages must be discarded.
+  final bool resetBefore;
+
+  /// Some(true) when this page proved a whole-room read boundary.
+  final bool? boundaryResolved;
+
   const UnreadPage({
     required this.eventIds,
     required this.unresolvedEventIds,
     this.nextBatch,
     required this.reachedEnd,
+    required this.resetBefore,
+    this.boundaryResolved,
   });
 
   @override
@@ -117,7 +127,9 @@ class UnreadPage {
       eventIds.hashCode ^
       unresolvedEventIds.hashCode ^
       nextBatch.hashCode ^
-      reachedEnd.hashCode;
+      reachedEnd.hashCode ^
+      resetBefore.hashCode ^
+      boundaryResolved.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -127,5 +139,7 @@ class UnreadPage {
           eventIds == other.eventIds &&
           unresolvedEventIds == other.unresolvedEventIds &&
           nextBatch == other.nextBatch &&
-          reachedEnd == other.reachedEnd;
+          reachedEnd == other.reachedEnd &&
+          resetBefore == other.resetBefore &&
+          boundaryResolved == other.boundaryResolved;
 }
