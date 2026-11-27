@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/interaction_mode_provider.dart';
+import '../../../widgets/menu_text_selection_area.dart';
 import '../message_text.dart';
 
 class TimelineAdaptiveTextMetadata extends ConsumerWidget {
@@ -52,14 +53,18 @@ class TimelineAdaptiveTextMetadata extends ConsumerWidget {
         mentionedUserIds: mentionedUserIds,
         onMentionTap: onMentionTap,
       ),
-      metadata: metadata,
+      metadata: SelectionContainer.disabled(child: metadata),
     );
     final desktop = ref
         .watch(interactionModeProvider)
         .usesKeyboardMouse(Theme.of(context).platform);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: desktop || selectable ? SelectionArea(child: content) : content,
+      child: selectable
+          ? MenuTextSelectionArea(child: content)
+          : desktop
+          ? SelectionArea(child: content)
+          : content,
     );
   }
 }

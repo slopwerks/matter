@@ -14,6 +14,7 @@ import '../../widgets/app_avatar.dart';
 import 'matrix_code_block.dart';
 import 'matrix_html_flow.dart';
 import 'matrix_html_node.dart';
+import '../../widgets/menu_text_selection_area.dart';
 import 'matrix_html_parser.dart';
 import 'matrix_link_router.dart';
 
@@ -37,6 +38,7 @@ class MatrixHtmlMessage extends StatefulWidget {
   /// A message bubble turns this off for touch input: there the long press
   /// belongs to the message menu, not to text selection.
   final bool selectable;
+  final bool selectOnOpen;
 
   const MatrixHtmlMessage({
     super.key,
@@ -50,6 +52,7 @@ class MatrixHtmlMessage extends StatefulWidget {
     this.minWidth = 0,
     this.imageResolver,
     this.selectable = true,
+    this.selectOnOpen = false,
   });
 
   @override
@@ -111,7 +114,10 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
         }
       });
     }
-    final trailingMetadata = widget.trailingMetadata;
+    // The timestamp sits beside the paragraph but must not join its selection.
+    final trailingMetadata = widget.trailingMetadata == null
+        ? null
+        : SelectionContainer.disabled(child: widget.trailingMetadata!);
     if (trailingMetadata != null) {
       final inline = renderer.singleInlineBlock(_nodes);
       if (inline != null) {
@@ -159,8 +165,10 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
     );
   }
 
-  Widget _selectable(Widget child) =>
-      widget.selectable ? SelectionArea(child: child) : child;
+  Widget _selectable(Widget child) {
+    if (widget.selectOnOpen) return MenuTextSelectionArea(child: child);
+    return widget.selectable ? SelectionArea(child: child) : child;
+  }
 }
 
 class _MatrixNodeRenderer {
@@ -1230,6 +1238,10 @@ class _InlineRichTextMetadata extends StatelessWidget {
   Widget build(BuildContext context) {
     return _InlineRichTextMetadataRenderWidget(
       text: RichText(
+        selectionRegistrar: SelectionContainer.maybeOf(context),
+        selectionColor:
+            DefaultSelectionStyle.of(context).selectionColor ??
+            DefaultSelectionStyle.defaultColor,
         text: text,
         softWrap: true,
         textDirection: Directionality.of(context),
