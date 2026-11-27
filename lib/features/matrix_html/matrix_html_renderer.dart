@@ -111,7 +111,9 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
         }
       });
     }
-    final trailingMetadata = widget.trailingMetadata;
+    final trailingMetadata = widget.trailingMetadata == null
+        ? null
+        : SelectionContainer.disabled(child: widget.trailingMetadata!);
     if (trailingMetadata != null) {
       final inline = renderer.singleInlineBlock(_nodes);
       if (inline != null) {

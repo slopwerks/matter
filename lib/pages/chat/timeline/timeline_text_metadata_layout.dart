@@ -52,7 +52,7 @@ class TimelineAdaptiveTextMetadata extends ConsumerWidget {
         mentionedUserIds: mentionedUserIds,
         onMentionTap: onMentionTap,
       ),
-      metadata: metadata,
+      metadata: SelectionContainer.disabled(child: metadata),
     );
     final desktop = ref
         .watch(interactionModeProvider)
