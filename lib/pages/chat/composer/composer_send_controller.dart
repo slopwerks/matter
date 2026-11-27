@@ -260,12 +260,14 @@ class ComposerSendController {
   rust.ChatMessage _localStickerMessage({
     required String id,
     required StickerItem sticker,
+    String? inReplyTo,
     int? timestamp,
   }) => rust.ChatMessage(
     id: id,
     senderId: ref.read(currentUserProvider)?.id ?? '',
     senderName: '我',
     content: sticker.body,
+    inReplyTo: inReplyTo,
     mentionedUserIds: const [],
     mentionsRoom: false,
     timestamp: (timestamp ?? DateTime.now().millisecondsSinceEpoch).toString(),
@@ -284,6 +286,9 @@ class ComposerSendController {
   );
 
   Future<void> sendSticker(StickerItem sticker, Rect? sourceRect) async {
+    final replyState = ref.read(replyingToProvider(draftKey).notifier);
+    final reply = replyState.value;
+    final replyUser = reply == null || reply.isMe ? null : reply.senderId;
     final imageUrl = sticker.imageUrl;
     if (imageUrl == null) {
       ScaffoldMessenger.of(context()).showSnackBar(
@@ -316,9 +321,11 @@ class ComposerSendController {
       message: _localStickerMessage(
         id: failedLocalOutgoingId(id),
         sticker: sticker,
+        inReplyTo: reply?.id,
         timestamp: timestamp,
       ),
       sourceImageUrl: imageUrl,
+      replyToUserId: replyUser,
     );
     upsertLocalOutgoingMessage(
       ref,
@@ -327,9 +334,11 @@ class ComposerSendController {
         message: _localStickerMessage(
           id: id,
           sticker: sticker,
+          inReplyTo: reply?.id,
           timestamp: timestamp,
         ),
         sourceImageUrl: imageUrl,
+        replyToUserId: replyUser,
       ),
     );
     try {
@@ -341,8 +350,15 @@ class ComposerSendController {
         mimeType: sticker.mimeType,
         width: sticker.width,
         height: sticker.height,
+        replyToEventId: reply?.id,
+        replyToUserId: replyUser,
       );
       final sentId = markLocalOutgoingMessageSentInState(outgoing, id);
+      if (reply != null &&
+          replyState.mounted &&
+          replyState.value?.id == reply.id) {
+        replyState.value = null;
+      }
       if (!isMounted()) return;
       stopTyping();
       onMessageSent(presentation, true);

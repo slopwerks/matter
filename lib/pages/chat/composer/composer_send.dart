@@ -21,6 +21,8 @@ Future<bool> sendDraftText(
   required RoomAccountKey draftKey,
   required String rawText,
   required int totalMembers,
+  rust.ChatMessage? replyToOverride,
+  bool overrideReply = false,
   ValueNotifier<bool>? sendInFlight,
   bool composerHoldsDraft = false,
   ProviderContainer? refreshContainer,
@@ -37,7 +39,9 @@ Future<bool> sendDraftText(
   if (compiled.body.trim().isEmpty) return false;
 
   final editing = ref.read(editingMessageProvider(draftKey));
-  final replyTo = ref.read(replyingToProvider(draftKey));
+  final replyTo = overrideReply
+      ? replyToOverride
+      : ref.read(replyingToProvider(draftKey));
   final replyState = ref.read(replyingToProvider(draftKey).notifier);
   final draftState = ref.read(messageDraftProvider(draftKey).notifier);
   final editingState = ref.read(editingMessageProvider(draftKey).notifier);
@@ -109,7 +113,9 @@ Future<bool> sendDraftText(
     }
     // Consume only this send's relation, before the network wait. A newer
     // reply selected while sending belongs to the next draft.
-    if (replyTo != null) replyState.value = null;
+    if (replyTo != null && replyState.value?.id == replyTo.id) {
+      replyState.value = null;
+    }
   }
   try {
     String remoteEventId;

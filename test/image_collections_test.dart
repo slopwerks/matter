@@ -19,6 +19,7 @@ rust.ChatMessage picture(
   int time = 1000,
   String sender = 'alice',
   String? root,
+  String? reply,
   bool spoiler = false,
   String? caption,
   String? captionFormattedBody,
@@ -40,6 +41,7 @@ rust.ChatMessage picture(
   caption: caption,
   captionFormattedBody: captionFormattedBody,
   sharedCaption: sharedCaption,
+  inReplyTo: reply,
   imageMetadata: root == null && !spoiler
       ? null
       : rust.ImageMessageMetadata(albumRoot: root, spoiler: spoiler),
@@ -55,6 +57,15 @@ rust.ChatMessage picture(
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+  });
+
+  test('image stacks do not hide differing reply targets', () {
+    final runs = chatImageRuns([
+      picture('plain'),
+      picture('reply-a', reply: r'$a'),
+      picture('reply-b', reply: r'$b'),
+    ]);
+    expect(runs, hasLength(3));
   });
 
   test(

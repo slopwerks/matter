@@ -62,16 +62,28 @@ class ComposerAttachmentStrip extends ConsumerWidget {
                 Positioned(
                   right: 0,
                   top: 0,
-                  child: IconButton.filledTonal(
-                    tooltip: '移除图片',
-                    style: composerIconButtonStyle(
-                      Theme.of(context),
-                      compact: compact,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    excludeFromSemantics: true,
+                    onTap: draft.isSending ? null : () => draft.toggle(item),
+                    child: SizedBox.square(
+                      dimension: compact ? 32 : 48,
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: IconButton.filledTonal(
+                          key: ValueKey('remove-attachment:${item.id}'),
+                          tooltip: '移除图片',
+                          style: composerThumbnailRemoveStyle(
+                            Theme.of(context),
+                            compact: true,
+                          ),
+                          onPressed: draft.isSending
+                              ? null
+                              : () => draft.toggle(item),
+                          icon: const Icon(Icons.close, size: 16),
+                        ),
+                      ),
                     ),
-                    onPressed: draft.isSending
-                        ? null
-                        : () => draft.toggle(item),
-                    icon: const Icon(Icons.close, size: 16),
                   ),
                 ),
               ],

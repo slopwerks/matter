@@ -326,6 +326,10 @@ macro_rules! declare_models_api {
         #[derive(Clone, Debug, PartialEq)]
         pub struct ImageMessageMetadata {
             pub album_root: Option<String>,
+            /// Event this image replies to, serialized as `m.in_reply_to`.
+            pub reply_to_event_id: Option<String>,
+            /// Reply recipient to mention; omitted for self-replies by the caller.
+            pub reply_to_user_id: Option<String>,
             pub blurhash: Option<String>,
             pub spoiler: bool,
             pub spoiler_reason: Option<String>,

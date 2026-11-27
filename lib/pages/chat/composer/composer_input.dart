@@ -25,6 +25,7 @@ import 'composer_keyboard_controller.dart';
 import 'composer_draft_controller.dart';
 import 'composer_quote_banner.dart';
 import 'composer_send_controller.dart';
+import 'composer_send.dart';
 import 'composer_text_field.dart';
 import 'composer_typing_controller.dart';
 import 'composer_tools_controller.dart';
@@ -95,6 +96,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   late final RoomAccountKey _draftKey;
   bool _hasText = false;
   bool _readingClipboard = false;
+  bool _sendingPendingImages = false;
   late final ComposerToolsController _tools;
 
   late final ComposerTypingController _typingController;
@@ -165,7 +167,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
       isMounted: () => mounted,
       textController: _controller,
       totalMembers: () => widget.totalMembers,
-      inlineImages: () => _inlineImages,
       isDesktop: () => _isDesktop,
       keyboardMouse: () => _keyboardMouse,
       sourceLoading: () => _draftController.isSourceLoading,
@@ -337,11 +338,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
         return;
       }
       if (image != null) {
-        if (_inlineImages) {
-          unawaited(previewExternalFiles([image]));
-        } else {
-          await previewExternalFiles([image]);
-        }
+        unawaited(previewExternalFiles([image]));
       } else {
         final editable = _focusNode.context
             ?.findAncestorStateOfType<EditableTextState>();
@@ -416,6 +413,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   Future<void> _sendMessage() async {
+    if (_sendingPendingImages) return;
     if (_inlineImages &&
         ref.read(editingMessageProvider(_draftKey)) == null &&
         ref
@@ -430,17 +428,90 @@ class MessageInputState extends ConsumerState<MessageInput> {
 
   Future<bool> _sendPendingImages() async {
     final pending = ref.read(composerAttachmentDraftProvider(_draftKey));
-    if (pending.isSending || _sender.isSending) return false;
+    if (_sendingPendingImages || pending.isSending || _sender.isSending) {
+      return false;
+    }
     final sender = _pendingImagesKey.currentState;
     if (sender == null) return false;
     final text = _controller.text;
+    final replyState = ref.read(replyingToProvider(_draftKey).notifier);
+    final replyTo = replyState.value;
     final draftState = ref.read(messageDraftProvider(_draftKey).notifier);
+    final replyTextFirst = replyTo != null && text.trim().isNotEmpty;
+    _sendingPendingImages = true;
     try {
-      final sent = await sender.sendSelectedMedia(description: text);
-      if (sent && draftState.mounted && draftState.value == text) {
+      if (replyTextFirst) {
+        Object? textError;
+        final textSent = await sendDraftText(
+          ref,
+          roomId: widget.roomId,
+          draftKey: _draftKey,
+          rawText: text,
+          replyToOverride: replyTo,
+          overrideReply: true,
+          totalMembers: widget.totalMembers,
+          refreshContainer: ProviderScope.containerOf(context, listen: false),
+          onError: (error) => textError = error,
+        );
+        if (!textSent) {
+          if (replyState.mounted && replyState.value == null) {
+            replyState.value = replyTo;
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('文字发送失败: $textError')));
+          }
+          return false;
+        }
+        if (draftState.mounted && draftState.value == text) {
+          draftState.value = '';
+        }
+        if (mounted && _controller.text == text) _controller.clear();
+        if (!mounted || ref.read(activeUserIdProvider) != _draftKey.userId) {
+          return true;
+        }
+        unawaited(refreshMessages(ref, widget.roomId));
+      }
+      final imagesSent = await sender.sendSelectedMedia(
+        description: '',
+        includeReply: !replyTextFirst,
+      );
+      if (!imagesSent) return false;
+      if (!mounted || ref.read(activeUserIdProvider) != _draftKey.userId) {
+        return true;
+      }
+      var sent = true;
+      if (!replyTextFirst && text.trim().isNotEmpty) {
+        Object? textError;
+        sent = await sendDraftText(
+          ref,
+          roomId: widget.roomId,
+          draftKey: _draftKey,
+          rawText: text,
+          replyToOverride: replyTo,
+          overrideReply: true,
+          totalMembers: widget.totalMembers,
+          refreshContainer: ProviderScope.containerOf(context, listen: false),
+          onError: (error) => textError = error,
+        );
+        if (!sent && replyState.mounted && replyState.value == null) {
+          replyState.value = replyTo;
+        }
+        if (!sent && mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('文字发送失败: $textError')));
+        }
+        if (sent && mounted) unawaited(refreshMessages(ref, widget.roomId));
+      }
+      if (!replyTextFirst &&
+          sent &&
+          draftState.mounted &&
+          draftState.value == text) {
         draftState.value = '';
       }
-      if (sent && mounted && _controller.text == text) _controller.clear();
+      if (!replyTextFirst && sent && mounted && _controller.text == text) {
+        _controller.clear();
+      }
       if (mounted) _showKeyboard();
       return sent;
     } catch (error) {
@@ -449,11 +520,13 @@ class MessageInputState extends ConsumerState<MessageInput> {
             .showSnackBar(SnackBar(content: Text('发送失败: $error')));
       }
       return false;
+    } finally {
+      _sendingPendingImages = false;
     }
   }
 
   void _toggleAttachmentPicker() {
-    if (_inlineImages) {
+    if (_isDesktop || _keyboardMouse) {
       unawaited(_tools.pickImages());
       return;
     }
@@ -753,6 +826,28 @@ class MessageInputState extends ConsumerState<MessageInput> {
                                     key: ValueKey(
                                       'attachment_picker_${_draftKey.userId}_${widget.roomId}',
                                     ),
+                                    composerController: _controller,
+                                    composerDraft: pendingImages,
+                                    onImagesSelected: (items) {
+                                      if (ref.read(activeUserIdProvider) !=
+                                              _draftKey.userId ||
+                                          pendingImages.isSending) {
+                                        return;
+                                      }
+                                      pendingImages.addItems(items);
+                                    },
+                                    onImagesDeselected: (items) {
+                                      if (ref.read(activeUserIdProvider) !=
+                                              _draftKey.userId ||
+                                          pendingImages.isSending) {
+                                        return;
+                                      }
+                                      pendingImages.selected.removeWhere(
+                                        (item) => items.contains(item),
+                                      );
+                                      pendingImages.selectionChanged();
+                                      pendingImages.discardUnselected();
+                                    },
                                     roomId: widget.roomId,
                                     accountUserId: _draftKey.userId,
                                     onRefresh: (roomId) =>
@@ -773,9 +868,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
                                         widget.onPickerHeightChanged(height);
                                       }
                                     },
-                                    onClose: () => widget.onPanelModeChanged(
-                                      InputPanelMode.none,
-                                    ),
+                                    onClose: () {
+                                      if (pendingImages.selected.isNotEmpty) {
+                                        _showKeyboard();
+                                      } else {
+                                        widget.onPanelModeChanged(
+                                          InputPanelMode.none,
+                                        );
+                                      }
+                                    },
                                   ),
                                 ),
                                 _ => const SizedBox.shrink(),

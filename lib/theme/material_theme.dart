@@ -317,6 +317,21 @@ ButtonStyle composerIconButtonStyle(ThemeData theme, {required bool compact}) =>
       ),
     );
 
+ButtonStyle composerThumbnailRemoveStyle(
+  ThemeData theme, {
+  required bool compact,
+}) => IconButton.styleFrom(
+  fixedSize: const Size.square(24),
+  minimumSize: const Size.square(24),
+  maximumSize: const Size.square(24),
+  padding: EdgeInsets.zero,
+  tapTargetSize: compact
+      ? MaterialTapTargetSize.shrinkWrap
+      : MaterialTapTargetSize.padded,
+  visualDensity: VisualDensity.standard,
+  shape: composerButtonShape(theme),
+);
+
 ButtonStyle composerSendButtonStyle(ThemeData theme, {required bool compact}) =>
     FilledButton.styleFrom(
       minimumSize: Size(64, compact ? 32 : 48),

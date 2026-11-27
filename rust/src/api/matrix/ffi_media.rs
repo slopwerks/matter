@@ -344,6 +344,7 @@ macro_rules! declare_media_api {
         }
 
         #[frb]
+        #[allow(clippy::too_many_arguments)]
         pub async fn send_sticker(
             account_user_id: String,
             room_id: String,
@@ -352,6 +353,8 @@ macro_rules! declare_media_api {
             mime_type: Option<String>,
             width: Option<i32>,
             height: Option<i32>,
+            reply_to_event_id: Option<String>,
+            reply_to_user_id: Option<String>,
         ) -> Result<(), String> {
             stickers::send_sticker(
                 account_user_id,
@@ -361,6 +364,8 @@ macro_rules! declare_media_api {
                 mime_type,
                 width,
                 height,
+                reply_to_event_id,
+                reply_to_user_id,
             )
             .await
         }
