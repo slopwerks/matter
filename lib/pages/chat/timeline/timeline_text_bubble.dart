@@ -142,6 +142,7 @@ class TimelineTextBubble extends ConsumerWidget {
             trailingMetadata: metadata,
             minWidth: replyPreviewWidth,
             selectable: selectable,
+            selectOnOpen: selecting,
           )
         else
           TimelineAdaptiveTextMetadata(
@@ -170,6 +171,8 @@ class TimelineTextBubble extends ConsumerWidget {
       child: selecting
           // A touch anywhere else drops the selection mode again.
           ? TapRegion(
+              // Flutter's selection handles and toolbar live in the overlay.
+              groupId: SelectableRegion,
               onTapOutside: (_) =>
                   ref.read(textSelectionTargetProvider.notifier).clear(),
               child: DecoratedBox(

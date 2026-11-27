@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/matrix_html/matrix_html_renderer.dart';
 import 'package:matter/pages/chat/timeline/timeline_text_bubble.dart';
@@ -14,12 +16,15 @@ import 'package:matter/theme/neu_theme.dart';
 
 const _html = '<p>hello <strong>there</strong></p>';
 
-rust.ChatMessage _message() => rust.ChatMessage(
+rust.ChatMessage _message({
+  String body = 'hello there',
+  String? html = _html,
+}) => rust.ChatMessage(
   id: r'$a',
   senderId: '@alice:example.org',
   senderName: 'Alice',
-  content: 'hello there',
-  formattedBody: _html,
+  content: body,
+  formattedBody: html,
   mentionedUserIds: const [],
   mentionsRoom: false,
   timestamp: '1700000000000',
@@ -87,7 +92,7 @@ Future<ProviderContainer> _pumpBubble(
             mentionDisplayNames: const {},
             onMentionTap: (_) {},
             messageIndex: const {},
-            metadata: const SizedBox.shrink(),
+            metadata: const Text('14:54'),
           ),
         ),
       ),
@@ -233,6 +238,100 @@ void main() {
     await tester.tap(find.text('选择文字'));
     expect(selected, 1);
   });
+
+  for (final formatted in [false, true]) {
+    final kind = formatted ? 'formatted' : 'plain';
+    for (final adjust in [false, true]) {
+      testWidgets(
+        'Android touch copies ${adjust ? 'adjusted' : 'whole'} $kind body',
+        (tester) async {
+          const body = '部署之前请先确认当前服务器运行的系统版本，以下说明适用于 RHEL 7 的';
+          final html = formatted
+              ? '<p>${body.replaceFirst('RHEL', '<strong>RHEL</strong>')}</p>'
+              : null;
+          await tester.binding.setSurfaceSize(const Size(360, 640));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          String? copied;
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            (call) async {
+              if (call.method == 'Clipboard.setData') {
+                copied = call.arguments['text'] as String;
+              }
+              return null;
+            },
+          );
+          final container = await _pumpBubble(
+            tester,
+            platform: TargetPlatform.android,
+            mode: InteractionMode.auto,
+            message: _message(body: body, html: html),
+            formattedBody: html,
+          );
+          RenderParagraph paragraph() => tester.renderObject<RenderParagraph>(
+            find.text(body, findRichText: true),
+          );
+          expect(find.text('Alice'), findsOneWidget);
+          expect(find.text('14:54'), findsOneWidget);
+          await tester.longPress(find.text(body, findRichText: true));
+          await tester.pumpAndSettle();
+          expect(paragraph().selections, isEmpty);
+
+          container.read(textSelectionTargetProvider.notifier).enter(r'$a');
+          await tester.pumpAndSettle();
+          final p = paragraph();
+          final whole = TextSelection(baseOffset: 0, extentOffset: body.length);
+          expect(
+            p.selections,
+            [whole],
+            reason: 'Entering selection must highlight the body without a second long press',
+          );
+          final boxes = p.getBoxesForSelection(whole);
+          expect(
+            boxes.first.top,
+            lessThan(boxes.last.top),
+            reason: 'Exercise soft wrap',
+          );
+          if (adjust) {
+            final start = body.indexOf('RHEL');
+            final word = TextSelection(
+              baseOffset: start,
+              extentOffset: start + 4,
+            );
+            final wordBoxes = p.getBoxesForSelection(word);
+            // Touch the endpoints of the initial highlight, then move both handles.
+            Future<void> drag(Offset from, Offset to) async {
+              final gesture = await tester.startGesture(p.localToGlobal(from));
+              // Material handles track deltas after the pan wins touch slop.
+              await gesture.moveBy(const Offset(40, 0));
+              await tester.pump();
+              await gesture.moveBy(to - from);
+              await tester.pump();
+              await gesture.up();
+              await tester.pumpAndSettle();
+            }
+
+            await drag(
+              boxes.first.toRect().bottomLeft,
+              wordBoxes.first.toRect().bottomLeft,
+            );
+            await drag(
+              boxes.last.toRect().bottomRight,
+              wordBoxes.last.toRect().bottomRight,
+            );
+            expect(p.selections, [word]);
+          }
+          await tester.tap(find.text('Copy'));
+          await tester.pumpAndSettle();
+          expect(copied, adjust ? 'RHEL' : body);
+          await tester.tapAt(const Offset(300, 550));
+          await tester.pumpAndSettle();
+          expect(paragraph().selections, isEmpty);
+          expect(find.text('Copy'), findsNothing);
+        },
+      );
+    }
+  }
 
   Finder outsideSelection() => find.byWidgetPredicate(
     (widget) => widget is SelectionContainer && widget.registrar == null,
