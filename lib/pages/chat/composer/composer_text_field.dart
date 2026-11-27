@@ -55,53 +55,57 @@ class ComposerTextField extends StatelessWidget {
               intensity: .85,
               borderColor: focusNode.hasFocus ? colors.accent : null,
             ),
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        readOnly: readOnly,
-        textAlignVertical: TextAlignVertical.center,
-        contextMenuBuilder: (context, editable) =>
-            markdownSelectionContextMenuBuilder(
-              context,
-              editable,
-              onPaste: onPaste,
+      child: Align(
+        alignment: Alignment.center,
+        heightFactor: 1,
+        child: TextField(
+          controller: controller,
+          focusNode: focusNode,
+          readOnly: readOnly,
+          textAlignVertical: TextAlignVertical.center,
+          contextMenuBuilder: (context, editable) =>
+              markdownSelectionContextMenuBuilder(
+                context,
+                editable,
+                onPaste: onPaste,
+              ),
+          style: Theme.of(context).textTheme.bodyLarge,
+          cursorColor: colors.accent,
+          decoration: InputDecoration(
+            hintText: '消息',
+            hintStyle: Theme.of(context).textTheme.bodyLarge
+                ?.copyWith(color: colors.textTertiary),
+            filled: expanded || material ? false : null,
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: expanded ? 8 : (material ? 2 : 14),
+              vertical: expanded ? 6 : (material ? 12 : 11),
             ),
-        style: Theme.of(context).textTheme.bodyLarge,
-        cursorColor: colors.accent,
-        decoration: InputDecoration(
-          hintText: '消息',
-          hintStyle: Theme.of(context).textTheme.bodyLarge
-              ?.copyWith(color: colors.textTertiary),
-          filled: expanded || material ? false : null,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: expanded ? 8 : (material ? 2 : 14),
-            vertical: expanded ? 6 : (material ? 12 : 11),
+            border: material && !expanded
+                ? const OutlineInputBorder(
+                    borderRadius: materialComposerRadius,
+                    borderSide: BorderSide.none,
+                  )
+                : InputBorder.none,
+            enabledBorder: material && !expanded
+                ? const OutlineInputBorder(
+                    borderRadius: materialComposerRadius,
+                    borderSide: BorderSide.none,
+                  )
+                : InputBorder.none,
+            focusedBorder: material && !expanded
+                ? const OutlineInputBorder(
+                    borderRadius: materialComposerRadius,
+                    borderSide: BorderSide.none,
+                  )
+                : InputBorder.none,
+            isDense: true,
           ),
-          border: material && !expanded
-              ? const OutlineInputBorder(
-                  borderRadius: materialComposerRadius,
-                  borderSide: BorderSide.none,
-                )
-              : InputBorder.none,
-          enabledBorder: material && !expanded
-              ? const OutlineInputBorder(
-                  borderRadius: materialComposerRadius,
-                  borderSide: BorderSide.none,
-                )
-              : InputBorder.none,
-          focusedBorder: material && !expanded
-              ? const OutlineInputBorder(
-                  borderRadius: materialComposerRadius,
-                  borderSide: BorderSide.none,
-                )
-              : InputBorder.none,
-          isDense: true,
+          minLines: 1,
+          maxLines: null,
+          textInputAction: TextInputAction.newline,
+          keyboardType: TextInputType.multiline,
+          onTap: onTap,
         ),
-        minLines: 1,
-        maxLines: null,
-        textInputAction: TextInputAction.newline,
-        keyboardType: TextInputType.multiline,
-        onTap: onTap,
       ),
     );
   }
