@@ -111,7 +111,10 @@ class _MatrixHtmlMessageState extends State<MatrixHtmlMessage> {
         }
       });
     }
-    final trailingMetadata = widget.trailingMetadata;
+    // The timestamp sits beside the paragraph but must not join its selection.
+    final trailingMetadata = widget.trailingMetadata == null
+        ? null
+        : SelectionContainer.disabled(child: widget.trailingMetadata!);
     if (trailingMetadata != null) {
       final inline = renderer.singleInlineBlock(_nodes);
       if (inline != null) {

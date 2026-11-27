@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/matrix_html/matrix_html_renderer.dart';
 import 'package:matter/pages/chat/timeline/timeline_text_bubble.dart';
 import 'package:matter/pages/chat/timeline/timeline_message_menu.dart';
+import 'package:matter/pages/chat/timeline/timeline_text_metadata_layout.dart';
 import 'package:matter/providers/interaction_mode_provider.dart';
 import 'package:matter/providers/text_selection_target.dart';
 import 'package:matter/src/rust/api/matrix.dart' as rust;
@@ -231,5 +232,54 @@ void main() {
 
     await tester.tap(find.text('选择文字'));
     expect(selected, 1);
+  });
+
+  Finder outsideSelection() => find.byWidgetPredicate(
+    (widget) => widget is SelectionContainer && widget.registrar == null,
+  );
+
+  testWidgets('the plain text timestamp is not selectable', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: TimelineAdaptiveTextMetadata(
+              text: 'hello there',
+              textStyle: const TextStyle(),
+              metadata: const Text('12:30'),
+              maxWidth: 300,
+              linkColor: Colors.blue,
+              selectable: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.ancestor(of: find.text('12:30'), matching: outsideSelection()),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the formatted body timestamp is not selectable', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MatrixHtmlMessage(
+            html: _html,
+            style: const TextStyle(),
+            accentColor: Colors.blue,
+            trailingMetadata: const Text('12:30'),
+            selectable: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.ancestor(of: find.text('12:30'), matching: outsideSelection()),
+      findsOneWidget,
+    );
   });
 }
