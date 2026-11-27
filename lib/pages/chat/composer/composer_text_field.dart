@@ -59,9 +59,7 @@ class ComposerTextField extends StatelessWidget {
         controller: controller,
         focusNode: focusNode,
         readOnly: readOnly,
-        textAlignVertical: expanded
-            ? TextAlignVertical.top
-            : TextAlignVertical.center,
+        textAlignVertical: TextAlignVertical.center,
         contextMenuBuilder: (context, editable) =>
             markdownSelectionContextMenuBuilder(
               context,
@@ -99,7 +97,7 @@ class ComposerTextField extends StatelessWidget {
               : InputBorder.none,
           isDense: true,
         ),
-        minLines: expanded ? 3 : null,
+        minLines: 1,
         maxLines: null,
         textInputAction: TextInputAction.newline,
         keyboardType: TextInputType.multiline,
