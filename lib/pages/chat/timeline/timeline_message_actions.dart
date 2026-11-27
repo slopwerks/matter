@@ -23,6 +23,11 @@ import '../action_failure_message.dart';
 import 'timeline_message_menu.dart';
 import 'timeline_reactions_bar.dart';
 
+/// Message actions receive the root Overlay's own context from the long-press
+/// menu. That context has no Overlay ancestor, so [Overlay.of] returns null.
+BuildContext overlayActionContext(BuildContext context) =>
+    Overlay.maybeOf(context, rootOverlay: true)?.context ?? context;
+
 class TimelineMessageActions {
   const TimelineMessageActions({
     required this.roomId,
@@ -337,7 +342,7 @@ class TimelineMessageActions {
                 }
               },
         onPlusOne: message.msgType == MessageType.text
-            ? () => unawaited(resendMessage(overlayContext, ref, message))
+            ? () => unawaited(resendMessage(messengerContext, ref, message))
             : null,
         onAddStickerPack:
             message.msgType == MessageType.sticker && message.imageUrl != null
@@ -418,7 +423,7 @@ class TimelineMessageActions {
     ChatMessage message,
   ) async {
     final container = ProviderScope.containerOf(context, listen: false);
-    final messengerContext = Overlay.of(context, rootOverlay: true).context;
+    final toastContext = overlayActionContext(context);
     try {
       await forwardMessage(
         sourceRoomId: roomId,
@@ -431,12 +436,12 @@ class TimelineMessageActions {
           mentionsRoom: message.mentionsRoom,
         ),
       );
-      if (!messengerContext.mounted) return;
-      neuToast(messengerContext, '已 +1');
+      if (!toastContext.mounted) return;
+      neuToast(toastContext, '已 +1');
       unawaited(refreshMessagesContainer(container, roomId));
     } catch (error) {
-      if (!messengerContext.mounted) return;
-      ScaffoldMessenger.of(messengerContext).showSnackBar(
+      if (!toastContext.mounted) return;
+      ScaffoldMessenger.of(toastContext).showSnackBar(
         SnackBar(
           content: Text('+1 失败: ${actionFailureMessage(error)}'),
           duration: const Duration(seconds: 2),
