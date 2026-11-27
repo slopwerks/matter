@@ -82,11 +82,12 @@ class ComposerKeyboardController {
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
     if (isComposing) return KeyEventResult.ignored;
     final keyboard = HardwareKeyboard.instance;
-    final pasteModifier = Theme.of(context()).platform == TargetPlatform.macOS
+    final platform = Theme.of(context()).platform;
+    final pasteModifier =
+        platform == TargetPlatform.macOS || platform == TargetPlatform.iOS
         ? keyboard.isMetaPressed
         : keyboard.isControlPressed;
-    if (keyboardMouse() &&
-        event is KeyDownEvent &&
+    if (event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.keyV &&
         pasteModifier &&
         !keyboard.isShiftPressed &&
