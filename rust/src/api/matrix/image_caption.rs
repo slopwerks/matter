@@ -43,10 +43,24 @@ pub(super) fn with_metadata(
     if let Some(root) = &metadata.album_root {
         let root = matrix_sdk::ruma::EventId::parse(root)
             .map_err(|error| format!("Invalid album root: {error}"))?;
-        content["m.relates_to"] = serde_json::json!({
-            "rel_type": ALBUM_RELATION,
-            "event_id": root.as_str(),
+        content["m.relates_to"]["rel_type"] = Value::String(ALBUM_RELATION.to_owned());
+        content["m.relates_to"]["event_id"] = Value::String(root.to_string());
+    }
+    let reply_user = metadata
+        .reply_to_user_id
+        .as_ref()
+        .map(matrix_sdk::ruma::UserId::parse)
+        .transpose()
+        .map_err(|error| format!("Invalid reply user ID: {error}"))?;
+    if let Some(event_id) = &metadata.reply_to_event_id {
+        let event_id = matrix_sdk::ruma::EventId::parse(event_id)
+            .map_err(|error| format!("Invalid reply event ID: {error}"))?;
+        content["m.relates_to"]["m.in_reply_to"] = serde_json::json!({
+            "event_id": event_id.as_str(),
         });
+        if let Some(user_id) = reply_user {
+            content["m.mentions"] = serde_json::json!({ "user_ids": [user_id.as_str()] });
+        }
     }
     if let Some(hash) = &metadata.blurhash {
         content["info"][BLURHASH_KEY] = Value::String(hash.clone());
@@ -69,6 +83,23 @@ pub(super) fn metadata(event: &Value) -> Option<ImageMessageMetadata> {
         .and_then(Value::as_str)
         .and_then(|id| matrix_sdk::ruma::EventId::parse(id).ok())
         .map(|id| id.to_string());
+    let reply_to_event_id = relation
+        .and_then(|relation| relation.get("m.in_reply_to"))
+        .and_then(|reply| reply.get("event_id"))
+        .and_then(Value::as_str)
+        .and_then(|id| matrix_sdk::ruma::EventId::parse(id).ok())
+        .map(|id| id.to_string());
+    // Matrix does not explicitly identify the reply recipient. Our outbound
+    // images mention only that user; do not guess when incoming mentions differ.
+    let reply_to_user_id = reply_to_event_id.as_ref().and_then(|_| {
+        let users = content.get("m.mentions")?.get("user_ids")?.as_array()?;
+        if users.len() != 1 {
+            return None;
+        }
+        matrix_sdk::ruma::UserId::parse(users[0].as_str()?)
+            .ok()
+            .map(|id| id.to_string())
+    });
     let blurhash = content
         .get("info")
         .and_then(|info| info.get(BLURHASH_KEY))
@@ -95,11 +126,13 @@ pub(super) fn metadata(event: &Value) -> Option<ImageMessageMetadata> {
     } else {
         None
     };
-    if album_root.is_none() && blurhash.is_none() && !spoiler {
+    if album_root.is_none() && reply_to_event_id.is_none() && blurhash.is_none() && !spoiler {
         return None;
     }
     Some(ImageMessageMetadata {
         album_root,
+        reply_to_event_id,
+        reply_to_user_id,
         blurhash,
         spoiler,
         spoiler_reason,

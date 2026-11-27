@@ -1891,12 +1891,20 @@ class IgnoredUsers {
 
 class ImageMessageMetadata {
   final String? albumRoot;
+
+  /// Event this image replies to, serialized as `m.in_reply_to`.
+  final String? replyToEventId;
+
+  /// Reply recipient to mention; omitted for self-replies by the caller.
+  final String? replyToUserId;
   final String? blurhash;
   final bool spoiler;
   final String? spoilerReason;
 
   const ImageMessageMetadata({
     this.albumRoot,
+    this.replyToEventId,
+    this.replyToUserId,
     this.blurhash,
     required this.spoiler,
     this.spoilerReason,
@@ -1905,6 +1913,8 @@ class ImageMessageMetadata {
   @override
   int get hashCode =>
       albumRoot.hashCode ^
+      replyToEventId.hashCode ^
+      replyToUserId.hashCode ^
       blurhash.hashCode ^
       spoiler.hashCode ^
       spoilerReason.hashCode;
@@ -1915,6 +1925,8 @@ class ImageMessageMetadata {
       other is ImageMessageMetadata &&
           runtimeType == other.runtimeType &&
           albumRoot == other.albumRoot &&
+          replyToEventId == other.replyToEventId &&
+          replyToUserId == other.replyToUserId &&
           blurhash == other.blurhash &&
           spoiler == other.spoiler &&
           spoilerReason == other.spoilerReason;

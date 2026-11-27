@@ -147,6 +147,153 @@ fn plain_images_never_use_the_filename_as_a_caption() {
     }
 }
 
+fn image_reply_metadata() -> super::ImageMessageMetadata {
+    super::ImageMessageMetadata {
+        album_root: None,
+        reply_to_event_id: Some("$reply:example.org".to_owned()),
+        reply_to_user_id: Some("@alice:example.org".to_owned()),
+        blurhash: None,
+        spoiler: false,
+        spoiler_reason: None,
+    }
+}
+
+fn image_reply_content(
+    metadata: &super::ImageMessageMetadata,
+) -> Result<serde_json::Value, String> {
+    let image = image_message_content(
+        "photo.jpg".to_owned(),
+        &"image/jpeg".parse().unwrap(),
+        None,
+        None,
+        None,
+        MediaSource::Plain(mxc_uri()),
+    );
+    let content = super::image_caption::with_captions(image, Some("Caption"), None)?;
+    super::image_caption::with_metadata(content, Some(metadata))
+}
+
+#[test]
+fn image_reply_serializes_standard_relation_and_mentions_and_round_trips() {
+    let metadata = image_reply_metadata();
+    let content = image_reply_content(&metadata).unwrap();
+    assert_eq!(
+        content["m.relates_to"]["m.in_reply_to"]["event_id"],
+        "$reply:example.org"
+    );
+    assert!(content["m.relates_to"].get("rel_type").is_none());
+    assert_eq!(
+        content["m.mentions"]["user_ids"],
+        serde_json::json!(["@alice:example.org"])
+    );
+    assert_eq!(content["body"], "Caption");
+    assert_eq!(content["filename"], "photo.jpg");
+    assert_eq!(
+        super::image_caption::metadata(&serde_json::json!({"content": content.clone()})),
+        Some(metadata),
+    );
+    let parsed: RoomMessageEventContent = serde_json::from_value(content).unwrap();
+    let wire = serde_json::to_value(parsed).unwrap();
+    assert_eq!(
+        wire["m.relates_to"]["m.in_reply_to"]["event_id"],
+        "$reply:example.org"
+    );
+}
+
+#[test]
+fn image_reply_coexists_with_album_spoiler_and_blurhash() {
+    let mut metadata = image_reply_metadata();
+    metadata.album_root = Some("$album:example.org".to_owned());
+    metadata.blurhash = Some("LEHV6nWB2yk8pyo0adR*.7kCMdnj".to_owned());
+    metadata.spoiler = true;
+    metadata.spoiler_reason = Some("Surprise".to_owned());
+    let content = image_reply_content(&metadata).unwrap();
+    assert_eq!(
+        content["m.relates_to"]["rel_type"],
+        super::image_caption::ALBUM_RELATION
+    );
+    assert_eq!(content["m.relates_to"]["event_id"], "$album:example.org");
+    assert_eq!(
+        content["m.relates_to"]["m.in_reply_to"]["event_id"],
+        "$reply:example.org"
+    );
+    assert_eq!(
+        content["info"]["xyz.amorgan.blurhash"],
+        metadata.blurhash.as_deref().unwrap()
+    );
+    assert_eq!(content["page.codeberg.everypizza.msc4193.spoiler"], true);
+    assert_eq!(
+        super::image_caption::metadata(&serde_json::json!({"content": content})),
+        Some(metadata),
+    );
+}
+
+#[test]
+fn image_reply_without_recipient_does_not_mention_self() {
+    let mut metadata = image_reply_metadata();
+    metadata.reply_to_user_id = None;
+    let content = image_reply_content(&metadata).unwrap();
+    assert!(content.get("m.mentions").is_none());
+    assert_eq!(
+        super::image_caption::metadata(&serde_json::json!({"content": content})),
+        Some(metadata.clone()),
+    );
+    metadata.reply_to_event_id = None;
+    let content = image_reply_content(&metadata).unwrap();
+    assert!(content.get("m.relates_to").is_none());
+    assert_eq!(
+        super::image_caption::metadata(&serde_json::json!({"content": content})),
+        None
+    );
+}
+
+#[test]
+fn image_reply_rejects_invalid_outbound_ids() {
+    let mut metadata = image_reply_metadata();
+    metadata.reply_to_event_id = Some("not-an-event".to_owned());
+    assert!(image_reply_content(&metadata)
+        .unwrap_err()
+        .starts_with("Invalid reply event ID:"));
+    metadata = image_reply_metadata();
+    metadata.reply_to_user_id = Some("not-a-user".to_owned());
+    assert!(image_reply_content(&metadata)
+        .unwrap_err()
+        .starts_with("Invalid reply user ID:"));
+    metadata = image_reply_metadata();
+    metadata.album_root = Some("not-an-event".to_owned());
+    assert!(image_reply_content(&metadata)
+        .unwrap_err()
+        .starts_with("Invalid album root:"));
+}
+
+#[test]
+fn image_reply_parser_ignores_invalid_or_ambiguous_reply_metadata() {
+    let content = serde_json::json!({
+        "m.relates_to": {"m.in_reply_to": {"event_id": "not-an-event"}},
+        "m.mentions": {"user_ids": ["@alice:example.org"]},
+    });
+    assert_eq!(
+        super::image_caption::metadata(&serde_json::json!({"content": content})),
+        None
+    );
+    for users in [
+        serde_json::json!(["not-a-user"]),
+        serde_json::json!(["@alice:example.org", "@bob:example.org"]),
+    ] {
+        let content = serde_json::json!({
+            "m.relates_to": {"m.in_reply_to": {"event_id": "$reply:example.org"}},
+            "m.mentions": {"user_ids": users},
+        });
+        let metadata =
+            super::image_caption::metadata(&serde_json::json!({"content": content})).unwrap();
+        assert_eq!(
+            metadata.reply_to_event_id.as_deref(),
+            Some("$reply:example.org")
+        );
+        assert_eq!(metadata.reply_to_user_id, None);
+    }
+}
+
 #[test]
 fn location_content_uses_legacy_wire_format_and_validates_ranges() {
     let content = location_message_content("Office", "geo:39.9,116.4").unwrap();

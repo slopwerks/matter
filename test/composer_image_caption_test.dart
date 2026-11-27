@@ -37,6 +37,22 @@ class _Api implements RustLibApi {
   bool fail = false;
   bool failText = false;
   final sent = <String>[];
+  final imageReplies = <String?>[];
+  final textReplies = <String>[];
+
+  @override
+  Future<String> crateApiMatrixSendReply({
+    required String accountUserId,
+    required String roomId,
+    required rust.FormattedMessageInput message,
+    required String replyToEventId,
+    String? replyToUserId,
+  }) async {
+    if (failText) throw StateError('text offline');
+    textReplies.add(replyToEventId);
+    sent.add(message.body);
+    return r'$reply';
+  }
 
   @override
   Future<String> crateApiMatrixSendMessage({
@@ -63,6 +79,7 @@ class _Api implements RustLibApi {
     rust.ImageMessageMetadata? metadata,
   }) async {
     if (fail) throw StateError('offline');
+    imageReplies.add(metadata?.replyToEventId);
     sent.add('image');
     images.add((room: roomId, filename: filename, caption: caption));
     return r'$image';
@@ -130,7 +147,68 @@ void main() {
     api.fail = false;
     api.failText = false;
     api.sent.clear();
+    api.imageReplies.clear();
+    api.textReplies.clear();
   });
+
+  for (final withText in [false, true]) {
+    testWidgets('images can reply to a message withText=$withText', (
+      tester,
+    ) async {
+      final key = GlobalKey<MessageInputState>();
+      final container = await _pumpComposer(tester, key);
+      final reply = rust.ChatMessage(
+        id: r'$target',
+        senderId: '@other:example.org',
+        senderName: 'Other',
+        content: 'Reply here',
+        mentionedUserIds: const [],
+        mentionsRoom: false,
+        timestamp: '1',
+        isMe: false,
+        msgType: rust.MessageType.text,
+        isEdited: false,
+        editHistory: const [],
+        reactions: const [],
+        readers: const [],
+        totalMembers: 2,
+      );
+      container.read(replyingToProvider(_key).notifier).value = reply;
+      if (!withText) {
+        container.read(messageDraftProvider(_key).notifier).value = '';
+      }
+      unawaited(key.currentState!.previewExternalFiles([_image()]));
+      await tester.pumpAndSettle();
+      final pending = container.read(composerAttachmentDraftProvider(_key));
+      pending.addListener(() {
+        if (pending.isSending && pending.selected.isEmpty) {
+          container.read(localOutgoingMessagesProvider(_key).notifier).value =
+              [];
+        }
+      });
+      api.fail = true;
+      await tester.tap(find.byKey(const ValueKey('send_only')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      await tester.pump();
+      expect(container.read(replyingToProvider(_key))?.id, reply.id);
+      expect(pending.selected, hasLength(1));
+      api.fail = false;
+      await tester.tap(find.byKey(const ValueKey('send_only')));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      await tester.pumpAndSettle();
+      expect(api.imageReplies, [reply.id]);
+      expect(api.textReplies, withText ? [reply.id] : isEmpty);
+      expect(api.images.single.caption, isNull);
+      expect(container.read(replyingToProvider(_key)), isNull);
+      expect(pending.selected, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+      container.dispose();
+    });
+  }
 
   testWidgets('touch composer stages images above text without uploading', (
     tester,

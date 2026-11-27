@@ -434,6 +434,8 @@ class MessageInputState extends ConsumerState<MessageInput> {
     final sender = _pendingImagesKey.currentState;
     if (sender == null) return false;
     final text = _controller.text;
+    final replyState = ref.read(replyingToProvider(_draftKey).notifier);
+    final replyTo = replyState.value;
     final draftState = ref.read(messageDraftProvider(_draftKey).notifier);
     _sendingPendingImages = true;
     try {
@@ -450,10 +452,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
           roomId: widget.roomId,
           draftKey: _draftKey,
           rawText: text,
+          replyToOverride: replyTo,
+          overrideReply: true,
           totalMembers: widget.totalMembers,
           refreshContainer: ProviderScope.containerOf(context, listen: false),
           onError: (error) => textError = error,
         );
+        if (!sent && replyState.mounted && replyState.value == null) {
+          replyState.value = replyTo;
+        }
         if (!sent && mounted) {
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text('文字发送失败: $textError')));
