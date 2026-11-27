@@ -308,6 +308,9 @@ layout, hit testing and popup anchors stay at rest. Reduced motion disables it.
 
 `NeuAction`, `NeuButton`, `NeuIconButton` and space cards use that feedback in
 Material. Their new-skeuomorphic branches keep their existing press treatment.
+`NeuDecoration` interpolates raised and pressed depth through a flat surface:
+outer shadows contract and fade before inner shadows grow. Buttons retain their
+110 ms press transition, including smooth reversal when released partway through.
 Toolbar icon controls use `MaterialToolbar` and a neutral filled pill, with the
 style defined in `material_theme.dart`; inline buttons keep their usual fill.
 Settings section headings use `titleSmall` rather than letter-spaced captions.
