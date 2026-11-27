@@ -165,7 +165,6 @@ class MessageInputState extends ConsumerState<MessageInput> {
       isMounted: () => mounted,
       textController: _controller,
       totalMembers: () => widget.totalMembers,
-      inlineImages: () => _inlineImages,
       isDesktop: () => _isDesktop,
       keyboardMouse: () => _keyboardMouse,
       sourceLoading: () => _draftController.isSourceLoading,
@@ -337,11 +336,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
         return;
       }
       if (image != null) {
-        if (_inlineImages) {
-          unawaited(previewExternalFiles([image]));
-        } else {
-          await previewExternalFiles([image]);
-        }
+        unawaited(previewExternalFiles([image]));
       } else {
         final editable = _focusNode.context
             ?.findAncestorStateOfType<EditableTextState>();
@@ -453,7 +448,7 @@ class MessageInputState extends ConsumerState<MessageInput> {
   }
 
   void _toggleAttachmentPicker() {
-    if (_inlineImages) {
+    if (_isDesktop || _keyboardMouse) {
       unawaited(_tools.pickImages());
       return;
     }
@@ -753,6 +748,28 @@ class MessageInputState extends ConsumerState<MessageInput> {
                                     key: ValueKey(
                                       'attachment_picker_${_draftKey.userId}_${widget.roomId}',
                                     ),
+                                    composerController: _controller,
+                                    composerDraft: pendingImages,
+                                    onImagesSelected: (items) {
+                                      if (ref.read(activeUserIdProvider) !=
+                                              _draftKey.userId ||
+                                          pendingImages.isSending) {
+                                        return;
+                                      }
+                                      pendingImages.addItems(items);
+                                    },
+                                    onImagesDeselected: (items) {
+                                      if (ref.read(activeUserIdProvider) !=
+                                              _draftKey.userId ||
+                                          pendingImages.isSending) {
+                                        return;
+                                      }
+                                      pendingImages.selected.removeWhere(
+                                        (item) => items.contains(item),
+                                      );
+                                      pendingImages.selectionChanged();
+                                      pendingImages.discardUnselected();
+                                    },
                                     roomId: widget.roomId,
                                     accountUserId: _draftKey.userId,
                                     onRefresh: (roomId) =>
@@ -773,9 +790,15 @@ class MessageInputState extends ConsumerState<MessageInput> {
                                         widget.onPickerHeightChanged(height);
                                       }
                                     },
-                                    onClose: () => widget.onPanelModeChanged(
-                                      InputPanelMode.none,
-                                    ),
+                                    onClose: () {
+                                      if (pendingImages.selected.isNotEmpty) {
+                                        _showKeyboard();
+                                      } else {
+                                        widget.onPanelModeChanged(
+                                          InputPanelMode.none,
+                                        );
+                                      }
+                                    },
                                   ),
                                 ),
                                 _ => const SizedBox.shrink(),

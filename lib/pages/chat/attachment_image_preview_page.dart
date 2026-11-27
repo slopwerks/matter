@@ -24,6 +24,8 @@ class AttachmentImagePreviewPage extends StatefulWidget {
   final AttachmentMediaItem initialImage;
   final Future<bool> Function() onSend;
   final VoidCallback onCaptionFocus;
+  final String? actionLabel;
+  final bool allowDescription;
 
   const AttachmentImagePreviewPage({
     super.key,
@@ -32,6 +34,8 @@ class AttachmentImagePreviewPage extends StatefulWidget {
     required this.initialImage,
     required this.onSend,
     required this.onCaptionFocus,
+    this.actionLabel,
+    this.allowDescription = true,
   });
 
   @override
@@ -397,7 +401,9 @@ class _AttachmentImagePreviewPageState
                           ? 1
                           : widget.draft.selected.length,
                       showOriginalToggle: false,
+                      allowDescription: widget.allowDescription,
                       onFocus: widget.onCaptionFocus,
+                      actionLabel: widget.actionLabel,
                       onSend: _send,
                     ),
                   ],

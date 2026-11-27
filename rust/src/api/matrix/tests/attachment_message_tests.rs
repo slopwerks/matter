@@ -91,6 +91,63 @@ fn manually_built_image_and_video_content_preserves_attachment_metadata() {
 }
 
 #[test]
+fn native_image_caption_round_trips_separately_from_filename() {
+    let content = image_message_content(
+        "photo.jpg".to_owned(),
+        &"image/jpeg".parse().unwrap(),
+        UInt::new(12),
+        UInt::new(640),
+        UInt::new(480),
+        MediaSource::Plain(mxc_uri()),
+    );
+    let json = super::image_caption::with_captions(content, Some("  A sunset 🌅  "), None).unwrap();
+    assert_eq!(json["msgtype"], "m.image");
+    assert_eq!(json["body"], "A sunset 🌅");
+    assert_eq!(json["filename"], "photo.jpg");
+    assert_eq!(json["url"], "mxc://example.org/media");
+    assert_eq!(json["info"]["w"], 640);
+    assert_eq!(json["info"]["h"], 480);
+    assert!(json.get(super::image_caption::SHARED_CAPTION_KEY).is_none());
+
+    let incoming: RoomMessageEventContent = serde_json::from_value(json).unwrap();
+    let MessageType::Image(image) = incoming.msgtype else {
+        panic!("expected m.image");
+    };
+    assert_eq!(image.filename(), "photo.jpg");
+    assert_eq!(image.caption(), Some("A sunset 🌅"));
+    let (caption, html) = super::media_caption_parts(image.formatted_caption(), image.caption());
+    assert_eq!(caption.as_deref(), Some("A sunset 🌅"));
+    assert!(html.is_none());
+}
+
+#[test]
+fn plain_images_never_use_the_filename_as_a_caption() {
+    for caption in [None, Some(""), Some(" \n\t ")] {
+        let content = image_message_content(
+            "photo.jpg".to_owned(),
+            &"image/jpeg".parse().unwrap(),
+            None,
+            None,
+            None,
+            MediaSource::Plain(mxc_uri()),
+        );
+        let json = super::image_caption::with_captions(content, caption, None).unwrap();
+        assert_eq!(json["body"], "photo.jpg");
+        assert!(json.get("filename").is_none());
+        let incoming: RoomMessageEventContent = serde_json::from_value(json).unwrap();
+        let MessageType::Image(image) = incoming.msgtype else {
+            panic!("expected m.image");
+        };
+        assert_eq!(image.filename(), "photo.jpg");
+        assert!(image.caption().is_none());
+        assert_eq!(
+            super::media_caption_parts(image.formatted_caption(), image.caption()),
+            (None, None),
+        );
+    }
+}
+
+#[test]
 fn location_content_uses_legacy_wire_format_and_validates_ranges() {
     let content = location_message_content("Office", "geo:39.9,116.4").unwrap();
     let json = serde_json::to_value(content).unwrap();

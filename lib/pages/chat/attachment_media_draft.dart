@@ -116,6 +116,19 @@ class AttachmentMediaDraft extends ChangeNotifier {
     notifyListeners();
   }
 
+  void addItems(Iterable<AttachmentMediaItem> items) {
+    if (isSending) return;
+    for (final item in items) {
+      _items[item.id] = item;
+      selected.removeWhere((existing) => existing.id == item.id);
+      selected.add(item);
+    }
+    _sendOriginal = selected
+        .where((item) => item.isImage && item.canCompress)
+        .every((item) => !item.compress);
+    notifyListeners();
+  }
+
   void setSending(bool value) {
     isSending = value;
     notifyListeners();
