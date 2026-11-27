@@ -75,6 +75,9 @@ class AttachmentPicker extends StatefulWidget {
   final bool inline;
   final TextEditingController? composerController;
   final Future<bool> Function()? onInlineSend;
+  final ValueChanged<List<AttachmentMediaItem>>? onImagesSelected;
+  final ValueChanged<List<AttachmentMediaItem>>? onImagesDeselected;
+  final AttachmentMediaDraft? composerDraft;
 
   const AttachmentPicker({
     super.key,
@@ -96,6 +99,9 @@ class AttachmentPicker extends StatefulWidget {
     this.inline = false,
     this.composerController,
     this.onInlineSend,
+    this.onImagesSelected,
+    this.onImagesDeselected,
+    this.composerDraft,
   });
 
   @override
@@ -111,6 +117,8 @@ class AttachmentPickerState extends State<AttachmentPicker> {
   bool _isPickingFiles = false;
   late final _mediaDraft = widget.draft ?? AttachmentMediaDraft();
   bool _previewOpen = false;
+  List<AttachmentMediaItem> _stagedImages = [];
+  bool _syncingImages = false;
 
   @override
   void initState() {
@@ -140,6 +148,9 @@ class AttachmentPickerState extends State<AttachmentPicker> {
           widget.onMessageSent(presentation, optimistic),
       onClose: () => widget.onClose(),
     );
+    if (widget.onImagesSelected != null) {
+      _mediaDraft.description.text = widget.composerController!.text;
+    }
     _sheetController = DraggableScrollableController();
     _sheetExtent = ValueNotifier<double>(0);
     _tab = widget.initialTab;
@@ -148,20 +159,37 @@ class AttachmentPickerState extends State<AttachmentPicker> {
       final item = _mediaDraft.forFile(file);
       if (!_mediaDraft.selected.contains(item)) _mediaDraft.toggle(item);
     }
+    if (widget.onImagesSelected != null) {
+      final pending = widget.composerDraft;
+      if (pending != null) {
+        _stagedImages = pending.selected.where((item) => item.isImage).toList();
+        _mediaDraft.addItems(_stagedImages);
+        pending.addListener(_syncComposerImages);
+      }
+      _mediaDraft.addListener(_syncImages);
+    }
   }
 
   @override
   void dispose() {
+    widget.composerDraft?.removeListener(_syncComposerImages);
+    _mediaDraft.removeListener(_syncImages);
     _sheetController.dispose();
     _sheetExtent.dispose();
     if (!_previewOpen && widget.draft == null) _mediaDraft.dispose();
     super.dispose();
   }
 
-  Future<bool> sendSelectedMedia({required String description}) {
+  Future<bool> sendSelectedMedia({
+    required String description,
+    bool includeReply = true,
+  }) {
     if (_sender.isSending || _mediaDraft.isSending) return Future.value(false);
     _mediaDraft.description.text = description;
-    return _sender.sendSelectedMedia(closePicker: false);
+    return _sender.sendSelectedMedia(
+      closePicker: false,
+      includeReply: includeReply,
+    );
   }
 
   Future<void> _openPreview(
@@ -170,7 +198,7 @@ class AttachmentPickerState extends State<AttachmentPicker> {
   ) async {
     if (_sender.isSending || _previewOpen) return;
     _previewOpen = true;
-    if (widget.inline) {
+    if (widget.inline || widget.onImagesSelected != null) {
       _mediaDraft.description.text = widget.composerController!.text;
     }
     FocusManager.instance.primaryFocus?.unfocus();
@@ -181,7 +209,11 @@ class AttachmentPickerState extends State<AttachmentPicker> {
         images: images,
         initialImage: item,
         onCaptionFocus: _expandForCaption,
-        onSend: widget.inline
+        actionLabel: _stagingImages ? '完成' : null,
+        allowDescription: !widget.inline && widget.onImagesSelected == null,
+        onSend: _stagingImages
+            ? () async => _stageImages()
+            : widget.inline
             ? () {
                 widget.composerController!.text = _mediaDraft.description.text;
                 return widget.onInlineSend!();
@@ -200,6 +232,50 @@ class AttachmentPickerState extends State<AttachmentPicker> {
       _previewOpen = false;
       if (!mounted && widget.draft == null) _mediaDraft.dispose();
     }
+  }
+
+  bool get _stagingImages =>
+      widget.onImagesSelected != null &&
+      _mediaDraft.selected.every((item) => item.isImage);
+
+  void _syncImages() {
+    if (_syncingImages) return;
+    _syncingImages = true;
+    try {
+      final images = _mediaDraft.selected
+          .where((item) => item.isImage)
+          .toList();
+      final removed = _stagedImages
+          .where((item) => !images.contains(item))
+          .toList();
+      _stagedImages = images;
+      if (removed.isNotEmpty) widget.onImagesDeselected?.call(removed);
+      if (images.isNotEmpty) widget.onImagesSelected!(images);
+    } finally {
+      _syncingImages = false;
+    }
+  }
+
+  void _syncComposerImages() {
+    if (_syncingImages) return;
+    _syncingImages = true;
+    try {
+      final images = widget.composerDraft!.selected
+          .where((item) => item.isImage)
+          .toList();
+      _mediaDraft.selected.removeWhere((item) => item.isImage);
+      _mediaDraft.addItems(images);
+      _stagedImages = images;
+    } finally {
+      _syncingImages = false;
+    }
+  }
+
+  bool _stageImages() {
+    if (_mediaDraft.isSending || _mediaDraft.selected.isEmpty) return false;
+    if (_mediaDraft.selected.any((item) => !item.isImage)) return false;
+    widget.onImagesSelected!(List.of(_mediaDraft.selected));
+    return true;
   }
 
   void _expandForCaption() {
@@ -404,7 +480,10 @@ class AttachmentPickerState extends State<AttachmentPicker> {
                               _mediaDraft.selected.isNotEmpty
                           ? AttachmentCaptionComposer(
                               draft: _mediaDraft,
-                              allowDescription: _mediaDraft.hasImages,
+                              allowDescription:
+                                  _mediaDraft.hasImages &&
+                                  widget.onImagesSelected == null,
+                              actionLabel: _stagingImages ? '完成' : null,
                               onFocus: _expandForCaption,
                               onClear: () {
                                 _mediaDraft.selected.clear();
@@ -412,7 +491,11 @@ class AttachmentPickerState extends State<AttachmentPicker> {
                                 FocusManager.instance.primaryFocus?.unfocus();
                               },
                               onSend: () {
-                                unawaited(_sender.sendSelectedMedia());
+                                if (_stagingImages) {
+                                  if (_stageImages()) widget.onClose();
+                                } else {
+                                  unawaited(_sender.sendSelectedMedia());
+                                }
                               },
                             )
                           : AttachmentTabBar(

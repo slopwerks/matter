@@ -77,13 +77,18 @@ class AttachmentSendController {
   /// resolving a second one.
   MessageSendPresentation _batchPresentation = MessageSendPresentation.quiet;
 
-  Future<bool> sendSelectedMedia({bool closePicker = true}) async {
+  Future<bool> sendSelectedMedia({
+    bool closePicker = true,
+    bool includeReply = true,
+  }) async {
     _ensureCanSend();
     final items = List<AttachmentMediaItem>.of(draft.selected);
     if (isSending || items.isEmpty) return false;
     final description = draft.description.text.trim();
     final caption = description.isEmpty ? null : description;
     final lastImage = items.lastIndexWhere((item) => item.isImage);
+    final replyState = container.read(replyingToProvider(draftKey).notifier);
+    final replyTo = includeReply ? replyState.value : null;
     var albumRoot = draft.albumRootEventId;
     final album =
         albumRoot != null || items.where((item) => item.isImage).length > 1;
@@ -95,6 +100,10 @@ class AttachmentSendController {
               items[index],
               caption: index == lastImage ? caption : null,
               albumRoot: albumRoot,
+              replyToEventId: replyTo?.id,
+              replyToUserId: replyTo == null || replyTo.isMe
+                  ? null
+                  : replyTo.senderId,
             );
             if (album && albumRoot == null && eventId != null) {
               albumRoot = eventId;
@@ -105,7 +114,14 @@ class AttachmentSendController {
       draft.selected,
       closePicker: closePicker,
     );
-    return (isMounted() || hasSharedDraft()) && draft.selected.isEmpty;
+    final sent = (isMounted() || hasSharedDraft()) && draft.selected.isEmpty;
+    if (sent &&
+        replyTo != null &&
+        replyState.mounted &&
+        replyState.value?.id == replyTo.id) {
+      replyState.value = null;
+    }
+    return sent;
   }
 
   /// Optimistically inserts the picked image as a local outgoing message so
@@ -127,6 +143,7 @@ class AttachmentSendController {
         content: caption ?? prepared.filename,
         caption: caption,
         imageMetadata: metadata,
+        inReplyTo: metadata.replyToEventId,
         mentionedUserIds: const [],
         mentionsRoom: false,
         timestamp: timestamp.toString(),
@@ -147,6 +164,7 @@ class AttachmentSendController {
         totalMembers: totalMembers(),
       ),
       localImageBytes: prepared.bytes,
+      replyToUserId: metadata.replyToUserId,
     );
     upsertLocalOutgoingMessageInState(_outgoingState, local);
     _batchInsertedOptimistically = true;
@@ -206,6 +224,8 @@ class AttachmentSendController {
     AttachmentMediaItem item, {
     String? caption,
     String? albumRoot,
+    String? replyToEventId,
+    String? replyToUserId,
   }) async {
     final original = await item.original;
     final file = original.file;
@@ -240,6 +260,8 @@ class AttachmentSendController {
       _ensureCanSend();
       final metadata = rust.ImageMessageMetadata(
         albumRoot: albumRoot,
+        replyToEventId: replyToEventId,
+        replyToUserId: replyToUserId,
         blurhash: blurhash,
         spoiler: item.spoiler,
       );

@@ -117,6 +117,14 @@ pub(in crate::api::matrix) fn message_to_chat_message(
             result.image_metadata = original_event
                 .as_ref()
                 .and_then(super::super::image_caption::metadata);
+            // An album uses a custom relation type. Preserve its nested reply
+            // even if the SDK does not expose it as a standalone reply relation.
+            if result.in_reply_to.is_none() {
+                result.in_reply_to = result
+                    .image_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.reply_to_event_id.clone());
+            }
             if !message.is_edited() {
                 result.shared_caption = original_event
                     .as_ref()

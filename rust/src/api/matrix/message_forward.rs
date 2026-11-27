@@ -96,6 +96,8 @@ pub(super) async fn forward_message(
             }
             if let Some(metadata) = &mut metadata {
                 metadata.album_root = None;
+                metadata.reply_to_event_id = None;
+                metadata.reply_to_user_id = None;
             }
             let content = image_caption::with_captions(content, None, None)?;
             let content = image_caption::with_metadata(content, metadata.as_ref())?;

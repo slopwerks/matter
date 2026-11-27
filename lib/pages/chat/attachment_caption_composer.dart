@@ -86,6 +86,7 @@ class AttachmentCaptionComposer extends StatefulWidget {
   final int? sendCount;
   final bool allowDescription;
   final bool showOriginalToggle;
+  final String? actionLabel;
 
   const AttachmentCaptionComposer({
     super.key,
@@ -96,6 +97,7 @@ class AttachmentCaptionComposer extends StatefulWidget {
     this.sendCount,
     this.allowDescription = true,
     this.showOriginalToggle = true,
+    this.actionLabel,
   });
 
   @override
@@ -183,7 +185,7 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
         ),
         const SizedBox(width: 8),
         Tooltip(
-          message: '发送 $count 项',
+          message: widget.actionLabel ?? '发送 $count 项',
           child: FilledButton(
             key: const ValueKey('attachment-send-button'),
             onPressed: widget.draft.isSending || count == 0
@@ -212,7 +214,7 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
                         size: 18,
                       ),
                       const SizedBox(width: 4),
-                      Text('$count'),
+                      Text(widget.actionLabel ?? '$count'),
                     ],
                   ),
           ),
@@ -224,9 +226,7 @@ class _AttachmentCaptionComposerState extends State<AttachmentCaptionComposer> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         content,
-        if (widget.showOriginalToggle &&
-            widget.allowDescription &&
-            widget.draft.hasImages)
+        if (widget.showOriginalToggle && widget.draft.hasImages)
           Align(
             alignment: Alignment.centerLeft,
             child: Padding(

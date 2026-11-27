@@ -23,6 +23,7 @@ import 'timeline_bubble_frame.dart';
 import 'timeline_reactions_bar.dart';
 import 'timeline_swipe_reply.dart';
 import 'timeline_text_bubble.dart';
+import 'timeline_reply_preview.dart';
 import 'timeline_message_metadata.dart';
 import 'timeline_message_actions.dart';
 import 'timeline_plus_one.dart';
@@ -348,7 +349,36 @@ class TimelineMessagePresenter {
                 mentionDisplayNames: mentionDisplayNames,
                 onMentionTap: onMentionTap,
               ));
-    final bubble = coreBubble;
+    final replyId = message.inReplyTo;
+    final mediaReply =
+        replyId != null &&
+        (message.msgType == MessageType.image ||
+            message.msgType == MessageType.sticker);
+    final original = replyId == null ? null : messageIndex[replyId];
+    final bubble = mediaReply
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: isMe
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: TimelineBubbleFrame.maxWidth(context),
+                ),
+                child: TimelineReplyPreview(
+                  replyToId: replyId,
+                  replyContent: original == null
+                      ? '…'
+                      : '${original.senderName}: ${original.content}',
+                  isMe: isMe,
+                  onMessageJumpRequested: onMessageJumpRequested,
+                ),
+              ),
+              coreBubble,
+            ],
+          )
+        : coreBubble;
     // Capture the bubble's own build context so the floating menu can anchor
     // to the bubble rect rather than the whole message-group rect. The outer
     // `_buildMessage` context resolves to the group's outer render object.

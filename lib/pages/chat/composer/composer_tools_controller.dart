@@ -27,7 +27,6 @@ class ComposerToolsController {
     required this.isMounted,
     required this.textController,
     required this.totalMembers,
-    required this.inlineImages,
     required this.isDesktop,
     required this.keyboardMouse,
     required this.sourceLoading,
@@ -47,7 +46,6 @@ class ComposerToolsController {
   final bool Function() isMounted;
   final TextEditingController textController;
   final int Function() totalMembers;
-  final bool Function() inlineImages;
   final bool Function() isDesktop;
   final bool Function() keyboardMouse;
   final bool Function() sourceLoading;
@@ -74,14 +72,13 @@ class ComposerToolsController {
         draftKey.userId.isEmpty) {
       return;
     }
-    if (inlineImages() &&
-        files.every(
-          (file) =>
-              classifyAttachmentMime(
-                resolveAttachmentMime(file.name, file.mimeType),
-              ) ==
-              AttachmentMediaKind.image,
-        )) {
+    if (files.every(
+      (file) =>
+          classifyAttachmentMime(
+            resolveAttachmentMime(file.name, file.mimeType),
+          ) ==
+          AttachmentMediaKind.image,
+    )) {
       final pending = ref.read(composerAttachmentDraftProvider(draftKey));
       if (pending.isSending) return;
       final released = pending.stage(files);
