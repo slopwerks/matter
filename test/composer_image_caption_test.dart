@@ -35,6 +35,19 @@ XFile _image() => XFile.fromData(
 class _Api implements RustLibApi {
   final images = <({String room, String filename, String? caption})>[];
   bool fail = false;
+  bool failText = false;
+  final sent = <String>[];
+
+  @override
+  Future<String> crateApiMatrixSendMessage({
+    required String accountUserId,
+    required String roomId,
+    required rust.FormattedMessageInput message,
+  }) async {
+    if (failText) throw StateError('text offline');
+    sent.add(message.body);
+    return r'$text';
+  }
 
   @override
   Future<String> crateApiMatrixSendImageMessage({
@@ -50,6 +63,7 @@ class _Api implements RustLibApi {
     rust.ImageMessageMetadata? metadata,
   }) async {
     if (fail) throw StateError('offline');
+    sent.add('image');
     images.add((room: roomId, filename: filename, caption: caption));
     return r'$image';
   }
@@ -114,6 +128,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     api.images.clear();
     api.fail = false;
+    api.failText = false;
+    api.sent.clear();
   });
 
   testWidgets('touch composer stages images above text without uploading', (
@@ -165,7 +181,7 @@ void main() {
   });
 
   testWidgets(
-    'touch send puts text on the image and clears a successful draft',
+    'touch send sends image then separate text and clears successful draft',
     (tester) async {
       final key = GlobalKey<MessageInputState>();
       final container = await _pumpComposer(tester, key);
@@ -185,8 +201,9 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(api.images, [
-        (room: _key.roomId, filename: 'photo.png', caption: 'A sunset'),
+        (room: _key.roomId, filename: 'photo.png', caption: null),
       ]);
+      expect(api.sent, ['image', 'A sunset']);
       expect(pending.selected, isEmpty);
       expect(
         find.byKey(const ValueKey('composer-attachment-strip')),
@@ -197,6 +214,34 @@ void main() {
       container.dispose();
     },
   );
+
+  testWidgets('text failure after image send retains only text for retry', (
+    tester,
+  ) async {
+    api.failText = true;
+    final key = GlobalKey<MessageInputState>();
+    final container = await _pumpComposer(tester, key);
+    unawaited(key.currentState!.previewExternalFiles([_image()]));
+    await tester.pumpAndSettle();
+    final pending = container.read(composerAttachmentDraftProvider(_key));
+    pending.addListener(() {
+      if (pending.isSending && pending.selected.isEmpty) {
+        container.read(localOutgoingMessagesProvider(_key).notifier).value = [];
+      }
+    });
+    await tester.tap(find.byKey(const ValueKey('send_only')));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    });
+    await tester.pumpAndSettle();
+    expect(api.sent, ['image']);
+    expect(api.images.single.caption, isNull);
+    expect(pending.selected, isEmpty);
+    expect(container.read(messageDraftProvider(_key)), 'A sunset');
+    expect(find.text('A sunset'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    container.dispose();
+  });
 
   testWidgets('touch composer still sends an image without text', (
     tester,
