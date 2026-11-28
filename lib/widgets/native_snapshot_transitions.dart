@@ -6,6 +6,25 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+/// A background captured before navigation, without a Dart PNG round trip.
+abstract interface class NativeSnapshotBackground {
+  int? get nativeBackgroundToken;
+}
+
+Future<int?> captureNativeBackBackground() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return null;
+  try {
+    return await _SnapshotCoordinator.channel.invokeMethod<int>(
+      'captureBackground',
+    );
+  } on MissingPluginException {
+    return null;
+  } on PlatformException catch (error) {
+    debugPrint('Snapshot background unavailable: $error');
+    return null;
+  }
+}
+
 /// Android trial: cache route pixels before dragging, then let the platform
 /// animate images. The real Navigator is changed only by a committed gesture.
 class NativeSnapshotPageTransitionsBuilder extends PageTransitionsBuilder {
@@ -126,8 +145,12 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
   Timer? _timer;
   int generation = 0;
   bool _ready = false;
+  bool _arming = false;
+  bool _nativeArmed = false;
   bool _committing = false;
   bool _preparing = false;
+  bool _firstCaptureScheduled = false;
+  Future<Uint8List?>? _backgroundCapture;
   bool _supported = true;
   bool? _active;
   PageRoute<dynamic> get route => widget.route;
@@ -138,7 +161,8 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
       !route.isFirst &&
       route.popDisposition == RoutePopDisposition.pop &&
       !route.popGestureInProgress &&
-      route.animation?.status == AnimationStatus.completed &&
+      route.animation?.status != AnimationStatus.reverse &&
+      route.animation?.status != AnimationStatus.dismissed &&
       MediaQuery.viewInsetsOf(context).bottom == 0;
 
   @override
@@ -159,9 +183,15 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
     if (candidates.isNotEmpty) {
       previous = candidates.last;
       // The previous route is still painted while the incoming route enters.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(previous!.capture());
-      });
+      final hasNativeBackground = switch (route.settings) {
+        NativeSnapshotBackground(nativeBackgroundToken: != null) => true,
+        _ => false,
+      };
+      if (!hasNativeBackground) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _backgroundCapture = previous!.capture();
+        });
+      }
     }
   }
 
@@ -203,11 +233,52 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
       _active = true;
       unawaited(_setActive(true));
     }
+    final settings = route.settings;
+    if (settings case NativeSnapshotBackground(:final nativeBackgroundToken?)) {
+      if (!_ready && !_arming) unawaited(_arm(nativeBackgroundToken));
+      return;
+    }
+    if (!_ready) {
+      if (!_firstCaptureScheduled && !_preparing) {
+        _firstCaptureScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _firstCaptureScheduled = false;
+          if (mounted) unawaited(_prepare());
+        });
+      }
+      return;
+    }
     _timer?.cancel();
     _timer = Timer(
       const Duration(milliseconds: 180),
       () => unawaited(_prepare()),
     );
+  }
+
+  Future<void> _arm(int backgroundToken) async {
+    _arming = true;
+    generation = ++_SnapshotCoordinator.generation;
+    _SnapshotCoordinator.owner = this;
+    try {
+      final accepted = await _SnapshotCoordinator.channel.invokeMethod<bool>(
+        'arm',
+        {'generation': generation, 'backgroundToken': backgroundToken},
+      );
+      if (!mounted || accepted != true) {
+        await _SnapshotCoordinator.channel.invokeMethod<void>('clear', {
+          'generation': generation,
+        });
+        return;
+      }
+      _ready = true;
+      _nativeArmed = true;
+      _active = eligible;
+      if (!eligible) await _setActive(false);
+    } on MissingPluginException {
+      _supported = false;
+    } finally {
+      _arming = false;
+    }
   }
 
   Future<void> _setActive(bool value) async {
@@ -222,9 +293,11 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
   }
 
   Future<void> _prepare() async {
-    if (!eligible || _preparing || previous?.pixels == null) return;
+    if (!eligible || _preparing || previous == null || _nativeArmed) return;
     _preparing = true;
     try {
+      await _backgroundCapture;
+      if (!mounted || !eligible || previous?.pixels == null) return;
       final entry = _SnapshotCoordinator.entries[route];
       final pixels = await entry?.capture();
       if (!mounted || !eligible || pixels == null) return;

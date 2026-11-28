@@ -145,11 +145,13 @@ extension _MaterialAppLayout on _MatterAppState {
           MaterialConversationLayout(
             navigator: _conversationNavigator,
             onChatPopped: _clearSelectedRoom,
+            nativeBackgroundToken: _nativeBackgroundToken,
             routesOpen: _conversationRoutesOpen,
             active: navigationIndex == 0,
             onRoutesChanged: _setConversationRoutesOpen,
             window: window,
             list: _buildDesktopRoomList(
+              highlightSelection: !nativeChatRoute || window.hasSplit,
               filters: Builder(
                 builder: (context) => _materialConversationFilters(
                   spaces,

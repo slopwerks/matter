@@ -204,6 +204,12 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
     final scaffold = Scaffold(
       resizeToAvoidBottomInset: false,
       extendBody: true,
+      floatingActionButtonAnimator:
+          Theme.of(context).platform == TargetPlatform.android &&
+              !window.hasSplit &&
+              index == 0
+          ? FloatingActionButtonAnimator.noAnimation
+          : null,
       floatingActionButton: _detailTabs.contains(index)
           ? null
           : widget.floatingActionButton,
@@ -380,7 +386,11 @@ class _MaterialAdaptiveShellState extends State<MaterialAdaptiveShell>
             ),
     );
     return CompactCapsuleTransition(
-      enabled: !window.hasRail && index == 0 && !_detailTabs.contains(0),
+      enabled:
+          Theme.of(context).platform != TargetPlatform.android &&
+          !window.hasRail &&
+          index == 0 &&
+          !_detailTabs.contains(0),
       chatOpen: chatOpen,
       accountKey: pagesKey,
       child: scaffold,
@@ -652,6 +662,7 @@ class MaterialConversationLayout extends StatefulWidget {
     this.supporting,
     required this.onCloseSupporting,
     this.onChatPopped,
+    this.nativeBackgroundToken,
   });
 
   final MaterialWindowClass window;
@@ -665,6 +676,7 @@ class MaterialConversationLayout extends StatefulWidget {
   final Widget? supporting;
   final VoidCallback onCloseSupporting;
   final VoidCallback? onChatPopped;
+  final int? nativeBackgroundToken;
 
   @override
   State<MaterialConversationLayout> createState() =>
@@ -742,6 +754,8 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
                             if (android)
                               SelectedChatNavigator(
                                 roomId: widget.roomId,
+                                nativeBackgroundToken:
+                                    widget.nativeBackgroundToken,
                                 active: widget.active && !widget.routesOpen,
                                 canPop: !window.hasSplit && !modal,
                                 split: window.hasSplit,

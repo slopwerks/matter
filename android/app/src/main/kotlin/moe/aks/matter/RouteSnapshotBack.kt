@@ -6,6 +6,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Outline
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
+import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -22,16 +24,32 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
-/** Uses only Dart-provided route PNGs; gesture frames never cross the platform channel. */
+/** PNG snapshots remain supported; armed routes capture TextureView frames synchronously. */
 @RequiresApi(34)
 internal class RouteSnapshotBack(
     private val activity: Activity,
     private val commit: (Long, MethodChannel.Result) -> Unit,
     private val decoder: Executor = Executors.newSingleThreadExecutor(),
+    private val frameGetter: (() -> Frame?)? = null,
+    private val onCaptureFailed: (Long) -> Unit = {
+        Log.w("RouteSnapshotBack", "Foreground frame unavailable; native back commit suppressed")
+    },
 ) {
-    private data class Prepared(val front: Bitmap, val back: Bitmap, val x: Float, val y: Float, val width: Int, val height: Int) {
-        fun recycle() { front.recycle(); back.recycle() }
+    internal data class Frame(val bitmap: Bitmap, val x: Int, val y: Int, val width: Int, val height: Int)
+    private data class Prepared(var front: Bitmap?, val back: Bitmap, val x: Float, val y: Float, val width: Int, val height: Int,
+        val armed: Boolean = false, var frontFrame: Frame? = null) {
+        fun discardFront() {
+            front?.let { if (it !== back && !it.isRecycled) it.recycle() }
+            front = null
+            frontFrame = null
+        }
+        fun recycle() { discardFront(); if (!back.isRecycled) back.recycle() }
     }
+    private var backgroundSequence = 0L
+    private var pendingBackground: Frame? = null
+    private var pendingBackgroundToken: Long? = null
+    internal var captureFailed = false
+        private set
     private val main = Handler(Looper.getMainLooper())
     private var generation = -1L
     private var disposed = false
@@ -55,6 +73,8 @@ internal class RouteSnapshotBack(
             if (!registered || committing) return
             revision++ // A refresh started before this gesture cannot replace its pixels.
             removeOverlay()
+            prepared?.takeIf { it.armed }?.discardFront()
+            captureFailed = false
             direction = if (event.swipeEdge == BackEvent.EDGE_RIGHT) -1f else 1f
             showOverlay()
         }
@@ -68,7 +88,12 @@ internal class RouteSnapshotBack(
             radius = 28f * density * progress
             view.invalidateOutline()
         }
-        override fun onBackCancelled() { if (!committing) removeOverlay() }
+        override fun onBackCancelled() {
+            if (!committing) {
+                removeOverlay()
+                prepared?.takeIf { it.armed }?.discardFront()
+            }
+        }
         override fun onBackInvoked() {
             if (!registered || committing || !eligible) return
             if (foreground == null) showOverlay() // Non-gesture back still uses the same fenced commit.
@@ -93,7 +118,17 @@ internal class RouteSnapshotBack(
     }
 
     fun handleCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.method !in listOf("prepare", "refresh", "setActive", "clear", "finish")) {
+        if (call.method == "captureBackground") {
+            if (disposed) { result.success(null); return }
+            discardPendingBackground()
+            val frame = captureFrame()
+            if (frame == null) { result.success(null); return }
+            pendingBackground = frame
+            pendingBackgroundToken = ++backgroundSequence
+            result.success(pendingBackgroundToken)
+            return
+        }
+        if (call.method !in listOf("arm", "prepare", "refresh", "setActive", "clear", "finish")) {
             result.notImplemented()
             return
         }
@@ -102,6 +137,28 @@ internal class RouteSnapshotBack(
         val token = when (tokenValue) { is Int -> tokenValue.toLong(); is Long -> tokenValue; else -> null }
         if (disposed || token == null || token < 0) { result.success(false); return }
         when (call.method) {
+            "arm" -> {
+                val backgroundValue = args["backgroundToken"]
+                val backgroundToken = when (backgroundValue) {
+                    is Int -> backgroundValue.toLong()
+                    is Long -> backgroundValue
+                    else -> null
+                }
+                val frame = pendingBackground
+                if (token <= generation || frame == null || backgroundToken != pendingBackgroundToken) {
+                    result.success(false); return
+                }
+                // Detach before release: ownership moves from the pending slot to Prepared.
+                pendingBackground = null
+                pendingBackgroundToken = null
+                generation = token
+                release()
+                prepared = Prepared(null, frame.bitmap, frame.x.toFloat(), frame.y.toFloat(),
+                    frame.width, frame.height, armed = true)
+                eligible = true
+                updateRegistration()
+                result.success(true)
+            }
             "prepare" -> prepare(token, args, result)
             "refresh" -> prepare(token, args, result, refresh = true)
             "setActive" -> {
@@ -109,7 +166,11 @@ internal class RouteSnapshotBack(
                 eligible = args["eligible"] == true && prepared != null
                 if (!eligible) revision++
                 // Once Dart is popping, finish owns lifetime so no unrendered frame leaks through.
-                if (!eligible && !commitDispatched) { committing = false; removeOverlay() }
+                if (!eligible && !commitDispatched) {
+                    committing = false
+                    removeOverlay()
+                    prepared?.takeIf { it.armed }?.discardFront()
+                }
                 updateRegistration()
                 result.success(eligible == args["eligible"])
             }
@@ -183,9 +244,60 @@ internal class RouteSnapshotBack(
         registered = enabled
     }
 
+    private fun captureFrame(): Frame? {
+        val frame = try { if (frameGetter != null) frameGetter.invoke() else captureTextureFrame() }
+            catch (_: Exception) { null }
+        if (frame == null) return null
+        if (frame.bitmap.isRecycled || frame.width <= 0 || frame.height <= 0 ||
+            frame.bitmap.width <= 0 || frame.bitmap.height <= 0 ||
+            frame.bitmap === prepared?.back || frame.bitmap === prepared?.front) {
+            // Never recycle an installed snapshot when a faulty provider aliases it.
+            if (frame.bitmap !== prepared?.back && frame.bitmap !== prepared?.front && !frame.bitmap.isRecycled)
+                frame.bitmap.recycle()
+            return null
+        }
+        return frame
+    }
+
+    private fun captureTextureFrame(): Frame? {
+        val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return null
+        fun findTexture(view: View): TextureView? {
+            if (view is TextureView && view.isShown && view.isAvailable && view.width > 0 && view.height > 0) return view
+            if (view is ViewGroup) for (index in 0 until view.childCount) {
+                findTexture(view.getChildAt(index))?.let { return it }
+            }
+            return null
+        }
+        val texture = findTexture(content) ?: return null
+        val location = IntArray(2)
+        val origin = IntArray(2)
+        texture.getLocationInWindow(location)
+        content.getLocationInWindow(origin)
+        val bitmap = texture.bitmap ?: return null
+        return Frame(bitmap, location[0] - origin[0], location[1] - origin[1], texture.width, texture.height)
+    }
+
+    private fun discardPendingBackground() {
+        pendingBackground?.bitmap?.let { if (!it.isRecycled) it.recycle() }
+        pendingBackground = null
+        pendingBackgroundToken = null
+    }
+
     private fun showOverlay() {
         val snapshots = prepared ?: return
         val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        if (snapshots.armed && snapshots.front == null) {
+            val frame = captureFrame()
+            if (frame == null) {
+                captureFailed = true
+                onCaptureFailed(generation)
+                return // Never commit using an old background as a fake foreground.
+            }
+            captureFailed = false
+            snapshots.front = frame.bitmap
+            snapshots.frontFrame = frame
+        }
+        val front = snapshots.front ?: return
         val layer = FrameLayout(activity).apply {
             isClickable = true // Absorb touches without modifying the live Flutter view's state.
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -201,7 +313,12 @@ internal class RouteSnapshotBack(
         }
         layer.addView(image(snapshots.back))
         radius = 0f
-        foreground = image(snapshots.front).apply {
+        foreground = image(front).apply {
+            snapshots.frontFrame?.let { frame ->
+                layoutParams = FrameLayout.LayoutParams(frame.width, frame.height).apply {
+                    leftMargin = frame.x; topMargin = frame.y
+                }
+            }
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) {
                     outline.setRoundRect(0, 0, view.width, view.height, radius)
@@ -238,6 +355,8 @@ internal class RouteSnapshotBack(
         removeOverlay() // Clear every drawable reference before recycling its backing bitmap.
         prepared?.recycle()
         prepared = null
+        discardPendingBackground()
+        captureFailed = false
     }
 
     fun dispose() {

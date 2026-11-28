@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'chat_route_scope.dart';
 import 'pane_transitions.dart';
+import 'native_snapshot_transitions.dart';
 
 /// A state-selected conversation still needs a real route for Android's native
 /// predictive back transition. Keep this navigator mounted across pane changes.
@@ -12,12 +13,14 @@ class SelectedChatNavigator extends StatefulWidget {
     required this.list,
     required this.detail,
     required this.onChatPopped,
+    this.nativeBackgroundToken,
     this.active = true,
     this.canPop = true,
     this.split = false,
   });
 
   final String? roomId;
+  final int? nativeBackgroundToken;
   final Widget list;
   final Widget detail;
   final VoidCallback onChatPopped;
@@ -63,6 +66,7 @@ class _SelectedChatNavigatorState extends State<SelectedChatNavigator> {
               _ChatPage(
                 split: widget.split,
                 key: ValueKey(widget.roomId ?? 'empty-chat'),
+                nativeBackgroundToken: widget.nativeBackgroundToken,
                 child: PopScope<Object?>(
                   canPop: widget.active && widget.canPop,
                   onPopInvokedWithResult: (didPop, _) {
@@ -84,15 +88,18 @@ class _SelectedChatNavigatorState extends State<SelectedChatNavigator> {
 
 // The split route must let the retained list paint beside the detail. Keeping
 // the same Page type/key retains chat state when the window crosses 840 dp.
-class _ChatPage extends MaterialPage<void> {
+class _ChatPage extends MaterialPage<void> implements NativeSnapshotBackground {
   const _ChatPage({
     required this.split,
     this.isDetail = true,
+    this.nativeBackgroundToken,
     required super.key,
     required super.child,
   });
   final bool split;
   final bool isDetail;
+  @override
+  final int? nativeBackgroundToken;
 
   @override
   Route<void> createRoute(BuildContext context) => _ChatRoute(this);

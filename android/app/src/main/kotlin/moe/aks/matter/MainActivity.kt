@@ -101,7 +101,7 @@ class MainActivity : FlutterActivity() {
             }
             channel.setMethodCallHandler { call, result ->
                 if (Build.VERSION.SDK_INT >= 34) routeBack?.handleCall(call, result) ?: result.success(false)
-                else result.success(false)
+                else result.success(if (call.method == "captureBackground") null else false)
             }
         }
         if (Build.VERSION.SDK_INT >= 34) homeBack = HomePredictiveBack(this)

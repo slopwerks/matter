@@ -9,6 +9,84 @@ import 'package:matter/widgets/selected_chat_navigator.dart';
 import 'selected_chat_navigator_test.dart' show gesture;
 
 void main() {
+  testWidgets(
+    'native room is armed during entry without Dart PNG preparation',
+    (tester) async {
+      const channel = MethodChannel('moe.aks.matter/route_back');
+      final calls = <MethodCall>[];
+      final armReply = Completer<bool>();
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add(call);
+        if (call.method == 'arm') return armReply.future;
+        return true;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+      String? room;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            platform: TargetPlatform.android,
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: NativeSnapshotPageTransitionsBuilder(),
+              },
+            ),
+          ),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return SelectedChatNavigator(
+                roomId: room,
+                nativeBackgroundToken: 42,
+                list: const Scaffold(body: Text('List')),
+                detail: const Scaffold(body: Text('Chat')),
+                onChatPopped: () => setState(() => room = null),
+              );
+            },
+          ),
+        ),
+      );
+      update(() => room = 'room');
+      await tester.pump();
+      final arm = calls.singleWhere((call) => call.method == 'arm');
+      expect((arm.arguments as Map)['backgroundToken'], 42);
+      final chatRoute = ModalRoute.of(tester.element(find.text('Chat')))!;
+      expect(chatRoute.animation!.status, AnimationStatus.forward);
+      expect(calls.any((call) => call.method == 'prepare'), false);
+      armReply.complete(true);
+      await tester.pump();
+      Object? committed;
+      unawaited(
+        tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          'moe.aks.matter/route_back',
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall('commit', {
+              'generation': (arm.arguments as Map)['generation'],
+            }),
+          ),
+          (data) {
+            committed = const StandardMethodCodec().decodeEnvelope(data!);
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump();
+      expect(committed, true);
+      expect(room, null);
+      expect(calls.any((call) => call.method == 'finish'), true);
+      expect(calls.any((call) => call.method == 'prepare'), false);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   for (final available in [false, true]) {
     testWidgets(
       'Flutter never owns snapshot-route gesture available=$available',
