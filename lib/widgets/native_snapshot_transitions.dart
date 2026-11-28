@@ -349,6 +349,18 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
       route.navigator!.pop();
       await route.completed;
       await WidgetsBinding.instance.endOfFrame;
+      // UI frame completion precedes rasterization. A tiny raster task queued
+      // after compositeFrame fences that render without waiting for batched timings.
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawColor(const Color(0x00000000), BlendMode.src);
+      final picture = recorder.endRecording();
+      try {
+        final fence = await picture.toImage(1, 1);
+        fence.dispose();
+      } finally {
+        picture.dispose();
+      }
       await _SnapshotCoordinator.channel.invokeMethod<void>('finish', {
         'generation': generation,
       });

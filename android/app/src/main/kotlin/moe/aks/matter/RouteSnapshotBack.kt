@@ -31,6 +31,7 @@ internal class RouteSnapshotBack(
     private val commit: (Long, MethodChannel.Result) -> Unit,
     private val decoder: Executor = Executors.newSingleThreadExecutor(),
     private val frameGetter: (() -> Frame?)? = null,
+    private val presentationFence: ((() -> Unit) -> Unit)? = null,
     private val onCaptureFailed: (Long) -> Unit = {
         Log.w("RouteSnapshotBack", "Foreground frame unavailable; native back commit suppressed")
     },
@@ -182,8 +183,22 @@ internal class RouteSnapshotBack(
             }
             "finish" -> {
                 if (token != generation || !committing) { result.success(false); return }
-                release()
-                result.success(true)
+                val finish = {
+                    if (!disposed && token == generation && committing) {
+                        release()
+                        result.success(true)
+                    } else result.success(false)
+                }
+                val fence = presentationFence
+                if (fence != null) fence(finish) else {
+                    val decor = activity.window.decorView
+                    if (!decor.isHardwareAccelerated || !decor.isAttachedToWindow) {
+                        result.error("presentation_unavailable", "No hardware frame for snapshot handoff", null)
+                        return
+                    }
+                    decor.viewTreeObserver.registerFrameCommitCallback { main.post { finish() } }
+                    decor.invalidate()
+                }
             }
         }
     }

@@ -30,11 +30,12 @@ class RouteSnapshotBackTest {
         override fun error(code: String, message: String?, details: Any?) { fail(message) }
         override fun notImplemented() { fail("Unexpected unknown method") }
     }
-    private class Fixture(queued: Boolean = false) {
+    private class Fixture(queued: Boolean = false, delayedPresentation: Boolean = false) {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get().apply { setContentView(FrameLayout(this)) }
         val content = activity.findViewById<FrameLayout>(android.R.id.content)
         val tasks = mutableListOf<Runnable>()
+        val presentations = mutableListOf<() -> Unit>()
         var commits = 0
         var committedGeneration: Long? = null
         var commitReply: MethodChannel.Result? = null
@@ -44,7 +45,8 @@ class RouteSnapshotBackTest {
             commits++; committedGeneration = generation; commitReply = result
         }, Executor { if (queued) tasks.add(it) else it.run() },
             frameGetter = { if (frames.isEmpty()) null else frames.removeAt(0) },
-            onCaptureFailed = { captureFailures.add(it) })
+            onCaptureFailed = { captureFailures.add(it) },
+            presentationFence = { if (delayedPresentation) presentations.add(it) else it() })
         init { content.layout(0, 0, 400, 800) }
         fun call(method: String, generation: Int, extra: Map<String, Any> = emptyMap()): Reply {
             val reply = Reply()
@@ -70,6 +72,43 @@ class RouteSnapshotBackTest {
             content.layout(0, 0, 400, 800)
         }
         fun close() { back.dispose(); controller.pause().stop().destroy() }
+    }
+
+    @Test fun finishRetainsOverlayUntilHardwareFrameAndFencesStaleCompletion() {
+        val f = Fixture(delayedPresentation = true)
+        f.prepare(1); f.activate(1); f.start()
+        f.back.callback.onBackInvoked()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        val finish = f.call("finish", 1)
+        assertNotNull(f.back.overlay)
+        assertNull(finish.value)
+        f.presentations.removeAt(0).invoke()
+        assertEquals(true, finish.value)
+        assertNull(f.back.overlay)
+        f.prepare(2); f.activate(2); f.start()
+        f.back.callback.onBackInvoked()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        val stale = f.call("finish", 2)
+        f.prepare(3); f.activate(3); f.start()
+        val overlay = f.back.overlay
+        f.presentations.removeAt(0).invoke()
+        assertEquals(false, stale.value)
+        assertSame(overlay, f.back.overlay)
+        assertTrue(f.back.registered)
+        f.close()
+    }
+
+    @Test fun disposedPresentationCompletionNeverReleasesAnotherState() {
+        val f = Fixture(delayedPresentation = true)
+        f.prepare(1); f.activate(1); f.start()
+        f.back.callback.onBackInvoked()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        val pending = f.call("finish", 1)
+        f.back.dispose()
+        f.presentations.removeAt(0).invoke()
+        assertEquals(false, pending.value)
+        assertFalse(f.back.registered)
+        f.close()
     }
 
     @Test fun captureAndArmAreSynchronousAndNeverQueueDecode() {
