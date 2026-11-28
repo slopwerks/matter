@@ -36,6 +36,8 @@ import 'theme/neu_colors.dart';
 import 'theme/material_theme.dart';
 import 'theme/neu_theme.dart';
 import 'theme/system_font.dart';
+import 'widgets/predictive_home_back.dart';
+import 'widgets/native_snapshot_transitions.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -171,6 +173,7 @@ class _AppRoot extends ConsumerStatefulWidget {
 class _AppRootState extends ConsumerState<_AppRoot>
     with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _snapshotObserver = NativeSnapshotNavigationObserver();
   bool _credentialCompatibilityDialogShown = false;
   CurrentUser? _reloginUser;
   bool _resumeSession = false;
@@ -445,7 +448,7 @@ class _AppRootState extends ConsumerState<_AppRoot>
 
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      navigatorObservers: [chatRouteObserver],
+      navigatorObservers: [chatRouteObserver, _snapshotObserver],
       title: 'Matter',
       debugShowCheckedModeBanner: false,
       // pro_image_editor 14's own app bars, dialogs and bottom sheets are built
@@ -458,7 +461,7 @@ class _AppRootState extends ConsumerState<_AppRoot>
       darkTheme: applySystemFont(darkTheme, fontFamily, fallback: fontFallback),
       themeMode: themeMode,
       builder: (context, child) {
-        final content = ChatVisualSettingsRoot(
+        final appContent = ChatVisualSettingsRoot(
           child: DesktopNotificationListener(
             navigatorKey: _navigatorKey,
             child: PushNotificationListener(
@@ -479,6 +482,10 @@ class _AppRootState extends ConsumerState<_AppRoot>
               ),
             ),
           ),
+        );
+        final content = PredictiveHomeBack(
+          enabled: showMainApp,
+          child: appContent,
         );
         if ((fontScales.uiScale - 1.0).abs() < 0.001) return content;
         final media = MediaQuery.of(context);

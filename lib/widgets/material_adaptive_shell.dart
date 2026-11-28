@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/tokens.dart';
 import 'mobile_tab_view.dart';
+import 'selected_chat_navigator.dart';
 import 'conversation_routes.dart';
 import 'chat_route_scope.dart';
 import 'pane_transitions.dart';
@@ -650,6 +651,7 @@ class MaterialConversationLayout extends StatefulWidget {
     required this.onRoutesChanged,
     this.supporting,
     required this.onCloseSupporting,
+    this.onChatPopped,
   });
 
   final MaterialWindowClass window;
@@ -662,6 +664,7 @@ class MaterialConversationLayout extends StatefulWidget {
   final ValueChanged<bool> onRoutesChanged;
   final Widget? supporting;
   final VoidCallback onCloseSupporting;
+  final VoidCallback? onChatPopped;
 
   @override
   State<MaterialConversationLayout> createState() =>
@@ -684,6 +687,7 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
   @override
   Widget build(BuildContext context) {
     final window = widget.window;
+    final android = Theme.of(context).platform == TargetPlatform.android;
     final supporting = widget.supporting;
     final selected = widget.roomId != null || widget.routesOpen;
     final persistent = window == MaterialWindowClass.extraLarge;
@@ -705,25 +709,26 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
           final detailStart = window.hasSplit ? listWidth + 1 : 0.0;
           return Stack(
             children: [
-              PositionedDirectional(
-                key: const ValueKey('material-conversation-list'),
-                start: 0,
-                top: 0,
-                bottom: 0,
-                width: listWidth,
-                child: Offstage(
-                  offstage: selected && !window.hasSplit,
-                  child: ExcludeFocus(excluding: modal, child: widget.list),
+              if (!android)
+                PositionedDirectional(
+                  key: const ValueKey('material-conversation-list'),
+                  start: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: listWidth,
+                  child: Offstage(
+                    offstage: !android && selected && !window.hasSplit,
+                    child: ExcludeFocus(excluding: modal, child: widget.list),
+                  ),
                 ),
-              ),
               PositionedDirectional(
                 key: const ValueKey('material-conversation-detail'),
-                start: detailStart,
+                start: android ? 0 : detailStart,
                 end: supportingWidth,
                 top: 0,
                 bottom: 0,
                 child: Offstage(
-                  offstage: !window.hasSplit && !selected,
+                  offstage: !android && !window.hasSplit && !selected,
                   child: ExcludeFocus(
                     excluding: modal,
                     child: LayoutBuilder(
@@ -734,64 +739,121 @@ class _MaterialConversationLayoutState extends State<MaterialConversationLayout>
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Offstage(
-                              offstage: widget.routesOpen,
-                              child: TweenAnimationBuilder<double>(
-                                key: ValueKey(widget.roomId),
-                                tween: Tween(begin: 0, end: 1),
-                                duration: context.tokens.motion.effectsDuration,
-                                curve: Curves.easeOut,
-                                child: PrimaryCapsuleEditor(
-                                  child: widget.detail,
-                                ),
-                                builder: (context, opacity, child) => Opacity(
-                                  opacity:
-                                      window.hasSplit &&
-                                          widget.roomId != null &&
-                                          !MediaQuery.disableAnimationsOf(
-                                            context,
-                                          )
-                                      ? opacity
-                                      : 1,
-                                  child: child,
-                                ),
-                              ),
-                            ),
-                            Offstage(
-                              offstage: !widget.routesOpen,
-                              child: PopScope<Object?>(
-                                canPop: !widget.active || !widget.routesOpen,
-                                onPopInvokedWithResult: (didPop, result) {
-                                  if (!didPop &&
-                                      widget.active &&
-                                      widget.routesOpen) {
-                                    widget.navigator.currentState?.maybePop(
-                                      result,
-                                    );
-                                  }
-                                },
-                                child: Theme(
-                                  data: window.hasSplit
-                                      ? Theme.of(context).copyWith(
-                                          pageTransitionsTheme:
-                                              PaneFadeTransitions.theme,
-                                        )
-                                      : Theme.of(context),
-                                  child: ChatRouteScope(
-                                    observer: _chatObserver,
-                                    active: widget.active,
-                                    ancestors: ChatRouteScope.routesOf(context),
-                                    child: Navigator(
-                                      key: widget.navigator,
-                                      observers: [_observer, _chatObserver],
-                                      onGenerateRoute: (_) =>
-                                          MaterialPageRoute<void>(
-                                            builder: (_) =>
-                                                const SizedBox.shrink(),
-                                          ),
+                            if (android)
+                              SelectedChatNavigator(
+                                roomId: widget.roomId,
+                                active: widget.active && !widget.routesOpen,
+                                canPop: !window.hasSplit && !modal,
+                                split: window.hasSplit,
+                                list: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: SizedBox(
+                                    width: listWidth,
+                                    child: ExcludeFocus(
+                                      excluding: modal,
+                                      child: widget.list,
                                     ),
                                   ),
                                 ),
+                                detail: Padding(
+                                  padding: EdgeInsetsDirectional.only(
+                                    start: detailStart,
+                                  ),
+                                  child: ExcludeFocus(
+                                    excluding: modal,
+                                    child: LayoutBuilder(
+                                      builder: (context, pane) => MediaQuery(
+                                        data: MediaQuery.of(context)
+                                            .copyWith(size: pane.biggest),
+                                        child: PrimaryCapsuleEditor(
+                                          child: widget.detail,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                onChatPopped: widget.onChatPopped ?? () {},
+                              )
+                            else
+                              Offstage(
+                                offstage: widget.routesOpen,
+                                child: TweenAnimationBuilder<double>(
+                                  key: ValueKey(widget.roomId),
+                                  tween: Tween(begin: 0, end: 1),
+                                  duration:
+                                      context.tokens.motion.effectsDuration,
+                                  curve: Curves.easeOut,
+                                  child: PrimaryCapsuleEditor(
+                                    child: widget.detail,
+                                  ),
+                                  builder: (context, opacity, child) => Opacity(
+                                    opacity:
+                                        window.hasSplit &&
+                                            widget.roomId != null &&
+                                            !MediaQuery.disableAnimationsOf(
+                                              context,
+                                            )
+                                        ? opacity
+                                        : 1,
+                                    child: child,
+                                  ),
+                                ),
+                              ),
+                            Offstage(
+                              offstage: !widget.routesOpen,
+                              child: Padding(
+                                padding: EdgeInsetsDirectional.only(
+                                  start: android ? detailStart : 0,
+                                ),
+                                child:
+                                    NotificationListener<
+                                      NavigationNotification
+                                    >(
+                                      onNotification: (_) => true,
+                                      child: PopScope<Object?>(
+                                        canPop:
+                                            !widget.active ||
+                                            !widget.routesOpen,
+                                        onPopInvokedWithResult:
+                                            (didPop, result) {
+                                              if (!didPop &&
+                                                  widget.active &&
+                                                  widget.routesOpen) {
+                                                widget.navigator.currentState
+                                                    ?.maybePop(result);
+                                              }
+                                            },
+                                        child: Theme(
+                                          data: window.hasSplit
+                                              ? Theme.of(context).copyWith(
+                                                  pageTransitionsTheme:
+                                                      PaneFadeTransitions.theme,
+                                                )
+                                              : Theme.of(context),
+                                          child: ChatRouteScope(
+                                            observer: _chatObserver,
+                                            active:
+                                                widget.active &&
+                                                widget.routesOpen,
+                                            ancestors: ChatRouteScope.routesOf(
+                                              context,
+                                            ),
+                                            child: Navigator(
+                                              key: widget.navigator,
+                                              observers: [
+                                                _observer,
+                                                _chatObserver,
+                                              ],
+                                              onGenerateRoute: (_) =>
+                                                  MaterialPageRoute<void>(
+                                                    builder: (_) =>
+                                                        const SizedBox.shrink(),
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                               ),
                             ),
                           ],

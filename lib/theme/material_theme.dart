@@ -2,6 +2,8 @@ import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
 
+import '../widgets/native_snapshot_transitions.dart';
+
 import 'app_component_theme.dart';
 import 'material_color_scheme.dart';
 import 'neu_colors.dart';
@@ -500,11 +502,14 @@ ThemeData buildMaterialTheme(
     pageTransitionsTheme: PageTransitionsTheme(
       builders: {
         for (final platform in TargetPlatform.values)
-          platform: platform == TargetPlatform.iOS
-              ? const CupertinoPageTransitionsBuilder()
-              : FadeForwardsPageTransitionsBuilder(
-                  backgroundColor: surfaces.page,
-                ),
+          platform: switch (platform) {
+            TargetPlatform.android =>
+              const NativeSnapshotPageTransitionsBuilder(),
+            TargetPlatform.iOS => const CupertinoPageTransitionsBuilder(),
+            _ => FadeForwardsPageTransitionsBuilder(
+              backgroundColor: surfaces.page,
+            ),
+          },
       },
     ),
 

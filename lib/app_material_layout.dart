@@ -4,6 +4,8 @@ part of 'app.dart';
 /// It stays separate from the legacy skin's draggable desktop layout.
 extension _MaterialAppLayout on _MatterAppState {
   Widget _buildMaterialLayout(MaterialWindowClass window) {
+    final nativeChatRoute =
+        Theme.of(context).platform == TargetPlatform.android;
     final navigationIndex = ref.watch(navigationIndexProvider);
     final room = _selectedRoom;
     final detailsVisible =
@@ -42,13 +44,13 @@ extension _MaterialAppLayout on _MatterAppState {
       url: me?.avatarUrl,
     );
     return PopScope(
-      canPop: !singleChat && !modalDetails,
+      canPop: (!singleChat || nativeChatRoute) && !modalDetails,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (clearTextSelectionOnBack(ref)) return;
         if (modalDetails) {
           _setMaterialDetails(false);
-        } else if (singleChat) {
+        } else if (singleChat && !nativeChatRoute) {
           ChatDetailPage.handleSystemBack(_selectedChatKey);
         }
       },
@@ -142,6 +144,7 @@ extension _MaterialAppLayout on _MatterAppState {
         pages: [
           MaterialConversationLayout(
             navigator: _conversationNavigator,
+            onChatPopped: _clearSelectedRoom,
             routesOpen: _conversationRoutesOpen,
             active: navigationIndex == 0,
             onRoutesChanged: _setConversationRoutesOpen,
@@ -159,6 +162,7 @@ extension _MaterialAppLayout on _MatterAppState {
                 ? const _DesktopEmptyChat()
                 : _buildSelectedChat(
                     embedded: window.hasSplit,
+                    nativeChatRoute: nativeChatRoute && !window.hasSplit,
                     paneVisible:
                         !_conversationRoutesOpen && navigationIndex == 0,
                     canShowRoomDetails: true,

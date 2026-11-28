@@ -34,6 +34,7 @@ import 'widgets/neu_action.dart';
 import 'widgets/neu_surface.dart';
 import 'widgets/max_content_width.dart';
 import 'widgets/sheets.dart';
+import 'widgets/selected_chat_navigator.dart';
 
 part 'app_material_layout.dart';
 part 'app_legacy_navigation.dart';
@@ -631,7 +632,8 @@ class _MatterAppState extends ConsumerState<MatterApp> {
 
   Widget _buildMobileLayout() {
     final navigationIndex = ref.watch(navigationIndexProvider);
-    if (_selectedRoom != null && navigationIndex == 0) {
+    final android = Theme.of(context).platform == TargetPlatform.android;
+    if (!android && _selectedRoom != null && navigationIndex == 0) {
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, _) {
@@ -641,7 +643,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
       );
     }
 
-    return Scaffold(
+    final shell = Scaffold(
       extendBody: true,
       body: MobileTabView(
         key: ValueKey(ref.watch(activeUserIdProvider)),
@@ -728,6 +730,17 @@ class _MatterAppState extends ConsumerState<MatterApp> {
         ),
       ),
     );
+    if (!android) return shell;
+    return SelectedChatNavigator(
+      key: ValueKey(ref.watch(activeUserIdProvider)),
+      roomId: _selectedRoom?.id,
+      active: navigationIndex == 0,
+      list: shell,
+      detail: _selectedRoom == null
+          ? const SizedBox.shrink()
+          : _buildSelectedChat(embedded: false, nativeChatRoute: true),
+      onChatPopped: _clearSelectedRoom,
+    );
   }
 
   Widget _buildDesktopLayout(BuildContext context, BoxConstraints constraints) {
@@ -810,6 +823,7 @@ class _MatterAppState extends ConsumerState<MatterApp> {
   Widget _buildSelectedChat({
     required bool embedded,
     bool paneVisible = true,
+    bool nativeChatRoute = false,
     bool canShowRoomDetails = false,
     bool showRoomDetails = false,
     VoidCallback? onToggleDetailsPanel,
@@ -831,7 +845,8 @@ class _MatterAppState extends ConsumerState<MatterApp> {
           : '在线',
       embedded: embedded,
       paneVisible: paneVisible,
-      onBack: embedded ? null : _clearSelectedRoom,
+      nativeChatRoute: nativeChatRoute,
+      onBack: nativeChatRoute ? null : (embedded ? null : _clearSelectedRoom),
       detailsPanelOpen: showRoomDetails,
       onToggleDetailsPanel: canShowRoomDetails
           ? onToggleDetailsPanel ??

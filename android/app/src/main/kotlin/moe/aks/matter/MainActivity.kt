@@ -9,6 +9,8 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
+import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
@@ -17,6 +19,23 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : FlutterActivity() {
     private var storageBridge: StorageBridge? = null
+    private var homeBack: HomePredictiveBack? = null
+    private var routeBack: RouteSnapshotBack? = null
+    private var routeBackChannel: MethodChannel? = null
+    private var homeBackEligible = false
+    private var frameworkHandlesBack = false
+
+    override fun setFrameworkHandlesBack(handlesBack: Boolean) {
+        frameworkHandlesBack = handlesBack
+        super.setFrameworkHandlesBack(handlesBack)
+        if (Build.VERSION.SDK_INT >= 34) {
+            homeBack?.setEnabled(homeBackEligible && !handlesBack)
+        }
+    }
+
+    override fun getBackgroundMode(): BackgroundMode = BackgroundMode.transparent
+
+    override fun getRenderMode(): RenderMode = RenderMode.texture
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(
@@ -33,6 +52,12 @@ class MainActivity : FlutterActivity() {
     override fun shouldDestroyEngineWithHost(): Boolean = !DownloadRuntime.ownsEngine(flutterEngine)
 
     override fun onDestroy() {
+        routeBackChannel?.setMethodCallHandler(null)
+        routeBackChannel = null
+        if (Build.VERSION.SDK_INT >= 34) routeBack?.dispose()
+        routeBack = null
+        if (Build.VERSION.SDK_INT >= 34) homeBack?.dispose()
+        homeBack = null
         AudioRuntime.detachHost(this)
         DownloadRuntime.detachHost(this)
         super.onDestroy()
@@ -67,6 +92,31 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        routeBackChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "moe.aks.matter/route_back").also { channel ->
+            if (Build.VERSION.SDK_INT >= 34) {
+                routeBack?.dispose()
+                routeBack = RouteSnapshotBack(this, commit = { generation, reply ->
+                    channel.invokeMethod("commit", mapOf("generation" to generation), reply)
+                })
+            }
+            channel.setMethodCallHandler { call, result ->
+                if (Build.VERSION.SDK_INT >= 34) routeBack?.handleCall(call, result) ?: result.success(false)
+                else result.success(false)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 34) homeBack = HomePredictiveBack(this)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "moe.aks.matter/home_back")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "setEligible") {
+                    result.notImplemented()
+                } else {
+                    homeBackEligible = call.arguments == true
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        homeBack?.setEnabled(homeBackEligible && !frameworkHandlesBack)
+                    }
+                    result.success(null)
+                }
+            }
         storageBridge = StorageBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         DownloadRuntime.attachHost(this, flutterEngine)
         AudioRuntime.attachHost(this, flutterEngine)

@@ -79,6 +79,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
   final bool isDm;
   final String? initialMessageId;
   final bool embedded;
+  final bool nativeChatRoute;
   final bool paneVisible;
   final VoidCallback? onBack;
   static void openPanelAction(GlobalKey chatKey, RoomPanelAction action) {
@@ -116,6 +117,7 @@ class ChatDetailPage extends ConsumerStatefulWidget {
     this.isDm = false,
     this.initialMessageId,
     this.embedded = false,
+    this.nativeChatRoute = false,
     this.paneVisible = true,
     this.onBack,
     this.detailsPanelOpen = false,
@@ -3334,18 +3336,19 @@ class _ChatDetailPageState extends ConsumerState<ChatDetailPage>
       settings: visualSettings,
       child: PopScope(
         canPop:
-            !selectingText &&
-            (!_paneVisible ||
+            !_paneVisible ||
+            (!selectingText &&
+                (!widget.detailsPanelOpen || !widget.nativeChatRoute) &&
                 (!widget.embedded &&
                     _inputPanelMode == InputPanelMode.none &&
                     !keyboardVisible)),
         onPopInvokedWithResult: (didPop, _) {
-          if (didPop) return;
+          if (didPop || !_paneVisible) return;
           if (selectingText) {
             ref.read(textSelectionTargetProvider.notifier).clear();
             return;
           }
-          if (!_paneVisible) return;
+          if (widget.nativeChatRoute && widget.detailsPanelOpen) return;
           // The Material shell dispatches back once, after modal details.
           if (context.isMaterial && widget.onBack != null) return;
           SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
