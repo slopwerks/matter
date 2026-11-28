@@ -5,6 +5,7 @@ import '../../../providers/chat_visual_settings_provider.dart';
 import '../../../theme/neu_colors.dart';
 import '../../../theme/material_theme.dart';
 import '../../../widgets/neu_decoration.dart';
+import 'linux_ime_scope.dart';
 
 /// Inline editor presentation. The host owns focus, keyboard handling, drafts
 /// and the keyed send-flight boundary wrapped around this widget.
@@ -55,55 +56,60 @@ class ComposerTextField extends StatelessWidget {
               intensity: .85,
               borderColor: focusNode.hasFocus ? colors.accent : null,
             ),
-      child: TextField(
+      child: LinuxImeScope(
         controller: controller,
         focusNode: focusNode,
         readOnly: readOnly,
-        textAlignVertical: expanded
-            ? TextAlignVertical.top
-            : TextAlignVertical.center,
-        contextMenuBuilder: (context, editable) =>
-            markdownSelectionContextMenuBuilder(
-              context,
-              editable,
-              onPaste: onPaste,
+        child: TextField(
+          controller: controller,
+          focusNode: focusNode,
+          readOnly: readOnly,
+          textAlignVertical: expanded
+              ? TextAlignVertical.top
+              : TextAlignVertical.center,
+          contextMenuBuilder: (context, editable) =>
+              markdownSelectionContextMenuBuilder(
+                context,
+                editable,
+                onPaste: onPaste,
+              ),
+          style: Theme.of(context).textTheme.bodyLarge,
+          cursorColor: colors.accent,
+          decoration: InputDecoration(
+            hintText: '消息',
+            hintStyle: Theme.of(context).textTheme.bodyLarge
+                ?.copyWith(color: colors.textTertiary),
+            filled: expanded || material ? false : null,
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: expanded ? 8 : (material ? 2 : 14),
+              vertical: expanded ? 6 : (material ? 12 : 11),
             ),
-        style: Theme.of(context).textTheme.bodyLarge,
-        cursorColor: colors.accent,
-        decoration: InputDecoration(
-          hintText: '消息',
-          hintStyle: Theme.of(context).textTheme.bodyLarge
-              ?.copyWith(color: colors.textTertiary),
-          filled: expanded || material ? false : null,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: expanded ? 8 : (material ? 2 : 14),
-            vertical: expanded ? 6 : (material ? 12 : 11),
+            border: material && !expanded
+                ? const OutlineInputBorder(
+                    borderRadius: materialComposerRadius,
+                    borderSide: BorderSide.none,
+                  )
+                : InputBorder.none,
+            enabledBorder: material && !expanded
+                ? const OutlineInputBorder(
+                    borderRadius: materialComposerRadius,
+                    borderSide: BorderSide.none,
+                  )
+                : InputBorder.none,
+            focusedBorder: material && !expanded
+                ? const OutlineInputBorder(
+                    borderRadius: materialComposerRadius,
+                    borderSide: BorderSide.none,
+                  )
+                : InputBorder.none,
+            isDense: true,
           ),
-          border: material && !expanded
-              ? const OutlineInputBorder(
-                  borderRadius: materialComposerRadius,
-                  borderSide: BorderSide.none,
-                )
-              : InputBorder.none,
-          enabledBorder: material && !expanded
-              ? const OutlineInputBorder(
-                  borderRadius: materialComposerRadius,
-                  borderSide: BorderSide.none,
-                )
-              : InputBorder.none,
-          focusedBorder: material && !expanded
-              ? const OutlineInputBorder(
-                  borderRadius: materialComposerRadius,
-                  borderSide: BorderSide.none,
-                )
-              : InputBorder.none,
-          isDense: true,
+          minLines: expanded ? 3 : null,
+          maxLines: null,
+          textInputAction: TextInputAction.newline,
+          keyboardType: TextInputType.multiline,
+          onTap: onTap,
         ),
-        minLines: expanded ? 3 : null,
-        maxLines: null,
-        textInputAction: TextInputAction.newline,
-        keyboardType: TextInputType.multiline,
-        onTap: onTap,
       ),
     );
   }
