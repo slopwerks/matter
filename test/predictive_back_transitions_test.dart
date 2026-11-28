@@ -45,7 +45,7 @@ void main() {
     },
   );
   for (final cancel in [true, false]) {
-    testWidgets('compact secondary predictive gesture cancel=$cancel', (
+    testWidgets('unprepared secondary uses ordinary back cancel=$cancel', (
       tester,
     ) async {
       final position = ValueNotifier<double>(0);
@@ -113,9 +113,9 @@ void main() {
             'PredictiveBackSharedElementPageTransition',
           ),
         ),
-        findsWidgets,
+        findsNothing,
       );
-      expect(find.text('Open'), findsOneWidget);
+      expect(find.text('Detail'), findsOneWidget);
       await gesture(tester, cancel ? 'cancelBackGesture' : 'commitBackGesture');
       await tester.pumpAndSettle();
       expect(find.text('Detail'), cancel ? findsOneWidget : findsNothing);

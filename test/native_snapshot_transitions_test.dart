@@ -9,6 +9,73 @@ import 'package:matter/widgets/selected_chat_navigator.dart';
 import 'selected_chat_navigator_test.dart' show gesture;
 
 void main() {
+  for (final available in [false, true]) {
+    testWidgets(
+      'Flutter never owns snapshot-route gesture available=$available',
+      (tester) async {
+        const channel = MethodChannel('moe.aks.matter/route_back');
+        final calls = <MethodCall>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async {
+            calls.add(call);
+            return available && call.method == 'prepare';
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            channel,
+            null,
+          ),
+        );
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigator,
+            theme: ThemeData(
+              platform: TargetPlatform.android,
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android:
+                      NativeSnapshotPageTransitionsBuilder(),
+                },
+              ),
+            ),
+            home: const Scaffold(body: Text('List')),
+          ),
+        );
+        final route = MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('Detail')),
+        );
+        navigator.currentState!.push(route);
+        await tester.pump();
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+        });
+        await tester.pumpAndSettle();
+        expect(await gesture(tester, 'startBackGesture', 0), false);
+        await gesture(tester, 'cancelBackGesture');
+        expect(find.text('Detail'), findsOneWidget);
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        });
+        await tester.pump();
+        expect(calls.any((call) => call.method == 'prepare'), true);
+        expect(await gesture(tester, 'startBackGesture', 0), false);
+        await gesture(tester, 'updateBackGestureProgress', .5);
+        await tester.pump();
+        expect(route.popGestureInProgress, false);
+        expect(route.animation!.value, 1);
+        await gesture(tester, 'commitBackGesture');
+        await tester.pump();
+        expect(find.text('Detail'), findsNothing);
+        expect(find.text('List'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets(
     'image back gesture closes viewer without popping selected chat',
     (tester) async {
@@ -60,12 +127,12 @@ void main() {
       expect(room, 'room');
       expect(find.text('Image viewer'), findsNothing);
       expect(find.text('Chat'), findsOneWidget);
-      expect(await gesture(tester, 'startBackGesture', 0), true);
+      expect(await gesture(tester, 'startBackGesture', 0), false);
       await gesture(tester, 'updateBackGestureProgress', .5);
       await gesture(tester, 'cancelBackGesture');
       await tester.pumpAndSettle();
       expect(room, 'room');
-      expect(await gesture(tester, 'startBackGesture', 0), true);
+      expect(await gesture(tester, 'startBackGesture', 0), false);
       await gesture(tester, 'commitBackGesture');
       await tester.pumpAndSettle();
       expect(room, isNull);

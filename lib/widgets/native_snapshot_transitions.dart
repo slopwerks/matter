@@ -10,7 +10,10 @@ import 'package:material_ui/material_ui.dart';
 /// animate images. The real Navigator is changed only by a committed gesture.
 class NativeSnapshotPageTransitionsBuilder extends PageTransitionsBuilder {
   const NativeSnapshotPageTransitionsBuilder();
-  static const _fallback = PredictiveBackPageTransitionsBuilder();
+  static const _entrance = FadeForwardsPageTransitionsBuilder();
+
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
   @override
   Widget buildTransitions<T>(
     PageRoute<T> route,
@@ -20,7 +23,7 @@ class NativeSnapshotPageTransitionsBuilder extends PageTransitionsBuilder {
     Widget child,
   ) => _SnapshotRoute(
     route: route,
-    child: _fallback.buildTransitions(
+    child: _entrance.buildTransitions(
       route,
       context,
       animation,
@@ -183,8 +186,7 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
 
   void _status(AnimationStatus status) => _schedule();
   void _schedule() {
-    // The Flutter fallback also observes system gestures globally. Gate its
-    // route pop disposition, not just the native snapshot callback.
+    // Covered nested routes must not intercept an ordinary system back either.
     canPopNotifier.value = _ancestorRoutes.every(
       (ancestor) => ancestor.isCurrent,
     );
