@@ -8,6 +8,25 @@ import 'package:matter/widgets/selected_chat_navigator.dart';
 
 import 'selected_chat_navigator_test.dart' show gesture;
 
+Future<void> waitForSnapshotCall(
+  WidgetTester tester,
+  List<MethodCall> calls,
+  String method, {
+  int after = 0,
+}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  bool received() => calls.skip(after).any((call) => call.method == method);
+  while (!received() && DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 20));
+    // Image rasterization and PNG encoding run outside the fake test clock.
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+  }
+  await tester.pump();
+  expect(received(), true, reason: 'Native snapshot $method was not received');
+}
+
 void main() {
   testWidgets(
     'native room is armed during entry without Dart PNG preparation',
@@ -127,18 +146,11 @@ void main() {
         );
         navigator.currentState!.push(route);
         await tester.pump();
-        await tester.runAsync(() async {
-          await Future<void>.delayed(const Duration(milliseconds: 80));
-        });
         await tester.pumpAndSettle();
         expect(await gesture(tester, 'startBackGesture', 0), false);
         await gesture(tester, 'cancelBackGesture');
         expect(find.text('Detail'), findsOneWidget);
-        await tester.pump(const Duration(milliseconds: 200));
-        await tester.runAsync(() async {
-          await Future<void>.delayed(const Duration(milliseconds: 200));
-        });
-        await tester.pump();
+        await waitForSnapshotCall(tester, calls, 'prepare');
         expect(calls.any((call) => call.method == 'prepare'), true);
         expect(await gesture(tester, 'startBackGesture', 0), false);
         await gesture(tester, 'updateBackGestureProgress', .5);
@@ -263,15 +275,8 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-    });
     await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
-    await tester.pump();
+    await waitForSnapshotCall(tester, calls, 'setActive');
     final generation =
         (calls.lastWhere((call) => call.method == 'prepare').arguments
             as Map)['generation'];
@@ -321,11 +326,7 @@ void main() {
     expect(find.text('Image viewer'), findsNothing);
     expect(find.text('Chat'), findsOneWidget);
     expect(inner.currentState!.canPop(), true);
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
-    await tester.pump();
+    await waitForSnapshotCall(tester, calls, 'refresh', after: uncoverCalls);
     expect(
       calls
           .skip(uncoverCalls)
@@ -407,15 +408,8 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-    });
     await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
-    await tester.pump();
+    await waitForSnapshotCall(tester, calls, 'setActive');
     final prepare = calls.where((c) => c.method == 'prepare').toList();
     expect(prepare, isNotEmpty);
     final args = prepare.last.arguments as Map;
@@ -457,12 +451,9 @@ void main() {
     expect(staleResult, false);
     expect(find.text('Detail'), findsOneWidget);
     refreshReply = Completer<bool>();
+    final refreshCalls = calls.length;
     await tester.tap(find.text('Detail'));
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
-    await tester.pump();
+    await waitForSnapshotCall(tester, calls, 'refresh', after: refreshCalls);
     final refresh = calls.lastWhere((call) => call.method == 'refresh');
     expect((refresh.arguments as Map)['generation'], args['generation']);
     expect(
