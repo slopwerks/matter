@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'native_snapshot_transitions.dart';
+
 import 'material_adaptive_shell.dart';
 import 'conversation_routes.dart';
 import 'chat_route_scope.dart';
@@ -111,57 +113,73 @@ class _MaterialListDetailState extends State<MaterialListDetail> {
                       builder: (context, pane) => MediaQuery(
                         data: MediaQuery.of(context)
                             .copyWith(size: pane.biggest),
-                        child: PopScope<Object?>(
-                          canPop: !widget.active || !_hasDetail,
-                          onPopInvokedWithResult: (didPop, result) {
-                            if (didPop || !widget.active || !_hasDetail) return;
-                            final navigator = _navigator.currentState!;
-                            if (navigator.canPop()) navigator.maybePop(result);
-                          },
-                          child: Theme(
-                            data: theme.copyWith(
-                              pageTransitionsTheme: split
-                                  ? PaneFadeTransitions.theme
-                                  : PageTransitionsTheme(
-                                      builders: {
-                                        for (final platform
-                                            in TargetPlatform.values)
-                                          platform:
-                                              platform == TargetPlatform.iOS
-                                              ? theme
+                        child: NotificationListener<NavigationNotification>(
+                          onNotification: (_) => true,
+                          child: PopScope<Object?>(
+                            canPop: !widget.active || !_hasDetail,
+                            onPopInvokedWithResult: (didPop, result) {
+                              if (didPop || !widget.active || !_hasDetail) {
+                                return;
+                              }
+                              final navigator = _navigator.currentState!;
+                              if (navigator.canPop()) {
+                                navigator.maybePop(result);
+                              }
+                            },
+                            child: Theme(
+                              data: theme.copyWith(
+                                pageTransitionsTheme: split
+                                    ? PaneFadeTransitions.theme
+                                    : PageTransitionsTheme(
+                                        builders: {
+                                          for (final platform
+                                              in TargetPlatform.values)
+                                            platform: switch (platform) {
+                                              TargetPlatform.android =>
+                                                const NativeSnapshotPageTransitionsBuilder(),
+                                              TargetPlatform.iOS =>
+                                                theme
                                                     .pageTransitionsTheme
-                                                    .builders[platform]!
-                                              : const _DetailPageTransitionsBuilder(),
-                                      },
-                                    ),
-                            ),
-                            child: ChatRouteScope(
-                              observer: _chatObserver,
-                              active: widget.active,
-                              ancestors: ChatRouteScope.routesOf(context),
-                              child: Navigator(
-                                key: _navigator,
-                                observers: [_observer, _chatObserver],
-                                onGenerateRoute: (_) => MaterialPageRoute<void>(
-                                  builder: (context) =>
-                                      !MaterialAdaptiveShell.windowOf(context)!
-                                          .hasSplit
-                                      ? const SizedBox.expand()
-                                      : Scaffold(
-                                          body: Center(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  widget.emptyIcon,
-                                                  size: 48,
+                                                    .builders[platform]!,
+                                              _ =>
+                                                const _DetailPageTransitionsBuilder(),
+                                            },
+                                        },
+                                      ),
+                              ),
+                              child: ChatRouteScope(
+                                observer: _chatObserver,
+                                active: widget.active,
+                                ancestors: ChatRouteScope.routesOf(context),
+                                child: Navigator(
+                                  key: _navigator,
+                                  observers: [_observer, _chatObserver],
+                                  onGenerateRoute: (_) =>
+                                      MaterialPageRoute<void>(
+                                        builder: (context) =>
+                                            !MaterialAdaptiveShell.windowOf(
+                                              context,
+                                            )!.hasSplit
+                                            ? const SizedBox.expand()
+                                            : Scaffold(
+                                                body: Center(
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        widget.emptyIcon,
+                                                        size: 48,
+                                                      ),
+                                                      const SizedBox(
+                                                        height: 16,
+                                                      ),
+                                                      Text(widget.emptyLabel),
+                                                    ],
+                                                  ),
                                                 ),
-                                                const SizedBox(height: 16),
-                                                Text(widget.emptyLabel),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
+                                              ),
+                                      ),
                                 ),
                               ),
                             ),

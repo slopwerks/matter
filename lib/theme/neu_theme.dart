@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../widgets/native_snapshot_transitions.dart';
+
 import 'app_component_theme.dart';
 import 'neu_colors.dart';
 import 'storage_visual_theme.dart';
@@ -66,7 +68,7 @@ ThemeData buildNeuTheme(
     dividerColor: neu.hairline,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.android: NativeSnapshotPageTransitionsBuilder(),
         TargetPlatform.iOS: NeuPageTransitionsBuilder(),
         TargetPlatform.linux: NeuPageTransitionsBuilder(),
         TargetPlatform.macOS: NeuPageTransitionsBuilder(),
