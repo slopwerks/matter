@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matter/features/fonts/system_font_catalog.dart';
+import 'package:matter/features/fonts/linux_system_font.dart';
 import 'package:matter/providers/app_font_provider.dart';
 import 'package:matter/theme/system_font.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,9 +22,9 @@ void main() {
     expect(container.read(appFontProvider), isNull);
   });
 
-  test('desktop keeps the platform default font', () async {
+  test('other desktops keep the platform default font', () async {
     SharedPreferences.setMockInitialValues({});
-    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -151,7 +152,9 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      final container = ProviderContainer();
+      final container = ProviderContainer(
+        overrides: [linuxSystemFontProvider.overrideWith(_DesktopFont.new)],
+      );
       addTearDown(container.dispose);
 
       await container
@@ -165,7 +168,7 @@ void main() {
       expect(container.read(chatFontFamilyProvider), 'Noto Serif');
 
       await container.read(chatFontProvider.notifier).selectPlatformDefault();
-      expect(container.read(chatFontFamilyProvider), isNull);
+      expect(container.read(chatFontFamilyProvider), 'GTK Font');
 
       await container.read(chatFontProvider.notifier).reset();
       expect(container.read(chatFontFamilyProvider), 'Noto Sans');
@@ -311,6 +314,11 @@ HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts
       ['Consolas', 'Microsoft YaHei', 'Microsoft YaHei UI', 'Segoe UI'],
     );
   });
+}
+
+class _DesktopFont extends LinuxSystemFont {
+  @override
+  String? build() => 'GTK Font';
 }
 
 class _FixedFont extends AppFont {

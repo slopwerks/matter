@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/fonts/system_font_catalog.dart';
+import '../features/fonts/linux_system_font.dart';
 import '../theme/system_font.dart';
 
 /// Family the picked UI font file is registered under.
@@ -559,11 +560,13 @@ String _extension(String name) {
   return index < 0 ? '' : name.substring(index).toLowerCase();
 }
 
-String? _platformDefaultUiFamily() {
-  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-    return null;
-  }
-  return kSystemFontFamily;
+String? _platformDefaultUiFamily(Ref ref) {
+  if (kIsWeb) return null;
+  return switch (defaultTargetPlatform) {
+    TargetPlatform.android => kSystemFontFamily,
+    TargetPlatform.linux => ref.watch(linuxSystemFontProvider),
+    _ => null,
+  };
 }
 
 List<String>? _mergeFallbacks(Iterable<String> primary) {
@@ -580,12 +583,12 @@ List<String>? _mergeFallbacks(Iterable<String> primary) {
   return merged.isEmpty ? null : merged;
 }
 
-String? _resolveFamily(FontChoice? choice, String customFamily) =>
+String? _resolveFamily(Ref ref, FontChoice? choice, String customFamily) =>
     switch (choice) {
       PickedFontChoice() => customFamily,
       BundledFontChoice(:final family) => family,
       SystemFontChoice(:final family) => family,
-      PlatformDefaultFontChoice() || null => _platformDefaultUiFamily(),
+      PlatformDefaultFontChoice() || null => _platformDefaultUiFamily(ref),
     };
 
 final appFontProvider = NotifierProvider<AppFont, FontChoice?>(AppFont.new);
@@ -624,16 +627,16 @@ final appFontFallbackProvider = Provider<List<String>?>((ref) {
 });
 
 /// Family the UI renders with: a chosen family wins, otherwise Android uses
-/// the platform generic family (which follows the system font).
+/// the platform generic family and Linux resolves GTK’s desktop family.
 final appFontFamilyProvider = Provider<String?>(
-  (ref) => _resolveFamily(ref.watch(appFontProvider), kCustomFontFamily),
+  (ref) => _resolveFamily(ref, ref.watch(appFontProvider), kCustomFontFamily),
 );
 
 /// Family chat message bodies render with; null chat choice follows UI font.
 final chatFontFamilyProvider = Provider<String?>((ref) {
   final choice = ref.watch(chatFontProvider);
   if (choice == null) return ref.watch(appFontFamilyProvider);
-  return _resolveFamily(choice, kChatFontFamily);
+  return _resolveFamily(ref, choice, kChatFontFamily);
 });
 
 /// Fallback list for chat message bodies; null chat choice follows UI fallback.
