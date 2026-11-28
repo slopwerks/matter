@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -183,8 +185,6 @@ String _describeFallbackFont(FallbackChoice? choice) => switch (choice) {
 
 Future<void> _pickUiFont(BuildContext context, WidgetRef ref) async {
   final current = ref.read(appFontProvider);
-  final catalog = await ref.read(systemFontCatalogProvider.future);
-  if (!context.mounted) return;
   final action = await showNeuSheet<String>(
     context: context,
     child: Builder(
@@ -198,12 +198,11 @@ Future<void> _pickUiFont(BuildContext context, WidgetRef ref) async {
             label: '跟随系统',
             onTap: () => Navigator.pop(sheet, 'system'),
           ),
-          if (catalog.families.isNotEmpty)
-            NeuSheetItem(
-              icon: Icons.font_download_outlined,
-              label: '选择系统字体',
-              onTap: () => Navigator.pop(sheet, 'families'),
-            ),
+          NeuSheetItem(
+            icon: Icons.font_download_outlined,
+            label: '选择系统字体',
+            onTap: () => Navigator.pop(sheet, 'families'),
+          ),
           NeuSheetItem(
             icon: Icons.folder_open_rounded,
             label: current is PickedFontChoice ? '更换本地字体文件' : '选择本地字体文件',
@@ -230,6 +229,8 @@ Future<void> _pickUiFont(BuildContext context, WidgetRef ref) async {
         SystemFontChoice(:final family) => family,
         _ => null,
       };
+      final catalog = await ref.read(systemFontCatalogProvider.future);
+      if (!context.mounted) return;
       final family = await _showSystemFontPicker(
         context,
         catalog,
@@ -246,8 +247,6 @@ Future<void> _pickUiFont(BuildContext context, WidgetRef ref) async {
 
 Future<void> _pickChatFont(BuildContext context, WidgetRef ref) async {
   final current = ref.read(chatFontProvider);
-  final catalog = await ref.read(systemFontCatalogProvider.future);
-  if (!context.mounted) return;
   final action = await showNeuSheet<String>(
     context: context,
     child: Builder(
@@ -268,12 +267,11 @@ Future<void> _pickChatFont(BuildContext context, WidgetRef ref) async {
             label: '跟随系统默认',
             onTap: () => Navigator.pop(sheet, 'system_default'),
           ),
-          if (catalog.families.isNotEmpty)
-            NeuSheetItem(
-              icon: Icons.font_download_outlined,
-              label: '选择系统字体',
-              onTap: () => Navigator.pop(sheet, 'families'),
-            ),
+          NeuSheetItem(
+            icon: Icons.font_download_outlined,
+            label: '选择系统字体',
+            onTap: () => Navigator.pop(sheet, 'families'),
+          ),
           NeuSheetItem(
             icon: Icons.folder_open_rounded,
             label: current is PickedFontChoice ? '更换本地字体文件' : '选择本地字体文件',
@@ -295,6 +293,8 @@ Future<void> _pickChatFont(BuildContext context, WidgetRef ref) async {
         SystemFontChoice(:final family) => family,
         _ => null,
       };
+      final catalog = await ref.read(systemFontCatalogProvider.future);
+      if (!context.mounted) return;
       final family = await _showSystemFontPicker(
         context,
         catalog,
@@ -311,8 +311,6 @@ Future<void> _pickChatFont(BuildContext context, WidgetRef ref) async {
 
 Future<void> _pickMonoFont(BuildContext context, WidgetRef ref) async {
   final current = ref.read(monospaceFontProvider);
-  final catalog = await ref.read(systemFontCatalogProvider.future);
-  if (!context.mounted) return;
   final action = await showNeuSheet<String>(
     context: context,
     child: Builder(
@@ -333,12 +331,11 @@ Future<void> _pickMonoFont(BuildContext context, WidgetRef ref) async {
             label: '跟随系统 (monospace)',
             onTap: () => Navigator.pop(sheet, 'system_default'),
           ),
-          if (catalog.families.isNotEmpty)
-            NeuSheetItem(
-              icon: Icons.font_download_outlined,
-              label: '选择系统字体',
-              onTap: () => Navigator.pop(sheet, 'families'),
-            ),
+          NeuSheetItem(
+            icon: Icons.font_download_outlined,
+            label: '选择系统字体',
+            onTap: () => Navigator.pop(sheet, 'families'),
+          ),
           NeuSheetItem(
             icon: Icons.folder_open_rounded,
             label: current is PickedFontChoice ? '更换本地字体文件' : '选择本地字体文件',
@@ -360,6 +357,8 @@ Future<void> _pickMonoFont(BuildContext context, WidgetRef ref) async {
         SystemFontChoice(:final family) => family,
         _ => null,
       };
+      final catalog = await ref.read(systemFontCatalogProvider.future);
+      if (!context.mounted) return;
       final family = await _showSystemFontPicker(
         context,
         catalog,
@@ -377,8 +376,6 @@ Future<void> _pickMonoFont(BuildContext context, WidgetRef ref) async {
 
 Future<void> _pickFallbackFont(BuildContext context, WidgetRef ref) async {
   final current = ref.read(fallbackFontProvider);
-  final catalog = await ref.read(systemFontCatalogProvider.future);
-  if (!context.mounted) return;
   final action = await showNeuSheet<String>(
     context: context,
     child: Builder(
@@ -392,12 +389,11 @@ Future<void> _pickFallbackFont(BuildContext context, WidgetRef ref) async {
             label: '跟随系统',
             onTap: () => Navigator.pop(sheet, 'system'),
           ),
-          if (catalog.families.isNotEmpty)
-            NeuSheetItem(
-              icon: Icons.font_download_outlined,
-              label: '选择系统字体',
-              onTap: () => Navigator.pop(sheet, 'families'),
-            ),
+          NeuSheetItem(
+            icon: Icons.font_download_outlined,
+            label: '选择系统字体',
+            onTap: () => Navigator.pop(sheet, 'families'),
+          ),
           NeuSheetItem(
             icon: Icons.folder_open_rounded,
             label: switch (current) {
@@ -427,6 +423,8 @@ Future<void> _pickFallbackFont(BuildContext context, WidgetRef ref) async {
         FamilyFallback(:final family) => family,
         _ => null,
       };
+      final catalog = await ref.read(systemFontCatalogProvider.future);
+      if (!context.mounted) return;
       final family = await _showSystemFontPicker(
         context,
         catalog,
@@ -475,17 +473,65 @@ class _SystemFontPickerSheet extends StatefulWidget {
 class _SystemFontPickerSheetState extends State<_SystemFontPickerSheet> {
   final _searchController = TextEditingController();
   String _query = '';
+  bool _scrolling = false;
+  Timer? _previewResumeTimer;
+  final _readyPreviews = <String>{};
+  final _pendingPreviews = <String>{};
+  Animation<double>? _sheetAnimation;
+  bool _previewFrameScheduled = false;
   late bool _monoOnly =
       widget.preferMonospace && widget.catalog.monospaceFamilies.isNotEmpty;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation != _sheetAnimation) {
+      _sheetAnimation?.removeStatusListener(_onSheetStatus);
+      _sheetAnimation = animation;
+      animation?.addStatusListener(_onSheetStatus);
+    }
+  }
+
+  void _onSheetStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _schedulePreview();
+  }
+
+  void _schedulePreview() {
+    if (_previewFrameScheduled ||
+        _scrolling ||
+        _pendingPreviews.isEmpty ||
+        (_sheetAnimation != null &&
+            _sheetAnimation!.status != AnimationStatus.completed)) {
+      return;
+    }
+    _previewFrameScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _previewFrameScheduled = false;
+      if (!mounted ||
+          _scrolling ||
+          _pendingPreviews.isEmpty ||
+          (_sheetAnimation != null &&
+              _sheetAnimation!.status != AnimationStatus.completed)) {
+        return;
+      }
+      // Cold font resolution/rasterization must not batch into the opening frame.
+      setState(() => _readyPreviews.add(_pendingPreviews.first));
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  @override
   void dispose() {
+    _sheetAnimation?.removeStatusListener(_onSheetStatus);
+    _previewResumeTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    _pendingPreviews.clear();
     final query = _query.trim().toLowerCase();
     final source = _monoOnly
         ? widget.catalog.families
@@ -497,7 +543,13 @@ class _SystemFontPickerSheetState extends State<_SystemFontPickerSheet> {
         : source.where((f) => f.toLowerCase().contains(query)).toList();
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 460),
+      constraints: BoxConstraints.tightFor(
+        height:
+            (MediaQuery.sizeOf(context).height * .85 -
+                    MediaQuery.viewInsetsOf(context).bottom -
+                    100)
+                .clamp(180.0, 460.0),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -552,44 +604,79 @@ class _SystemFontPickerSheetState extends State<_SystemFontPickerSheet> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final family = filtered[index];
-                      final isSelected = family == widget.active;
-                      final isMono = widget.catalog.monospaceFamilies.contains(
-                        family,
-                      );
-                      final baseStyle = Theme.of(context).textTheme.bodyLarge;
-                      return ListTile(
-                        dense: true,
-                        leading: Icon(
-                          isSelected
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                          size: 20,
-                          color: isSelected
-                              ? context.neu.accent
-                              : context.neu.textSecondary,
-                        ),
-                        title: Text(
-                          family,
-                          style: baseStyle?.copyWith(
-                            fontFamily: family,
-                            fontFamilyFallback: baseStyle.fontFamilyFallback,
-                          ),
-                        ),
-                        trailing: isMono
-                            ? Text(
-                                'Mono',
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(color: context.neu.textTertiary),
-                              )
-                            : null,
-                        onTap: () => Navigator.pop(context, family),
-                      );
+                : NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification.depth != 0) return false;
+                      if (notification is ScrollStartNotification ||
+                          notification is ScrollUpdateNotification) {
+                        _previewResumeTimer?.cancel();
+                        if (!_scrolling) setState(() => _scrolling = true);
+                      } else if (notification is ScrollEndNotification) {
+                        _previewResumeTimer?.cancel();
+                        // Each wheel tick synchronously starts and ends a scroll.
+                        // Keep previews deferred across the whole wheel burst.
+                        _previewResumeTimer = Timer(
+                          const Duration(milliseconds: 150),
+                          () => setState(() => _scrolling = false),
+                        );
+                      }
+                      return false;
                     },
+                    child: ListView.builder(
+                      scrollCacheExtent: const ScrollCacheExtent.pixels(0),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final family = filtered[index];
+                        if (!_readyPreviews.contains(family)) {
+                          _pendingPreviews.add(family);
+                          _schedulePreview();
+                        }
+                        final isSelected = family == widget.active;
+                        final isMono = widget.catalog.monospaceFamilies
+                            .contains(family);
+                        final baseStyle = Theme.of(context).textTheme.bodyLarge;
+                        return Material(
+                          type: MaterialType.transparency,
+                          child: ListTile(
+                            dense: true,
+                            leading: Icon(
+                              isSelected
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked,
+                              size: 20,
+                              color: isSelected
+                                  ? context.neu.accent
+                                  : context.neu.textSecondary,
+                            ),
+                            title: Text(
+                              family,
+                              style: baseStyle?.copyWith(
+                                // Resolve new preview faces only after scrolling stops.
+                                fontFamily:
+                                    !_scrolling &&
+                                        _readyPreviews.contains(family)
+                                    ? family
+                                    : baseStyle.fontFamily,
+                                fontFamilyFallback:
+                                    baseStyle.fontFamilyFallback,
+                              ),
+                            ),
+                            trailing: isMono
+                                ? Text(
+                                    'Mono',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: context.neu.textTertiary,
+                                        ),
+                                  )
+                                : null,
+                            onTap: () => Navigator.pop(context, family),
+                          ),
+                        );
+                      },
+                    ),
                   ),
           ),
         ],
