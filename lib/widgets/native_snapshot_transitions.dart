@@ -197,6 +197,10 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
       }
       return;
     }
+    if (_ready && _SnapshotCoordinator.owner == this && _active != true) {
+      _active = true;
+      unawaited(_setActive(true));
+    }
     _timer?.cancel();
     _timer = Timer(
       const Duration(milliseconds: 180),
@@ -225,10 +229,14 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
       final box = entry!.key.currentContext!.findRenderObject()! as RenderBox;
       final position = box.localToGlobal(Offset.zero);
       final ratio = MediaQuery.devicePixelRatioOf(context);
-      generation = ++_SnapshotCoordinator.generation;
-      _SnapshotCoordinator.owner = this;
+      final refresh = _ready && _SnapshotCoordinator.owner == this;
+      if (!refresh) {
+        _ready = false;
+        generation = ++_SnapshotCoordinator.generation;
+        _SnapshotCoordinator.owner = this;
+      }
       final result = await _SnapshotCoordinator.channel.invokeMethod<bool>(
-        'prepare',
+        refresh ? 'refresh' : 'prepare',
         {
           'generation': generation,
           'foreground': pixels,
@@ -239,6 +247,8 @@ class _SnapshotRouteState extends State<_SnapshotRoute>
           'height': box.size.height * ratio,
         },
       );
+      // A declined refresh leaves the installed pixels and commit token intact.
+      if (refresh) return;
       if (!mounted || !eligible || result != true) {
         await _SnapshotCoordinator.channel.invokeMethod<void>('clear', {
           'generation': generation,

@@ -53,6 +53,7 @@ internal class RouteSnapshotBack(
     internal val callback = object : OnBackAnimationCallback {
         override fun onBackStarted(event: BackEvent) {
             if (!registered || committing) return
+            revision++ // A refresh started before this gesture cannot replace its pixels.
             removeOverlay()
             direction = if (event.swipeEdge == BackEvent.EDGE_RIGHT) -1f else 1f
             showOverlay()
@@ -92,7 +93,7 @@ internal class RouteSnapshotBack(
     }
 
     fun handleCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.method !in listOf("prepare", "setActive", "clear", "finish")) {
+        if (call.method !in listOf("prepare", "refresh", "setActive", "clear", "finish")) {
             result.notImplemented()
             return
         }
@@ -102,9 +103,11 @@ internal class RouteSnapshotBack(
         if (disposed || token == null || token < 0) { result.success(false); return }
         when (call.method) {
             "prepare" -> prepare(token, args, result)
+            "refresh" -> prepare(token, args, result, refresh = true)
             "setActive" -> {
                 if (token != generation || args["eligible"] !is Boolean) { result.success(false); return }
                 eligible = args["eligible"] == true && prepared != null
+                if (!eligible) revision++
                 // Once Dart is popping, finish owns lifetime so no unrendered frame leaks through.
                 if (!eligible && !commitDispatched) { committing = false; removeOverlay() }
                 updateRegistration()
@@ -124,9 +127,13 @@ internal class RouteSnapshotBack(
         }
     }
 
-    private fun prepare(token: Long, args: Map<*, *>, result: MethodChannel.Result) {
-        // A generation is single-use, including pending/failed decode and clear tombstones.
-        if (token <= generation) { result.success(false); return }
+    private fun prepare(token: Long, args: Map<*, *>, result: MethodChannel.Result, refresh: Boolean = false) {
+        // Refreshes retain the installed generation, including its commit identity.
+        if (refresh) {
+            if (token != generation || prepared == null || overlay != null || committing) {
+                result.success(false); return
+            }
+        } else if (token <= generation) { result.success(false); return }
         val front = args["foreground"] as? ByteArray
         val back = args["background"] as? ByteArray
         val rect = listOf("x", "y", "width", "height").map { (args[it] as? Number)?.toDouble() }
@@ -134,8 +141,12 @@ internal class RouteSnapshotBack(
             rect[2]!! < 1 || rect[3]!! < 1 || rect.any { kotlin.math.abs(it!!) > Int.MAX_VALUE / 2 }) {
             result.success(false); return
         }
-        generation = token
-        release()
+        if (refresh) {
+            revision++
+        } else {
+            generation = token
+            release()
+        }
         val decodeRevision = revision
         decoder.execute {
             var foregroundBitmap: Bitmap? = null
@@ -149,10 +160,12 @@ internal class RouteSnapshotBack(
             val decodedFront = foregroundBitmap
             val decodedBack = backgroundBitmap
             main.post {
-                if (disposed || generation != token || revision != decodeRevision || decodedFront == null || decodedBack == null) {
+                if (disposed || generation != token || revision != decodeRevision ||
+                    (refresh && (overlay != null || committing)) || decodedFront == null || decodedBack == null) {
                     decodedFront?.recycle(); decodedBack?.recycle()
                     result.success(false)
                 } else {
+                    prepared?.recycle()
                     prepared = Prepared(decodedFront, decodedBack, rect[0]!!.toFloat(), rect[1]!!.toFloat(),
                         rect[2]!!.roundToInt(), rect[3]!!.roundToInt())
                     result.success(true)

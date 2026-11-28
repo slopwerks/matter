@@ -182,7 +182,13 @@ void main() {
     });
     await tester.pump();
     expect(
-      calls.skip(uncoverCalls).any((call) => call.method == 'prepare'),
+      calls
+          .skip(uncoverCalls)
+          .any(
+            (call) =>
+                call.method == 'refresh' &&
+                (call.arguments as Map)['generation'] == generation,
+          ),
       true,
     );
     expect(
@@ -203,6 +209,7 @@ void main() {
   ) async {
     const channel = MethodChannel('moe.aks.matter/route_back');
     final calls = <MethodCall>[];
+    Completer<bool>? refreshReply;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
       call,
     ) async {
@@ -216,6 +223,15 @@ void main() {
       ),
     );
     final navigator = GlobalKey<NavigatorState>();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      calls.add(call);
+      if (call.method == 'refresh' && refreshReply != null) {
+        return refreshReply.future;
+      }
+      return call.method == 'prepare';
+    });
     var blocked = false;
     late StateSetter updateGuard;
     await tester.pumpWidget(
@@ -295,6 +311,19 @@ void main() {
     );
     expect(staleResult, false);
     expect(find.text('Detail'), findsOneWidget);
+    refreshReply = Completer<bool>();
+    await tester.tap(find.text('Detail'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pump();
+    final refresh = calls.lastWhere((call) => call.method == 'refresh');
+    expect((refresh.arguments as Map)['generation'], args['generation']);
+    expect(
+      calls.where((call) => call.method == 'prepare').length,
+      prepare.length,
+    );
     Object? result;
     final response = const StandardMethodCodec().encodeMethodCall(
       MethodCall('commit', {'generation': args['generation']}),
@@ -314,6 +343,9 @@ void main() {
     expect(find.text('List'), findsOneWidget);
     expect(result, true);
     expect(calls.any((c) => c.method == 'finish'), true);
+    refreshReply.complete(false);
+    await tester.pump();
+    expect(calls.where((call) => call.method == 'clear'), isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
 }

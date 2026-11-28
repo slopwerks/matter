@@ -59,6 +59,85 @@ class RouteSnapshotBackTest {
         fun close() { back.dispose(); controller.pause().stop().destroy() }
     }
 
+    @Test fun refreshingReadySnapshotsKeepsNativeBackRegistered() {
+        val f = Fixture(queued = true)
+        f.prepare(1)
+        f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        f.activate(1)
+        val refresh = f.call("refresh", 1, pngArgs())
+        assertTrue("Refreshing an eligible route must not expose Flutter fallback", f.back.registered)
+        f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(true, refresh.value)
+        f.close()
+    }
+
+    @Test fun refreshCompletingDuringGestureRetainsInstalledPixelsAndCommitToken() {
+        val f = Fixture(queued = true)
+        f.prepare(1); f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        f.activate(1)
+        val refresh = f.call("refresh", 1, pngArgs())
+        f.start()
+        val front = f.back.foreground!!
+        val drawable = front.drawable
+        f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(false, refresh.value)
+        assertSame(front, f.back.foreground)
+        assertSame(drawable, front.drawable)
+        assertTrue(f.back.registered)
+        assertEquals(false, f.call("refresh", 1, pngArgs()).value)
+        f.back.callback.onBackInvoked()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        assertEquals(1L, f.committedGeneration)
+        assertEquals(false, f.call("refresh", 1, pngArgs()).value)
+        f.close()
+    }
+
+    @Test fun cancelledGestureAndClearInvalidatePendingRefresh() {
+        val f = Fixture(queued = true)
+        f.prepare(1); f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        f.activate(1)
+        val refresh = f.call("refresh", 1, pngArgs())
+        f.start(); f.back.callback.onBackCancelled()
+        f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(false, refresh.value)
+        assertTrue(f.back.registered)
+        val cleared = f.call("refresh", 1, pngArgs())
+        f.call("clear", 1)
+        f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(false, cleared.value)
+        assertFalse(f.back.registered)
+        f.close()
+    }
+
+    @Test fun failedRefreshKeepsUsableSnapshotsAndCoverDisablesThem() {
+        val f = Fixture(queued = true)
+        f.prepare(1); f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        f.activate(1)
+        val invalid = f.call("refresh", 1, pngArgs() + ("foreground" to byteArrayOf(1, 2)))
+        f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(false, invalid.value)
+        assertTrue(f.back.registered)
+        val covered = f.call("refresh", 1, pngArgs())
+        f.call("setActive", 1, mapOf("eligible" to false))
+        f.tasks.removeAt(0).run()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(false, covered.value)
+        assertFalse(f.back.registered)
+        assertEquals(true, f.activate(1).value)
+        f.start()
+        assertNotNull(f.back.foreground)
+        f.close()
+    }
+
     @Test fun onlyReadyEligibleGenerationIntercepts() {
         val f = Fixture()
         assertEquals(false, f.activate(1).value)
